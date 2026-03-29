@@ -1,1 +1,28 @@
+name: Register Pilates
 
+on:
+  schedule:
+    - cron: '20 23 * * 6'  # Saturday 3:20 PM Pacific (UTC-8)
+  workflow_dispatch:        # Manual trigger for testing
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install playwright
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Run registration script
+        env:
+          YMCA_EMAIL: ${{ secrets.YMCA_EMAIL }}
+          YMCA_PASSWORD: ${{ secrets.YMCA_PASSWORD }}
+        run: node register-pilates.js
