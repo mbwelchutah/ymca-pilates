@@ -1,65 +1,44 @@
 const { chromium } = require('playwright');
 
 (async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
 
-  await page.goto('https://my.familyworks.app');
+   // Step 1: Go to YMCA app login page (with logout=yes to clear session)
+   await page.goto('https://my.familyworks.app/m?p=login&logout=yes');
+    await page.waitForLoadState('networkidle');
 
-  // Log in
-  await page.fill('input[type="email"]', process.env.YMCA_EMAIL);
-  await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-  await page.click('button[type="submit"]');
-  await page.waitForNavigation();
+   // Step 2: Click "Login to Y Account" button
+   await page.getByText('Login to Y Account').click();
 
-  // Navigate to class schedule
-  await page.goto('https://my.familyworks.app/schedule');
+   // Step 3: Wait for redirect to Daxko login page
+   await page.waitForURL('**/daxko.com/**');
+    await page.waitForSelector('input');
 
-  // Find and click Core Pilates on Tuesday at 4:20 PM
-  const classEntry = page.locator('text=Core Pilates').filter({ hasText: '4:20' });
-  await classEntry.first().click();
+   // Step 4: Fill in email/phone field and submit
+   await page.fill('input', process.env.YMCA_EMAIL);
+    await page.getByRole('button', { name: /submit/i }).click();
 
-  // Click Register or Enroll button
-  await page.locator(const { chromium } = require('playwright');
+   // Step 5: Fill in password and log in
+   await page.waitForSelector('input[type="password"]');
+    await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+    await page.getByRole('button', { name: /login/i }).click();
 
-(async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+   // Step 6: Wait to land back on YMCA app
+   await page.waitForURL('**/familyworks.app/**');
+    await page.waitForLoadState('networkidle');
 
-  // Step 1: Go to YMCA app and click Login
-  await page.goto('https://my.familyworks.app/m?p=login&logout=yes');
-  await page.waitForLoadState('networkidle');
-  await page.getByText('Login to Y Account').click();
+   // Step 7: Go to activities/schedule page
+   await page.goto('https://my.familyworks.app/m?p=activities');
+    await page.waitForLoadState('networkidle');
 
-  // Step 2: On Daxko login page - enter email
-  await page.waitForURL('**/daxko.com/**');
-  await page.waitForSelector('input[type="text"], input[type="email"], input[type="tel"]');
-  await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
-  await page.getByRole('button', { name: /submit/i }).click();
+   // Step 8: Find Core Pilates at 4:20 PM and click it
+   const classEntry = page.locator('text=Core Pilates').filter({ hasText: '4:20' });
+    await classEntry.first().click();
 
-  // Step 3: Enter password
-  await page.waitForSelector('input[type="password"]');
-  await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-  await page.getByRole('button', { name: /login/i }).click();
+   // Step 9: Click Register or Enroll button
+   await page.locator('button:has-text("Register"), button:has-text("Enroll")').first().click();
 
-  // Step 4: Wait to land back on YMCA app
-  await page.waitForURL('**/familyworks.app/**');
-  await page.waitForLoadState('networkidle');
-
-  // Step 5: Navigate to schedule and find Core Pilates Tuesday 4:20 PM
-  await page.goto('https://my.familyworks.app/m?p=activities');
-  await page.waitForLoadState('networkidle');
-
-  const classEntry = page.locator('text=Core Pilates').filter({ hasText: '4:20' });
-  await classEntry.first().click();
-
-  // Step 6: Click Register or Enroll
-  await page.locator('button:has-text("Register"), button:has-text("Enroll")').first().click();
-
-  console.log('Registration complete!');
-  await browser.close();
-})();button:has-text("Register"), button:has-text("Enroll")').first().click();
-
-  console.log('Registration complete!');
-  await browser.close();
+   console.log('Registration complete!');
+    await browser.close();
 })();
