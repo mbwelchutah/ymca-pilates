@@ -2,27 +2,24 @@ name: Register Pilates
 
 on:
   schedule:
-      - cron: '45 14 * * 0'  # Sunday 6:45 AM Pacific (UTC-8) = 3 days + 1hr before Wed 7:45 AM class
-        workflow_dispatch:        # Manual trigger for testing
+    - cron: '45 14 * * 0'
+  workflow_dispatch:
 
-        jobs:
-          register:
-              runs-on: ubuntu-latest
-                  steps:
-                        - uses: actions/checkout@v3
-
-                              - uses: actions/setup-node@v3
-                                      with:
-                                                node-version: '18'
-
-                                                      - name: Install dependencies
-                                                              run: npm install playwright
-
-                                                                    - name: Install Playwright browsers
-                                                                            run: npx playwright install chromium
-
-                                                                                  - name: Run registration script
-                                                                                          env:
-                                                                                                    YMCA_EMAIL: ${{ secrets.YMCA_EMAIL }}
-                                                                                                              YMCA_PASSWORD: ${{ secrets.YMCA_PASSWORD }}
-                                                                                                                      run: node register-pilates.js
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install playwright
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+      - name: Run registration script
+        env:
+          YMCA_EMAIL: ${{ secrets.YMCA_EMAIL }}
+          YMCA_PASSWORD: ${{ secrets.YMCA_PASSWORD }}
+        run: node register-pilates.js
