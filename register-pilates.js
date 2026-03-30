@@ -27,8 +27,8 @@ const { chromium } = require('playwright');
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
-    // Find rows containing "7:45" and check nearby text for Stephanie
-    const timeSlots = page.locator('text=/7:45/');
+    // Find rows containing "7:45 a" (AM) and check nearby text for Stephanie
+    const timeSlots = page.locator('text=/7:45 a/');
     const count = await timeSlots.count();
     for (let i = 0; i < count; i++) {
       const el = timeSlots.nth(i);
