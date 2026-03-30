@@ -1,7 +1,10 @@
 const { chromium } = require('playwright');
 
+const DRY_RUN = process.env.DRY_RUN === '1';
+if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
+
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ headless: !DRY_RUN });
   const page = await browser.newPage();
 
   // Step 1: Log in via Daxko
@@ -92,17 +95,28 @@ const { chromium } = require('playwright');
     console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
     if (hasRegister) {
+      if (DRY_RUN) {
+        console.log('DRY RUN: Would click Register button. Done.');
+        registered = true;
+        break;
+      }
       await registerBtn.first().click();
       console.log('SUCCESS: Registered for Core Pilates 7:45 AM with Stephanie');
       registered = true;
       break;
     } else if (hasWaitlist) {
+      if (DRY_RUN) {
+        console.log('DRY RUN: Would click Waitlist button. Done.');
+        registered = true;
+        break;
+      }
       await waitlistBtn.first().click();
       console.log('WAITLIST: Class full — joined waitlist for Core Pilates 7:45 AM');
       registered = true;
       break;
     } else {
-      console.log('Attempt ' + attempt + ': No register/waitlist button found. Retrying in 30s...');
+      console.log('Attempt ' + attempt + ': No register/waitlist button found.' + (DRY_RUN ? ' (dry run — pausing 10s for inspection)' : ' Retrying in 30s...'));
+      if (DRY_RUN) { await page.waitForTimeout(10000); break; }
       await page.waitForTimeout(30000);
       await page.reload();
       await page.waitForLoadState('networkidle');
