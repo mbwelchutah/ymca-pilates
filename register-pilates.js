@@ -30,7 +30,7 @@ const { chromium } = require('playwright');
   await wedTabs.first().click();
   await page.waitForTimeout(2000);
 
-  // Step 4: Find Core Pilates at 7:30 AM with Stephanie
+  // Step 4: Find Core Pilates at 7:45 AM with Stephanie
   async function findTargetCard() {
     const cards = page.locator('text=Core Pilates');
     const count = await cards.count();
@@ -42,7 +42,7 @@ const { chromium } = require('playwright');
         return node;
       });
       const cardText = await p.evaluate(el => el.textContent.replace(/\s+/g, ' '));
-      if (cardText.includes('7:30') && cardText.toLowerCase().includes('stephanie')) {
+      if (cardText.includes('7:45') && cardText.toLowerCase().includes('stephanie')) {
         return card;
       }
     }
@@ -52,7 +52,7 @@ const { chromium } = require('playwright');
   let targetCard = await findTargetCard();
 
   if (!targetCard) {
-    console.log('Could not find 7:30 AM Core Pilates with Stephanie. Exiting.');
+    console.log('Could not find 7:45 AM Core Pilates with Stephanie. Exiting.');
     await browser.close();
     process.exit(1);
   }
@@ -72,12 +72,12 @@ const { chromium } = require('playwright');
 
     if (hasRegister) {
       await registerBtn.first().click();
-      console.log('SUCCESS: Registered for Core Pilates 7:30 AM with Stephanie');
+      console.log('SUCCESS: Registered for Core Pilates 7:45 AM with Stephanie');
       registered = true;
       break;
     } else if (hasWaitlist) {
       await waitlistBtn.first().click();
-      console.log('WAITLIST: Class full — joined waitlist for Core Pilates 7:30 AM');
+      console.log('WAITLIST: Class full — joined waitlist for Core Pilates 7:45 AM');
       registered = true;
       break;
     } else {
