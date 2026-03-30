@@ -27,18 +27,24 @@ const { chromium } = require('playwright');
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
-    const cards = page.locator('text=Core Pilates');
-    const count = await cards.count();
+    // Find rows containing "7:45" and check nearby text for Stephanie
+    const timeSlots = page.locator('text=/7:45/');
+    const count = await timeSlots.count();
     for (let i = 0; i < count; i++) {
-      const card = cards.nth(i);
-      const p = await card.evaluateHandle(el => {
-        let node = el;
-        for (let j = 0; j < 4; j++) node = node.parentElement;
-        return node;
+      const el = timeSlots.nth(i);
+      // Walk up to find a clickable row that includes instructor info
+      const rowHandle = await el.evaluateHandle(node => {
+        let n = node;
+        for (let j = 0; j < 6; j++) {
+          if (n.parentElement) n = n.parentElement;
+          if (n.textContent.toLowerCase().includes('stephanie')) return n;
+        }
+        return null;
       });
-      const cardText = await p.evaluate(el => el.textContent.replace(/\s+/g, ' '));
-      if (cardText.includes('7:45') && cardText.toLowerCase().includes('stephanie')) {
-        return card;
+      const isValid = await rowHandle.evaluate(n => n !== null).catch(() => false);
+      if (isValid) {
+        console.log('Found 7:45 Stephanie row:', await rowHandle.evaluate(n => n.textContent.replace(/\s+/g, ' ').trim().slice(0, 80)));
+        return el;
       }
     }
     return null;
