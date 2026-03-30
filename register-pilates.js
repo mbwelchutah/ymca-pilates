@@ -65,10 +65,14 @@ const { chromium } = require('playwright');
   let registered = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const registerBtn = page.locator('button:has-text("Register"), button:has-text("Register")');
-    const waitlistBtn = page.locator('button:has-text("Waitlist"), button:has-text("Waitlist")');
+    const registerBtn = page.locator('button:has-text("Register")');
+    const waitlistBtn = page.locator('button:has-text("aitlist")');
     const hasRegister = await registerBtn.count() > 0;
     const hasWaitlist = await waitlistBtn.count() > 0;
+
+    // Log all visible buttons for debugging
+    const allBtns = await page.locator('button:visible').allTextContents();
+    console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
     if (hasRegister) {
       await registerBtn.first().click();
@@ -81,7 +85,7 @@ const { chromium } = require('playwright');
       registered = true;
       break;
     } else {
-      console.log('Attempt ' + attempt + ': Registration not open yet. Retrying in 30s...');
+      console.log('Attempt ' + attempt + ': No register/waitlist button found. Retrying in 30s...');
       await page.waitForTimeout(30000);
       await page.reload();
       await page.waitForLoadState('networkidle');
