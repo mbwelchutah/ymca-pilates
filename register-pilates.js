@@ -25,12 +25,7 @@ const { chromium } = require('playwright');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(3000);
 
-  // Step 3: Click Wednesday tab
-  const wedTabs = page.locator('text=/Wed \\d+/');
-  await wedTabs.first().click();
-  await page.waitForTimeout(2000);
-
-  // Step 4: Find Core Pilates at 7:45 AM with Stephanie
+  // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
     const cards = page.locator('text=Core Pilates');
     const count = await cards.count();
@@ -49,10 +44,26 @@ const { chromium } = require('playwright');
     return null;
   }
 
-  let targetCard = await findTargetCard();
+  // Try each Wednesday tab until we find the class
+  const wedTabs = page.locator('text=/Wed \\d+/');
+  const wedCount = await wedTabs.count();
+  let targetCard = null;
+
+  for (let w = 0; w < wedCount; w++) {
+    const tabText = await wedTabs.nth(w).textContent();
+    console.log('Trying Wednesday tab: ' + tabText.trim());
+    await wedTabs.nth(w).click();
+    await page.waitForTimeout(2000);
+    targetCard = await findTargetCard();
+    if (targetCard) {
+      console.log('Found class on ' + tabText.trim());
+      break;
+    }
+    console.log('Class not found on ' + tabText.trim() + ', trying next Wednesday...');
+  }
 
   if (!targetCard) {
-    console.log('Could not find 7:45 AM Core Pilates with Stephanie. Exiting.');
+    console.log('Could not find 7:45 AM Core Pilates with Stephanie on any Wednesday. Exiting.');
     await browser.close();
     process.exit(1);
   }
@@ -91,13 +102,16 @@ const { chromium } = require('playwright');
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(3000);
 
-      // Re-click Wednesday tab after reload
+      // Re-find the correct Wednesday tab after reload
       const wedTabsRetry = page.locator('text=/Wed \\d+/');
-      if (await wedTabsRetry.count() > 0) await wedTabsRetry.first().click();
-      await page.waitForTimeout(2000);
+      const wedCountRetry = await wedTabsRetry.count();
+      for (let w = 0; w < wedCountRetry; w++) {
+        await wedTabsRetry.nth(w).click();
+        await page.waitForTimeout(2000);
+        targetCard = await findTargetCard();
+        if (targetCard) break;
+      }
 
-      // Re-find the card (fixes stale locator bug)
-      targetCard = await findTargetCard();
       if (targetCard) await targetCard.click().catch(() => {});
       await page.waitForTimeout(2000);
     }
