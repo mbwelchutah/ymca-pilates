@@ -3,11 +3,22 @@
 // Sanders, and registers (or joins the waitlist). Set DRY_RUN=1 to run
 // with a visible browser without clicking Register/Waitlist.
 const fs = require('fs');
+const { execSync } = require('child_process');
 const { chromium } = require('playwright');
 
 const DRY_RUN = process.env.DRY_RUN === '1';
 const isHeadless = process.env.HEADLESS !== 'false';
 if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
+
+// Use the system Chromium (installed via Nix) so the required shared libraries
+// (libgbm, libglib, etc.) are available. Playwright's bundled chrome-headless-shell
+// cannot find them in this environment.
+let CHROMIUM_PATH;
+try {
+  CHROMIUM_PATH = execSync('which chromium', { encoding: 'utf8' }).trim();
+} catch {
+  CHROMIUM_PATH = null;
+}
 
 async function runBookingJob(job) {
   const { classTitle } = job;
@@ -16,7 +27,10 @@ async function runBookingJob(job) {
   let screenshotPath = null;
 
   try {
-    browser = await chromium.launch({ headless: isHeadless });
+    browser = await chromium.launch({
+      headless: isHeadless,
+      ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
+    });
     const page = await browser.newPage();
 
     const snap = async () => {
