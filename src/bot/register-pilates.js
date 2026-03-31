@@ -2,19 +2,34 @@
 // Logs into Daxko, finds the Wednesday Core Pilates class with Stephanie
 // Sanders, and registers (or joins the waitlist). Set DRY_RUN=1 to run
 // with a visible browser without clicking Register/Waitlist.
+const fs = require('fs');
 const { chromium } = require('playwright');
 
 const DRY_RUN = process.env.DRY_RUN === '1';
+const isHeadless = process.env.HEADLESS !== 'false';
 if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
 
 async function runBookingJob(job) {
   const { classTitle } = job;
+  const classTitleLower = classTitle.toLowerCase();
   let browser;
-  const screenshotPath = null; // reserved for future screenshot support
+  let screenshotPath = null;
 
   try {
-    browser = await chromium.launch({ headless: !DRY_RUN });
+    browser = await chromium.launch({ headless: isHeadless });
     const page = await browser.newPage();
+
+    const snap = async () => {
+      try {
+        fs.mkdirSync('screenshots', { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const p = `screenshots/${ts}.png`;
+        await page.screenshot({ path: p });
+        screenshotPath = p;
+      } catch (e) {
+        console.log('Screenshot failed:', e.message);
+      }
+    };
 
     // Step 1: Log in via Daxko
     await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account');
@@ -86,7 +101,7 @@ async function runBookingJob(job) {
       // "Stephanie" sibling in an ancestor's direct children) never worked because
       // the title and the session row are both INSIDE the same class card — they
       // are never in separate direct children of any ancestor.
-      const result = await page.evaluate(() => {
+      const result = await page.evaluate((classTitleLower) => {
         document.querySelectorAll('[data-target-class]').forEach(el => {
           el.removeAttribute('data-target-class');
         });
@@ -106,9 +121,9 @@ async function runBookingJob(job) {
         for (const stephanieEl of stephanieEls) {
           let ancestor = stephanieEl.parentElement;
           while (ancestor && ancestor !== document.body) {
-            const txt = ancestor.textContent;
-            // First ancestor with "Core Pilates" but NOT "Level 2" = the class card
-            if (/core pilates/i.test(txt) && !/core pilates level 2/i.test(txt)) {
+            const txt = ancestor.textContent.toLowerCase();
+            // First ancestor with the class title but NOT "level 2" = the class card
+            if (txt.includes(classTitleLower) && !txt.includes(classTitleLower + ' level 2')) {
               // Trace back from stephanieEl to its direct-child-of-ancestor level
               let clickTarget = stephanieEl;
               while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
@@ -135,10 +150,10 @@ async function runBookingJob(job) {
               el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60))
           }
         };
-      });
+      }, classTitleLower);
 
       if (result.matched) {
-        console.log('Found Core Pilates / Stephanie row:', result.matched);
+        console.log('Found ' + classTitle + ' / Stephanie row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 
@@ -167,6 +182,7 @@ async function runBookingJob(job) {
     if (!targetCard) {
       const msg = `Could not find ${classTitle} with Stephanie on any Wednesday.`;
       console.log(msg);
+      await snap();
       return { status: 'error', message: msg, screenshotPath };
     }
 
@@ -233,12 +249,14 @@ async function runBookingJob(job) {
     if (!registered) {
       const msg = 'Registration did not open within the retry window.';
       console.log('FAILED: ' + msg);
+      await snap();
       return { status: 'error', message: msg, screenshotPath };
     }
 
     const successMsg = DRY_RUN
       ? `DRY RUN complete for ${classTitle}`
       : `Registered for ${classTitle} with Stephanie`;
+    await snap();
     return { status: 'success', message: successMsg, screenshotPath };
 
   } catch (err) {
@@ -250,3 +268,12 @@ async function runBookingJob(job) {
 }
 
 module.exports = { runBookingJob };
+
+// Allow direct invocation: node src/bot/register-pilates.js
+if (require.main === module) {
+  runBookingJob({ classTitle: 'Core Pilates' }).then(result => {
+    console.log(result.message);
+    if (result.screenshotPath) console.log('Screenshot:', result.screenshotPath);
+    if (result.status !== 'success') process.exit(1);
+  });
+}
