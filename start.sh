@@ -2,4 +2,4 @@
 echo "Installing Playwright system dependencies..."
 npx playwright install --with-deps chromium
 echo "Starting server..."
-node server.js
+node src/web/server.js

@@ -1,3 +1,7 @@
+// Bot entry point — run by GitHub Actions every Sunday at 2:45 PM UTC.
+// Logs into Daxko, finds the Wednesday Core Pilates class with Stephanie
+// Sanders, and registers (or joins the waitlist). Set DRY_RUN=1 to run
+// with a visible browser without clicking Register/Waitlist.
 const { chromium } = require('playwright');
 
 const DRY_RUN = process.env.DRY_RUN === '1';

@@ -22,4 +22,4 @@ jobs:
         env:
           YMCA_EMAIL: ${{ secrets.YMCA_EMAIL }}
           YMCA_PASSWORD: ${{ secrets.YMCA_PASSWORD }}
-        run: node register-pilates.js
+        run: node src/bot/register-pilates.js

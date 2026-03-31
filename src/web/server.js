@@ -1,3 +1,6 @@
+// Web server entry point — started by Replit (npm start) and the deployment run command.
+// Serves a one-button UI at / and a /register endpoint that triggers the
+// Playwright booking automation in the same process.
 const http = require('http');
 const { chromium } = require('playwright');
 const { execSync } = require('child_process');
@@ -187,7 +190,7 @@ async function runRegistration() {
     await page.waitForTimeout(2000);
     log('✅ Schedule loaded and filtered to Stephanie Sanders');
 
-    // Step 3: Find class
+    // Step 3: Find class — search by class name + instructor
     async function findTargetCard() {
       // Strategy: search by instructor name anchored inside the correct class card.
       //

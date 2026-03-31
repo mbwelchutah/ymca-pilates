@@ -4,8 +4,8 @@ A Node.js web app that automates registration for a Core Pilates class at the Eu
 
 ## Architecture
 
-- **`server.js`**: Main entry point. Serves a simple web UI and exposes a `/register` endpoint that triggers Playwright automation.
-- **`register-pilates.js`**: Standalone CLI version of the registration script with a dry-run mode.
+- **`src/web/server.js`**: Web server entry point. Serves a simple UI and exposes a `/register` endpoint that triggers Playwright automation.
+- **`src/bot/register-pilates.js`**: Standalone CLI bot run by GitHub Actions. Supports `DRY_RUN=1` for a visible-browser test without clicking Register.
 
 ## Tech Stack
 
