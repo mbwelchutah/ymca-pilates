@@ -149,34 +149,40 @@ async function runRegistration() {
 
     // Step 3: Find class
     async function findTargetCard() {
-      // Try multiple time formats: "7:45 a", "7:45 AM", "7:45am", "7:45"
-      const timePatterns = [/7:45 a/i, /7:45\s*am/i, /7:45/];
-      for (const pattern of timePatterns) {
-        const timeSlots = page.locator(`text=/${pattern.source}/i`);
-        const count = await timeSlots.count();
-        if (count > 0) log('  Found ' + count + ' slot(s) matching ' + pattern);
-        for (let i = 0; i < count; i++) {
-          const el = timeSlots.nth(i);
-          const rowText = await el.evaluateHandle(node => {
-            let n = node;
-            for (let j = 0; j < 8; j++) {
-              if (n.parentElement) n = n.parentElement;
-              const t = n.textContent.toLowerCase();
-              if (t.includes('stephanie') || t.includes('pilates')) return { found: true, text: n.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), hasStephanie: t.includes('stephanie') };
+      // Use page.evaluate to find the exact clickable row:
+      // - time text must START with "7:45 a" (AM, not an end-time like "6:45 p - 7:45 p")
+      // - row must contain "stephanie" (case-insensitive)
+      const clickable = await page.evaluate(() => {
+        const allText = Array.from(document.querySelectorAll('*'));
+        for (const el of allText) {
+          // Only look at leaf-ish nodes whose own text starts with 7:45 a
+          const ownText = (el.childNodes.length <= 3 ? el.textContent : '').trim();
+          if (!/^7:45\s*a/i.test(ownText)) continue;
+          // Walk up to find a container with Stephanie
+          let n = el;
+          for (let i = 0; i < 10; i++) {
+            if (!n) break;
+            const t = n.textContent.toLowerCase();
+            if (t.includes('stephanie')) {
+              // Mark this container so Playwright can find it
+              n.setAttribute('data-target-class', 'yes');
+              return n.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
             }
-            return { found: false, text: '' };
-          });
-          const info = await rowText.jsonValue();
-          if (info.found) {
-            log('  Row text: ' + info.text);
-            if (info.hasStephanie) return el;
+            n = n.parentElement;
           }
         }
+        return null;
+      });
+
+      if (clickable) {
+        log('  Matched row: ' + clickable);
+        return page.locator('[data-target-class="yes"]').first();
       }
-      // Log all visible text for debugging if nothing found
+
+      // Debug: log relevant lines from page
       const bodyText = await page.locator('body').innerText().catch(() => '');
-      const relevant = bodyText.split('\n').filter(l => l.match(/7:|stephanie|pilates|core/i)).slice(0, 10);
-      if (relevant.length) log('  Page snippets: ' + relevant.join(' | '));
+      const relevant = bodyText.split('\n').filter(l => l.match(/7:45|stephanie|core pilates/i)).slice(0, 8);
+      log('  Page snippets: ' + (relevant.join(' | ') || '(none)'));
       return null;
     }
 
