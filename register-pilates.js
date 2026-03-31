@@ -69,60 +69,71 @@ if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
-    // Strategy: search by class name + instructor, not by time text.
-    // The schedule page splits "7:45 a" across separate DOM elements so
-    // no single node ever contains that string.
+    // Strategy: start from "Stephanie S." text, walk UP to find the class card
+    // that contains "Core Pilates" but NOT "Core Pilates Level 2", then walk
+    // back down to get the direct-child session row to click.
     //
-    // Algorithm:
-    //  1. Clear stale markers from prior calls.
-    //  2. Find elements whose direct text-node content is exactly "Core Pilates".
-    //  3. Walk UP from each title element until an ancestor has the title in
-    //     one direct child and "stephanie" in a SEPARATE direct child.
-    //  4. Mark that session-row child for Playwright to locate and click.
-    const matched = await page.evaluate(() => {
+    // The previous approach (start from "Core Pilates" title, look for a separate
+    // "Stephanie" sibling in an ancestor's direct children) never worked because
+    // the title and the session row are both INSIDE the same class card — they
+    // are never in separate direct children of any ancestor.
+    const result = await page.evaluate(() => {
       document.querySelectorAll('[data-target-class]').forEach(el => {
         el.removeAttribute('data-target-class');
       });
 
-      const titleEls = [];
+      // Find elements whose own direct text nodes say "Stephanie S." (with dot)
+      // The dot distinguishes "Stephanie S." from "Stephanie Sanders" in the filter.
+      const stephanieEls = [];
       for (const el of document.querySelectorAll('*')) {
         const directText = Array.from(el.childNodes)
           .filter(n => n.nodeType === Node.TEXT_NODE)
           .map(n => n.textContent.trim())
           .filter(t => t.length > 0)
           .join('');
-        if (/^core pilates$/i.test(directText)) titleEls.push(el);
+        if (/stephanie\s+s\./i.test(directText)) stephanieEls.push(el);
       }
 
-      for (const titleEl of titleEls) {
-        let ancestor = titleEl.parentElement;
+      for (const stephanieEl of stephanieEls) {
+        let ancestor = stephanieEl.parentElement;
         while (ancestor && ancestor !== document.body) {
-          let titleChild = null;
-          let stephanieChild = null;
-
-          for (const child of Array.from(ancestor.children)) {
-            if (child === titleEl || child.contains(titleEl)) {
-              titleChild = child;
-            } else if (child.textContent.toLowerCase().includes('stephanie')) {
-              stephanieChild = child;
+          const txt = ancestor.textContent;
+          // First ancestor with "Core Pilates" but NOT "Level 2" = the class card
+          if (/core pilates/i.test(txt) && !/core pilates level 2/i.test(txt)) {
+            // Trace back from stephanieEl to its direct-child-of-ancestor level
+            let clickTarget = stephanieEl;
+            while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
+              clickTarget = clickTarget.parentElement;
             }
+            if (clickTarget.parentElement === ancestor) {
+              clickTarget.setAttribute('data-target-class', 'yes');
+              return {
+                matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
+                debug: null
+              };
+            }
+            break;
           }
-
-          if (titleChild && stephanieChild) {
-            stephanieChild.setAttribute('data-target-class', 'yes');
-            return stephanieChild.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
-          }
-
           ancestor = ancestor.parentElement;
         }
       }
-      return null;
+
+      return {
+        matched: null,
+        debug: {
+          stephanieElCount: stephanieEls.length,
+          stephanieTexts: stephanieEls.slice(0, 4).map(el =>
+            el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60))
+        }
+      };
     });
 
-    if (matched) {
-      console.log('Found Core Pilates / Stephanie row:', matched);
+    if (result.matched) {
+      console.log('Found Core Pilates / Stephanie row:', result.matched);
       return page.locator('[data-target-class="yes"]').first();
     }
+
+    if (result.debug) console.log('findTargetCard debug:', JSON.stringify(result.debug));
     return null;
   }
 

@@ -187,73 +187,85 @@ async function runRegistration() {
     await page.waitForTimeout(2000);
     log('✅ Schedule loaded and filtered to Stephanie Sanders');
 
-    // Step 3: Find class — use broad text search then verify by reading full row text
+    // Step 3: Find class
     async function findTargetCard() {
-      // Strategy: search by class name + instructor, not by time text.
-      // The schedule page splits "7:45 a" across separate DOM elements so
-      // no single node ever contains that string.
+      // Strategy: search by instructor name anchored inside the correct class card.
       //
-      // Algorithm:
-      //  1. Clear any stale markers from prior calls.
-      //  2. Find every element whose direct text-node content is exactly
-      //     "Core Pilates" (which naturally excludes "Core Pilates Level 2").
-      //  3. Walk UP from each such title element until we find an ancestor
-      //     whose DIRECT children include (a) the title in one child and
-      //     (b) "stephanie" text in a SEPARATE child — that separate child
-      //     is the session row.
-      //  4. Mark that session-row child so Playwright can locate it.
-      const matched = await page.evaluate(() => {
-        // Clear stale markers from any previous call
+      // Previous approach (start from "Core Pilates" title, walk up looking for
+      // a separate "Stephanie" sibling) always failed because both the heading
+      // and the session row live inside THE SAME class card — they are never
+      // in separate direct children of any ancestor.
+      //
+      // Correct algorithm:
+      //  1. Clear stale markers.
+      //  2. Find elements whose direct text is "Stephanie S." (the dot makes it
+      //     specific — avoids matching "Stephanie Sanders" in the filter bar).
+      //  3. Walk UP from each such element until we find an ancestor whose full
+      //     textContent contains "Core Pilates" but NOT "Core Pilates Level 2".
+      //     That ancestor is the Core Pilates class card.
+      //  4. From the Stephanie element, walk back up to the direct child of that
+      //     ancestor — that child is the session row to click.
+      const result = await page.evaluate(() => {
         document.querySelectorAll('[data-target-class]').forEach(el => {
           el.removeAttribute('data-target-class');
         });
 
-        // Collect all elements whose own direct text nodes say "Core Pilates"
-        const titleEls = [];
+        // Collect elements whose own text nodes contain "Stephanie S." (with dot)
+        const stephanieEls = [];
         for (const el of document.querySelectorAll('*')) {
           const directText = Array.from(el.childNodes)
             .filter(n => n.nodeType === Node.TEXT_NODE)
             .map(n => n.textContent.trim())
             .filter(t => t.length > 0)
             .join('');
-          if (/^core pilates$/i.test(directText)) titleEls.push(el);
+          if (/stephanie\s+s\./i.test(directText)) stephanieEls.push(el);
         }
 
-        for (const titleEl of titleEls) {
-          // Walk up from the title element looking for the card container.
-          // The card container is the lowest ancestor where the title element
-          // and a "Stephanie" element live in SEPARATE direct children.
-          let ancestor = titleEl.parentElement;
+        for (const stephanieEl of stephanieEls) {
+          let ancestor = stephanieEl.parentElement;
           while (ancestor && ancestor !== document.body) {
-            let titleChild = null;   // direct child that contains titleEl
-            let stephanieChild = null; // separate direct child with "stephanie"
-
-            for (const child of Array.from(ancestor.children)) {
-              if (child === titleEl || child.contains(titleEl)) {
-                titleChild = child;
-              } else if (child.textContent.toLowerCase().includes('stephanie')) {
-                stephanieChild = child;
+            const txt = ancestor.textContent;
+            // First ancestor that contains "Core Pilates" but NOT "Level 2"
+            // is the class card for the plain Core Pilates class.
+            if (/core pilates/i.test(txt) && !/core pilates level 2/i.test(txt)) {
+              // Walk back from stephanieEl to find the direct child of ancestor
+              // (that child is the session row we need to click).
+              let clickTarget = stephanieEl;
+              while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
+                clickTarget = clickTarget.parentElement;
               }
+              if (clickTarget.parentElement === ancestor) {
+                clickTarget.setAttribute('data-target-class', 'yes');
+                return {
+                  matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
+                  debug: null
+                };
+              }
+              break; // ancestor found but couldn't trace back — try next stephanieEl
             }
-
-            if (titleChild && stephanieChild) {
-              // stephanieChild is the session row for this Core Pilates class
-              stephanieChild.setAttribute('data-target-class', 'yes');
-              return stephanieChild.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
-            }
-
             ancestor = ancestor.parentElement;
           }
         }
-        return null;
+
+        // Debug info when nothing matched
+        return {
+          matched: null,
+          debug: {
+            stephanieElCount: stephanieEls.length,
+            stephanieTexts: stephanieEls.slice(0, 4).map(el =>
+              el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60))
+          }
+        };
       });
 
-      if (matched) {
-        log('  Matched row: ' + matched);
+      if (result.matched) {
+        log('  Matched row: ' + result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 
-      // Debug: log relevant lines from page
+      if (result.debug) log('  findTargetCard debug: ' + JSON.stringify(result.debug));
+
+      // Debug: log relevant lines from page text
       const bodyText = await page.locator('body').innerText().catch(() => '');
       const relevant = bodyText.split('\n').filter(l => l.match(/stephanie|core pilates/i)).slice(0, 8);
       log('  Page snippets: ' + (relevant.join(' | ') || '(none)'));
