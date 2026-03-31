@@ -2,9 +2,11 @@
   "main": "src/web/server.js",
   "scripts": {
     "start": "node src/web/server.js",
-    "bot": "node src/bot/register-pilates.js"
+    "bot": "node src/bot/register-pilates.js",
+    "db:test": "node src/db/test-jobs.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
     "playwright": "^1.58.2"
   }
 }
