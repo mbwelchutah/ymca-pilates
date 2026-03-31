@@ -243,6 +243,9 @@ const server = http.createServer(async (req, res) => {
       const result = await runRegistration();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, log: 'Server error: ' + err.message }));
     } finally {
       running = false;
     }
