@@ -30,32 +30,51 @@ if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
-    // Strategy: find a clickable time-slot row inside a "Core Pilates" card
-    // (not "Core Pilates Level 2") that contains "Stephanie".
-    // Avoids fragile time-text matching since the schedule page splits
-    // "7:45 a" across separate DOM elements.
+    // Strategy: search by class name + instructor, not by time text.
+    // The schedule page splits "7:45 a" across separate DOM elements so
+    // no single node ever contains that string.
+    //
+    // Algorithm:
+    //  1. Clear stale markers from prior calls.
+    //  2. Find elements whose direct text-node content is exactly "Core Pilates".
+    //  3. Walk UP from each title element until an ancestor has the title in
+    //     one direct child and "stephanie" in a SEPARATE direct child.
+    //  4. Mark that session-row child for Playwright to locate and click.
     const matched = await page.evaluate(() => {
-      const allEls = Array.from(document.querySelectorAll('*'));
-      for (const el of allEls) {
-        const ownText = el.childNodes.length <= 5
-          ? Array.from(el.childNodes)
-              .filter(n => n.nodeType === Node.TEXT_NODE)
-              .map(n => n.textContent.trim())
-              .join('')
-              .trim()
-          : '';
-        if (ownText.toLowerCase() !== 'core pilates') continue;
+      document.querySelectorAll('[data-target-class]').forEach(el => {
+        el.removeAttribute('data-target-class');
+      });
 
-        const card = el.closest('[class]') || el.parentElement;
-        if (!card) continue;
+      const titleEls = [];
+      for (const el of document.querySelectorAll('*')) {
+        const directText = Array.from(el.childNodes)
+          .filter(n => n.nodeType === Node.TEXT_NODE)
+          .map(n => n.textContent.trim())
+          .filter(t => t.length > 0)
+          .join('');
+        if (/^core pilates$/i.test(directText)) titleEls.push(el);
+      }
 
-        const rows = Array.from(card.querySelectorAll('*'));
-        for (const row of rows) {
-          const rowText = row.textContent.toLowerCase();
-          if (rowText.includes('stephanie') && row.children.length >= 1 && row.children.length <= 8) {
-            row.setAttribute('data-target-class', 'yes');
-            return row.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+      for (const titleEl of titleEls) {
+        let ancestor = titleEl.parentElement;
+        while (ancestor && ancestor !== document.body) {
+          let titleChild = null;
+          let stephanieChild = null;
+
+          for (const child of Array.from(ancestor.children)) {
+            if (child === titleEl || child.contains(titleEl)) {
+              titleChild = child;
+            } else if (child.textContent.toLowerCase().includes('stephanie')) {
+              stephanieChild = child;
+            }
           }
+
+          if (titleChild && stephanieChild) {
+            stephanieChild.setAttribute('data-target-class', 'yes');
+            return stephanieChild.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+          }
+
+          ancestor = ancestor.parentElement;
         }
       }
       return null;

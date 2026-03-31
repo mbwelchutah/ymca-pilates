@@ -149,38 +149,60 @@ async function runRegistration() {
 
     // Step 3: Find class
     async function findTargetCard() {
-      // Strategy: find a clickable time-slot row that is:
-      //   1. Inside a "Core Pilates" card (not "Core Pilates Level 2")
-      //   2. Contains "Stephanie" in the same row
-      // This avoids fragile time-text matching (the schedule page splits
-      // "7:45 a" across separate DOM elements).
+      // Strategy: search by class name + instructor, not by time text.
+      // The schedule page splits "7:45 a" across separate DOM elements so
+      // no single node ever contains that string.
+      //
+      // Algorithm:
+      //  1. Clear any stale markers from prior calls.
+      //  2. Find every element whose direct text-node content is exactly
+      //     "Core Pilates" (which naturally excludes "Core Pilates Level 2").
+      //  3. Walk UP from each such title element until we find an ancestor
+      //     whose DIRECT children include (a) the title in one child and
+      //     (b) "stephanie" text in a SEPARATE child — that separate child
+      //     is the session row.
+      //  4. Mark that session-row child so Playwright can locate it.
       const matched = await page.evaluate(() => {
-        // Find all elements whose direct text content is exactly "Core Pilates"
-        // (excludes "Core Pilates Level 2" etc.)
-        const allEls = Array.from(document.querySelectorAll('*'));
-        for (const el of allEls) {
-          const ownText = el.childNodes.length <= 5
-            ? Array.from(el.childNodes)
-                .filter(n => n.nodeType === Node.TEXT_NODE)
-                .map(n => n.textContent.trim())
-                .join('')
-                .trim()
-            : '';
-          if (ownText.toLowerCase() !== 'core pilates') continue;
+        // Clear stale markers from any previous call
+        document.querySelectorAll('[data-target-class]').forEach(el => {
+          el.removeAttribute('data-target-class');
+        });
 
-          // Found a "Core Pilates" heading element — search its parent card
-          // for a sibling row containing "Stephanie"
-          const card = el.closest('[class]') || el.parentElement;
-          if (!card) continue;
+        // Collect all elements whose own direct text nodes say "Core Pilates"
+        const titleEls = [];
+        for (const el of document.querySelectorAll('*')) {
+          const directText = Array.from(el.childNodes)
+            .filter(n => n.nodeType === Node.TEXT_NODE)
+            .map(n => n.textContent.trim())
+            .filter(t => t.length > 0)
+            .join('');
+          if (/^core pilates$/i.test(directText)) titleEls.push(el);
+        }
 
-          // Look through descendants for a row that has "stephanie"
-          const rows = Array.from(card.querySelectorAll('*'));
-          for (const row of rows) {
-            const rowText = row.textContent.toLowerCase();
-            if (rowText.includes('stephanie') && row.children.length >= 1 && row.children.length <= 8) {
-              row.setAttribute('data-target-class', 'yes');
-              return row.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+        for (const titleEl of titleEls) {
+          // Walk up from the title element looking for the card container.
+          // The card container is the lowest ancestor where the title element
+          // and a "Stephanie" element live in SEPARATE direct children.
+          let ancestor = titleEl.parentElement;
+          while (ancestor && ancestor !== document.body) {
+            let titleChild = null;   // direct child that contains titleEl
+            let stephanieChild = null; // separate direct child with "stephanie"
+
+            for (const child of Array.from(ancestor.children)) {
+              if (child === titleEl || child.contains(titleEl)) {
+                titleChild = child;
+              } else if (child.textContent.toLowerCase().includes('stephanie')) {
+                stephanieChild = child;
+              }
             }
+
+            if (titleChild && stephanieChild) {
+              // stephanieChild is the session row for this Core Pilates class
+              stephanieChild.setAttribute('data-target-class', 'yes');
+              return stephanieChild.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+            }
+
+            ancestor = ancestor.parentElement;
           }
         }
         return null;
