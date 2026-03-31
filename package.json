@@ -1,0 +1,12 @@
+{
+  "name": "ymca-pilates",
+  "version": "1.0.0",
+  "description": "YMCA Pilates registration automation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "^1.44.0"
+  }
+}
