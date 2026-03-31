@@ -111,7 +111,9 @@ async function runRegistration() {
   const logs = [];
   const log = (msg) => { console.log(msg); logs.push(msg); };
 
-  const browser = await chromium.launch({ headless: true });
+  const launchOptions = { headless: true };
+  if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
+  const browser = await chromium.launch(launchOptions);
   const page = await browser.newPage();
 
   try {
