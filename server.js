@@ -149,39 +149,51 @@ async function runRegistration() {
 
     // Step 3: Find class
     async function findTargetCard() {
-      // Use page.evaluate to find the exact clickable row:
-      // - time text must START with "7:45 a" (AM, not an end-time like "6:45 p - 7:45 p")
-      // - row must contain "stephanie" (case-insensitive)
-      const clickable = await page.evaluate(() => {
-        const allText = Array.from(document.querySelectorAll('*'));
-        for (const el of allText) {
-          // Only look at leaf-ish nodes whose own text starts with 7:45 a
-          const ownText = (el.childNodes.length <= 3 ? el.textContent : '').trim();
-          if (!/^7:45\s*a/i.test(ownText)) continue;
-          // Walk up to find a container with Stephanie
-          let n = el;
-          for (let i = 0; i < 10; i++) {
-            if (!n) break;
-            const t = n.textContent.toLowerCase();
-            if (t.includes('stephanie')) {
-              // Mark this container so Playwright can find it
-              n.setAttribute('data-target-class', 'yes');
-              return n.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+      // Strategy: find a clickable time-slot row that is:
+      //   1. Inside a "Core Pilates" card (not "Core Pilates Level 2")
+      //   2. Contains "Stephanie" in the same row
+      // This avoids fragile time-text matching (the schedule page splits
+      // "7:45 a" across separate DOM elements).
+      const matched = await page.evaluate(() => {
+        // Find all elements whose direct text content is exactly "Core Pilates"
+        // (excludes "Core Pilates Level 2" etc.)
+        const allEls = Array.from(document.querySelectorAll('*'));
+        for (const el of allEls) {
+          const ownText = el.childNodes.length <= 5
+            ? Array.from(el.childNodes)
+                .filter(n => n.nodeType === Node.TEXT_NODE)
+                .map(n => n.textContent.trim())
+                .join('')
+                .trim()
+            : '';
+          if (ownText.toLowerCase() !== 'core pilates') continue;
+
+          // Found a "Core Pilates" heading element — search its parent card
+          // for a sibling row containing "Stephanie"
+          const card = el.closest('[class]') || el.parentElement;
+          if (!card) continue;
+
+          // Look through descendants for a row that has "stephanie"
+          const rows = Array.from(card.querySelectorAll('*'));
+          for (const row of rows) {
+            const rowText = row.textContent.toLowerCase();
+            if (rowText.includes('stephanie') && row.children.length >= 1 && row.children.length <= 8) {
+              row.setAttribute('data-target-class', 'yes');
+              return row.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
             }
-            n = n.parentElement;
           }
         }
         return null;
       });
 
-      if (clickable) {
-        log('  Matched row: ' + clickable);
+      if (matched) {
+        log('  Matched row: ' + matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 
       // Debug: log relevant lines from page
       const bodyText = await page.locator('body').innerText().catch(() => '');
-      const relevant = bodyText.split('\n').filter(l => l.match(/7:45|stephanie|core pilates/i)).slice(0, 8);
+      const relevant = bodyText.split('\n').filter(l => l.match(/stephanie|core pilates/i)).slice(0, 8);
       log('  Page snippets: ' + (relevant.join(' | ') || '(none)'));
       return null;
     }

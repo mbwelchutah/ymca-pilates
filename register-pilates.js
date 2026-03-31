@@ -30,25 +30,40 @@ if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
-    // Find rows containing "7:45 a" (AM) and check nearby text for Stephanie
-    const timeSlots = page.locator('text=/7:45 a/');
-    const count = await timeSlots.count();
-    for (let i = 0; i < count; i++) {
-      const el = timeSlots.nth(i);
-      // Walk up to find a clickable row that includes instructor info
-      const rowHandle = await el.evaluateHandle(node => {
-        let n = node;
-        for (let j = 0; j < 6; j++) {
-          if (n.parentElement) n = n.parentElement;
-          if (n.textContent.toLowerCase().includes('stephanie')) return n;
+    // Strategy: find a clickable time-slot row inside a "Core Pilates" card
+    // (not "Core Pilates Level 2") that contains "Stephanie".
+    // Avoids fragile time-text matching since the schedule page splits
+    // "7:45 a" across separate DOM elements.
+    const matched = await page.evaluate(() => {
+      const allEls = Array.from(document.querySelectorAll('*'));
+      for (const el of allEls) {
+        const ownText = el.childNodes.length <= 5
+          ? Array.from(el.childNodes)
+              .filter(n => n.nodeType === Node.TEXT_NODE)
+              .map(n => n.textContent.trim())
+              .join('')
+              .trim()
+          : '';
+        if (ownText.toLowerCase() !== 'core pilates') continue;
+
+        const card = el.closest('[class]') || el.parentElement;
+        if (!card) continue;
+
+        const rows = Array.from(card.querySelectorAll('*'));
+        for (const row of rows) {
+          const rowText = row.textContent.toLowerCase();
+          if (rowText.includes('stephanie') && row.children.length >= 1 && row.children.length <= 8) {
+            row.setAttribute('data-target-class', 'yes');
+            return row.textContent.replace(/\s+/g, ' ').trim().slice(0, 120);
+          }
         }
-        return null;
-      });
-      const isValid = await rowHandle.evaluate(n => n !== null).catch(() => false);
-      if (isValid) {
-        console.log('Found 7:45 Stephanie row:', await rowHandle.evaluate(n => n.textContent.replace(/\s+/g, ' ').trim().slice(0, 80)));
-        return el;
       }
+      return null;
+    });
+
+    if (matched) {
+      console.log('Found Core Pilates / Stephanie row:', matched);
+      return page.locator('[data-target-class="yes"]').first();
     }
     return null;
   }
