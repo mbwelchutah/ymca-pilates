@@ -141,13 +141,16 @@ async function runRegistration() {
     ]);
     log('✅ Logged in');
 
-    // Step 2: Go to schedule
-    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes&event=Core Pilates');
+    // Step 2: Go to schedule and filter by Stephanie Sanders instructor
+    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
-    log('✅ Schedule loaded');
+    // Select Stephanie Sanders from instructor dropdown
+    await page.selectOption('select', { label: 'Stephanie Sanders' });
+    await page.waitForTimeout(2000);
+    log('✅ Schedule loaded and filtered to Stephanie Sanders');
 
-    // Step 3: Find class
+    // Step 3: Find class — use broad text search then verify by reading full row text
     async function findTargetCard() {
       // Strategy: search by class name + instructor, not by time text.
       // The schedule page splits "7:45 a" across separate DOM elements so
