@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 modules = ["nodejs-20"]
 [agent]
 expertMode = true
@@ -36,3 +37,6 @@ externalPort = 80
 [deployment]
 deploymentTarget = "autoscale"
 run = ["node", "server.js"]
+=======
+run = "bash start.sh"
+>>>>>>> 47d24b036a7eacdeef6812400d820d95210bbecd
