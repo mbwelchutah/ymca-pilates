@@ -4,6 +4,8 @@
 const http = require('http');
 const { chromium } = require('playwright');
 const { execSync } = require('child_process');
+const { getJobById } = require('../db/jobs');
+const { runBookingJob } = require('../bot/register-pilates');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -81,6 +83,7 @@ const html = `<!DOCTYPE html>
     <h1>🧘 YMCA Pilates</h1>
     <p class="subtitle">Core Pilates · Wed 7:45 AM · Stephanie</p>
     <button id="btn" onclick="register()">Register Me</button>
+    <button id="btn2" onclick="runFromDb()" style="margin-top: 12px; background: #457b9d;">Run Saved Job</button>
     <div id="status"></div>
   </div>
   <script>
@@ -100,6 +103,35 @@ const html = `<!DOCTYPE html>
         if (data.success) {
           status.className = 'success';
           btn.textContent = '✅ Registered!';
+        } else {
+          status.className = 'error';
+          btn.textContent = 'Try Again';
+          btn.disabled = false;
+        }
+      } catch (e) {
+        status.className = 'error';
+        status.textContent = 'Network error: ' + e.message;
+        btn.textContent = 'Try Again';
+        btn.disabled = false;
+      }
+    }
+
+    async function runFromDb() {
+      const btn = document.getElementById('btn2');
+      const status = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = 'Running...';
+      status.className = 'running';
+      status.style.display = 'block';
+      status.textContent = 'Loading job from database...';
+
+      try {
+        const res = await fetch('/run-job');
+        const data = await res.json();
+        status.textContent = data.log;
+        if (data.success) {
+          status.className = 'success';
+          btn.textContent = '✅ Done!';
         } else {
           status.className = 'error';
           btn.textContent = 'Try Again';
@@ -359,6 +391,32 @@ const server = http.createServer(async (req, res) => {
       const result = await runRegistration();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, log: 'Server error: ' + err.message }));
+    } finally {
+      running = false;
+    }
+  } else if (req.method === 'GET' && req.url === '/run-job') {
+    // Load job id 1 from DB and run the bot using that data
+    const dbJob = getJobById(1);
+    if (!dbJob) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, log: 'No job found in database. Run: npm run db:test' }));
+      return;
+    }
+    if (running) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, log: 'Already running, please wait...' }));
+      return;
+    }
+    running = true;
+    try {
+      const job = { classTitle: dbJob.class_title };
+      console.log('Running job from DB:', job);
+      const result = await runBookingJob(job);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: result.status === 'success', log: result.message }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, log: 'Server error: ' + err.message }));
