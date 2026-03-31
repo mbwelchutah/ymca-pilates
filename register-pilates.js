@@ -23,10 +23,12 @@ if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---
     page.click('#submit_button'),
   ]);
 
-  // Step 2: Go to Core Pilates schedule search
-  await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes&event=Core%20Pilates');
+  // Step 2: Go to schedule and filter by Stephanie Sanders instructor
+  await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(3000);
+  await page.selectOption('select', { label: 'Stephanie Sanders' });
+  await page.waitForTimeout(2000);
 
   // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
   async function findTargetCard() {
