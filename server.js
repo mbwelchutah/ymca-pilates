@@ -149,21 +149,34 @@ async function runRegistration() {
 
     // Step 3: Find class
     async function findTargetCard() {
-      const timeSlots = page.locator('text=/7:45 a/');
-      const count = await timeSlots.count();
-      for (let i = 0; i < count; i++) {
-        const el = timeSlots.nth(i);
-        const rowHandle = await el.evaluateHandle(node => {
-          let n = node;
-          for (let j = 0; j < 6; j++) {
-            if (n.parentElement) n = n.parentElement;
-            if (n.textContent.toLowerCase().includes('stephanie')) return n;
+      // Try multiple time formats: "7:45 a", "7:45 AM", "7:45am", "7:45"
+      const timePatterns = [/7:45 a/i, /7:45\s*am/i, /7:45/];
+      for (const pattern of timePatterns) {
+        const timeSlots = page.locator(`text=/${pattern.source}/i`);
+        const count = await timeSlots.count();
+        if (count > 0) log('  Found ' + count + ' slot(s) matching ' + pattern);
+        for (let i = 0; i < count; i++) {
+          const el = timeSlots.nth(i);
+          const rowText = await el.evaluateHandle(node => {
+            let n = node;
+            for (let j = 0; j < 8; j++) {
+              if (n.parentElement) n = n.parentElement;
+              const t = n.textContent.toLowerCase();
+              if (t.includes('stephanie') || t.includes('pilates')) return { found: true, text: n.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), hasStephanie: t.includes('stephanie') };
+            }
+            return { found: false, text: '' };
+          });
+          const info = await rowText.jsonValue();
+          if (info.found) {
+            log('  Row text: ' + info.text);
+            if (info.hasStephanie) return el;
           }
-          return null;
-        });
-        const isValid = await rowHandle.evaluate(n => n !== null).catch(() => false);
-        if (isValid) return el;
+        }
       }
+      // Log all visible text for debugging if nothing found
+      const bodyText = await page.locator('body').innerText().catch(() => '');
+      const relevant = bodyText.split('\n').filter(l => l.match(/7:|stephanie|pilates|core/i)).slice(0, 10);
+      if (relevant.length) log('  Page snippets: ' + relevant.join(' | '));
       return null;
     }
 
