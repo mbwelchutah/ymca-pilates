@@ -134,18 +134,23 @@ async function runRegistration() {
     ]);
     log('✅ Logged in');
 
-    // Step 2: Go to schedule
-    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes&event=Core Pilates');
+    // Step 2: Go to schedule (URL-encode the event name)
+    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes&event=Core%20Pilates');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
     log('✅ Schedule loaded');
 
-    // Step 3: Find class
+    // Step 3: Find class — use broad text search then verify by reading full row text
     async function findTargetCard() {
-      const timeSlots = page.locator('text=/7:45 a/');
+      // Use a broad regex that handles regular or non-breaking spaces
+      const timeSlots = page.locator('text=/7:45/');
       const count = await timeSlots.count();
+      log('Found ' + count + ' elements with "7:45"');
       for (let i = 0; i < count; i++) {
         const el = timeSlots.nth(i);
+        const elText = await el.textContent().catch(() => '');
+        // Must be AM (contains 'a') not PM end time
+        if (!elText.toLowerCase().includes('a')) continue;
         const rowHandle = await el.evaluateHandle(node => {
           let n = node;
           for (let j = 0; j < 6; j++) {
@@ -155,7 +160,11 @@ async function runRegistration() {
           return null;
         });
         const isValid = await rowHandle.evaluate(n => n !== null).catch(() => false);
-        if (isValid) return el;
+        if (isValid) {
+          const rowText = await rowHandle.evaluate(n => n.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
+          log('Found row: ' + rowText);
+          return el;
+        }
       }
       return null;
     }
