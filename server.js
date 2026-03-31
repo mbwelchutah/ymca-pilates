@@ -112,10 +112,11 @@ async function runRegistration() {
   const logs = [];
   const log = (msg) => { console.log(msg); logs.push(msg); };
 
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
+  let browser;
   try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
     // Step 1: Log in
     await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account');
     await page.waitForLoadState('domcontentloaded');
@@ -224,7 +225,7 @@ async function runRegistration() {
     log('❌ Error: ' + err.message);
     return { success: false, log: logs.join('\n') };
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 }
 
