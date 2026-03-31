@@ -1,8 +1,15 @@
 const http = require('http');
 const { chromium } = require('playwright');
+const { execSync } = require('child_process');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
+
+const CHROMIUM_PATH = (() => {
+  try { return execSync('which chromium').toString().trim(); } catch {}
+  try { return execSync('which chromium-browser').toString().trim(); } catch {}
+  return null;
+})();
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -114,7 +121,7 @@ async function runRegistration() {
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}) });
     const page = await browser.newPage();
 
     // Step 1: Log in

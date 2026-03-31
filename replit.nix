@@ -1,5 +1,13 @@
 {pkgs}: {
   deps = [
+    pkgs.chromium
+    pkgs.xorg.libxshmfence
+    pkgs.xorg.libXtst
+    pkgs.xorg.libXrender
+    pkgs.xorg.libXi
+    pkgs.xorg.libXcursor
+    pkgs.expat
+    pkgs.libdrm
     pkgs.mesa
     pkgs.alsa-lib
     pkgs.cairo
