@@ -144,9 +144,46 @@ async function runRegistration() {
     // Step 2: Go to schedule and filter by Stephanie Sanders instructor
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(3000);
-    // Select Stephanie Sanders from instructor dropdown
-    await page.selectOption('select', { label: 'Stephanie Sanders' });
+    await page.waitForTimeout(4000);
+
+    // Wait for any dropdown to have options loaded (Bubble.io loads them async)
+    await page.waitForFunction(() => {
+      const selects = document.querySelectorAll('select');
+      for (const sel of selects) {
+        if (sel.options.length > 1) return true;
+      }
+      return false;
+    }, { timeout: 15000 }).catch(() => log('⚠️ Dropdown options slow to load, proceeding anyway'));
+
+    // Find and select Stephanie Sanders using evaluate (Bubble needs dispatchEvent)
+    const selectedInstructor = await page.evaluate(() => {
+      const selects = document.querySelectorAll('select');
+      for (const sel of selects) {
+        for (const opt of sel.options) {
+          if (opt.text.toLowerCase().includes('stephanie')) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('input', { bubbles: true }));
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            return opt.text;
+          }
+        }
+      }
+      // Log all available options for debugging
+      const allOpts = [];
+      for (const sel of selects) {
+        for (const opt of sel.options) {
+          allOpts.push(opt.text);
+        }
+      }
+      return 'NOT_FOUND:' + allOpts.join('|');
+    });
+
+    if (selectedInstructor.startsWith('NOT_FOUND:')) {
+      log('⚠️ Stephanie not found. Available options: ' + selectedInstructor.replace('NOT_FOUND:', ''));
+      log('Proceeding without instructor filter...');
+    } else {
+      log('✅ Selected instructor: ' + selectedInstructor);
+    }
     await page.waitForTimeout(2000);
     log('✅ Schedule loaded and filtered to Stephanie Sanders');
 
