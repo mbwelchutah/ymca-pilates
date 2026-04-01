@@ -5,6 +5,7 @@ const { URL } = require('url');
 const { getJobById, getAllJobs } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
+const { getPhase } = require('../scheduler/booking-window');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -19,36 +20,57 @@ function buildHtml(jobs) {
     ? `Job #${first.id} \u2014 ${first.class_title} \u00b7 ${first.day_of_week || ''} \u00b7 ${first.class_time || ''} \u00b7 ${first.instructor || ''}`
     : null;
 
+  // Compute booking phase for each job (server-side, using scheduler module).
+  function jobPhase(j) {
+    try { return getPhase(j).phase; } catch(e) { return 'unknown'; }
+  }
+
+  const PHASE_LABEL = {
+    too_early: 'Too Early',
+    warmup:    'Warmup',
+    sniper:    'Sniper',
+    late:      'Open',
+    unknown:   'Unknown',
+  };
+
   const jobRowsHtml = hasJobs
     ? jobs.map(j => {
-        const active = j.is_active ? '<span class="badge active">active</span>' : '<span class="badge inactive">inactive</span>';
+        const phase  = jobPhase(j);
+        const active = j.is_active
+          ? '<span class="badge badge-active">active</span>'
+          : '<span class="badge badge-inactive">inactive</span>';
+        const phaseBadge = `<span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>`;
         return `
-        <tr class="job-row" data-id="${j.id}"
+        <tr class="job-row"
+            data-id="${j.id}"
             data-title="${esc(j.class_title)}"
             data-day="${esc(j.day_of_week || '')}"
             data-time="${esc(j.class_time || '')}"
             data-instructor="${esc(j.instructor || '')}"
+            data-phase="${esc(phase)}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
           <td><strong>${esc(j.class_title)}</strong></td>
-          <td>${esc(j.day_of_week || '—')}</td>
-          <td>${esc(j.class_time  || '—')}</td>
-          <td>${esc(j.instructor  || '—')}</td>
+          <td>${esc(j.day_of_week || '\u2014')}</td>
+          <td>${esc(j.class_time  || '\u2014')}</td>
+          <td>${esc(j.instructor  || '\u2014')}</td>
+          <td>${phaseBadge}</td>
           <td>${active}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="6" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
+    : '<tr><td colspan="7" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
 
   const sel = first
-    ? `${esc(first.class_title)} · ${esc(first.day_of_week || '')} · ${esc(first.class_time || '')} · ${esc(first.instructor || '')}`
+    ? `${esc(first.class_title)} \u00b7 ${esc(first.day_of_week || '')} \u00b7 ${esc(first.class_time || '')} \u00b7 ${esc(first.instructor || '')}`
     : 'None';
+  const firstPhase = first ? jobPhase(first) : 'unknown';
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YMCA Pilates — Control Panel</title>
+  <title>YMCA Pilates \u2014 Control Panel</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -56,32 +78,32 @@ function buildHtml(jobs) {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #eef2f7;
       min-height: 100vh;
-      padding: 24px 16px 48px;
+      padding: 28px 16px 56px;
       color: #1a1a2e;
     }
 
     .page {
-      max-width: 640px;
+      max-width: 680px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 22px;
     }
 
     /* ---- page header ---- */
-    .page-header { text-align: center; padding: 8px 0 4px; }
-    .page-header h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; }
-    .page-header p  { font-size: 13px; color: #888; margin-top: 4px; }
+    .page-header { text-align: center; padding: 8px 0 6px; }
+    .page-header h1 { font-size: 23px; font-weight: 700; color: #1a1a2e; }
+    .page-header p  { font-size: 14px; color: #888; margin-top: 5px; }
 
     /* ---- cards ---- */
     .card {
       background: white;
       border-radius: 14px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      box-shadow: 0 2px 14px rgba(0,0,0,0.07);
       overflow: hidden;
     }
     .card-header {
-      padding: 14px 20px 10px;
+      padding: 16px 24px 12px;
       border-bottom: 1px solid #f0f0f0;
     }
     .card-header h2 {
@@ -91,7 +113,7 @@ function buildHtml(jobs) {
       text-transform: uppercase;
       color: #999;
     }
-    .card-body { padding: 16px 20px; }
+    .card-body { padding: 20px 24px; }
 
     /* ---- selected job ---- */
     .selected-id {
@@ -103,15 +125,18 @@ function buildHtml(jobs) {
       margin-bottom: 5px;
     }
     .selected-summary {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 600;
       color: #1a1a2e;
       line-height: 1.4;
     }
     .selected-meta {
-      font-size: 13px;
+      font-size: 14px;
       color: #666;
-      margin-top: 4px;
+      margin-top: 5px;
+    }
+    .selected-phase {
+      margin-top: 8px;
     }
 
     /* ---- jobs table ---- */
@@ -122,7 +147,7 @@ function buildHtml(jobs) {
     }
     .jobs-table th {
       text-align: left;
-      padding: 10px 12px;
+      padding: 11px 14px;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.06em;
@@ -131,7 +156,7 @@ function buildHtml(jobs) {
       border-bottom: 1px solid #f0f0f0;
     }
     .jobs-table td {
-      padding: 12px 12px;
+      padding: 13px 14px;
       border-bottom: 1px solid #f8f8f8;
       vertical-align: middle;
       color: #333;
@@ -141,8 +166,8 @@ function buildHtml(jobs) {
     .job-row.selected { background: #eef3ff; box-shadow: inset 4px 0 0 #457b9d; }
     .job-row.selected td { color: #1a1a2e; font-weight: 500; }
     .job-id { color: #bbb; font-size: 12px; font-weight: 400; }
-    .no-jobs { padding: 32px 20px; text-align: center; color: #aaa; font-size: 14px; line-height: 1.6; }
-    .no-jobs strong { display: block; font-size: 16px; color: #999; margin-bottom: 6px; }
+    .no-jobs { padding: 36px 24px; text-align: center; color: #aaa; font-size: 14px; line-height: 1.7; }
+    .no-jobs strong { display: block; font-size: 16px; color: #999; margin-bottom: 8px; }
     .no-jobs code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 
     /* ---- badges ---- */
@@ -152,25 +177,33 @@ function buildHtml(jobs) {
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      padding: 3px 7px;
+      padding: 3px 8px;
       border-radius: 20px;
+      white-space: nowrap;
     }
-    .badge.active   { background: #d4edda; color: #155724; }
-    .badge.inactive { background: #f0f0f0; color: #888; }
+    .badge-active   { background: #d4edda; color: #155724; }
+    .badge-inactive { background: #f0f0f0; color: #888; }
+
+    /* Phase badge colours */
+    .badge-phase-too_early { background: #f0f0f0; color: #888; }
+    .badge-phase-warmup    { background: #fff3cd; color: #856404; }
+    .badge-phase-sniper    { background: #ffe5d0; color: #c04a00; }
+    .badge-phase-late      { background: #d4edda; color: #155724; }
+    .badge-phase-unknown   { background: #f0f0f0; color: #aaa; }
 
     /* ---- actions ---- */
-    .actions { display: flex; flex-direction: column; gap: 10px; }
+    .actions { display: flex; flex-direction: column; gap: 12px; }
     .btn {
       border: none;
       border-radius: 10px;
-      padding: 14px 20px;
+      padding: 15px 20px;
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       width: 100%;
       transition: opacity 0.15s, background 0.15s;
     }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .btn-primary   { background: #e63946; color: white; }
     .btn-primary:hover:not(:disabled)   { background: #c1121f; }
     .btn-secondary { background: #457b9d; color: white; }
@@ -179,38 +212,32 @@ function buildHtml(jobs) {
     .btn-muted:hover:not(:disabled)     { background: #e0e0e0; }
 
     /* ---- status ---- */
+    .status-body { display: flex; flex-direction: column; gap: 12px; }
     #status {
       font-size: 13px;
-      line-height: 1.6;
+      line-height: 1.65;
       white-space: pre-wrap;
       font-family: 'SF Mono', 'Fira Code', monospace;
       color: #555;
-      min-height: 40px;
+      min-height: 44px;
     }
     #status.running { color: #856404; }
     #status.success { color: #155724; }
     #status.error   { color: #721c24; }
-
-    /* ---- spinner ---- */
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner {
-      display: inline-block;
-      width: 11px; height: 11px;
-      border: 2px solid currentColor;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      margin-right: 6px;
-      vertical-align: middle;
-      opacity: 0.75;
+    .last-run {
+      font-size: 12px;
+      color: #bbb;
+      border-top: 1px solid #f5f5f5;
+      padding-top: 10px;
     }
+    .last-run strong { color: #999; }
   </style>
 </head>
 <body>
   <div class="page">
 
     <div class="page-header">
-      <h1>🧘 YMCA Pilates</h1>
+      <h1>&#x1F9D8; YMCA Pilates</h1>
       <p>Booking control panel</p>
     </div>
 
@@ -221,6 +248,7 @@ function buildHtml(jobs) {
         <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
         <div class="selected-summary" id="sel-title">${first ? esc(first.class_title) : 'None'}</div>
         <div class="selected-meta"    id="sel-meta">${sel}</div>
+        <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
       </div>
     </div>
 
@@ -235,6 +263,7 @@ function buildHtml(jobs) {
             <th>Day</th>
             <th>Time</th>
             <th>Instructor</th>
+            <th>Phase</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -252,7 +281,7 @@ function buildHtml(jobs) {
           Run Selected Job
         </button>
         <button class="btn btn-secondary" id="btn-register" onclick="runRegister()">
-          Register Me (Core Pilates default)
+          Run Default Job
         </button>
         <button class="btn btn-muted" id="btn-clean" onclick="cleanTestJobs()">
           Clean Old Test Jobs
@@ -263,8 +292,9 @@ function buildHtml(jobs) {
     <!-- Status -->
     <div class="card">
       <div class="card-header"><h2>Status</h2></div>
-      <div class="card-body">
+      <div class="card-body status-body">
         <div id="status">No job run yet.</div>
+        <div class="last-run" id="last-run" style="display:none"></div>
       </div>
     </div>
 
@@ -274,8 +304,12 @@ function buildHtml(jobs) {
     // ---- state ----
     let selectedJobId    = ${first ? first.id : 'null'};
     let selectedJobLabel = ${JSON.stringify(firstLabel)};
+    let selectedJobPhase = ${JSON.stringify(firstPhase)};
     let activeBtn        = null;
     let activeSuccessText = null;
+    let dotsTimer        = null;
+
+    const PHASE_LABEL = ${JSON.stringify(PHASE_LABEL)};
 
     // Highlight the first row on load.
     (function() {
@@ -287,49 +321,73 @@ function buildHtml(jobs) {
     function selectJob(row) {
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
-      selectedJobId = row.dataset.id;
-      selectedJobLabel = 'Job #' + row.dataset.id + ' — ' +
+      selectedJobId    = row.dataset.id;
+      selectedJobPhase = row.dataset.phase || 'unknown';
+      selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
-          .filter(Boolean).join(' · ');
+          .filter(Boolean).join(' \u00b7 ');
       document.getElementById('sel-id').textContent    = 'Job #' + row.dataset.id;
       document.getElementById('sel-title').textContent = row.dataset.title;
       document.getElementById('sel-meta').textContent  =
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
-          .filter(Boolean).join(' · ');
+          .filter(Boolean).join(' \u00b7 ');
+      const ph = selectedJobPhase;
+      document.getElementById('sel-phase').innerHTML =
+        '<span class="badge badge-phase-' + ph + '">' + (PHASE_LABEL[ph] || ph) + '</span>';
     }
 
-    // ---- spinner helper ----
-    function spinnerHtml(text) {
-      return '<span class="spinner"></span>' + text;
+    // ---- animated dots ----
+    function startDots(statusEl, baseText) {
+      stopDots();
+      let count = 0;
+      const steps = ['.', '..', '...', '..'];
+      statusEl.className   = 'running';
+      statusEl.textContent = baseText + '.';
+      dotsTimer = setInterval(function() {
+        count = (count + 1) % steps.length;
+        statusEl.textContent = baseText + steps[count];
+      }, 500);
+    }
+    function stopDots() {
+      if (dotsTimer) { clearInterval(dotsTimer); dotsTimer = null; }
     }
 
-    // ---- lock / unlock Run Selected Job across all runs ----
+    // ---- last run display ----
+    function showLastRun(success, text) {
+      const el = document.getElementById('last-run');
+      const ts = new Date().toLocaleTimeString();
+      const icon = success ? '\u2705' : '\u274c';
+      el.innerHTML = '<strong>Last run:</strong> ' + icon + ' ' + ts + ' \u2014 ' + text;
+      el.style.display = '';
+    }
+
+    // ---- lock / unlock Run Selected Job button across all runs ----
     function lockRunBtn()   {
       const b = document.getElementById('btn-run');
-      if (b) { b.disabled = true; }
+      if (b) b.disabled = true;
     }
     function unlockRunBtn() {
       const b = document.getElementById('btn-run');
-      if (b && b !== activeBtn) { b.disabled = false; }
+      if (b && b !== activeBtn) b.disabled = false;
     }
 
     // ---- shared job runner ----
-    async function startJob(url, btn, successText, statusPrefix) {
+    async function startJob(url, btn, successText, jobLabel) {
       const statusEl = document.getElementById('status');
       btn.disabled   = true;
-      btn.textContent = 'Running…';
+      btn.textContent = 'Running\u2026';
       lockRunBtn();
-      statusEl.className = 'running';
-      statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + ' — Starting…' : 'Starting…');
-      activeBtn = btn;
+      activeBtn         = btn;
       activeSuccessText = successText;
+      startDots(statusEl, 'Running ' + (jobLabel || 'job'));
       try {
         const res  = await fetch(url);
         const data = await res.json();
         if (!data.started) {
+          stopDots();
           if (data.log && data.log.includes('Already running')) {
-            statusEl.innerHTML = spinnerHtml('Job already in progress — checking status…');
-            poll();
+            startDots(statusEl, 'Job already in progress');
+            poll(jobLabel);
           } else {
             statusEl.className   = 'error';
             statusEl.textContent = data.log || 'Could not start job.';
@@ -339,9 +397,9 @@ function buildHtml(jobs) {
           }
           return;
         }
-        statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + ' — Checking progress…' : 'Checking progress…');
-        poll(statusPrefix);
+        poll(jobLabel);
       } catch (e) {
+        stopDots();
         statusEl.className   = 'error';
         statusEl.textContent = 'Network error: ' + e.message;
         btn.textContent = 'Try Again';
@@ -350,26 +408,29 @@ function buildHtml(jobs) {
       }
     }
 
-    async function poll(statusPrefix) {
+    async function poll(jobLabel) {
       const statusEl = document.getElementById('status');
       try {
         const res  = await fetch('/status');
         const data = await res.json();
         if (data.active) {
-          statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + '<br>' + data.log : data.log);
-          setTimeout(() => poll(statusPrefix), 2000);
+          startDots(statusEl, 'Running ' + (jobLabel || 'job'));
+          setTimeout(function() { poll(jobLabel); }, 2000);
         } else {
+          stopDots();
+          const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
           statusEl.className   = data.success ? 'success' : 'error';
-          statusEl.textContent = (statusPrefix ? statusPrefix + ' — ' : '') + data.log;
+          statusEl.textContent = prefix + data.log;
+          showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : 'Try Again';
-            if (!data.success) { activeBtn.disabled = false; }
+            if (!data.success) activeBtn.disabled = false;
           }
           unlockRunBtn();
         }
       } catch (e) {
-        statusEl.innerHTML = spinnerHtml('Checking status… (' + e.message + ')');
-        setTimeout(() => poll(statusPrefix), 3000);
+        startDots(statusEl, 'Checking status');
+        setTimeout(function() { poll(jobLabel); }, 3000);
       }
     }
 
@@ -383,28 +444,34 @@ function buildHtml(jobs) {
       startJob(
         '/run-job?id=' + selectedJobId,
         document.getElementById('btn-run'),
-        '✅ Done!',
-        'Running ' + selectedJobLabel
+        '\u2705 Done!',
+        selectedJobLabel
       );
     }
 
     function runRegister() {
-      startJob('/register', document.getElementById('btn-register'), '✅ Registered!', 'Running Core Pilates (default)');
+      startJob(
+        '/register',
+        document.getElementById('btn-register'),
+        '\u2705 Registered!',
+        'Default job (Core Pilates)'
+      );
     }
 
     async function cleanTestJobs() {
       const btn = document.getElementById('btn-clean');
       const statusEl = document.getElementById('status');
       btn.disabled = true;
-      btn.textContent = 'Cleaning…';
-      statusEl.className = 'running';
-      statusEl.innerHTML = spinnerHtml('Cleaning old test jobs…');
+      btn.textContent = 'Cleaning\u2026';
+      startDots(statusEl, 'Cleaning old test jobs');
       try {
         const res  = await fetch('/clean-test-jobs');
         const data = await res.json();
+        stopDots();
         statusEl.textContent = data.log;
         statusEl.className   = data.success ? 'success' : 'error';
       } catch (e) {
+        stopDots();
         statusEl.className   = 'error';
         statusEl.textContent = 'Network error: ' + e.message;
       } finally {
