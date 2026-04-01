@@ -74,6 +74,10 @@ function buildHtml(jobs, error, editError) {
     ? jobs.map(j => {
         const phase         = jobPhase(j);
         const phaseBadge    = '<span class="badge badge-phase-' + phase + '">' + (PHASE_LABEL[phase] || phase) + '</span>';
+        const jobBooked     = isBookedSS(j);
+        const bookedBadge   = jobBooked
+          ? '<br><span class="badge-booked">&#10003;&nbsp;Booked</span>'
+          : '';
         const lastRunCell   = fmtRunAt(j.last_run_at);
         const lastResBadge  = resultBadge(j.last_result);
         return `
@@ -97,7 +101,7 @@ function buildHtml(jobs, error, editError) {
           <td>${esc(j.class_time   || '\u2014')}</td>
           <td>${esc(j.target_date  || '\u2014')}</td>
           <td>${esc(j.instructor   || '\u2014')}</td>
-          <td>${phaseBadge}</td>
+          <td>${phaseBadge}${bookedBadge}</td>
           <td class="col-last-run">${lastRunCell}</td>
           <td>${lastResBadge}</td>
         </tr>`;
@@ -398,6 +402,21 @@ function buildHtml(jobs, error, editError) {
       margin-bottom: 3px;
       color: #c0392b;
     }
+    /* Compact booked badge for the jobs table */
+    .badge-booked {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: #edfaf3;
+      border: 1px solid #a8e6c1;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #1a6b3a;
+      margin-top: 3px;
+      white-space: nowrap;
+    }
     .sel-booked-box {
       display: inline-flex;
       align-items: center;
@@ -647,10 +666,17 @@ function buildHtml(jobs, error, editError) {
       return successDate >= weekStart;
     }
 
-    // Highlight the first row on load.
+    // On load: restore the previously selected job from localStorage, or fall
+    // back to the first row.  selectJob() also persists the choice going forward.
     (function() {
-      const firstRow = document.querySelector('.job-row');
-      if (firstRow) firstRow.classList.add('selected');
+      const savedId  = localStorage.getItem('selectedJobId');
+      const allRows  = document.querySelectorAll('.job-row');
+      let   target   = null;
+      if (savedId) {
+        allRows.forEach(r => { if (r.dataset.id === savedId) target = r; });
+      }
+      if (!target && allRows.length) target = allRows[0];
+      if (target) selectJob(target);
     })();
 
     // ---- job selection ----
@@ -669,6 +695,7 @@ function buildHtml(jobs, error, editError) {
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
       selectedJobId         = row.dataset.id;
+      localStorage.setItem('selectedJobId', selectedJobId);
       selectedJobPhase      = row.dataset.phase      || 'unknown';
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
