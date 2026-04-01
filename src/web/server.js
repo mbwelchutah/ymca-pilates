@@ -832,8 +832,9 @@ function buildHtml(jobs, error, editError) {
     setInterval(function() {
       const now   = Date.now();
       const rows  = document.querySelectorAll('.job-row');
-      let   nextRow = null;
-      let   nextDiff = Infinity;
+      let   nextRow    = null;   // unbooked active job with smallest future diff
+      let   nextDiff   = Infinity;
+      let   openNowRow = null;   // unbooked active job whose booking window is already open
 
       // Pass 1: update each row's countdown cell; find next-to-open unbooked job.
       rows.forEach(function(row) {
@@ -846,6 +847,8 @@ function buildHtml(jobs, error, editError) {
           if (diff > 0 && diff < nextDiff) {
             nextDiff = diff;
             nextRow  = row;
+          } else if (diff <= 0 && !openNowRow) {
+            openNowRow = row;  // first already-open candidate (most recently opened)
           }
         }
       });
@@ -855,19 +858,24 @@ function buildHtml(jobs, error, editError) {
       if (nextRow) nextRow.classList.add('next-job');
 
       // Update the global next-job banner.
+      // Priority: future job (nextRow) > already-open job (openNowRow) > hide.
       const banner = document.getElementById('next-job-banner');
       if (banner) {
-        if (!nextRow) {
+        const bannerRow = nextRow || openNowRow;
+        if (!bannerRow) {
           banner.classList.add('hidden');
         } else {
           banner.classList.remove('hidden', 'warning', 'sniper');
-          const nextTitle = nextRow.dataset.title || ('Job #' + nextRow.dataset.id);
-          if (nextDiff <= 0) {
-            banner.textContent = '\uD83D\uDD25 ' + nextTitle + ' \u2014 booking open now';
+          const bannerTitle = bannerRow.dataset.title || ('Job #' + bannerRow.dataset.id);
+          if (!nextRow) {
+            // openNowRow: booking window already open
+            banner.textContent = '\uD83D\uDD25 ' + bannerTitle + ' \u2014 booking open now';
             banner.classList.add('sniper');
+          } else if (nextDiff <= 60000) {
+            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextDiff);
+            banner.classList.add('warning');
           } else {
-            banner.textContent = '\u23F3 ' + nextTitle + ' opens in ' + formatCountdown(nextDiff);
-            if (nextDiff <= 60000) banner.classList.add('warning');
+            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextDiff);
           }
         }
       }
