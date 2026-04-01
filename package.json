@@ -5,7 +5,8 @@
     "bot": "node src/bot/register-pilates.js",
     "db:test": "node src/db/test-jobs.js",
     "bot:db": "node src/bot/run-from-db.js",
-    "scheduler:test": "node src/scheduler/test-booking-window.js"
+    "scheduler:test": "node src/scheduler/test-booking-window.js",
+    "scheduler:once": "node src/scheduler/run-scheduler-once.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
