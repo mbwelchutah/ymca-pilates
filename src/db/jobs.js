@@ -31,24 +31,25 @@ function getJobById(id) {
 }
 
 // Records the completion time and outcome of a job run.
-// status should be "success", "already_registered", "error", or similar —
-// whatever result.status the bot returns.
-// Call this in the scheduler's finally block so it always fires.
+// status should be "success", "already_registered", "error", or similar.
+// errorMessage: pass the failure description when status === "error"; pass
+//   null (or omit) for all other outcomes — it will be cleared in the DB.
 //
-// last_success_at: set to now when status is "success".
-// For all other outcomes, COALESCE preserves the existing value so a later
-// error run does not wipe out a previously recorded success timestamp.
-function setLastRun(id, status) {
-  const db  = openDb();
-  const ts  = new Date().toISOString();
+// last_success_at: set to now on "success"; COALESCE preserves it otherwise.
+// last_error_message: set to errorMessage on "error"; NULL on any success/clean exit.
+function setLastRun(id, status, errorMessage) {
+  const db        = openDb();
+  const ts        = new Date().toISOString();
   const successAt = status === 'success' ? ts : null;
+  const errMsg    = status === 'error' ? (errorMessage || 'Unknown error') : null;
   db.prepare(`
     UPDATE jobs
-    SET last_run_at     = ?,
-        last_result     = ?,
-        last_success_at = COALESCE(?, last_success_at)
+    SET last_run_at         = ?,
+        last_result         = ?,
+        last_error_message  = ?,
+        last_success_at     = COALESCE(?, last_success_at)
     WHERE id = ?
-  `).run(ts, status || null, successAt, id);
+  `).run(ts, status || null, errMsg, successAt, id);
 }
 
 function updateJob(id, fields) {

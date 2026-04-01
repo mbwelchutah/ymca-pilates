@@ -31,6 +31,7 @@ function openDb() {
     'ALTER TABLE jobs ADD COLUMN last_result TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN last_success_at TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN target_date TEXT NULL',
+    'ALTER TABLE jobs ADD COLUMN last_error_message TEXT NULL',
   ];
   for (const sql of addColumns) {
     try {

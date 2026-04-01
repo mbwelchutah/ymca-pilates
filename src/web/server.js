@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getPhase } = require('../scheduler/booking-window');
@@ -72,9 +72,10 @@ function buildHtml(jobs, error, editError) {
             data-last-result="${esc(j.last_result || '')}"
             data-target-date="${esc(j.target_date || '')}"
             data-is-active="${j.is_active ? '1' : '0'}"
+            data-last-error-msg="${esc(j.last_error_message || '')}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
-          <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong></td>
+          <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong>${j.last_result === 'error' && j.last_error_message ? ` <span class="row-warn" title="${esc(j.last_error_message)}">&#9888;</span>` : ''}</td>
           <td>${esc(j.day_of_week  || '\u2014')}</td>
           <td>${esc(j.class_time   || '\u2014')}</td>
           <td>${esc(j.target_date  || '\u2014')}</td>
@@ -352,6 +353,34 @@ function buildHtml(jobs, error, editError) {
     }
     .dot-on  { background: #28a745; }
     .dot-off { background: #ccc; }
+
+    /* ---- error message display ---- */
+    .row-warn {
+      color: #c04a00;
+      font-size: 11px;
+      margin-left: 4px;
+      cursor: default;
+    }
+    .sel-error-box {
+      margin-top: 8px;
+      background: #fff5f5;
+      border: 1px solid #f5c6cb;
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: 12px;
+      color: #721c24;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .sel-error-box .err-label {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      display: block;
+      margin-bottom: 3px;
+      color: #c0392b;
+    }
   </style>
 </head>
 <body>
@@ -378,6 +407,10 @@ function buildHtml(jobs, error, editError) {
           <span class="run-label">Result:</span>
           <span id="sel-last-result">${first ? resultBadge(first.last_result) : resultBadge(null)}</span>
         </div>
+        ${first && first.last_result === 'error' && first.last_error_message
+          ? `<div class="sel-error-box" id="sel-error-box"><span class="err-label">Last Error</span>${esc(first.last_error_message)}</div>`
+          : `<div class="sel-error-box" id="sel-error-box" style="display:none"><span class="err-label">Last Error</span><span id="sel-error-text"></span></div>`
+        }
       </div>
     </div>
 
@@ -537,6 +570,7 @@ function buildHtml(jobs, error, editError) {
     let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result  || '') : '')};
     let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
     let selectedJobIsActive   = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
+    let selectedJobLastErrMsg = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
@@ -586,7 +620,8 @@ function buildHtml(jobs, error, editError) {
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
       selectedJobTargetDate = row.dataset.targetDate || '';
-      selectedJobIsActive   = row.dataset.isActive   === '1';
+      selectedJobIsActive   = row.dataset.isActive    === '1';
+      selectedJobLastErrMsg = row.dataset.lastErrorMsg || '';
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
@@ -604,6 +639,19 @@ function buildHtml(jobs, error, editError) {
         'Date: <strong>' + (selectedJobTargetDate || '\u2014') + '</strong>';
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
+
+      // Show or hide the error message box
+      const errBox = document.getElementById('sel-error-box');
+      if (errBox) {
+        const errText = document.getElementById('sel-error-text');
+        if (selectedJobLastResult === 'error' && selectedJobLastErrMsg) {
+          if (errText) errText.textContent = selectedJobLastErrMsg;
+          else errBox.lastChild.textContent = selectedJobLastErrMsg;
+          errBox.style.display = '';
+        } else {
+          errBox.style.display = 'none';
+        }
+      }
 
       // Populate the Edit Job form with values from this row
       document.getElementById('edit-job-id').value     = row.dataset.id;
@@ -828,9 +876,14 @@ function runInBackground(job) {
   runBookingJob(job)
     .then(result => {
       jobState = { active: false, log: result.message, success: result.status === 'success' };
+      if (job.id) {
+        const errMsg = result.status === 'error' ? (result.message || null) : null;
+        setLastRun(job.id, result.status, errMsg);
+      }
     })
     .catch(err => {
       jobState = { active: false, log: 'Error: ' + err.message, success: false };
+      if (job.id) setLastRun(job.id, 'error', err.message || null);
     });
 }
 
@@ -872,6 +925,7 @@ const server = http.createServer((req, res) => {
     }
     console.log(`Running job #${dbJob.id} (${dbJob.class_title}) from DB`);
     runInBackground({
+      id:          dbJob.id,
       classTitle:  dbJob.class_title,
       classTime:   dbJob.class_time,
       dayOfWeek:   dbJob.day_of_week,

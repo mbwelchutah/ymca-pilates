@@ -102,17 +102,19 @@ async function runTick() {
     console.log(`  => RUNNING Job #${dbJob.id} (marked as running, ${runningJobs.size} job(s) active)...`);
 
     // lastResult starts as 'error' so a crash in the try block is still recorded.
-    let lastResult = 'error';
+    let lastResult  = 'error';
+    let lastErrMsg  = null;
     try {
       const result = await runBookingJob(job);
       lastResult = result.status;
+      if (result.status === 'error') lastErrMsg = result.message || null;
       console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);
     } catch (err) {
+      lastErrMsg = err.message || 'Uncaught exception';
       console.error(`  => ERROR Job #${dbJob.id}:`, err.message);
     } finally {
-      // Write both last_run_at and last_result so the next tick (and the UI)
-      // can see when the job ran and whether it succeeded.
-      setLastRun(dbJob.id, lastResult);
+      // Persist run timestamp, outcome, and (on error) the failure message.
+      setLastRun(dbJob.id, lastResult, lastErrMsg);
       runningJobs.delete(dbJob.id);
       console.log(`  => Job #${dbJob.id} done. result: ${lastResult}. (${runningJobs.size} job(s) still running)`);
     }
