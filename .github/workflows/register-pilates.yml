@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
       - name: Install dependencies
         run: npm install playwright
       - name: Install Playwright browsers
@@ -22,4 +22,4 @@ jobs:
         env:
           YMCA_EMAIL: ${{ secrets.YMCA_EMAIL }}
           YMCA_PASSWORD: ${{ secrets.YMCA_PASSWORD }}
-        run: node register-pilates.js
+        run: node src/bot/register-pilates.js

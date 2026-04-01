@@ -1,0 +1,18 @@
+{
+  "main": "src/web/server.js",
+  "scripts": {
+    "start": "for pid in $(ps aux | grep 'node src/web/server' | grep -v grep | awk '{print $2}'); do kill -9 $pid 2>/dev/null; done; sleep 2; node src/web/server.js",
+    "bot": "node src/bot/register-pilates.js",
+    "db:test": "node src/db/test-jobs.js",
+    "bot:db": "node src/bot/run-from-db.js",
+    "scheduler:test": "node src/scheduler/test-booking-window.js",
+    "scheduler:once": "node src/scheduler/run-scheduler-once.js",
+    "scheduler:run":        "node src/scheduler/run-eligible-jobs-once.js",
+    "db:create-test-job":   "node src/db/create-test-job.js",
+    "db:cleanup-test-jobs": "node src/db/cleanup-test-jobs.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "playwright": "^1.58.2"
+  }
+}
