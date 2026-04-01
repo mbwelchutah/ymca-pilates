@@ -25,6 +25,22 @@ function buildHtml(jobs, error, editError) {
     try { return getPhase(j).phase; } catch(e) { return 'unknown'; }
   }
 
+  // Mirror of the scheduler's already-booked logic for display purposes.
+  function isBookedSS(j) {
+    if (!j || !j.last_success_at) return false;
+    if (j.target_date) return j.last_success_at.startsWith(j.target_date);
+    // Week-based fallback: Monday 00:00 UTC as week start.
+    const successDate  = new Date(j.last_success_at);
+    const now          = new Date();
+    const daysSinceMon = (now.getUTCDay() + 6) % 7;
+    const weekStart    = new Date(now);
+    weekStart.setUTCHours(0, 0, 0, 0);
+    weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon);
+    return successDate >= weekStart;
+  }
+
+  const firstIsBooked = isBookedSS(first);
+
   const PHASE_LABEL = {
     too_early: 'Too Early',
     warmup:    'Warmup',
@@ -72,6 +88,7 @@ function buildHtml(jobs, error, editError) {
             data-last-result="${esc(j.last_result || '')}"
             data-target-date="${esc(j.target_date || '')}"
             data-is-active="${j.is_active ? '1' : '0'}"
+            data-last-success-at="${esc(j.last_success_at || '')}"
             data-last-error-msg="${esc(j.last_error_message || '')}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
@@ -381,6 +398,20 @@ function buildHtml(jobs, error, editError) {
       margin-bottom: 3px;
       color: #c0392b;
     }
+    .sel-booked-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 8px;
+      background: #edfaf3;
+      border: 1px solid #a8e6c1;
+      border-radius: 20px;
+      padding: 4px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1a6b3a;
+    }
+    .sel-booked-box .booked-icon { font-size: 14px; }
   </style>
 </head>
 <body>
@@ -400,6 +431,10 @@ function buildHtml(jobs, error, editError) {
         <div class="selected-meta"    id="sel-meta">${sel}</div>
         <div class="selected-date"    id="sel-date" style="font-size:13px;color:#888;margin-top:4px;">Date: <strong>${first && first.target_date ? esc(first.target_date) : '\u2014'}</strong></div>
         <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
+        <div id="sel-booked-box" class="sel-booked-box" ${firstIsBooked ? '' : 'style="display:none"'}>
+          <span class="booked-icon">&#10003;</span>
+          <span id="sel-booked-text">${first && first.target_date ? `Booked for ${esc(first.target_date)}` : 'Booked this week'}</span>
+        </div>
         <div class="selected-run-info">
           <span class="run-label">Last run:</span>
           <span id="sel-last-run">${first ? fmtRunAt(first.last_run_at) : 'Never'}</span>
@@ -569,8 +604,9 @@ function buildHtml(jobs, error, editError) {
     let selectedJobLastRunAt  = ${JSON.stringify(first ? (first.last_run_at  || '') : '')};
     let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result  || '') : '')};
     let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
-    let selectedJobIsActive   = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
-    let selectedJobLastErrMsg = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
+    let selectedJobIsActive    = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
+    let selectedJobLastSuccessAt = ${JSON.stringify(first ? (first.last_success_at || '') : '')};
+    let selectedJobLastErrMsg  = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
@@ -592,6 +628,23 @@ function buildHtml(jobs, error, editError) {
     function resultBadge(r) {
       if (!r) return '<span class="badge badge-result-none">\u2014</span>';
       return '<span class="badge badge-result-' + r + '">' + r + '</span>';
+    }
+
+    // Returns true if the job represented by current selectedJob* state should
+    // show the "Booked" badge.  Mirrors the scheduler's already-booked guard.
+    function isBooked() {
+      if (!selectedJobLastSuccessAt) return false;
+      if (selectedJobTargetDate) {
+        return selectedJobLastSuccessAt.startsWith(selectedJobTargetDate);
+      }
+      // Week-based fallback.
+      const successDate  = new Date(selectedJobLastSuccessAt);
+      const now          = new Date();
+      const daysSinceMon = (now.getUTCDay() + 6) % 7;
+      const weekStart    = new Date(now);
+      weekStart.setUTCHours(0, 0, 0, 0);
+      weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon);
+      return successDate >= weekStart;
     }
 
     // Highlight the first row on load.
@@ -620,8 +673,9 @@ function buildHtml(jobs, error, editError) {
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
       selectedJobTargetDate = row.dataset.targetDate || '';
-      selectedJobIsActive   = row.dataset.isActive    === '1';
-      selectedJobLastErrMsg = row.dataset.lastErrorMsg || '';
+      selectedJobIsActive      = row.dataset.isActive      === '1';
+      selectedJobLastSuccessAt = row.dataset.lastSuccessAt  || '';
+      selectedJobLastErrMsg    = row.dataset.lastErrorMsg   || '';
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
@@ -639,6 +693,21 @@ function buildHtml(jobs, error, editError) {
         'Date: <strong>' + (selectedJobTargetDate || '\u2014') + '</strong>';
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
+
+      // Show or hide the "Booked" badge.
+      const bookedBox  = document.getElementById('sel-booked-box');
+      const bookedText = document.getElementById('sel-booked-text');
+      if (bookedBox) {
+        if (isBooked()) {
+          const label = selectedJobTargetDate
+            ? 'Booked for ' + selectedJobTargetDate
+            : 'Booked this week';
+          if (bookedText) bookedText.textContent = label;
+          bookedBox.style.display = '';
+        } else {
+          bookedBox.style.display = 'none';
+        }
+      }
 
       // Show or hide the error message box
       const errBox = document.getElementById('sel-error-box');

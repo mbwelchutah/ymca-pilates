@@ -37,10 +37,13 @@ function getJobById(id) {
 //
 // last_success_at: set to now on "success"; COALESCE preserves it otherwise.
 // last_error_message: set to errorMessage on "error"; NULL on any success/clean exit.
+// Statuses that count as "we got the spot" — both clear the error and stamp last_success_at.
+const SUCCESS_STATUSES = ['success', 'already_registered'];
+
 function setLastRun(id, status, errorMessage) {
   const db        = openDb();
   const ts        = new Date().toISOString();
-  const successAt = status === 'success' ? ts : null;
+  const successAt = SUCCESS_STATUSES.includes(status) ? ts : null;
   const errMsg    = status === 'error' ? (errorMessage || 'Unknown error') : null;
   db.prepare(`
     UPDATE jobs

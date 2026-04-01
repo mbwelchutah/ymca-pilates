@@ -75,10 +75,21 @@ async function runTick() {
       continue;
     }
 
-    // Already-booked guard — skip if this job succeeded during the current week.
-    if (isThisWeek(dbJob.last_success_at)) {
-      console.log(`  => SKIPPING Job #${dbJob.id} — already booked this week (${dbJob.last_success_at})`);
-      continue;
+    // Already-booked guard — two branches:
+    //   1. target_date job: success recorded on or after that exact date → done.
+    //   2. recurring job:   success recorded within the current calendar week → done.
+    if (dbJob.target_date) {
+      // last_success_at is an ISO string ("2026-04-08T…"). startsWith(target_date)
+      // confirms the success was stamped on the same UTC calendar date.
+      if (dbJob.last_success_at && dbJob.last_success_at.startsWith(dbJob.target_date)) {
+        console.log(`  => SKIPPING Job #${dbJob.id} — already booked for target date ${dbJob.target_date}`);
+        continue;
+      }
+    } else {
+      if (isThisWeek(dbJob.last_success_at)) {
+        console.log(`  => SKIPPING Job #${dbJob.id} — already booked this week (${dbJob.last_success_at})`);
+        continue;
+      }
     }
 
     // Concurrency guard — skip if this job is already running from a previous tick.
