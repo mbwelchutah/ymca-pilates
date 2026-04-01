@@ -293,7 +293,7 @@ function buildHtml(jobs) {
     <div class="card">
       <div class="card-header"><h2>Status</h2></div>
       <div class="card-body status-body">
-        <div id="status">No job run yet.</div>
+        <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
         <div class="last-run" id="last-run" style="display:none"></div>
       </div>
     </div>
@@ -305,9 +305,10 @@ function buildHtml(jobs) {
     let selectedJobId    = ${first ? first.id : 'null'};
     let selectedJobLabel = ${JSON.stringify(firstLabel)};
     let selectedJobPhase = ${JSON.stringify(firstPhase)};
-    let activeBtn        = null;
-    let activeSuccessText = null;
-    let dotsTimer        = null;
+    let activeBtn             = null;
+    let activeSuccessText     = null;
+    let activeBtnOriginalLabel = null;
+    let dotsTimer             = null;
 
     const PHASE_LABEL = ${JSON.stringify(PHASE_LABEL)};
 
@@ -319,6 +320,17 @@ function buildHtml(jobs) {
 
     // ---- job selection ----
     function selectJob(row) {
+      // Only reset status if no job is currently running.
+      if (!activeBtn || !activeBtn.disabled) {
+        stopDots();
+        const statusEl = document.getElementById('status');
+        statusEl.className   = '';
+        statusEl.textContent = 'Ready to run Job #' + row.dataset.id + '.';
+        const lastRunEl = document.getElementById('last-run');
+        lastRunEl.style.display = 'none';
+        lastRunEl.innerHTML = '';
+      }
+
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
       selectedJobId    = row.dataset.id;
@@ -374,6 +386,7 @@ function buildHtml(jobs) {
     // ---- shared job runner ----
     async function startJob(url, btn, successText, jobLabel) {
       const statusEl = document.getElementById('status');
+      activeBtnOriginalLabel = btn.textContent.trim();
       btn.disabled   = true;
       btn.textContent = 'Running\u2026';
       lockRunBtn();
@@ -391,7 +404,7 @@ function buildHtml(jobs) {
           } else {
             statusEl.className   = 'error';
             statusEl.textContent = data.log || 'Could not start job.';
-            btn.textContent = 'Try Again';
+            btn.textContent = activeBtnOriginalLabel;
             btn.disabled    = false;
             unlockRunBtn();
           }
@@ -402,7 +415,7 @@ function buildHtml(jobs) {
         stopDots();
         statusEl.className   = 'error';
         statusEl.textContent = 'Network error: ' + e.message;
-        btn.textContent = 'Try Again';
+        btn.textContent = activeBtnOriginalLabel;
         btn.disabled    = false;
         unlockRunBtn();
       }
@@ -423,7 +436,7 @@ function buildHtml(jobs) {
           statusEl.textContent = prefix + data.log;
           showLastRun(data.success, data.log);
           if (activeBtn) {
-            activeBtn.textContent = data.success ? activeSuccessText : 'Try Again';
+            activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
             if (!data.success) activeBtn.disabled = false;
           }
           unlockRunBtn();
