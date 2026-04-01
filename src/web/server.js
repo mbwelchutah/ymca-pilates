@@ -194,4 +194,17 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
+// Graceful shutdown on SIGTERM (sent by Replit when restarting the workflow).
+// Calling server.close() releases the port before the process exits, preventing
+// EADDRINUSE on the next start.
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing server...');
+  server.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
+  // Hard exit if close() stalls (e.g. a long-running Playwright job)
+  setTimeout(() => process.exit(0), 5000).unref();
+});
+
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
