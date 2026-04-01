@@ -33,10 +33,21 @@ function getJobById(id) {
 // status should be "success", "already_registered", "error", or similar —
 // whatever result.status the bot returns.
 // Call this in the scheduler's finally block so it always fires.
+//
+// last_success_at: set to now when status is "success".
+// For all other outcomes, COALESCE preserves the existing value so a later
+// error run does not wipe out a previously recorded success timestamp.
 function setLastRun(id, status) {
-  const db = openDb();
-  db.prepare('UPDATE jobs SET last_run_at = ?, last_result = ? WHERE id = ?')
-    .run(new Date().toISOString(), status || null, id);
+  const db  = openDb();
+  const ts  = new Date().toISOString();
+  const successAt = status === 'success' ? ts : null;
+  db.prepare(`
+    UPDATE jobs
+    SET last_run_at     = ?,
+        last_result     = ?,
+        last_success_at = COALESCE(?, last_success_at)
+    WHERE id = ?
+  `).run(ts, status || null, successAt, id);
 }
 
 module.exports = { createJob, getAllJobs, getJobById, setLastRun };

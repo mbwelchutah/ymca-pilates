@@ -13,6 +13,21 @@ const INTERVAL_MS     = 60 * 1000;      // how often to check (ms)
 const COOLDOWN_MS     = 30 * 60 * 1000; // skip if ran within this window (ms)
 const ELIGIBLE_PHASES = ['warmup', 'sniper'];
 
+// Returns true if the ISO timestamp falls within the current UTC calendar week
+// (Monday 00:00 UTC through Sunday 23:59 UTC).
+// Timezone imprecision is acceptable for now — the booking window is ~24h wide.
+function isThisWeek(isoStr) {
+  if (!isoStr) return false;
+  const successDate  = new Date(isoStr);
+  const now          = new Date();
+  // Roll back to the most recent Monday at midnight UTC.
+  const daysSinceMon = (now.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  const weekStart    = new Date(now);
+  weekStart.setUTCHours(0, 0, 0, 0);
+  weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon);
+  return successDate >= weekStart;
+}
+
 // In-memory concurrency guard.
 // Tracks job ids that are currently being run by the bot.
 // If a tick fires while a job is still running, that job is skipped.
@@ -56,6 +71,12 @@ async function runTick() {
     console.log(`  Job #${dbJob.id} (${dbJob.class_title} ${dbJob.day_of_week} ${dbJob.class_time}) — phase: ${phase}`);
 
     if (!ELIGIBLE_PHASES.includes(phase)) {
+      continue;
+    }
+
+    // Already-booked guard — skip if this job succeeded during the current week.
+    if (isThisWeek(dbJob.last_success_at)) {
+      console.log(`  => SKIPPING Job #${dbJob.id} — already booked this week (${dbJob.last_success_at})`);
       continue;
     }
 
