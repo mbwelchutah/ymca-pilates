@@ -163,13 +163,21 @@ function buildHtml(jobs) {
     }
 
     /* ---- jobs table ---- */
-    .table-scroll { overflow-x: auto; }
+    .table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch; /* smooth momentum scroll on iOS */
+    }
     .jobs-table {
       width: 100%;
+      min-width: 580px;          /* prevents columns squishing below this width */
       border-collapse: collapse;
       font-size: 12px;
     }
     .jobs-table th {
+      position: sticky;          /* header stays visible while scrolling */
+      top: 0;
+      background: white;
+      z-index: 1;
       text-align: left;
       padding: 10px 11px;
       font-size: 10px;
@@ -185,15 +193,23 @@ function buildHtml(jobs) {
       border-bottom: 1px solid #f8f8f8;
       vertical-align: middle;
       color: #333;
+      white-space: nowrap;       /* cells never wrap; table scrolls instead */
     }
     .job-row { cursor: pointer; transition: background 0.15s; }
     .job-row:hover  { background: #f5f8ff; }
     .job-row.selected { background: #eef3ff; box-shadow: inset 4px 0 0 #457b9d; }
     .job-row.selected td { color: #1a1a2e; font-weight: 500; }
-    .job-id { color: #bbb; font-size: 12px; font-weight: 400; }
+    .job-id { color: #bbb; font-size: 11px; font-weight: 400; }
     .no-jobs { padding: 36px 24px; text-align: center; color: #aaa; font-size: 14px; line-height: 1.7; }
     .no-jobs strong { display: block; font-size: 16px; color: #999; margin-bottom: 8px; }
     .no-jobs code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    /* Tighten table padding on narrow screens */
+    @media (max-width: 480px) {
+      .jobs-table { font-size: 11px; }
+      .jobs-table th { padding: 8px 8px; font-size: 9px; }
+      .jobs-table td { padding: 9px 8px; }
+    }
 
     /* ---- badges ---- */
     .badge {
