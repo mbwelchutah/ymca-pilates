@@ -9,7 +9,14 @@ const { runBookingJob } = require('../bot/register-pilates');
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
-const html = `<!DOCTYPE html>
+function buildHtml(job) {
+  const title    = job ? job.class_title : 'Core Pilates';
+  const day      = job ? job.day_of_week : '';
+  const time     = job ? job.class_time  : '';
+  const instructor = job ? job.instructor : 'Stephanie';
+  const subtitle = [title, day, time, instructor].filter(Boolean).join(' · ');
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -74,7 +81,7 @@ const html = `<!DOCTYPE html>
 <body>
   <div class="card">
     <h1>🧘 YMCA Pilates</h1>
-    <p class="subtitle">Core Pilates · Wed 7:45 AM · Stephanie</p>
+    <p class="subtitle">${subtitle}</p>
     <button id="btn" onclick="register()">Register Me</button>
     <button id="btn2" onclick="runFromDb()" style="margin-top: 12px; background: #457b9d;">Run Saved Job</button>
     <button id="btn3" onclick="cleanTestJobs()" style="margin-top: 12px; background: #6c757d;">Clean Test Jobs</button>
@@ -168,6 +175,7 @@ const html = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+} // end buildHtml
 
 let jobState = { active: false, log: 'No job run yet.', success: null };
 
@@ -189,8 +197,9 @@ const server = http.createServer(async (req, res) => {
   };
 
   if (req.method === 'GET' && req.url === '/') {
+    const pageJob = getJobById(1);
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
+    res.end(buildHtml(pageJob));
 
   } else if (req.method === 'GET' && req.url === '/status') {
     json(jobState);
