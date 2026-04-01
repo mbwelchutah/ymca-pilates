@@ -29,13 +29,14 @@ function getJobById(id) {
   return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
 }
 
-// Records the current UTC time as the last run timestamp for a job.
-// Call this after a job finishes (success or failure) so the scheduler
-// knows not to re-launch it within the cooldown window.
-function setLastRunAt(id) {
+// Records the completion time and outcome of a job run.
+// status should be "success", "already_registered", "error", or similar —
+// whatever result.status the bot returns.
+// Call this in the scheduler's finally block so it always fires.
+function setLastRun(id, status) {
   const db = openDb();
-  db.prepare('UPDATE jobs SET last_run_at = ? WHERE id = ?')
-    .run(new Date().toISOString(), id);
+  db.prepare('UPDATE jobs SET last_run_at = ?, last_result = ? WHERE id = ?')
+    .run(new Date().toISOString(), status || null, id);
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRunAt };
+module.exports = { createJob, getAllJobs, getJobById, setLastRun };

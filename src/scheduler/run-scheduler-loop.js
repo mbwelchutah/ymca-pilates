@@ -5,7 +5,7 @@
 // Usage:  npm run scheduler:loop
 // Stop:   Ctrl+C  (or kill the process)
 
-const { getAllJobs, setLastRunAt } = require('../db/jobs');
+const { getAllJobs, setLastRun } = require('../db/jobs');
 const { getPhase }                 = require('./booking-window');
 const { runBookingJob }            = require('../bot/register-pilates');
 
@@ -70,24 +70,29 @@ async function runTick() {
       const msSinceRun = Date.now() - new Date(dbJob.last_run_at).getTime();
       if (msSinceRun < COOLDOWN_MS) {
         const minAgo = Math.round(msSinceRun / 60000);
-        console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago)`);
+        const prevResult = dbJob.last_result || 'unknown';
+        console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago, last result: ${prevResult})`);
         continue;
       }
     }
 
     runningJobs.add(dbJob.id);
     console.log(`  => RUNNING Job #${dbJob.id} (marked as running, ${runningJobs.size} job(s) active)...`);
+
+    // lastResult starts as 'error' so a crash in the try block is still recorded.
+    let lastResult = 'error';
     try {
       const result = await runBookingJob(job);
+      lastResult = result.status;
       console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);
     } catch (err) {
       console.error(`  => ERROR Job #${dbJob.id}:`, err.message);
     } finally {
-      // Stamp the DB regardless of success or failure so the next tick
-      // knows this job was attempted and respects the cooldown window.
-      setLastRunAt(dbJob.id);
+      // Write both last_run_at and last_result so the next tick (and the UI)
+      // can see when the job ran and whether it succeeded.
+      setLastRun(dbJob.id, lastResult);
       runningJobs.delete(dbJob.id);
-      console.log(`  => Job #${dbJob.id} done. last_run_at stamped. (${runningJobs.size} job(s) still running)`);
+      console.log(`  => Job #${dbJob.id} done. result: ${lastResult}. (${runningJobs.size} job(s) still running)`);
     }
   }
 }
