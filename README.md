@@ -1,27 +1,131 @@
 # ymca-pilates
 
-Automates registration for the Wednesday 7:45 AM Core Pilates class (Stephanie Sanders) at the Eugene YMCA.
+Automates registration for the Wednesday 7:45 AM Core Pilates class (Stephanie Sanders) at the Eugene YMCA via the Daxko / familyworks booking system.
 
-## How it works
+---
 
-| Piece | File | How it runs |
-|---|---|---|
-| **Booking bot** | `src/bot/register-pilates.js` | GitHub Actions every Sunday at 2:45 PM UTC |
-| **Web app** | `src/web/server.js` | Replit (`npm start`) — one-button UI at port 5000 |
+## What this project is now
 
-## Replit startup
+This started as a single hardcoded booking script. It now has several cooperating pieces:
 
-Replit runs `npm start`, which executes `node src/web/server.js`. The app binds to `0.0.0.0:5000` and is proxied to port 80.
+- A **Playwright booking bot** that logs into Daxko, finds the class, and clicks Register or Waitlist
+- A **SQLite jobs database** that stores which class to book
+- A **scheduler / booking-window module** that calculates when registration opens and decides whether to run the bot
+- A **simple web UI** (served by Replit) for manually triggering a run or inspecting status
+- Optional **GitHub Actions** support (bot can also be triggered on a schedule from GitHub)
 
-## GitHub Actions bot
+---
 
-The workflow (`.github/workflows/register-pilates.yml`) runs every Sunday and calls `node src/bot/register-pilates.js`. Requires two repository secrets: `YMCA_EMAIL` and `YMCA_PASSWORD`.
+## Architecture
 
-## Local dry run (visible browser)
-
-```bash
-DRY_RUN=1 YMCA_EMAIL=you@example.com YMCA_PASSWORD=secret node src/bot/register-pilates.js
 ```
+src/
+  bot/
+    register-pilates.js       Main booking bot — logs in, finds class, clicks Register/Waitlist
+    run-from-db.js            Loads job #1 from DB and calls runBookingJob()
+
+  db/
+    init.js                   Opens / creates the SQLite database (jobs.db)
+    jobs.js                   CRUD helpers: createJob, getAllJobs, getJobById
+    test-jobs.js              Seeds a default Core Pilates job (id=1) — legacy helper
+    create-test-job.js        Creates a test job whose booking window opens in ~15 min
+    cleanup-test-jobs.js      Deletes Core Pilates test jobs older than 24 hours
+
+  scheduler/
+    booking-window.js         Calculates when booking opens; returns current phase
+                              (too_early / warmup / sniper / late)
+    run-scheduler-once.js     Checks phase for all active jobs, runs bot if eligible
+    run-eligible-jobs-once.js Same as above
+    test-booking-window.js    Smoke test: prints parsed times, next class, booking open time
+
+  web/
+    server.js                 HTTP server on port 5000
+                              Routes: GET / (UI), /register, /run-job, /status
+```
+
+**There is no persistent scheduler loop yet.** The scheduler scripts run once and exit. To run on a recurring schedule you must trigger them externally (cron, GitHub Actions, or manually).
+
+---
+
+## How Replit and GitHub fit together
+
+- **Replit** is the main workspace. The app runs here. Secrets (`YMCA_EMAIL`, `YMCA_PASSWORD`) live in Replit's Secrets panel.
+- **GitHub** is source control and backup. Changes do not appear on GitHub until you commit and push them.
+- Use the **Version Control panel** (branch icon in the Replit left sidebar) to push and pull. Running `git push` directly in the terminal will fail — Replit's auth helper only works through the UI.
+- The `main` branch in Replit is the source of truth. Ignore stale branches on GitHub unless you intentionally branched.
+
+---
+
+## Safe test workflow (without booking a real class)
+
+**Step 1 — Create a fake test job** whose booking window opens in ~15 minutes:
+```bash
+npm run db:create-test-job
+```
+
+**Step 2 — Check the scheduler phase** for active jobs:
+```bash
+npm run scheduler:once
+```
+You will see the phase (`too_early`, `warmup`, `sniper`, or `late`) and minutes until booking opens.
+
+**Step 3 — Run the bot in dry-run mode** (visible browser, no clicks):
+```bash
+DRY_RUN=1 HEADLESS=false npm run scheduler:run
+```
+The browser opens, logs in, and finds the class but stops before clicking Register or Waitlist.
+
+**Step 4 — Clean up** old test jobs when done:
+```bash
+npm run db:cleanup-test-jobs
+```
+This only removes Core Pilates jobs older than 24 hours, so the real job (id=1) is safe if recently seeded.
+
+---
+
+## Daily / normal workflow
+
+**Start the web UI:**
+```bash
+npm start
+```
+The server starts on port 5000. Open the Replit preview to see the control panel.
+
+**Web UI buttons:**
+- **Register Me** — runs the booking bot immediately (1 attempt, returns a result in ~30 seconds)
+- **Run Saved Job** — same, but loads the job definition from the database first
+- **Clean Test Jobs** — runs the cleanup script from the browser
+
+**Run the bot directly from the command line:**
+```bash
+node src/bot/register-pilates.js
+```
+
+**Dry run (no clicks, visible browser):**
+```bash
+DRY_RUN=1 HEADLESS=false node src/bot/register-pilates.js
+```
+
+**Check git status and push updates:**
+Use the Version Control panel in the Replit sidebar — do not use `git push` in the terminal.
+
+---
+
+## npm scripts reference
+
+| Script | What it does |
+|---|---|
+| `npm start` | Start the web server (kills any stale instance first) |
+| `npm run bot` | Run the booking bot from CLI |
+| `npm run bot:db` | Run bot using job loaded from database |
+| `npm run db:test` | Seed the database with a default Core Pilates job (id=1) |
+| `npm run db:create-test-job` | Create a test job with booking window opening in ~15 min |
+| `npm run db:cleanup-test-jobs` | Delete old Core Pilates test jobs (older than 24h) |
+| `npm run scheduler:test` | Print booking window info for job #1 |
+| `npm run scheduler:once` | Check phase for all active jobs; run bot if eligible (runs once, then exits) |
+| `npm run scheduler:run` | Same as scheduler:once |
+
+---
 
 ## Environment variables
 
@@ -29,3 +133,17 @@ DRY_RUN=1 YMCA_EMAIL=you@example.com YMCA_PASSWORD=secret node src/bot/register-
 |---|---|
 | `YMCA_EMAIL` | YMCA account email |
 | `YMCA_PASSWORD` | YMCA account password |
+| `DRY_RUN=1` | Skip clicking Register/Waitlist — safe for testing |
+| `HEADLESS=false` | Show the browser window (only useful locally or in non-headless environments) |
+
+Both secrets are stored in Replit's Secrets panel and are injected automatically at runtime.
+
+---
+
+## Known current limitations
+
+- **No persistent scheduler loop.** There is no background process that watches the clock and triggers the bot automatically. You must run the scheduler manually or wire it to an external trigger (GitHub Actions cron, etc.).
+- **The web UI is minimal.** Buttons trigger the bot and show a status message. There is no job management UI — all job editing is done via CLI scripts.
+- **Real booking depends on the class being listed.** If the schedule page does not show Core Pilates on the target Wednesday, the bot reports it could not find the class and exits cleanly.
+- **Test jobs use computed future times.** The fake job created by `db:create-test-job` has a valid time, but there will be no matching class card on the YMCA site — the bot will log in, fail to find the card, and return an error. That is expected.
+- **Session expiry causes fast failure.** If Daxko shows "Login to Register" instead of a Register button, the bot now exits immediately with a clear error rather than retrying for 10 minutes.

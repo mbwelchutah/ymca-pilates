@@ -1,0 +1,89 @@
+Do a documentation and project-clarity cleanup only. Do NOT change booking logic, scheduler logic, DB schema, routes, UI behavior, or GitHub Actions behavior.
+
+Goal:
+Make the repo easier to understand before the next development step.
+
+Work only on documentation files such as:
+
+* `README.md`
+* optionally `replit.md` if that is where project notes live
+
+Please update the docs so they match the current real project state.
+
+Add or revise these sections:
+
+1. **What this project is now**
+
+   * explain that it is no longer just a single hardcoded booking script
+   * explain that it now includes:
+
+     * Playwright booking bot
+     * SQLite jobs database
+     * scheduler / booking-window logic
+     * simple Replit web UI
+     * optional GitHub Actions usage
+
+2. **Current architecture**
+
+   * short, beginner-friendly overview of:
+
+     * `src/bot/` = booking bot
+     * `src/db/` = SQLite jobs + test job helpers + cleanup
+     * `src/scheduler/` = booking-open time calculation + scheduler runners
+     * `src/web/` = simple control panel UI
+   * mention the key files by name where helpful
+
+3. **How Replit and GitHub fit together**
+
+   * Replit is the main workspace and host
+   * GitHub is source control / backup
+   * explain in simple terms that changes must be committed and pushed to appear on GitHub
+   * explain that old stale branches should not be used if main is current
+
+4. **Safe test workflow**
+   Add a step-by-step section for safely testing without accidentally booking:
+
+   * create a test job
+   * inspect scheduler phase
+   * run scheduler in dry-run mode with visible browser
+   * clean up old test jobs
+
+   Include commands like:
+
+   * `npm run db:create-test-job`
+   * `npm run scheduler:once`
+   * `DRY_RUN=1 HEADLESS=false npm run scheduler:run`
+   * `npm run db:cleanup-test-jobs`
+
+5. **Daily/normal workflow**
+
+   * how to start the web UI
+   * how to use the UI
+   * how to test changes
+   * how to check git status and push updates
+
+6. **Known current limitations**
+
+   * UI may still be simple/basic
+   * scheduler loop may not be fully automated yet (if true in current code)
+   * real booking depends on class existing and registration actually being open
+   * fake test jobs may not match real classes
+
+7. **Do not guess**
+
+   * If a section is unclear from the current repo, inspect the files and write only what is supported by the actual code.
+   * Do not invent features that are not present.
+
+Style requirements:
+
+* beginner-friendly
+* short sections
+* practical commands
+* no marketing tone
+* explain the current reality of the repo, not the older simpler version
+
+After editing, briefly summarize:
+
+* which files were updated
+* what major sections were added or corrected
+* any places where the code and docs still do not fully match
