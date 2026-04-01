@@ -5,7 +5,8 @@ const { URL } = require('url');
 const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
-const { getPhase } = require('../scheduler/booking-window');
+const { getPhase }           = require('../scheduler/booking-window');
+const { setSchedulerPaused } = require('../scheduler/scheduler-state');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -159,6 +160,10 @@ function buildHtml(jobs, error, editError) {
     .banner.hidden  { display:none; }
     .banner.warning { background:#fff3cd; border-color:#ffeeba; }
     .banner.sniper  { background:#ffe5e5; border-color:#ffb3b3; color:#d62828; font-weight:600; }
+
+    /* ---- scheduler status pill ---- */
+    .scheduler-status          { font-size:12px; text-align:right; color:#4caf50; letter-spacing:.02em; }
+    .scheduler-status.paused   { color:#e67e22; }
 
     /* ---- cards ---- */
     .card {
@@ -519,6 +524,8 @@ function buildHtml(jobs, error, editError) {
 
     <div id="next-job-banner" class="banner hidden"></div>
 
+    <div id="scheduler-status" class="scheduler-status">&#9654; Scheduler running</div>
+
     <!-- Selected Job -->
     <div class="card">
       <div class="card-header"><h2>Selected Job</h2></div>
@@ -595,6 +602,12 @@ function buildHtml(jobs, error, editError) {
         </button>
         <button class="btn btn-danger" id="btn-delete" onclick="deleteSelectedJob()">
           Delete Job
+        </button>
+        <button class="btn btn-muted" id="btn-pause" onclick="pauseScheduler()">
+          &#9646;&#9646; Pause Scheduler
+        </button>
+        <button class="btn btn-muted" id="btn-resume" onclick="resumeScheduler()" style="display:none">
+          &#9654; Resume Scheduler
         </button>
       </div>
     </div>
@@ -1202,6 +1215,50 @@ function buildHtml(jobs, error, editError) {
         btn.disabled    = false;
       }
     }
+
+    // ---- scheduler pause / resume ----
+
+    function updateSchedulerUI(paused) {
+      const statusEl = document.getElementById('scheduler-status');
+      const pauseBtn = document.getElementById('btn-pause');
+      const resumeBtn = document.getElementById('btn-resume');
+      if (statusEl) {
+        statusEl.textContent = paused ? '\u23F8 Scheduler paused' : '\u25BA Scheduler running';
+        statusEl.className   = paused ? 'scheduler-status paused' : 'scheduler-status';
+      }
+      if (pauseBtn)  pauseBtn.style.display  = paused ? 'none' : '';
+      if (resumeBtn) resumeBtn.style.display = paused ? ''     : 'none';
+      localStorage.setItem('schedulerPaused', paused ? 'true' : 'false');
+    }
+
+    async function pauseScheduler() {
+      try {
+        await fetch('/pause-scheduler', { method: 'POST' });
+        updateSchedulerUI(true);
+      } catch (e) {
+        console.error('Failed to pause scheduler:', e.message);
+      }
+    }
+
+    async function resumeScheduler() {
+      try {
+        await fetch('/resume-scheduler', { method: 'POST' });
+        updateSchedulerUI(false);
+      } catch (e) {
+        console.error('Failed to resume scheduler:', e.message);
+      }
+    }
+
+    // On load: restore pause state from localStorage and sync with server.
+    (function() {
+      const wasPaused = localStorage.getItem('schedulerPaused') === 'true';
+      if (wasPaused) {
+        fetch('/pause-scheduler', { method: 'POST' }).catch(function() {});
+        updateSchedulerUI(true);
+      } else {
+        updateSchedulerUI(false);
+      }
+    })();
   </script>
 </body>
 </html>`;
@@ -1398,6 +1455,16 @@ const server = http.createServer((req, res) => {
       res.writeHead(302, { Location: '/' });
       res.end();
     });
+
+  } else if (req.method === 'POST' && path === '/pause-scheduler') {
+    setSchedulerPaused(true);
+    console.log('Scheduler paused via UI.');
+    json({ ok: true, paused: true });
+
+  } else if (req.method === 'POST' && path === '/resume-scheduler') {
+    setSchedulerPaused(false);
+    console.log('Scheduler resumed via UI.');
+    json({ ok: true, paused: false });
 
   } else {
     res.writeHead(404);

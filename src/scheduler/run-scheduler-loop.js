@@ -5,9 +5,10 @@
 // Usage:  npm run scheduler:loop
 // Stop:   Ctrl+C  (or kill the process)
 
-const { getAllJobs, setLastRun } = require('../db/jobs');
-const { getPhase }                 = require('./booking-window');
-const { runBookingJob }            = require('../bot/register-pilates');
+const { getAllJobs, setLastRun }    = require('../db/jobs');
+const { getPhase }                  = require('./booking-window');
+const { runBookingJob }             = require('../bot/register-pilates');
+const { isSchedulerPaused }         = require('./scheduler-state');
 
 const INTERVAL_MS     = 60 * 1000;      // how often to check (ms)
 const COOLDOWN_MS     = 30 * 60 * 1000; // skip if ran within this window (ms)
@@ -42,6 +43,11 @@ function now() {
 
 async function runTick() {
   console.log(`\n[${now()}] --- Scheduler tick ---`);
+
+  if (isSchedulerPaused()) {
+    console.log('  ⏸ Scheduler paused — skipping tick');
+    return;
+  }
 
   let jobs;
   try {
