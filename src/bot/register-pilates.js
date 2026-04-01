@@ -218,6 +218,13 @@ async function runBookingJob(job) {
       const allBtns = await page.locator('button:visible').allTextContents();
       console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
+      const hasLoginButton = allBtns.some(b => b.toLowerCase().includes('login to register'));
+      if (hasLoginButton) {
+        console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
+        await snap();
+        return { status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath };
+      }
+
       if (hasRegister) {
         if (DRY_RUN) {
           console.log('DRY RUN: Would click Register button. Done.');
