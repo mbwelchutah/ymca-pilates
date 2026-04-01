@@ -73,14 +73,15 @@ function buildHtml(jobs) {
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
           <td><strong>${esc(j.class_title)}</strong></td>
-          <td>${esc(j.day_of_week || '\u2014')}</td>
-          <td>${esc(j.class_time  || '\u2014')}</td>
+          <td>${esc(j.day_of_week  || '\u2014')}</td>
+          <td>${esc(j.class_time   || '\u2014')}</td>
+          <td>${esc(j.instructor   || '\u2014')}</td>
           <td>${phaseBadge}</td>
           <td class="col-last-run">${lastRunCell}</td>
           <td>${lastResBadge}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="7" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
+    : '<tr><td colspan="8" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
 
   const sel = first
     ? `${esc(first.class_title)} \u00b7 ${esc(first.day_of_week || '')} \u00b7 ${esc(first.class_time || '')} \u00b7 ${esc(first.instructor || '')}`
@@ -162,23 +163,25 @@ function buildHtml(jobs) {
     }
 
     /* ---- jobs table ---- */
+    .table-scroll { overflow-x: auto; }
     .jobs-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: 12px;
     }
     .jobs-table th {
       text-align: left;
-      padding: 11px 14px;
-      font-size: 11px;
+      padding: 10px 11px;
+      font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #bbb;
       border-bottom: 1px solid #f0f0f0;
+      white-space: nowrap;
     }
     .jobs-table td {
-      padding: 13px 14px;
+      padding: 11px 11px;
       border-bottom: 1px solid #f8f8f8;
       vertical-align: middle;
       color: #333;
@@ -299,22 +302,25 @@ function buildHtml(jobs) {
     <!-- Saved Jobs -->
     <div class="card">
       <div class="card-header"><h2>Saved Jobs</h2></div>
-      <table class="jobs-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Class</th>
-            <th>Day</th>
-            <th>Time</th>
-            <th>Phase</th>
-            <th>Last Run</th>
-            <th>Last Result</th>
-          </tr>
-        </thead>
-        <tbody id="jobs-body">
-          ${jobRowsHtml}
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="jobs-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Class</th>
+              <th>Day</th>
+              <th>Time</th>
+              <th>Instructor</th>
+              <th>Phase</th>
+              <th>Last Run</th>
+              <th>Last Result</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-body">
+            ${jobRowsHtml}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Actions -->
