@@ -8,6 +8,7 @@
     "scheduler:test": "node src/scheduler/test-booking-window.js",
     "scheduler:once": "node src/scheduler/run-scheduler-once.js",
     "scheduler:run":        "node src/scheduler/run-eligible-jobs-once.js",
+    "db:add":               "node src/db/add-job.js",
     "db:create-test-job":   "node src/db/create-test-job.js",
     "db:cleanup-test-jobs": "node src/db/cleanup-test-jobs.js",
     "scheduler:loop":       "node src/scheduler/run-scheduler-loop.js"
