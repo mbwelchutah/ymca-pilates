@@ -356,11 +356,11 @@ function buildHtml(jobs) {
         const res  = await fetch('/status');
         const data = await res.json();
         if (data.active) {
-          statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + '\n' + data.log : data.log);
+          statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + '<br>' + data.log : data.log);
           setTimeout(() => poll(statusPrefix), 2000);
         } else {
           statusEl.className   = data.success ? 'success' : 'error';
-          statusEl.textContent = (statusPrefix ? statusPrefix + '\n' : '') + data.log;
+          statusEl.textContent = (statusPrefix ? statusPrefix + ' — ' : '') + data.log;
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : 'Try Again';
             if (!data.success) { activeBtn.disabled = false; }
