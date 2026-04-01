@@ -1,0 +1,143 @@
+Add three UI enhancements to the dashboard:
+
+1. Auto-highlight the next job to open
+2. Optional alert (visual + optional sound) when a job enters the final countdown
+3. “Sniper mode active” indicator
+
+Current state:
+
+* countdown timer exists
+* phase exists (too_early, warmup, sniper, late)
+* jobs may show "Booked"
+* UI updates every second
+
+Goal:
+Make it obvious which job is about to run and when action is imminent.
+
+Do NOT:
+
+* change scheduler logic
+* change DB schema
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Auto-highlight next job to open
+
+1. In client-side JS:
+
+   * loop through all rows with `data-open-time`
+   * find the job with the **smallest positive time remaining**
+
+2. Add a CSS class:
+
+```css
+.next-job {
+  outline: 2px solid #f4a261;
+  background: #fff7ec;
+}
+```
+
+3. Apply:
+
+```js
+document.querySelectorAll("tr").forEach(r => r.classList.remove("next-job"));
+nextRow.classList.add("next-job");
+```
+
+4. Update every second (inside existing countdown loop)
+
+---
+
+## PART 2 — Visual alert (last 60 seconds)
+
+1. Reuse your existing `<60s` logic
+
+2. Add stronger visual class:
+
+```css
+.countdown-critical {
+  color: #d62828;
+  font-weight: 700;
+  animation: pulse 0.8s infinite;
+}
+```
+
+3. Apply when:
+
+```js
+diff > 0 && diff <= 60000
+```
+
+---
+
+## PART 3 — Optional sound alert
+
+Keep it VERY simple:
+
+```js
+let hasPlayed = false;
+
+if (diff > 0 && diff <= 10000 && !hasPlayed) {
+  hasPlayed = true;
+  new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
+}
+```
+
+Reset when:
+
+```js
+if (diff > 60000) hasPlayed = false;
+```
+
+Do NOT add settings UI yet — keep optional and minimal.
+
+---
+
+## PART 4 — “Sniper mode active” indicator
+
+In Selected Job card:
+
+1. If phase === "sniper" OR countdown < 60s:
+
+Show:
+
+```html
+<div class="sniper-indicator">🔥 Sniper mode active</div>
+```
+
+2. Style:
+
+```css
+.sniper-indicator {
+  color: #d62828;
+  font-weight: 600;
+  margin-top: 6px;
+}
+```
+
+---
+
+## PART 5 — Interaction rules
+
+* If job is already booked:
+
+  * do NOT highlight as next job
+  * do NOT trigger alerts
+
+* If multiple jobs:
+
+  * only ONE job gets "next-job"
+
+* Keep everything readable, not flashy
+
+---
+
+## After changes, explain:
+
+* how next job is determined
+* how highlight updates
+* when alert triggers
+* how sniper mode is defined
+* any edge cases left

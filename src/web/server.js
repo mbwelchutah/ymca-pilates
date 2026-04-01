@@ -466,6 +466,22 @@ function buildHtml(jobs, error, editError) {
       50%  { opacity: 0.4; }
       100% { opacity: 1; }
     }
+    /* Next-to-open job highlight */
+    .next-job {
+      outline: 2px solid #f4a261;
+      background: #fff7ec !important;
+    }
+    /* Sniper mode indicator in Selected Job card */
+    .sniper-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #d62828;
+      animation: pulse 1s infinite;
+    }
   </style>
 </head>
 <body>
@@ -486,6 +502,7 @@ function buildHtml(jobs, error, editError) {
         <div class="selected-date"    id="sel-date" style="font-size:13px;color:#888;margin-top:4px;">Date: <strong>${first && first.target_date ? esc(first.target_date) : '\u2014'}</strong></div>
         <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
         <div class="sel-countdown"    id="sel-countdown"></div>
+        <div class="sniper-indicator" id="sel-sniper" style="display:none">&#128293; Sniper mode active</div>
         <div id="sel-booked-box" class="sel-booked-box" ${firstIsBooked ? '' : 'style="display:none"'}>
           <span class="booked-icon">&#10003;</span>
           <span id="sel-booked-text">${first && first.target_date ? `Booked for ${esc(first.target_date)}` : 'Booked this week'}</span>
@@ -735,17 +752,77 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
-    // Tick every second: update all row countdown cells + the card countdown.
+    // Returns true if a table row's job is already booked (mirrors isBooked() but
+    // reads directly from data attributes so it works for any row, not just the
+    // currently selected one).
+    function isRowBooked(row) {
+      const sat = row.dataset.lastSuccessAt || '';
+      if (!sat) return false;
+      const td  = row.dataset.targetDate || '';
+      if (td)  return sat.startsWith(td);
+      const successDate  = new Date(sat);
+      const now          = new Date();
+      const daysSinceMon = (now.getUTCDay() + 6) % 7;
+      const weekStart    = new Date(now);
+      weekStart.setUTCHours(0, 0, 0, 0);
+      weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon);
+      return successDate >= weekStart;
+    }
+
+    // Shows or hides the #sel-sniper indicator in the card.
+    // Visible when: phase is "sniper" OR booking opens within 60 seconds.
+    function updateSniperIndicator(bookingOpenMs, phase) {
+      const el = document.getElementById('sel-sniper');
+      if (!el) return;
+      const diff = bookingOpenMs ? (bookingOpenMs - Date.now()) : Infinity;
+      const show = phase === 'sniper' || (diff > 0 && diff <= 60000);
+      el.style.display = show ? '' : 'none';
+    }
+
+    // Guard so the alert sound only fires once per countdown cycle.
+    let hasPlayed = false;
+
+    // Tick every second: update countdown cells, highlight the next job to open,
+    // trigger sound alert in final 10 s, and refresh the sniper indicator.
     setInterval(function() {
-      // Table rows
-      document.querySelectorAll('.job-row').forEach(function(row) {
+      const now   = Date.now();
+      const rows  = document.querySelectorAll('.job-row');
+      let   nextRow = null;
+      let   nextDiff = Infinity;
+
+      // Pass 1: update each row's countdown cell; find next-to-open unbooked job.
+      rows.forEach(function(row) {
         const boms = row.dataset.bookingOpen ? Number(row.dataset.bookingOpen) : null;
         const cell = row.querySelector('.job-countdown');
         if (cell) applyCountdown(cell, boms);
+
+        if (boms && !isRowBooked(row)) {
+          const diff = boms - now;
+          if (diff > 0 && diff < nextDiff) {
+            nextDiff = diff;
+            nextRow  = row;
+          }
+        }
       });
-      // Selected Job card
+
+      // Apply / remove the .next-job highlight.
+      rows.forEach(function(r) { r.classList.remove('next-job'); });
+      if (nextRow) nextRow.classList.add('next-job');
+
+      // Sound alert: fire once when the next job enters its final 10 seconds.
+      if (nextDiff > 0 && nextDiff <= 10000 && !hasPlayed) {
+        hasPlayed = true;
+        try {
+          new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg').play()
+            .catch(function() {});            // silently ignore autoplay block
+        } catch(e) {}
+      }
+      if (nextDiff > 60000) hasPlayed = false; // reset for next cycle
+
+      // Pass 2: update Selected Job card countdown + sniper indicator.
       const cardCd = document.getElementById('sel-countdown');
       if (cardCd) applyCountdown(cardCd, selectedJobBookingOpen);
+      updateSniperIndicator(selectedJobBookingOpen, selectedJobPhase);
     }, 1000);
 
     // On load: restore the previously selected job from localStorage, or fall
@@ -804,9 +881,10 @@ function buildHtml(jobs, error, editError) {
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
 
-      // Refresh card countdown immediately on selection (ticker handles the rest).
+      // Refresh card countdown + sniper indicator immediately on selection.
       const cdEl = document.getElementById('sel-countdown');
       if (cdEl) applyCountdown(cdEl, selectedJobBookingOpen);
+      updateSniperIndicator(selectedJobBookingOpen, selectedJobPhase);
 
       // Show or hide the "Booked" badge.
       const bookedBox  = document.getElementById('sel-booked-box');
