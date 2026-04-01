@@ -17,6 +17,7 @@ const ELIGIBLE_PHASES = ['warmup', 'sniper'];
     const job = {
       classTitle: dbJob.class_title,
       classTime:  dbJob.class_time,
+      dayOfWeek:  dbJob.day_of_week,
     };
 
     const { phase } = getPhase({

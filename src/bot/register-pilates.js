@@ -21,7 +21,13 @@ try {
 }
 
 async function runBookingJob(job) {
-  const { classTitle, classTime, maxAttempts: maxAttemptsOpt } = job;
+  const { classTitle, classTime, dayOfWeek, maxAttempts: maxAttemptsOpt } = job;
+  // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
+  const DAY_SHORT = {
+    Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
+    Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat',
+  };
+  const dayShort = DAY_SHORT[dayOfWeek] || 'Wed';
   const classTitleLower = classTitle.toLowerCase();
   // Normalize DB time "7:45 AM" → "7:45 a" to match page text like "7:45 a - 8:45 a"
   const classTimeNorm = classTime
@@ -134,7 +140,7 @@ async function runBookingJob(job) {
     }
     await page.waitForTimeout(2000);
 
-    console.log(`Looking for: "${classTitle}" at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
+    console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
     // Step 3: Find the target class with Stephanie on the next available Wednesday
     async function findTargetCard() {
@@ -211,26 +217,27 @@ async function runBookingJob(job) {
       return null;
     }
 
-    // Try each Wednesday tab until we find the class
-    const wedTabs = page.locator('text=/Wed \\d+/');
-    const wedCount = await wedTabs.count();
+    // Try each matching day tab until we find the class
+    const dayTabs = page.locator(`text=/${dayShort} \\d+/`);
+    const dayTabCount = await dayTabs.count();
+    console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
-    for (let w = 0; w < wedCount; w++) {
-      const tabText = await wedTabs.nth(w).textContent();
-      console.log('Trying Wednesday tab: ' + tabText.trim());
-      await wedTabs.nth(w).click();
+    for (let w = 0; w < dayTabCount; w++) {
+      const tabText = await dayTabs.nth(w).textContent();
+      console.log('Trying tab: ' + tabText.trim());
+      await dayTabs.nth(w).click();
       await page.waitForTimeout(2000);
       targetCard = await findTargetCard();
       if (targetCard) {
         console.log('Found class on ' + tabText.trim());
         break;
       }
-      console.log('Class not found on ' + tabText.trim() + ', trying next Wednesday...');
+      console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
     }
 
     if (!targetCard) {
-      const msg = `Could not find ${classTitle} with Stephanie on any Wednesday.`;
+      const msg = `Could not find ${classTitle} with Stephanie on any ${dayOfWeek || dayShort} tab.`;
       console.log(msg);
       await snap();
       return { status: 'error', message: msg, screenshotPath };
@@ -289,11 +296,11 @@ async function runBookingJob(job) {
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(3000);
 
-        // Re-find the correct Wednesday tab after reload
-        const wedTabsRetry = page.locator('text=/Wed \\d+/');
-        const wedCountRetry = await wedTabsRetry.count();
-        for (let w = 0; w < wedCountRetry; w++) {
-          await wedTabsRetry.nth(w).click();
+        // Re-find the correct day tab after reload
+        const dayTabsRetry = page.locator(`text=/${dayShort} \\d+/`);
+        const dayTabCountRetry = await dayTabsRetry.count();
+        for (let w = 0; w < dayTabCountRetry; w++) {
+          await dayTabsRetry.nth(w).click();
           await page.waitForTimeout(2000);
           targetCard = await findTargetCard();
           if (targetCard) break;
