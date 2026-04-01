@@ -21,7 +21,7 @@ try {
 }
 
 async function runBookingJob(job) {
-  const { classTitle } = job;
+  const { classTitle, maxAttempts: maxAttemptsOpt } = job;
   const classTitleLower = classTitle.toLowerCase();
   let browser;
   let screenshotPath = null;
@@ -203,8 +203,9 @@ async function runBookingJob(job) {
     await targetCard.click();
     await page.waitForTimeout(2000);
 
-    // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet
-    const maxAttempts = 20;
+    // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet.
+    // maxAttemptsOpt can be passed in job object (e.g. 1 for web UI, 20 for cron).
+    const maxAttempts = maxAttemptsOpt || 20;
     let registered = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {

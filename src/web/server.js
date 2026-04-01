@@ -95,10 +95,15 @@ const html = `<!DOCTYPE html>
         const res = await fetch(url);
         const data = await res.json();
         if (!data.started) {
-          statusEl.className = 'error';
-          statusEl.textContent = data.log || 'Could not start job.';
-          btn.textContent = 'Try Again';
-          btn.disabled = false;
+          if (data.log && data.log.includes('Already running')) {
+            statusEl.textContent = 'Job already in progress — checking status...';
+            poll();
+          } else {
+            statusEl.className = 'error';
+            statusEl.textContent = data.log || 'Could not start job.';
+            btn.textContent = 'Try Again';
+            btn.disabled = false;
+          }
           return;
         }
         statusEl.textContent = 'Job started — checking progress...';
@@ -168,7 +173,7 @@ const server = http.createServer(async (req, res) => {
 
   } else if (req.method === 'GET' && req.url === '/register') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
-    runInBackground({ classTitle: 'Core Pilates' });
+    runInBackground({ classTitle: 'Core Pilates', maxAttempts: 1 });
     json({ started: true });
 
   } else if (req.method === 'GET' && req.url === '/run-job') {
@@ -176,7 +181,7 @@ const server = http.createServer(async (req, res) => {
     const dbJob = getJobById(1);
     if (!dbJob) { json({ started: false, log: 'No job found in database. Run: npm run db:test' }); return; }
     console.log('Running job from DB:', dbJob.class_title);
-    runInBackground({ classTitle: dbJob.class_title });
+    runInBackground({ classTitle: dbJob.class_title, maxAttempts: 1 });
     json({ started: true });
 
   } else {
