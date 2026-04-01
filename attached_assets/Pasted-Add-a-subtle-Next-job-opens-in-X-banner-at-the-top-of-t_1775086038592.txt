@@ -1,0 +1,148 @@
+Add a subtle “Next job opens in X” banner at the top of the dashboard.
+
+Current state:
+
+* countdown timers exist per job
+* next job is already identified (smallest positive open-time)
+* UI updates every second
+* jobs may be booked or inactive
+
+Goal:
+Show a global banner indicating the next job to open and how soon it opens.
+
+Do NOT:
+
+* change scheduler logic
+* change DB schema
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Add banner HTML
+
+At the top of the page (above Selected Job card):
+
+```html
+<div id="next-job-banner" class="banner hidden">
+  ⏳ Next job opens in — 
+</div>
+```
+
+---
+
+## PART 2 — Add styling
+
+```css
+.banner {
+  background: #f1faee;
+  border: 1px solid #d8e2dc;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.banner.hidden {
+  display: none;
+}
+
+.banner.warning {
+  background: #fff3cd;
+  border-color: #ffeeba;
+}
+
+.banner.sniper {
+  background: #ffe5e5;
+  border-color: #ffb3b3;
+  color: #d62828;
+  font-weight: 600;
+}
+```
+
+---
+
+## PART 3 — Compute next job
+
+In the countdown loop:
+
+1. Find next job (smallest positive diff), excluding:
+
+   * booked jobs
+   * inactive jobs
+
+2. Store:
+
+```js
+let nextJob = null;
+let minDiff = Infinity;
+```
+
+---
+
+## PART 4 — Update banner every second
+
+```js
+const banner = document.getElementById("next-job-banner");
+
+if (!nextJob) {
+  banner.classList.add("hidden");
+} else {
+  banner.classList.remove("hidden");
+
+  const diff = minDiff;
+
+  const formatted = formatCountdown(diff);
+
+  banner.textContent = `⏳ Next job opens in ${formatted}`;
+
+  banner.classList.remove("warning", "sniper");
+
+  if (diff <= 60000 && diff > 0) {
+    banner.classList.add("warning");
+  }
+
+  if (diff <= 0) {
+    banner.textContent = "🔥 Booking open now";
+    banner.classList.add("sniper");
+  }
+}
+```
+
+---
+
+## PART 5 — Include job name (nice touch)
+
+Enhance:
+
+```js
+banner.textContent = `⏳ ${jobTitle} opens in ${formatted}`;
+```
+
+---
+
+## PART 6 — Behavior rules
+
+* If all jobs are booked → hide banner
+* If no active jobs → hide banner
+* Only ONE job drives the banner
+* Keep it subtle (no flashing)
+
+---
+
+## PART 7 — Optional polish
+
+* If < 10 seconds:
+  show:
+  "🔥 Opening in 00:00:08"
+
+* Match styling with countdown warning colors
+
+---
+
+## After changes, explain:
+
+* how next job is determined
+* how banner updates every second
+* how states (normal, warning, sniper) work
+* when banner hides

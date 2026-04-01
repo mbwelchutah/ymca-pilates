@@ -1,0 +1,135 @@
+Add two UX enhancements to make the dashboard behave like a live control panel:
+
+1. Auto-scroll to the next job opening soon
+2. Pin the selected job so it stays visible and does not get overridden
+
+Current state:
+
+* next job is already highlighted (next-job class)
+* selected job is tracked in JS
+* countdown updates every second
+* table may scroll off screen when multiple jobs exist
+
+Goal:
+Make the UI automatically bring the most important job into view, while respecting user selection.
+
+Do NOT:
+
+* change scheduler logic
+* change DB schema
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Auto-scroll to next job
+
+1. In the countdown update loop:
+
+   After identifying `nextRow` (smallest positive diff):
+
+```js
+if (nextRow) {
+  nextRow.scrollIntoView({
+    behavior: "smooth",
+    block: "center"
+  });
+}
+```
+
+2. Only scroll if:
+
+   * user has NOT manually selected a different job recently
+   * use a flag:
+
+```js
+let userPinned = false;
+```
+
+---
+
+## PART 2 — Pin selected job
+
+1. When user clicks a row (selectJob):
+
+```js
+userPinned = true;
+localStorage.setItem("selectedJobId", id);
+```
+
+2. When page loads:
+
+```js
+const savedId = localStorage.getItem("selectedJobId");
+if (savedId) {
+  selectJob(savedId);
+  userPinned = true;
+}
+```
+
+---
+
+## PART 3 — Respect pinned state
+
+Modify auto-scroll logic:
+
+```js
+if (!userPinned && nextRow) {
+  nextRow.scrollIntoView({
+    behavior: "smooth",
+    block: "center"
+  });
+}
+```
+
+---
+
+## PART 4 — Add “Pinned” indicator
+
+In Selected Job card:
+
+```html
+<div class="pin-indicator">📌 Pinned</div>
+```
+
+Style:
+
+```css
+.pin-indicator {
+  font-size: 12px;
+  color: #457b9d;
+  margin-top: 4px;
+}
+```
+
+Only show if `userPinned === true`
+
+---
+
+## PART 5 — Optional: unpin behavior
+
+Add a simple “Unpin” button:
+
+```js
+function unpin() {
+  userPinned = false;
+  localStorage.removeItem("selectedJobId");
+}
+```
+
+---
+
+## PART 6 — Edge behavior
+
+* If pinned job is deleted → reset pin
+* If pinned job is booked → keep pinned
+* Do not auto-scroll while user is interacting (keep it calm)
+
+---
+
+## After changes, explain:
+
+* how auto-scroll determines when to run
+* how pinning overrides scrolling
+* how localStorage persists selection
+* how edge cases are handled

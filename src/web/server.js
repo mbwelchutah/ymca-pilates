@@ -103,7 +103,7 @@ function buildHtml(jobs, error, editError) {
             data-last-success-at="${esc(j.last_success_at || '')}"
             data-last-error-msg="${esc(j.last_error_message || '')}"
             data-booking-open="${bookingOpenMs || ''}"
-            onclick="selectJob(this)">
+            onclick="selectJob(this, true)">
           <td class="job-id">#${j.id}</td>
           <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong>${j.last_result === 'error' && j.last_error_message ? ` <span class="row-warn" title="${esc(j.last_error_message)}">&#9888;</span>` : ''}</td>
           <td>${esc(j.day_of_week  || '\u2014')}</td>
@@ -482,6 +482,25 @@ function buildHtml(jobs, error, editError) {
       color: #d62828;
       animation: pulse 1s infinite;
     }
+    /* Pin indicator */
+    .pin-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #457b9d;
+      margin-top: 4px;
+    }
+    .unpin-btn {
+      background: none;
+      border: none;
+      font-size: 11px;
+      color: #457b9d;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+    .unpin-btn:hover { color: #1d3557; }
   </style>
 </head>
 <body>
@@ -506,6 +525,9 @@ function buildHtml(jobs, error, editError) {
         <div id="sel-booked-box" class="sel-booked-box" ${firstIsBooked ? '' : 'style="display:none"'}>
           <span class="booked-icon">&#10003;</span>
           <span id="sel-booked-text">${first && first.target_date ? `Booked for ${esc(first.target_date)}` : 'Booked this week'}</span>
+        </div>
+        <div class="pin-indicator" id="sel-pin-box" style="display:none">
+          &#128204; Pinned&nbsp;<button class="unpin-btn" onclick="unpin()">Unpin</button>
         </div>
         <div class="selected-run-info">
           <span class="run-label">Last run:</span>
@@ -779,8 +801,23 @@ function buildHtml(jobs, error, editError) {
       el.style.display = show ? '' : 'none';
     }
 
+    // Shows or hides the 📌 Pinned indicator based on userPinned.
+    function updatePinIndicator() {
+      const el = document.getElementById('sel-pin-box');
+      if (el) el.style.display = userPinned ? '' : 'none';
+    }
+
+    // Clears the pin: re-enables auto-scroll and removes the localStorage key.
+    function unpin() {
+      userPinned = false;
+      localStorage.removeItem('selectedJobId');
+      updatePinIndicator();
+    }
+
     // Guard so the alert sound only fires once per countdown cycle.
     let hasPlayed = false;
+    // Set when the user actively pins a job; suppresses auto-scroll.
+    let userPinned = false;
 
     // Tick every second: update countdown cells, highlight the next job to open,
     // trigger sound alert in final 10 s, and refresh the sniper indicator.
@@ -809,6 +846,11 @@ function buildHtml(jobs, error, editError) {
       rows.forEach(function(r) { r.classList.remove('next-job'); });
       if (nextRow) nextRow.classList.add('next-job');
 
+      // Auto-scroll to the next-to-open row only when the user hasn't pinned one.
+      if (!userPinned && nextRow) {
+        nextRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
       // Sound alert: fire once when the next job enters its final 10 seconds.
       if (nextDiff > 0 && nextDiff <= 10000 && !hasPlayed) {
         hasPlayed = true;
@@ -826,20 +868,32 @@ function buildHtml(jobs, error, editError) {
     }, 1000);
 
     // On load: restore the previously selected job from localStorage, or fall
-    // back to the first row.  selectJob() also persists the choice going forward.
+    // back to the first row.  Sets userPinned only when a saved choice is found.
     (function() {
-      const savedId  = localStorage.getItem('selectedJobId');
-      const allRows  = document.querySelectorAll('.job-row');
-      let   target   = null;
+      const savedId   = localStorage.getItem('selectedJobId');
+      const allRows   = document.querySelectorAll('.job-row');
+      let   target    = null;
+      let   fromSaved = false;
       if (savedId) {
-        allRows.forEach(r => { if (r.dataset.id === savedId) target = r; });
+        allRows.forEach(r => { if (r.dataset.id === savedId) { target = r; fromSaved = true; } });
       }
       if (!target && allRows.length) target = allRows[0];
-      if (target) selectJob(target);
+      if (target) selectJob(target);          // does NOT set userPinned by itself
+      if (fromSaved) {                        // only pin when we actually restored
+        userPinned = true;
+        updatePinIndicator();
+      }
     })();
 
     // ---- job selection ----
-    function selectJob(row) {
+    // fromUser=true: called by a real click — sets pin.
+    // fromUser=false (default): called programmatically (load, refresh) — no pin.
+    function selectJob(row, fromUser) {
+      if (fromUser) {
+        userPinned = true;
+        localStorage.setItem('selectedJobId', row.dataset.id);
+        updatePinIndicator();
+      }
       // Only reset status if no job is currently running.
       if (!activeBtn || !activeBtn.disabled) {
         stopDots();
@@ -854,7 +908,6 @@ function buildHtml(jobs, error, editError) {
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
       selectedJobId         = row.dataset.id;
-      localStorage.setItem('selectedJobId', selectedJobId);
       selectedJobPhase      = row.dataset.phase      || 'unknown';
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
