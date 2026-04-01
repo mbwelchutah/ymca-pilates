@@ -190,26 +190,26 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error('Port ' + PORT + ' already in use — kill the stale process and retry');
-  } else {
-    console.error('Server error:', err);
-  }
-  process.exit(1);
-});
-
-// Graceful shutdown on SIGTERM (sent by Replit when restarting the workflow).
-// Calling server.close() releases the port before the process exits, preventing
-// EADDRINUSE on the next start.
+// On SIGTERM (Replit workflow restart), close the HTTP server so the port is
+// released, then exit. The hard timeout is NOT unref'd so that a background
+// Playwright job cannot keep the process alive past the deadline.
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, closing server...');
-  server.close(() => {
-    console.log('Server closed.');
-    process.exit(0);
-  });
-  // Hard exit if close() stalls (e.g. a long-running Playwright job)
-  setTimeout(() => process.exit(0), 5000).unref();
+  console.log('SIGTERM received, shutting down...');
+  server.close(() => { console.log('Server closed.'); process.exit(0); });
+  setTimeout(() => { console.log('Hard exit after timeout.'); process.exit(0); }, 4000);
 });
 
+// If the port is still in use (previous instance still shutting down),
+// wait 2 s and retry rather than crashing. Give up after 10 attempts.
+let listenAttempts = 0;
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE' && listenAttempts < 10) {
+    listenAttempts++;
+    console.log('Port ' + PORT + ' in use, retrying in 2s... (' + listenAttempts + '/10)');
+    setTimeout(() => server.listen(PORT, HOST), 2000);
+  } else {
+    console.error('Server error:', err.message);
+    process.exit(1);
+  }
+});
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
