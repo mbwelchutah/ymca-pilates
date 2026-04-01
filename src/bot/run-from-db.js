@@ -18,6 +18,7 @@ const { runBookingJob } = require('./register-pilates');
   // Map DB column names to the shape runBookingJob() expects
   const job = {
     classTitle: dbJob.class_title,
+    classTime:  dbJob.class_time,
   };
 
   console.log('\nMapped job object:');

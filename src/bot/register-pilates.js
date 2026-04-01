@@ -21,8 +21,12 @@ try {
 }
 
 async function runBookingJob(job) {
-  const { classTitle, maxAttempts: maxAttemptsOpt } = job;
+  const { classTitle, classTime, maxAttempts: maxAttemptsOpt } = job;
   const classTitleLower = classTitle.toLowerCase();
+  // Normalize DB time "7:45 AM" → "7:45 a" to match page text like "7:45 a - 8:45 a"
+  const classTimeNorm = classTime
+    ? classTime.trim().toLowerCase().replace(/^(\d+:\d+)\s*(am|pm).*/, (_, t, ap) => t + ' ' + ap[0])
+    : null;
   let browser;
   let screenshotPath = null;
 
@@ -130,17 +134,11 @@ async function runBookingJob(job) {
     }
     await page.waitForTimeout(2000);
 
-    // Step 3: Find Core Pilates at 7:45 AM with Stephanie on the next available Wednesday
+    console.log(`Looking for: "${classTitle}" at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
+
+    // Step 3: Find the target class with Stephanie on the next available Wednesday
     async function findTargetCard() {
-      // Strategy: start from "Stephanie S." text, walk UP to find the class card
-      // that contains "Core Pilates" but NOT "Core Pilates Level 2", then walk
-      // back down to get the direct-child session row to click.
-      //
-      // The previous approach (start from "Core Pilates" title, look for a separate
-      // "Stephanie" sibling in an ancestor's direct children) never worked because
-      // the title and the session row are both INSIDE the same class card — they
-      // are never in separate direct children of any ancestor.
-      const result = await page.evaluate((classTitleLower) => {
+      const result = await page.evaluate(({ classTitleLower, classTimeNorm }) => {
         document.querySelectorAll('[data-target-class]').forEach(el => {
           el.removeAttribute('data-target-class');
         });
@@ -157,6 +155,8 @@ async function runBookingJob(job) {
           if (/stephanie\s+s\./i.test(directText)) stephanieEls.push(el);
         }
 
+        const timeRejected = [];
+
         for (const stephanieEl of stephanieEls) {
           let ancestor = stephanieEl.parentElement;
           while (ancestor && ancestor !== document.body) {
@@ -169,9 +169,16 @@ async function runBookingJob(job) {
                 clickTarget = clickTarget.parentElement;
               }
               if (clickTarget.parentElement === ancestor) {
+                const rowText = clickTarget.textContent.toLowerCase();
+                // Time check: skip this row if it doesn't match the intended time
+                if (classTimeNorm && !rowText.includes(classTimeNorm)) {
+                  timeRejected.push(clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
+                  break; // wrong time — try next stephanieEl
+                }
                 clickTarget.setAttribute('data-target-class', 'yes');
                 return {
                   matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
+                  timeRejected,
                   debug: null
                 };
               }
@@ -183,16 +190,20 @@ async function runBookingJob(job) {
 
         return {
           matched: null,
+          timeRejected,
           debug: {
             stephanieElCount: stephanieEls.length,
             stephanieTexts: stephanieEls.slice(0, 4).map(el =>
               el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60))
           }
         };
-      }, classTitleLower);
+      }, { classTitleLower, classTimeNorm });
 
+      if (result.timeRejected && result.timeRejected.length > 0) {
+        result.timeRejected.forEach(r => console.log('  Rejected (time mismatch):', r));
+      }
       if (result.matched) {
-        console.log('Found ' + classTitle + ' / Stephanie row:', result.matched);
+        console.log('Matched row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 

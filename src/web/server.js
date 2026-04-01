@@ -181,7 +181,7 @@ const server = http.createServer(async (req, res) => {
     const dbJob = getJobById(1);
     if (!dbJob) { json({ started: false, log: 'No job found in database. Run: npm run db:test' }); return; }
     console.log('Running job from DB:', dbJob.class_title);
-    runInBackground({ classTitle: dbJob.class_title, maxAttempts: 1 });
+    runInBackground({ classTitle: dbJob.class_title, classTime: dbJob.class_time, maxAttempts: 1 });
     json({ started: true });
 
   } else {
