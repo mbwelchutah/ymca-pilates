@@ -15,6 +15,9 @@ const HOST = '0.0.0.0';
 function buildHtml(jobs) {
   const hasJobs = jobs && jobs.length > 0;
   const first   = hasJobs ? jobs[0] : null;
+  const firstLabel = first
+    ? `Job #${first.id} \u2014 ${first.class_title} \u00b7 ${first.day_of_week || ''} \u00b7 ${first.class_time || ''} \u00b7 ${first.instructor || ''}`
+    : null;
 
   const jobRowsHtml = hasJobs
     ? jobs.map(j => {
@@ -34,7 +37,7 @@ function buildHtml(jobs) {
           <td>${active}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="6" class="no-jobs">No saved jobs found. Run <code>npm run db:test</code> to seed one.</td></tr>';
+    : '<tr><td colspan="6" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
 
   const sel = first
     ? `${esc(first.class_title)} · ${esc(first.day_of_week || '')} · ${esc(first.class_time || '')} · ${esc(first.instructor || '')}`
@@ -91,6 +94,14 @@ function buildHtml(jobs) {
     .card-body { padding: 16px 20px; }
 
     /* ---- selected job ---- */
+    .selected-id {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #457b9d;
+      margin-bottom: 5px;
+    }
     .selected-summary {
       font-size: 15px;
       font-weight: 600;
@@ -127,11 +138,12 @@ function buildHtml(jobs) {
     }
     .job-row { cursor: pointer; transition: background 0.15s; }
     .job-row:hover  { background: #f5f8ff; }
-    .job-row.selected { background: #eef3ff; }
-    .job-row.selected td { color: #1a1a2e; }
-    .job-id { color: #bbb; font-size: 12px; }
-    .no-jobs { padding: 24px; text-align: center; color: #999; font-size: 14px; }
-    .no-jobs code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; }
+    .job-row.selected { background: #eef3ff; box-shadow: inset 4px 0 0 #457b9d; }
+    .job-row.selected td { color: #1a1a2e; font-weight: 500; }
+    .job-id { color: #bbb; font-size: 12px; font-weight: 400; }
+    .no-jobs { padding: 32px 20px; text-align: center; color: #aaa; font-size: 14px; line-height: 1.6; }
+    .no-jobs strong { display: block; font-size: 16px; color: #999; margin-bottom: 6px; }
+    .no-jobs code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 
     /* ---- badges ---- */
     .badge {
@@ -178,6 +190,20 @@ function buildHtml(jobs) {
     #status.running { color: #856404; }
     #status.success { color: #155724; }
     #status.error   { color: #721c24; }
+
+    /* ---- spinner ---- */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+      opacity: 0.75;
+    }
   </style>
 </head>
 <body>
@@ -192,8 +218,9 @@ function buildHtml(jobs) {
     <div class="card">
       <div class="card-header"><h2>Selected Job</h2></div>
       <div class="card-body">
+        <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
         <div class="selected-summary" id="sel-title">${first ? esc(first.class_title) : 'None'}</div>
-        <div class="selected-meta"  id="sel-meta">${sel}</div>
+        <div class="selected-meta"    id="sel-meta">${sel}</div>
       </div>
     </div>
 
@@ -244,9 +271,10 @@ function buildHtml(jobs) {
   </div><!-- /page -->
 
   <script>
-    // Track which job is selected (default to first).
-    let selectedJobId   = ${first ? first.id : 'null'};
-    let activeBtn       = null;
+    // ---- state ----
+    let selectedJobId    = ${first ? first.id : 'null'};
+    let selectedJobLabel = ${JSON.stringify(firstLabel)};
+    let activeBtn        = null;
     let activeSuccessText = null;
 
     // Highlight the first row on load.
@@ -255,23 +283,44 @@ function buildHtml(jobs) {
       if (firstRow) firstRow.classList.add('selected');
     })();
 
+    // ---- job selection ----
     function selectJob(row) {
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
       selectedJobId = row.dataset.id;
+      selectedJobLabel = 'Job #' + row.dataset.id + ' — ' +
+        [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
+          .filter(Boolean).join(' · ');
+      document.getElementById('sel-id').textContent    = 'Job #' + row.dataset.id;
       document.getElementById('sel-title').textContent = row.dataset.title;
       document.getElementById('sel-meta').textContent  =
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' · ');
     }
 
+    // ---- spinner helper ----
+    function spinnerHtml(text) {
+      return '<span class="spinner"></span>' + text;
+    }
+
+    // ---- lock / unlock Run Selected Job across all runs ----
+    function lockRunBtn()   {
+      const b = document.getElementById('btn-run');
+      if (b) { b.disabled = true; }
+    }
+    function unlockRunBtn() {
+      const b = document.getElementById('btn-run');
+      if (b && b !== activeBtn) { b.disabled = false; }
+    }
+
     // ---- shared job runner ----
-    async function startJob(url, btn, successText) {
+    async function startJob(url, btn, successText, statusPrefix) {
       const statusEl = document.getElementById('status');
       btn.disabled   = true;
       btn.textContent = 'Running…';
+      lockRunBtn();
       statusEl.className = 'running';
-      statusEl.textContent = 'Starting…';
+      statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + ' — Starting…' : 'Starting…');
       activeBtn = btn;
       activeSuccessText = successText;
       try {
@@ -279,58 +328,68 @@ function buildHtml(jobs) {
         const data = await res.json();
         if (!data.started) {
           if (data.log && data.log.includes('Already running')) {
-            statusEl.textContent = 'Job already in progress — checking status…';
+            statusEl.innerHTML = spinnerHtml('Job already in progress — checking status…');
             poll();
           } else {
-            statusEl.className  = 'error';
+            statusEl.className   = 'error';
             statusEl.textContent = data.log || 'Could not start job.';
             btn.textContent = 'Try Again';
             btn.disabled    = false;
+            unlockRunBtn();
           }
           return;
         }
-        statusEl.textContent = 'Job started — checking progress…';
-        poll();
+        statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + ' — Checking progress…' : 'Checking progress…');
+        poll(statusPrefix);
       } catch (e) {
-        statusEl.className  = 'error';
+        statusEl.className   = 'error';
         statusEl.textContent = 'Network error: ' + e.message;
         btn.textContent = 'Try Again';
         btn.disabled    = false;
+        unlockRunBtn();
       }
     }
 
-    async function poll() {
+    async function poll(statusPrefix) {
       const statusEl = document.getElementById('status');
       try {
         const res  = await fetch('/status');
         const data = await res.json();
-        statusEl.textContent = data.log;
         if (data.active) {
-          setTimeout(poll, 2000);
+          statusEl.innerHTML = spinnerHtml(statusPrefix ? statusPrefix + '\n' + data.log : data.log);
+          setTimeout(() => poll(statusPrefix), 2000);
         } else {
-          statusEl.className = data.success ? 'success' : 'error';
+          statusEl.className   = data.success ? 'success' : 'error';
+          statusEl.textContent = (statusPrefix ? statusPrefix + '\n' : '') + data.log;
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : 'Try Again';
-            if (!data.success) activeBtn.disabled = false;
+            if (!data.success) { activeBtn.disabled = false; }
           }
+          unlockRunBtn();
         }
       } catch (e) {
-        statusEl.textContent = 'Checking status… (' + e.message + ')';
-        setTimeout(poll, 3000);
+        statusEl.innerHTML = spinnerHtml('Checking status… (' + e.message + ')');
+        setTimeout(() => poll(statusPrefix), 3000);
       }
     }
 
     function runSelected() {
       if (!selectedJobId) {
-        document.getElementById('status').className = 'error';
-        document.getElementById('status').textContent = 'No job selected.';
+        const statusEl = document.getElementById('status');
+        statusEl.className   = 'error';
+        statusEl.textContent = 'No job selected. Click a row in the Saved Jobs table first.';
         return;
       }
-      startJob('/run-job?id=' + selectedJobId, document.getElementById('btn-run'), '✅ Done!');
+      startJob(
+        '/run-job?id=' + selectedJobId,
+        document.getElementById('btn-run'),
+        '✅ Done!',
+        'Running ' + selectedJobLabel
+      );
     }
 
     function runRegister() {
-      startJob('/register', document.getElementById('btn-register'), '✅ Registered!');
+      startJob('/register', document.getElementById('btn-register'), '✅ Registered!', 'Running Core Pilates (default)');
     }
 
     async function cleanTestJobs() {
@@ -339,14 +398,14 @@ function buildHtml(jobs) {
       btn.disabled = true;
       btn.textContent = 'Cleaning…';
       statusEl.className = 'running';
-      statusEl.textContent = 'Cleaning old test jobs…';
+      statusEl.innerHTML = spinnerHtml('Cleaning old test jobs…');
       try {
         const res  = await fetch('/clean-test-jobs');
         const data = await res.json();
         statusEl.textContent = data.log;
         statusEl.className   = data.success ? 'success' : 'error';
       } catch (e) {
-        statusEl.className  = 'error';
+        statusEl.className   = 'error';
         statusEl.textContent = 'Network error: ' + e.message;
       } finally {
         btn.textContent = 'Clean Old Test Jobs';

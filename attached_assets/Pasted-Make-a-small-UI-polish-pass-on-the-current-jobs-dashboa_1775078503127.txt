@@ -1,0 +1,72 @@
+Make a small UI polish pass on the current jobs dashboard. Do NOT change booking logic, scheduler logic, DB schema, or overall architecture.
+
+Goal:
+Improve clarity and safety of the existing Step 5 interface without redesigning it.
+
+Work only in the existing web UI code, primarily:
+
+* `src/web/server.js`
+
+Please make only these small tweaks:
+
+1. **Make the selected row more obvious**
+
+   * Add a stronger visual highlight for the currently selected job row
+   * Use a subtle background change and/or left border
+   * Keep it clean and simple
+
+2. **Show job ID in the Selected Job card**
+
+   * Add the selected job’s id visibly in the Selected Job summary
+   * Example:
+
+     * `Job #2`
+     * then title/day/time/instructor below
+
+3. **Improve empty-state behavior**
+
+   * If there are no jobs in the DB, show a friendly empty state instead of a blank table
+   * Example:
+
+     * `No jobs found. Create a test job to begin.`
+   * Keep buttons sensible in this state
+
+4. **Disable “Run Selected Job” while a run is in progress**
+
+   * Prevent duplicate clicks while the selected job is running
+   * Re-enable it when the run finishes or errors
+   * Keep this logic simple on the client side
+
+5. **Show which job is running in the Status box**
+
+   * When a run starts, display something like:
+
+     * `Running Job #2 — Core Pilates · Saturday · 12:27 AM · Stephanie Sanders`
+   * When it completes, keep the result clear and tied to that job
+
+6. **Add a small loading indicator**
+
+   * Keep it minimal: simple `Running...` text or subtle animated dots/spinner is enough
+   * Do not add big UI libraries
+
+7. **Keep the current layout**
+
+   * Do NOT redesign the four-card layout
+   * Do NOT add forms yet
+   * Do NOT add edit/delete/toggle features yet
+
+Style requirements:
+
+* simple
+* polished
+* mobile-friendly
+* beginner-friendly code
+* no framework rewrite
+* no over-engineering
+
+After making changes, briefly explain:
+
+* which small UI improvements were added
+* how duplicate runs are prevented
+* how the empty state behaves
+* anything intentionally left for a later step
