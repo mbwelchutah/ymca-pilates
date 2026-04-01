@@ -33,13 +33,33 @@ function buildHtml(jobs) {
     unknown:   'Unknown',
   };
 
+  // Format an ISO timestamp to a short local time string, or "Never".
+  function fmtRunAt(iso) {
+    if (!iso) return 'Never';
+    try {
+      return new Date(iso).toLocaleString('en-US', {
+        timeZone:  'America/Los_Angeles',
+        month:     'short',
+        day:       'numeric',
+        hour:      'numeric',
+        minute:    '2-digit',
+        hour12:    true,
+      });
+    } catch (e) { return iso; }
+  }
+
+  // Render a last_result value as a colored badge, or an em-dash for null.
+  function resultBadge(r) {
+    if (!r) return '<span class="badge badge-result-none">\u2014</span>';
+    return '<span class="badge badge-result-' + esc(r) + '">' + esc(r) + '</span>';
+  }
+
   const jobRowsHtml = hasJobs
     ? jobs.map(j => {
-        const phase  = jobPhase(j);
-        const active = j.is_active
-          ? '<span class="badge badge-active">active</span>'
-          : '<span class="badge badge-inactive">inactive</span>';
-        const phaseBadge = `<span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>`;
+        const phase         = jobPhase(j);
+        const phaseBadge    = '<span class="badge badge-phase-' + phase + '">' + (PHASE_LABEL[phase] || phase) + '</span>';
+        const lastRunCell   = fmtRunAt(j.last_run_at);
+        const lastResBadge  = resultBadge(j.last_result);
         return `
         <tr class="job-row"
             data-id="${j.id}"
@@ -48,14 +68,16 @@ function buildHtml(jobs) {
             data-time="${esc(j.class_time || '')}"
             data-instructor="${esc(j.instructor || '')}"
             data-phase="${esc(phase)}"
+            data-last-run-at="${esc(j.last_run_at || '')}"
+            data-last-result="${esc(j.last_result || '')}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
           <td><strong>${esc(j.class_title)}</strong></td>
           <td>${esc(j.day_of_week || '\u2014')}</td>
           <td>${esc(j.class_time  || '\u2014')}</td>
-          <td>${esc(j.instructor  || '\u2014')}</td>
           <td>${phaseBadge}</td>
-          <td>${active}</td>
+          <td class="col-last-run">${lastRunCell}</td>
+          <td>${lastResBadge}</td>
         </tr>`;
       }).join('')
     : '<tr><td colspan="7" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
@@ -191,6 +213,21 @@ function buildHtml(jobs) {
     .badge-phase-late      { background: #d4edda; color: #155724; }
     .badge-phase-unknown   { background: #f0f0f0; color: #aaa; }
 
+    /* Result badge colours */
+    .badge-result-success            { background: #d4edda; color: #155724; }
+    .badge-result-already_registered { background: #d1ecf1; color: #0c5460; }
+    .badge-result-error              { background: #f8d7da; color: #721c24; }
+    .badge-result-none               { background: transparent; color: #ccc; font-weight: 400; }
+
+    /* Last run / result row in selected-job card */
+    .selected-run-info {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #888;
+    }
+    .selected-run-info .run-label { font-weight: 600; color: #aaa; }
+    .col-last-run { font-size: 12px; color: #888; white-space: nowrap; }
+
     /* ---- actions ---- */
     .actions { display: flex; flex-direction: column; gap: 12px; }
     .btn {
@@ -249,6 +286,13 @@ function buildHtml(jobs) {
         <div class="selected-summary" id="sel-title">${first ? esc(first.class_title) : 'None'}</div>
         <div class="selected-meta"    id="sel-meta">${sel}</div>
         <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
+        <div class="selected-run-info">
+          <span class="run-label">Last run:</span>
+          <span id="sel-last-run">${first ? fmtRunAt(first.last_run_at) : 'Never'}</span>
+          &nbsp;&middot;&nbsp;
+          <span class="run-label">Result:</span>
+          <span id="sel-last-result">${first ? resultBadge(first.last_result) : resultBadge(null)}</span>
+        </div>
       </div>
     </div>
 
@@ -262,9 +306,9 @@ function buildHtml(jobs) {
             <th>Class</th>
             <th>Day</th>
             <th>Time</th>
-            <th>Instructor</th>
             <th>Phase</th>
-            <th>Status</th>
+            <th>Last Run</th>
+            <th>Last Result</th>
           </tr>
         </thead>
         <tbody id="jobs-body">
@@ -302,15 +346,33 @@ function buildHtml(jobs) {
 
   <script>
     // ---- state ----
-    let selectedJobId    = ${first ? first.id : 'null'};
-    let selectedJobLabel = ${JSON.stringify(firstLabel)};
-    let selectedJobPhase = ${JSON.stringify(firstPhase)};
+    let selectedJobId        = ${first ? first.id : 'null'};
+    let selectedJobLabel     = ${JSON.stringify(firstLabel)};
+    let selectedJobPhase     = ${JSON.stringify(firstPhase)};
+    let selectedJobLastRunAt = ${JSON.stringify(first ? (first.last_run_at || '') : '')};
+    let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result || '') : '')};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
     let dotsTimer             = null;
 
     const PHASE_LABEL = ${JSON.stringify(PHASE_LABEL)};
+
+    // ---- display helpers (mirror server-side versions) ----
+    function fmtRunAt(iso) {
+      if (!iso) return 'Never';
+      try {
+        return new Date(iso).toLocaleString('en-US', {
+          timeZone: 'America/Los_Angeles',
+          month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit', hour12: true,
+        });
+      } catch(e) { return iso; }
+    }
+    function resultBadge(r) {
+      if (!r) return '<span class="badge badge-result-none">\u2014</span>';
+      return '<span class="badge badge-result-' + r + '">' + r + '</span>';
+    }
 
     // Highlight the first row on load.
     (function() {
@@ -333,8 +395,10 @@ function buildHtml(jobs) {
 
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
-      selectedJobId    = row.dataset.id;
-      selectedJobPhase = row.dataset.phase || 'unknown';
+      selectedJobId         = row.dataset.id;
+      selectedJobPhase      = row.dataset.phase      || 'unknown';
+      selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
+      selectedJobLastResult = row.dataset.lastResult || '';
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
@@ -344,8 +408,10 @@ function buildHtml(jobs) {
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
       const ph = selectedJobPhase;
-      document.getElementById('sel-phase').innerHTML =
+      document.getElementById('sel-phase').innerHTML      =
         '<span class="badge badge-phase-' + ph + '">' + (PHASE_LABEL[ph] || ph) + '</span>';
+      document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
+      document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
     }
 
     // ---- animated dots ----
