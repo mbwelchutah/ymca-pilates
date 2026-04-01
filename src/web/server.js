@@ -3,6 +3,7 @@
 // Playwright booking automation in the same process.
 const http = require('http');
 const { getJobById } = require('../db/jobs');
+const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 
 const PORT = process.env.PORT || 5000;
@@ -76,6 +77,7 @@ const html = `<!DOCTYPE html>
     <p class="subtitle">Core Pilates · Wed 7:45 AM · Stephanie</p>
     <button id="btn" onclick="register()">Register Me</button>
     <button id="btn2" onclick="runFromDb()" style="margin-top: 12px; background: #457b9d;">Run Saved Job</button>
+    <button id="btn3" onclick="cleanTestJobs()" style="margin-top: 12px; background: #6c757d;">Clean Test Jobs</button>
     <div id="status"></div>
   </div>
   <script>
@@ -141,6 +143,28 @@ const html = `<!DOCTYPE html>
 
     function register() { startJob('/register', document.getElementById('btn'), '✅ Registered!'); }
     function runFromDb() { startJob('/run-job', document.getElementById('btn2'), '✅ Done!'); }
+
+    async function cleanTestJobs() {
+      const btn = document.getElementById('btn3');
+      const statusEl = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = 'Cleaning...';
+      statusEl.className = 'running';
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Cleaning old test jobs...';
+      try {
+        const res = await fetch('/clean-test-jobs');
+        const data = await res.json();
+        statusEl.textContent = data.log;
+        statusEl.className = data.success ? 'success' : 'error';
+      } catch (e) {
+        statusEl.className = 'error';
+        statusEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.textContent = 'Clean Test Jobs';
+        btn.disabled = false;
+      }
+    }
   </script>
 </body>
 </html>`;
@@ -183,6 +207,15 @@ const server = http.createServer(async (req, res) => {
     console.log('Running job from DB:', dbJob.class_title);
     runInBackground({ classTitle: dbJob.class_title, classTime: dbJob.class_time, dayOfWeek: dbJob.day_of_week, maxAttempts: 1 });
     json({ started: true });
+
+  } else if (req.method === 'GET' && req.url === '/clean-test-jobs') {
+    const db = openDb();
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const deleted = db.prepare(
+      `DELETE FROM jobs WHERE class_title = 'Core Pilates' AND created_at < ?`
+    ).run(cutoff);
+    const remaining = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
+    json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
 
   } else {
     res.writeHead(404);
