@@ -20,10 +20,18 @@ function buildHtml(jobs, error, editError) {
     ? `Job #${first.id} \u2014 ${first.class_title} \u00b7 ${first.day_of_week || ''} \u00b7 ${first.class_time || ''} \u00b7 ${first.instructor || ''}`
     : null;
 
-  // Compute booking phase for each job (server-side, using scheduler module).
-  function jobPhase(j) {
-    try { return getPhase(j).phase; } catch(e) { return 'unknown'; }
+  // Compute booking phase + booking-open timestamp for a job.
+  // Returns { phase, bookingOpenMs } where bookingOpenMs is epoch ms (or null).
+  function jobInfo(j) {
+    try {
+      const r = getPhase(j);
+      return { phase: r.phase, bookingOpenMs: r.bookingOpen ? r.bookingOpen.getTime() : null };
+    } catch(e) {
+      return { phase: 'unknown', bookingOpenMs: null };
+    }
   }
+  // Thin wrapper kept for the two callers that only need phase.
+  function jobPhase(j) { return jobInfo(j).phase; }
 
   // Mirror of the scheduler's already-booked logic for display purposes.
   function isBookedSS(j) {
@@ -72,7 +80,7 @@ function buildHtml(jobs, error, editError) {
 
   const jobRowsHtml = hasJobs
     ? jobs.map(j => {
-        const phase         = jobPhase(j);
+        const { phase, bookingOpenMs } = jobInfo(j);
         const phaseBadge    = '<span class="badge badge-phase-' + phase + '">' + (PHASE_LABEL[phase] || phase) + '</span>';
         const jobBooked     = isBookedSS(j);
         const bookedBadge   = jobBooked
@@ -94,6 +102,7 @@ function buildHtml(jobs, error, editError) {
             data-is-active="${j.is_active ? '1' : '0'}"
             data-last-success-at="${esc(j.last_success_at || '')}"
             data-last-error-msg="${esc(j.last_error_message || '')}"
+            data-booking-open="${bookingOpenMs || ''}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
           <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong>${j.last_result === 'error' && j.last_error_message ? ` <span class="row-warn" title="${esc(j.last_error_message)}">&#9888;</span>` : ''}</td>
@@ -104,14 +113,16 @@ function buildHtml(jobs, error, editError) {
           <td>${phaseBadge}${bookedBadge}</td>
           <td class="col-last-run">${lastRunCell}</td>
           <td>${lastResBadge}</td>
+          <td class="countdown-cell job-countdown"></td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="9" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
+    : '<tr><td colspan="10" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
 
   const sel = first
     ? `${esc(first.class_title)} \u00b7 ${esc(first.day_of_week || '')} \u00b7 ${esc(first.class_time || '')} \u00b7 ${esc(first.instructor || '')}`
     : 'None';
-  const firstPhase = first ? jobPhase(first) : 'unknown';
+  const { phase: firstPhase, bookingOpenMs: firstBookingOpenMs } =
+    first ? jobInfo(first) : { phase: 'unknown', bookingOpenMs: null };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -431,6 +442,30 @@ function buildHtml(jobs, error, editError) {
       color: #1a6b3a;
     }
     .sel-booked-box .booked-icon { font-size: 14px; }
+
+    /* Countdown timer */
+    .countdown-cell {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: #555;
+      white-space: nowrap;
+    }
+    .sel-countdown {
+      font-size: 13px;
+      color: #777;
+      margin-top: 5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .countdown-warning {
+      color: #d62828 !important;
+      font-weight: 600;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%   { opacity: 1; }
+      50%  { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -450,6 +485,7 @@ function buildHtml(jobs, error, editError) {
         <div class="selected-meta"    id="sel-meta">${sel}</div>
         <div class="selected-date"    id="sel-date" style="font-size:13px;color:#888;margin-top:4px;">Date: <strong>${first && first.target_date ? esc(first.target_date) : '\u2014'}</strong></div>
         <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
+        <div class="sel-countdown"    id="sel-countdown"></div>
         <div id="sel-booked-box" class="sel-booked-box" ${firstIsBooked ? '' : 'style="display:none"'}>
           <span class="booked-icon">&#10003;</span>
           <span id="sel-booked-text">${first && first.target_date ? `Booked for ${esc(first.target_date)}` : 'Booked this week'}</span>
@@ -484,6 +520,7 @@ function buildHtml(jobs, error, editError) {
               <th>Phase</th>
               <th>Last Run</th>
               <th>Last Result</th>
+              <th>Opens In</th>
             </tr>
           </thead>
           <tbody id="jobs-body">
@@ -623,9 +660,10 @@ function buildHtml(jobs, error, editError) {
     let selectedJobLastRunAt  = ${JSON.stringify(first ? (first.last_run_at  || '') : '')};
     let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result  || '') : '')};
     let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
-    let selectedJobIsActive    = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
+    let selectedJobIsActive      = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
     let selectedJobLastSuccessAt = ${JSON.stringify(first ? (first.last_success_at || '') : '')};
-    let selectedJobLastErrMsg  = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
+    let selectedJobLastErrMsg    = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
+    let selectedJobBookingOpen   = ${firstBookingOpenMs || 'null'};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
@@ -666,6 +704,50 @@ function buildHtml(jobs, error, editError) {
       return successDate >= weekStart;
     }
 
+    // Formats ms-until-open as H:MM:SS countdown string, or returns null when
+    // the booking window is already open (diff <= 0) or unknown (null).
+    function formatCountdown(bookingOpenMs) {
+      if (!bookingOpenMs) return null;
+      const diff = bookingOpenMs - Date.now();
+      if (diff <= 0) return null;                  // open — caller shows 🔥 OPEN
+      const totalSec = Math.ceil(diff / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const mm = String(m).padStart(2, '0');
+      const ss = String(s).padStart(2, '0');
+      return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+    }
+
+    // Applies countdown text + warning class to a single element.
+    // el: DOM element.  bookingOpenMs: epoch ms for when booking opens.
+    function applyCountdown(el, bookingOpenMs) {
+      if (!bookingOpenMs) { el.textContent = ''; el.classList.remove('countdown-warning'); return; }
+      const diff     = bookingOpenMs - Date.now();
+      const label    = formatCountdown(bookingOpenMs);
+      const isWarning = diff > 0 && diff <= 60000;
+      if (diff <= 0) {
+        el.textContent = '\uD83D\uDD25 OPEN';
+        el.classList.remove('countdown-warning');
+      } else {
+        el.textContent = label;
+        el.classList.toggle('countdown-warning', isWarning);
+      }
+    }
+
+    // Tick every second: update all row countdown cells + the card countdown.
+    setInterval(function() {
+      // Table rows
+      document.querySelectorAll('.job-row').forEach(function(row) {
+        const boms = row.dataset.bookingOpen ? Number(row.dataset.bookingOpen) : null;
+        const cell = row.querySelector('.job-countdown');
+        if (cell) applyCountdown(cell, boms);
+      });
+      // Selected Job card
+      const cardCd = document.getElementById('sel-countdown');
+      if (cardCd) applyCountdown(cardCd, selectedJobBookingOpen);
+    }, 1000);
+
     // On load: restore the previously selected job from localStorage, or fall
     // back to the first row.  selectJob() also persists the choice going forward.
     (function() {
@@ -703,6 +785,7 @@ function buildHtml(jobs, error, editError) {
       selectedJobIsActive      = row.dataset.isActive      === '1';
       selectedJobLastSuccessAt = row.dataset.lastSuccessAt  || '';
       selectedJobLastErrMsg    = row.dataset.lastErrorMsg   || '';
+      selectedJobBookingOpen   = row.dataset.bookingOpen ? Number(row.dataset.bookingOpen) : null;
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
@@ -720,6 +803,10 @@ function buildHtml(jobs, error, editError) {
         'Date: <strong>' + (selectedJobTargetDate || '\u2014') + '</strong>';
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
+
+      // Refresh card countdown immediately on selection (ticker handles the rest).
+      const cdEl = document.getElementById('sel-countdown');
+      if (cdEl) applyCountdown(cdEl, selectedJobBookingOpen);
 
       // Show or hide the "Booked" badge.
       const bookedBox  = document.getElementById('sel-booked-box');
