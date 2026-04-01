@@ -7,7 +7,8 @@
     "bot:db": "node src/bot/run-from-db.js",
     "scheduler:test": "node src/scheduler/test-booking-window.js",
     "scheduler:once": "node src/scheduler/run-scheduler-once.js",
-    "scheduler:run":  "node src/scheduler/run-eligible-jobs-once.js"
+    "scheduler:run":        "node src/scheduler/run-eligible-jobs-once.js",
+    "db:create-test-job":  "node src/db/create-test-job.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
