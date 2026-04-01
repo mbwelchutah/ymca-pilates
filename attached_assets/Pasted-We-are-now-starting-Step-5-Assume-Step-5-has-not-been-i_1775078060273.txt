@@ -1,0 +1,159 @@
+We are now starting **Step 5**.
+
+Assume Step 5 has **not** been implemented yet.
+
+Current goal:
+Build the **first usable multi-job control panel** for this YMCA booking app and improve the interface so it is clearer, more polished, and easier to use on desktop and phone.
+
+Important assumptions:
+
+* Do NOT assume a jobs list page already exists
+* Do NOT assume a dropdown selector already exists
+* Do NOT assume the UI is dynamic yet
+* Treat the current interface as too basic and in need of improvement
+
+Current project context:
+
+* There is a Playwright booking bot
+* There is a SQLite jobs table
+* There is a scheduler layer
+* There is a simple web UI in `src/web/server.js`
+* The next step is to make the UI actually useful for managing saved jobs
+
+## Step 5 requirements
+
+Build a **simple jobs dashboard** in the existing web app.
+
+### Main goals
+
+1. Show **all saved jobs** from the database on the page
+2. Make it possible to **choose and run a specific job**
+3. Improve the visual layout so the page feels like a real control panel
+4. Keep the patch beginner-friendly and do not over-engineer
+
+## What to build
+
+### A. Jobs list / dashboard
+
+On the main page, render all saved jobs from SQLite.
+
+For each job, show:
+
+* id
+* class title
+* day of week
+* class time
+* instructor
+* active / inactive status
+
+### B. Selected job area
+
+At the top of the page, show a clear “selected job” summary card.
+
+When a user clicks a job in the list, update the selected-job summary.
+
+### C. Run button for selected job
+
+Add a button that runs the currently selected job.
+
+This should call a route like:
+
+* `/run-job?id=<selectedJobId>`
+
+### D. Interface improvement
+
+Improve the layout so it is easier to understand:
+
+* a clean card-style layout
+* clearer typography
+* spacing between sections
+* a visible selected-job panel
+* better separation between actions and status messages
+* mobile-friendly width and spacing
+
+Keep it simple:
+
+* plain server-rendered HTML/CSS is fine
+* no framework rewrite
+* no React
+* no major architecture changes
+
+### E. Status/result area
+
+Keep a single status box that shows:
+
+* running
+* success
+* error
+
+This should update when a job is run.
+
+## Technical requirements
+
+### In `src/web/server.js`
+
+Please implement the smallest safe version of all this.
+
+Do NOT:
+
+* change DB schema
+* change booking logic
+* change scheduler logic
+* add authentication
+* add edit/delete forms yet
+* add drag-and-drop or advanced UI features
+* split into many files unless absolutely necessary
+
+### Data loading
+
+* Load all jobs from the DB
+* If there are no jobs, show a friendly “No jobs found” message
+
+### Job selection
+
+* Default to the first job in the list
+* Let the user change selection by clicking a job row/card or by a simple selector
+* Keep the behavior obvious and easy to follow
+
+### Running a job
+
+* Use the selected job id
+* Map DB fields to the bot shape as needed
+* Reuse the existing run-job logic if present, but do not assume it exists; add it if needed
+
+## UI style direction
+
+Aim for:
+
+* cleaner than the current basic page
+* simple but polished
+* large readable buttons
+* card layout
+* clear section headings like:
+
+  * Selected Job
+  * Saved Jobs
+  * Actions
+  * Status
+
+Do not make it flashy. Make it useful.
+
+## Deliverables
+
+Please implement:
+
+1. a jobs dashboard on the main page
+2. selected-job summary
+3. run-selected-job button
+4. improved page styling/layout
+5. clear status area
+
+## Explain after changes
+
+After making the changes, explain:
+
+* what Step 5 added
+* which files were changed
+* how the job selection works
+* how to test it in Replit
+* anything still intentionally left for a future step
