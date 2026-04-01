@@ -40,25 +40,62 @@ function parseTime(classTime) {
 }
 
 /**
- * Returns the next occurrence of dayOfWeek at the given hour/minute,
+ * Returns the Pacific UTC offset in hours at the given Date.
+ * e.g. -7 during PDT (summer), -8 during PST (winter).
+ * Uses Intl so it correctly handles daylight saving transitions.
+ */
+function pacificOffset(date) {
+  const tz = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    timeZoneName: 'shortOffset',
+  }).formatToParts(date).find(p => p.type === 'timeZoneName').value; // e.g. "GMT-7"
+  const m = tz.match(/GMT([+-])(\d+)/);
+  return m ? parseInt(m[1] + m[2], 10) : -7;
+}
+
+/**
+ * Returns the next occurrence of dayOfWeek at the given hour/minute IN PACIFIC TIME,
  * starting from `now`. If today is that day but the time has passed, returns next week.
+ *
+ * Bug fix: the old code used setHours() which uses the SYSTEM local timezone.
+ * On a UTC server, setHours(7, 45) = 7:45 UTC = 00:45 PDT — wrong.
+ * Fix: read today's date components in Pacific via Intl, then use Date.UTC()
+ * with the Pacific offset applied, so the system timezone is never involved.
  */
 function nextOccurrence(dayOfWeek, hours, minutes, now) {
   const targetDay = DAYS.indexOf(dayOfWeek);
   if (targetDay === -1) throw new Error('Unknown day_of_week: ' + dayOfWeek);
 
-  const result = new Date(now);
-  result.setSeconds(0, 0);
-  result.setHours(hours, minutes, 0, 0);
+  // Read the current date/time components in Pacific timezone
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+  });
+  const get = type => fmt.formatToParts(now).find(p => p.type === type).value;
 
-  const todayDay = now.getDay();
-  let daysUntil = (targetDay - todayDay + 7) % 7;
+  const pacYear    = parseInt(get('year'),   10);
+  const pacMonth   = parseInt(get('month'),  10) - 1; // 0-indexed for Date.UTC
+  const pacDay     = parseInt(get('day'),    10);
+  const pacHour    = parseInt(get('hour'),   10) % 24; // guard against "24" at midnight
+  const pacMinute  = parseInt(get('minute'), 10);
 
-  // If today is the target day but the time has already passed, go to next week
-  if (daysUntil === 0 && now >= result) daysUntil = 7;
+  const shortDays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayIndex = shortDays.indexOf(get('weekday'));
+  let daysUntil    = (targetDay - todayIndex + 7) % 7;
 
-  result.setDate(result.getDate() + daysUntil);
-  return result;
+  // If today is target day but class time has already passed, use next week
+  if (daysUntil === 0 &&
+      (pacHour > hours || (pacHour === hours && pacMinute >= minutes))) {
+    daysUntil = 7;
+  }
+
+  // Build a UTC Date representing hours:minutes Pacific on the target calendar day.
+  // Date.UTC handles day overflow (e.g. pacDay + 5 rolling past month end) correctly.
+  const targetDayUTC = new Date(Date.UTC(pacYear, pacMonth, pacDay + daysUntil));
+  const offset       = pacificOffset(targetDayUTC); // e.g. -7 for PDT
+  // 7:45 AM Pacific at UTC-7 → UTC hour = 7 - (-7) = 14
+  return new Date(Date.UTC(pacYear, pacMonth, pacDay + daysUntil, hours - offset, minutes));
 }
 
 /**

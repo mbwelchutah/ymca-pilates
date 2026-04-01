@@ -20,13 +20,15 @@ const job = {
   dayOfWeek:   dbJob.day_of_week,
 };
 
+const { parseTime }              = require('./booking-window');
 const { nextClass, bookingOpen } = getBookingWindow(job);
 const { phase, msUntilOpen }     = getPhase(job);
 
 const fmt = d => d.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' });
+const { hours, minutes } = parseTime(job.classTime);
 
+console.log('Parsed time:   ', `${hours}:${String(minutes).padStart(2, '0')} (hour=${hours}, min=${minutes})`);
 console.log('Next class:    ', fmt(nextClass));
 console.log('Booking opens: ', fmt(bookingOpen));
 console.log('Current phase: ', phase);
-console.log('ms until open: ', msUntilOpen);
 console.log('min until open:', Math.round(msUntilOpen / 60000));
