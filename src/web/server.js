@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getPhase } = require('../scheduler/booking-window');
@@ -13,7 +13,7 @@ const HOST = '0.0.0.0';
 // ---------------------------------------------------------------------------
 // HTML builder — generates the full page with jobs injected server-side.
 // ---------------------------------------------------------------------------
-function buildHtml(jobs) {
+function buildHtml(jobs, error) {
   const hasJobs = jobs && jobs.length > 0;
   const first   = hasJobs ? jobs[0] : null;
   const firstLabel = first
@@ -289,6 +289,49 @@ function buildHtml(jobs) {
       padding-top: 10px;
     }
     .last-run strong { color: #999; }
+
+    /* ---- create job form ---- */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+    @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-field.full-width { grid-column: 1 / -1; }
+    .form-field label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #bbb;
+    }
+    .form-field label .req { color: #e63946; margin-left: 2px; }
+    .form-field input,
+    .form-field select {
+      border: 1.5px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 14px;
+      color: #1a1a2e;
+      background: #fafafa;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    .form-field input:focus,
+    .form-field select:focus { border-color: #457b9d; background: #fff; }
+    .form-error {
+      background: #f8d7da;
+      color: #721c24;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 14px;
+    }
+    .btn-create { background: #457b9d; color: white; margin-top: 6px; }
+    .btn-create:hover { background: #2d6080; }
   </style>
 </head>
 <body>
@@ -356,6 +399,50 @@ function buildHtml(jobs) {
         <button class="btn btn-muted" id="btn-clean" onclick="cleanTestJobs()">
           Clean Old Test Jobs
         </button>
+      </div>
+    </div>
+
+    <!-- Create Job -->
+    <div class="card">
+      <div class="card-header"><h2>Create Job</h2></div>
+      <div class="card-body">
+        ${error ? `<div class="form-error">&#9888; ${esc(error)}</div>` : ''}
+        <form method="POST" action="/add-job">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Title<span class="req">*</span></label>
+              <input type="text" name="title" placeholder="Core Pilates" required>
+            </div>
+            <div class="form-field">
+              <label>Instructor<span class="req">*</span></label>
+              <input type="text" name="instructor" placeholder="Stephanie Sanders" required>
+            </div>
+            <div class="form-field">
+              <label>Day<span class="req">*</span></label>
+              <select name="day" required>
+                <option value="">— select —</option>
+                <option>Sunday</option>
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option selected>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Time<span class="req">*</span></label>
+              <input type="text" name="time" placeholder="7:45 AM" required>
+            </div>
+            <div class="form-field full-width">
+              <label>Target Date <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+              <input type="date" name="target_date">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-create" style="margin-top:18px;width:100%;">
+            Save Job
+          </button>
+        </form>
       </div>
     </div>
 
@@ -632,9 +719,10 @@ const server = http.createServer((req, res) => {
   const path   = parsed.pathname;
 
   if (req.method === 'GET' && path === '/') {
-    const jobs = getAllJobs();
+    const jobs  = getAllJobs();
+    const error = parsed.searchParams.get('error') || null;
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(buildHtml(jobs));
+    res.end(buildHtml(jobs, error));
 
   } else if (req.method === 'GET' && path === '/status') {
     json(jobState);
@@ -670,6 +758,44 @@ const server = http.createServer((req, res) => {
     ).run(cutoff);
     const remaining = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
     json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
+
+  } else if (req.method === 'POST' && path === '/add-job') {
+    // Collect the POST body (URL-encoded form data).
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      // Parse "key=value&key=value" without external libraries.
+      const fields = {};
+      body.split('&').forEach(pair => {
+        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+        if (k) fields[k] = (v || '').trim();
+      });
+
+      const classTitle = fields.title      || '';
+      const dayOfWeek  = fields.day        || '';
+      const classTime  = fields.time       || '';
+      const instructor = fields.instructor || '';
+      const targetDate = fields.target_date || null;
+
+      // Validate required fields — same rules as the CLI script.
+      const missing = [];
+      if (!classTitle) missing.push('title');
+      if (!dayOfWeek)  missing.push('day');
+      if (!classTime)  missing.push('time');
+      if (!instructor) missing.push('instructor');
+
+      if (missing.length > 0) {
+        const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
+        res.writeHead(302, { Location: '/?error=' + msg });
+        res.end();
+        return;
+      }
+
+      const id = createJob({ classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
+      console.log(`Created job #${id} via web form: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+      res.writeHead(302, { Location: '/' });
+      res.end();
+    });
 
   } else {
     res.writeHead(404);
