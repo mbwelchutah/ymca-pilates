@@ -154,6 +154,12 @@ function buildHtml(jobs, error, editError) {
     .page-header h1 { font-size: 23px; font-weight: 700; color: #1a1a2e; }
     .page-header p  { font-size: 14px; color: #888; margin-top: 5px; }
 
+    /* ---- next-job global banner ---- */
+    .banner         { background:#f1faee; border:1px solid #d8e2dc; padding:10px 14px; border-radius:8px; font-size:14px; }
+    .banner.hidden  { display:none; }
+    .banner.warning { background:#fff3cd; border-color:#ffeeba; }
+    .banner.sniper  { background:#ffe5e5; border-color:#ffb3b3; color:#d62828; font-weight:600; }
+
     /* ---- cards ---- */
     .card {
       background: white;
@@ -511,6 +517,8 @@ function buildHtml(jobs, error, editError) {
       <p>Booking control panel</p>
     </div>
 
+    <div id="next-job-banner" class="banner hidden"></div>
+
     <!-- Selected Job -->
     <div class="card">
       <div class="card-header"><h2>Selected Job</h2></div>
@@ -833,7 +841,7 @@ function buildHtml(jobs, error, editError) {
         const cell = row.querySelector('.job-countdown');
         if (cell) applyCountdown(cell, boms);
 
-        if (boms && !isRowBooked(row)) {
+        if (boms && !isRowBooked(row) && row.dataset.isActive === '1') {
           const diff = boms - now;
           if (diff > 0 && diff < nextDiff) {
             nextDiff = diff;
@@ -845,6 +853,24 @@ function buildHtml(jobs, error, editError) {
       // Apply / remove the .next-job highlight.
       rows.forEach(function(r) { r.classList.remove('next-job'); });
       if (nextRow) nextRow.classList.add('next-job');
+
+      // Update the global next-job banner.
+      const banner = document.getElementById('next-job-banner');
+      if (banner) {
+        if (!nextRow) {
+          banner.classList.add('hidden');
+        } else {
+          banner.classList.remove('hidden', 'warning', 'sniper');
+          const nextTitle = nextRow.dataset.title || ('Job #' + nextRow.dataset.id);
+          if (nextDiff <= 0) {
+            banner.textContent = '\uD83D\uDD25 ' + nextTitle + ' \u2014 booking open now';
+            banner.classList.add('sniper');
+          } else {
+            banner.textContent = '\u23F3 ' + nextTitle + ' opens in ' + formatCountdown(nextDiff);
+            if (nextDiff <= 60000) banner.classList.add('warning');
+          }
+        }
+      }
 
       // Auto-scroll to the next-to-open row only when the user hasn't pinned one.
       if (!userPinned && nextRow) {
