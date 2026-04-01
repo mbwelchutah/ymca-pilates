@@ -195,4 +195,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('Port ' + PORT + ' already in use — kill the stale process and retry');
+  } else {
+    console.error('Server error:', err);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
