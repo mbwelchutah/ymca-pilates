@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getPhase } = require('../scheduler/booking-window');
@@ -13,7 +13,7 @@ const HOST = '0.0.0.0';
 // ---------------------------------------------------------------------------
 // HTML builder — generates the full page with jobs injected server-side.
 // ---------------------------------------------------------------------------
-function buildHtml(jobs, error) {
+function buildHtml(jobs, error, editError) {
   const hasJobs = jobs && jobs.length > 0;
   const first   = hasJobs ? jobs[0] : null;
   const firstLabel = first
@@ -71,9 +71,10 @@ function buildHtml(jobs, error) {
             data-last-run-at="${esc(j.last_run_at || '')}"
             data-last-result="${esc(j.last_result || '')}"
             data-target-date="${esc(j.target_date || '')}"
+            data-is-active="${j.is_active ? '1' : '0'}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
-          <td><strong>${esc(j.class_title)}</strong></td>
+          <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong></td>
           <td>${esc(j.day_of_week  || '\u2014')}</td>
           <td>${esc(j.class_time   || '\u2014')}</td>
           <td>${esc(j.target_date  || '\u2014')}</td>
@@ -330,8 +331,27 @@ function buildHtml(jobs, error) {
       font-weight: 500;
       margin-bottom: 14px;
     }
-    .btn-create { background: #457b9d; color: white; margin-top: 6px; }
-    .btn-create:hover { background: #2d6080; }
+    .btn-create  { background: #457b9d; color: white; }
+    .btn-create:hover  { background: #2d6080; }
+    .btn-danger  { background: #e63946; color: white; }
+    .btn-danger:hover:not(:disabled)  { background: #c1121f; }
+    .btn-toggle  { background: #f0f0f0; color: #555; }
+    .btn-toggle:hover:not(:disabled)  { background: #e0e0e0; }
+    .btn-toggle.is-active { background: #fff3cd; color: #856404; }
+    .btn-toggle.is-active:hover:not(:disabled) { background: #ffeeba; }
+
+    /* ---- active dot in table ---- */
+    .dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+      position: relative; top: -1px;
+      flex-shrink: 0;
+    }
+    .dot-on  { background: #28a745; }
+    .dot-off { background: #ccc; }
   </style>
 </head>
 <body>
@@ -399,6 +419,12 @@ function buildHtml(jobs, error) {
         <button class="btn btn-muted" id="btn-clean" onclick="cleanTestJobs()">
           Clean Old Test Jobs
         </button>
+        <button class="btn btn-toggle ${first && !first.is_active ? '' : 'is-active'}" id="btn-toggle" onclick="toggleActive()">
+          ${first ? (first.is_active ? 'Deactivate Job' : 'Activate Job') : 'Toggle Active'}
+        </button>
+        <button class="btn btn-danger" id="btn-delete" onclick="deleteSelectedJob()">
+          Delete Job
+        </button>
       </div>
     </div>
 
@@ -446,6 +472,51 @@ function buildHtml(jobs, error) {
       </div>
     </div>
 
+    <!-- Edit Job -->
+    <div class="card">
+      <div class="card-header"><h2>Edit Selected Job</h2></div>
+      <div class="card-body">
+        ${editError ? `<div class="form-error">&#9888; ${esc(editError)}</div>` : ''}
+        <form method="POST" action="/update-job" id="edit-form">
+          <input type="hidden" name="job_id" id="edit-job-id" value="${first ? first.id : ''}">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Title<span class="req">*</span></label>
+              <input type="text" name="title" id="edit-title" placeholder="Core Pilates"
+                     value="${first ? esc(first.class_title) : ''}" required>
+            </div>
+            <div class="form-field">
+              <label>Instructor<span class="req">*</span></label>
+              <input type="text" name="instructor" id="edit-instructor" placeholder="Stephanie Sanders"
+                     value="${first ? esc(first.instructor || '') : ''}" required>
+            </div>
+            <div class="form-field">
+              <label>Day<span class="req">*</span></label>
+              <select name="day" id="edit-day" required>
+                <option value="">— select —</option>
+                ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d =>
+                  `<option${first && first.day_of_week === d ? ' selected' : ''}>${d}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Time<span class="req">*</span></label>
+              <input type="text" name="time" id="edit-time" placeholder="7:45 AM"
+                     value="${first ? esc(first.class_time || '') : ''}" required>
+            </div>
+            <div class="form-field full-width">
+              <label>Target Date <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+              <input type="date" name="target_date" id="edit-target-date"
+                     value="${first && first.target_date ? esc(first.target_date) : ''}">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-create" style="margin-top:18px;width:100%;">
+            Save Changes
+          </button>
+        </form>
+      </div>
+    </div>
+
     <!-- Status -->
     <div class="card">
       <div class="card-header"><h2>Status</h2></div>
@@ -465,6 +536,7 @@ function buildHtml(jobs, error) {
     let selectedJobLastRunAt  = ${JSON.stringify(first ? (first.last_run_at  || '') : '')};
     let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result  || '') : '')};
     let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
+    let selectedJobIsActive   = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
@@ -514,9 +586,12 @@ function buildHtml(jobs, error) {
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
       selectedJobTargetDate = row.dataset.targetDate || '';
+      selectedJobIsActive   = row.dataset.isActive   === '1';
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
+
+      // Selected Job card
       document.getElementById('sel-id').textContent    = 'Job #' + row.dataset.id;
       document.getElementById('sel-title').textContent = row.dataset.title;
       document.getElementById('sel-meta').textContent  =
@@ -529,6 +604,24 @@ function buildHtml(jobs, error) {
         'Date: <strong>' + (selectedJobTargetDate || '\u2014') + '</strong>';
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
+
+      // Populate the Edit Job form with values from this row
+      document.getElementById('edit-job-id').value     = row.dataset.id;
+      document.getElementById('edit-title').value      = row.dataset.title       || '';
+      document.getElementById('edit-instructor').value = row.dataset.instructor  || '';
+      document.getElementById('edit-time').value       = row.dataset.time        || '';
+      document.getElementById('edit-target-date').value = row.dataset.targetDate || '';
+      const daySelect = document.getElementById('edit-day');
+      for (let i = 0; i < daySelect.options.length; i++) {
+        daySelect.options[i].selected = daySelect.options[i].text === row.dataset.day;
+      }
+
+      // Update Toggle Active button label + style
+      const toggleBtn = document.getElementById('btn-toggle');
+      if (toggleBtn) {
+        toggleBtn.textContent = selectedJobIsActive ? 'Deactivate Job' : 'Activate Job';
+        toggleBtn.classList.toggle('is-active', selectedJobIsActive);
+      }
     }
 
     // ---- animated dots ----
@@ -654,6 +747,42 @@ function buildHtml(jobs, error) {
       );
     }
 
+    async function toggleActive() {
+      if (!selectedJobId) return;
+      const btn = document.getElementById('btn-toggle');
+      btn.disabled = true;
+      try {
+        const body = 'job_id=' + encodeURIComponent(selectedJobId) +
+                     '&is_active=' + (selectedJobIsActive ? '0' : '1');
+        const res = await fetch('/toggle-active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+        if (res.ok) window.location.reload();
+      } catch (e) {
+        btn.disabled = false;
+      }
+    }
+
+    async function deleteSelectedJob() {
+      if (!selectedJobId) return;
+      if (!confirm('Delete Job #' + selectedJobId + '? This cannot be undone.')) return;
+      const btn = document.getElementById('btn-delete');
+      btn.disabled = true;
+      try {
+        const body = 'job_id=' + encodeURIComponent(selectedJobId);
+        const res = await fetch('/delete-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+        if (res.ok) window.location.reload();
+      } catch (e) {
+        btn.disabled = false;
+      }
+    }
+
     async function cleanTestJobs() {
       const btn = document.getElementById('btn-clean');
       const statusEl = document.getElementById('status');
@@ -719,10 +848,11 @@ const server = http.createServer((req, res) => {
   const path   = parsed.pathname;
 
   if (req.method === 'GET' && path === '/') {
-    const jobs  = getAllJobs();
-    const error = parsed.searchParams.get('error') || null;
+    const jobs      = getAllJobs();
+    const error     = parsed.searchParams.get('error')      || null;
+    const editError = parsed.searchParams.get('edit_error') || null;
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(buildHtml(jobs, error));
+    res.end(buildHtml(jobs, error, editError));
 
   } else if (req.method === 'GET' && path === '/status') {
     json(jobState);
@@ -758,6 +888,74 @@ const server = http.createServer((req, res) => {
     ).run(cutoff);
     const remaining = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
     json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
+
+  } else if (req.method === 'POST' && path === '/update-job') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      const fields = {};
+      body.split('&').forEach(pair => {
+        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+        if (k) fields[k] = (v || '').trim();
+      });
+      const id         = parseInt(fields.job_id, 10);
+      const classTitle = fields.title      || '';
+      const dayOfWeek  = fields.day        || '';
+      const classTime  = fields.time       || '';
+      const instructor = fields.instructor || '';
+      const targetDate = fields.target_date || null;
+
+      if (!id) { res.writeHead(302, { Location: '/?edit_error=Invalid+job+ID' }); res.end(); return; }
+      const missing = [];
+      if (!classTitle) missing.push('title');
+      if (!dayOfWeek)  missing.push('day');
+      if (!classTime)  missing.push('time');
+      if (!instructor) missing.push('instructor');
+      if (missing.length > 0) {
+        const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
+        res.writeHead(302, { Location: '/?edit_error=' + msg }); res.end(); return;
+      }
+      updateJob(id, { classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
+      console.log(`Updated job #${id} via web form`);
+      res.writeHead(302, { Location: '/' }); res.end();
+    });
+
+  } else if (req.method === 'POST' && path === '/toggle-active') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      const fields = {};
+      body.split('&').forEach(pair => {
+        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+        if (k) fields[k] = (v || '').trim();
+      });
+      const id       = parseInt(fields.job_id, 10);
+      const isActive = fields.is_active === '1';
+      if (id) {
+        setJobActive(id, isActive);
+        console.log(`Set job #${id} is_active=${isActive}`);
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('ok');
+    });
+
+  } else if (req.method === 'POST' && path === '/delete-job') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      const fields = {};
+      body.split('&').forEach(pair => {
+        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+        if (k) fields[k] = (v || '').trim();
+      });
+      const id = parseInt(fields.job_id, 10);
+      if (id) {
+        deleteJob(id);
+        console.log(`Deleted job #${id} via web UI`);
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('ok');
+    });
 
   } else if (req.method === 'POST' && path === '/add-job') {
     // Collect the POST body (URL-encoded form data).

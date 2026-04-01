@@ -51,4 +51,30 @@ function setLastRun(id, status) {
   `).run(ts, status || null, successAt, id);
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRun };
+function updateJob(id, fields) {
+  const db = openDb();
+  db.prepare(`
+    UPDATE jobs
+    SET class_title = ?, day_of_week = ?, class_time = ?, instructor = ?, target_date = ?
+    WHERE id = ?
+  `).run(
+    fields.classTitle,
+    fields.dayOfWeek   || null,
+    fields.classTime   || null,
+    fields.instructor  || null,
+    fields.targetDate  || null,
+    id
+  );
+}
+
+function deleteJob(id) {
+  const db = openDb();
+  db.prepare('DELETE FROM jobs WHERE id = ?').run(id);
+}
+
+function setJobActive(id, isActive) {
+  const db = openDb();
+  db.prepare('UPDATE jobs SET is_active = ? WHERE id = ?').run(isActive ? 1 : 0, id);
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive };
