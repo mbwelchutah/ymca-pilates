@@ -1,0 +1,118 @@
+Add a countdown timer to booking open time ("sniper readiness") in the dashboard UI.
+
+Current state:
+
+* scheduler computes booking open time
+* phase is already calculated (too_early, warmup, sniper, late)
+* UI shows phase and job info
+* jobs may also show "Booked this week"
+
+Goal:
+Show a live countdown to booking open time for each job.
+
+Do NOT:
+
+* change scheduler logic
+* change DB schema
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Pass booking open time to UI
+
+In server-side rendering (server.js):
+
+1. For each job, compute:
+   bookingOpenTime (same logic used in scheduler)
+
+2. Add it to the row as a data attribute:
+
+   data-open-time="2026-04-08T06:45:00.000Z"
+
+---
+
+## PART 2 — Display countdown in UI
+
+1. Add a new column:
+   "Opens In"
+
+2. Initially render a placeholder:
+   "—"
+
+---
+
+## PART 3 — Add client-side countdown
+
+In the existing <script>:
+
+1. For each row:
+
+   * read data-open-time
+   * compute time remaining
+
+2. Create helper:
+
+```js
+function formatCountdown(ms) {
+  if (ms <= 0) return "Open";
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+
+  return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}
+```
+
+3. Update all rows every second:
+
+```js
+setInterval(() => {
+  const now = Date.now();
+
+  document.querySelectorAll("[data-open-time]").forEach(row => {
+    const openTime = new Date(row.dataset.openTime).getTime();
+    const diff = openTime - now;
+
+    const cell = row.querySelector(".countdown-cell");
+    if (cell) {
+      cell.textContent = formatCountdown(diff);
+    }
+  });
+}, 1000);
+```
+
+---
+
+## PART 4 — Enhance Selected Job card
+
+Show prominently:
+
+* Opens in: 03:12:45
+* or:
+  "Open now"
+
+---
+
+## PART 5 — Integrate with phase
+
+Optional but simple:
+
+* if phase === "sniper":
+  show:
+  "🔥 Opening now"
+* if booked:
+  show:
+  "✅ Booked"
+
+---
+
+## After changes, explain:
+
+* how open time is passed to the UI
+* how countdown is computed
+* how often it updates
+* what happens when time passes zero
+* any edge cases left
