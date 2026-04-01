@@ -21,13 +21,23 @@ try {
 }
 
 async function runBookingJob(job) {
-  const { classTitle, classTime, dayOfWeek, maxAttempts: maxAttemptsOpt } = job;
+  const { classTitle, classTime, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
   const DAY_SHORT = {
     Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
     Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat',
   };
-  const dayShort = DAY_SHORT[dayOfWeek] || 'Wed';
+  let dayShort = DAY_SHORT[dayOfWeek] || 'Wed';
+
+  // If targetDate is provided (YYYY-MM-DD), derive the exact day number and
+  // override dayShort from the date itself (more reliable than the DB string).
+  let targetDayNum = null;
+  if (targetDate) {
+    const d = new Date(targetDate + 'T00:00:00Z'); // parse as UTC to avoid tz shift
+    dayShort     = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
+    targetDayNum = d.getUTCDate(); // numeric day-of-month, e.g. 9
+    console.log(`targetDate: ${targetDate} → looking for "${dayShort} ${targetDayNum}" tab`);
+  }
   const classTitleLower = classTitle.toLowerCase();
   // Normalize DB time "7:45 AM" → "7:45 a" to match page text like "7:45 a - 8:45 a"
   const classTimeNorm = classTime
@@ -217,23 +227,52 @@ async function runBookingJob(job) {
       return null;
     }
 
-    // Try each matching day tab until we find the class
+    // Step 3: Find the target day tab then find the class card within it.
     const dayTabs = page.locator(`text=/${dayShort} \\d+/`);
     const dayTabCount = await dayTabs.count();
     console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
-    for (let w = 0; w < dayTabCount; w++) {
-      const tabText = await dayTabs.nth(w).textContent();
-      console.log('Trying tab: ' + tabText.trim());
-      await dayTabs.nth(w).click();
-      await page.waitForTimeout(2000);
-      targetCard = await findTargetCard();
-      if (targetCard) {
-        console.log('Found class on ' + tabText.trim());
-        break;
+    // Helper: scan a set of day-tab locators and return the first card match.
+    async function scanTabs(tabs, count) {
+      for (let w = 0; w < count; w++) {
+        const tabText = await tabs.nth(w).textContent();
+        console.log('Trying tab: ' + tabText.trim());
+        await tabs.nth(w).click();
+        await page.waitForTimeout(2000);
+        const card = await findTargetCard();
+        if (card) { console.log('Found class on ' + tabText.trim()); return card; }
+        console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
       }
-      console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
+      return null;
+    }
+
+    // If targetDate is set, click that specific date tab first (faster and unambiguous).
+    // Fall back to scanning all matching day tabs if the exact tab isn't visible yet.
+    if (targetDayNum !== null) {
+      let exactTabClicked = false;
+      for (let w = 0; w < dayTabCount; w++) {
+        const tabText = await dayTabs.nth(w).textContent();
+        const tabNum  = parseInt(tabText.replace(/\D+/g, ''), 10);
+        if (tabNum === targetDayNum) {
+          console.log('Clicking exact date tab: ' + tabText.trim());
+          await dayTabs.nth(w).click();
+          await page.waitForTimeout(2000);
+          targetCard = await findTargetCard();
+          if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
+          else            console.log('Class not on exact date tab — falling back to full scan.');
+          exactTabClicked = true;
+          break;
+        }
+      }
+      if (!exactTabClicked) {
+        console.log(`Exact tab for day ${targetDayNum} not visible — falling back to full scan.`);
+      }
+    }
+
+    // Fallback: scan all matching day tabs in order (also the path when targetDate is absent).
+    if (!targetCard) {
+      targetCard = await scanTabs(dayTabs, dayTabCount);
     }
 
     if (!targetCard) {
@@ -296,14 +335,27 @@ async function runBookingJob(job) {
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(3000);
 
-        // Re-find the correct day tab after reload
-        const dayTabsRetry = page.locator(`text=/${dayShort} \\d+/`);
+        // Re-find the correct day tab after reload, using exact-date if available.
+        const dayTabsRetry    = page.locator(`text=/${dayShort} \\d+/`);
         const dayTabCountRetry = await dayTabsRetry.count();
-        for (let w = 0; w < dayTabCountRetry; w++) {
-          await dayTabsRetry.nth(w).click();
-          await page.waitForTimeout(2000);
-          targetCard = await findTargetCard();
-          if (targetCard) break;
+        if (targetDayNum !== null) {
+          for (let w = 0; w < dayTabCountRetry; w++) {
+            const tabText = await dayTabsRetry.nth(w).textContent();
+            if (parseInt(tabText.replace(/\D+/g, ''), 10) === targetDayNum) {
+              await dayTabsRetry.nth(w).click();
+              await page.waitForTimeout(2000);
+              targetCard = await findTargetCard();
+              break;
+            }
+          }
+        }
+        if (!targetCard) {
+          for (let w = 0; w < dayTabCountRetry; w++) {
+            await dayTabsRetry.nth(w).click();
+            await page.waitForTimeout(2000);
+            targetCard = await findTargetCard();
+            if (targetCard) break;
+          }
         }
 
         if (targetCard) await targetCard.click().catch(() => {});

@@ -70,18 +70,20 @@ function buildHtml(jobs) {
             data-phase="${esc(phase)}"
             data-last-run-at="${esc(j.last_run_at || '')}"
             data-last-result="${esc(j.last_result || '')}"
+            data-target-date="${esc(j.target_date || '')}"
             onclick="selectJob(this)">
           <td class="job-id">#${j.id}</td>
           <td><strong>${esc(j.class_title)}</strong></td>
           <td>${esc(j.day_of_week  || '\u2014')}</td>
           <td>${esc(j.class_time   || '\u2014')}</td>
+          <td>${esc(j.target_date  || '\u2014')}</td>
           <td>${esc(j.instructor   || '\u2014')}</td>
           <td>${phaseBadge}</td>
           <td class="col-last-run">${lastRunCell}</td>
           <td>${lastResBadge}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="8" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
+    : '<tr><td colspan="9" class="no-jobs"><strong>No jobs found</strong>Create a test job to begin: run <code>npm run db:test</code> in the shell, then reload this page.</td></tr>';
 
   const sel = first
     ? `${esc(first.class_title)} \u00b7 ${esc(first.day_of_week || '')} \u00b7 ${esc(first.class_time || '')} \u00b7 ${esc(first.instructor || '')}`
@@ -304,6 +306,7 @@ function buildHtml(jobs) {
         <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
         <div class="selected-summary" id="sel-title">${first ? esc(first.class_title) : 'None'}</div>
         <div class="selected-meta"    id="sel-meta">${sel}</div>
+        <div class="selected-date"    id="sel-date" style="font-size:13px;color:#888;margin-top:4px;">Date: <strong>${first && first.target_date ? esc(first.target_date) : '\u2014'}</strong></div>
         <div class="selected-phase"   id="sel-phase"><span class="badge badge-phase-${firstPhase}">${PHASE_LABEL[firstPhase] || firstPhase}</span></div>
         <div class="selected-run-info">
           <span class="run-label">Last run:</span>
@@ -326,6 +329,7 @@ function buildHtml(jobs) {
               <th>Class</th>
               <th>Day</th>
               <th>Time</th>
+              <th>Date</th>
               <th>Instructor</th>
               <th>Phase</th>
               <th>Last Run</th>
@@ -368,11 +372,12 @@ function buildHtml(jobs) {
 
   <script>
     // ---- state ----
-    let selectedJobId        = ${first ? first.id : 'null'};
-    let selectedJobLabel     = ${JSON.stringify(firstLabel)};
-    let selectedJobPhase     = ${JSON.stringify(firstPhase)};
-    let selectedJobLastRunAt = ${JSON.stringify(first ? (first.last_run_at || '') : '')};
-    let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result || '') : '')};
+    let selectedJobId         = ${first ? first.id : 'null'};
+    let selectedJobLabel      = ${JSON.stringify(firstLabel)};
+    let selectedJobPhase      = ${JSON.stringify(firstPhase)};
+    let selectedJobLastRunAt  = ${JSON.stringify(first ? (first.last_run_at  || '') : '')};
+    let selectedJobLastResult = ${JSON.stringify(first ? (first.last_result  || '') : '')};
+    let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
     let activeBtn             = null;
     let activeSuccessText     = null;
     let activeBtnOriginalLabel = null;
@@ -421,6 +426,7 @@ function buildHtml(jobs) {
       selectedJobPhase      = row.dataset.phase      || 'unknown';
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
       selectedJobLastResult = row.dataset.lastResult || '';
+      selectedJobTargetDate = row.dataset.targetDate || '';
       selectedJobLabel = 'Job #' + row.dataset.id + ' \u2014 ' +
         [row.dataset.title, row.dataset.day, row.dataset.time, row.dataset.instructor]
           .filter(Boolean).join(' \u00b7 ');
@@ -432,6 +438,8 @@ function buildHtml(jobs) {
       const ph = selectedJobPhase;
       document.getElementById('sel-phase').innerHTML      =
         '<span class="badge badge-phase-' + ph + '">' + (PHASE_LABEL[ph] || ph) + '</span>';
+      document.getElementById('sel-date').innerHTML =
+        'Date: <strong>' + (selectedJobTargetDate || '\u2014') + '</strong>';
       document.getElementById('sel-last-run').textContent = fmtRunAt(selectedJobLastRunAt);
       document.getElementById('sel-last-result').innerHTML = resultBadge(selectedJobLastResult);
     }
@@ -649,6 +657,7 @@ const server = http.createServer((req, res) => {
       classTitle:  dbJob.class_title,
       classTime:   dbJob.class_time,
       dayOfWeek:   dbJob.day_of_week,
+      targetDate:  dbJob.target_date  || null,
       maxAttempts: 1,
     });
     json({ started: true });
