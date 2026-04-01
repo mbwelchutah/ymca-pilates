@@ -29,4 +29,13 @@ function getJobById(id) {
   return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
 }
 
-module.exports = { createJob, getAllJobs, getJobById };
+// Records the current UTC time as the last run timestamp for a job.
+// Call this after a job finishes (success or failure) so the scheduler
+// knows not to re-launch it within the cooldown window.
+function setLastRunAt(id) {
+  const db = openDb();
+  db.prepare('UPDATE jobs SET last_run_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id);
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRunAt };

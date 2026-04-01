@@ -5,11 +5,12 @@
 // Usage:  npm run scheduler:loop
 // Stop:   Ctrl+C  (or kill the process)
 
-const { getAllJobs } = require('../db/jobs');
-const { getPhase }   = require('./booking-window');
-const { runBookingJob } = require('../bot/register-pilates');
+const { getAllJobs, setLastRunAt } = require('../db/jobs');
+const { getPhase }                 = require('./booking-window');
+const { runBookingJob }            = require('../bot/register-pilates');
 
-const INTERVAL_MS     = 60 * 1000; // 60 seconds
+const INTERVAL_MS     = 60 * 1000;      // how often to check (ms)
+const COOLDOWN_MS     = 30 * 60 * 1000; // skip if ran within this window (ms)
 const ELIGIBLE_PHASES = ['warmup', 'sniper'];
 
 // In-memory concurrency guard.
@@ -64,6 +65,16 @@ async function runTick() {
       continue;
     }
 
+    // Cooldown guard — skip if the job ran recently (within COOLDOWN_MS).
+    if (dbJob.last_run_at) {
+      const msSinceRun = Date.now() - new Date(dbJob.last_run_at).getTime();
+      if (msSinceRun < COOLDOWN_MS) {
+        const minAgo = Math.round(msSinceRun / 60000);
+        console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago)`);
+        continue;
+      }
+    }
+
     runningJobs.add(dbJob.id);
     console.log(`  => RUNNING Job #${dbJob.id} (marked as running, ${runningJobs.size} job(s) active)...`);
     try {
@@ -72,8 +83,11 @@ async function runTick() {
     } catch (err) {
       console.error(`  => ERROR Job #${dbJob.id}:`, err.message);
     } finally {
+      // Stamp the DB regardless of success or failure so the next tick
+      // knows this job was attempted and respects the cooldown window.
+      setLastRunAt(dbJob.id);
       runningJobs.delete(dbJob.id);
-      console.log(`  => Job #${dbJob.id} removed from running set (${runningJobs.size} job(s) remaining).`);
+      console.log(`  => Job #${dbJob.id} done. last_run_at stamped. (${runningJobs.size} job(s) still running)`);
     }
   }
 }

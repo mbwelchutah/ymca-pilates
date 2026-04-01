@@ -23,6 +23,15 @@ function openDb() {
     )
   `);
 
+  // Safely add last_run_at to existing databases that predate this column.
+  // SQLite does not support "ADD COLUMN IF NOT EXISTS", so we try and ignore
+  // the error that fires when the column is already there.
+  try {
+    db.exec('ALTER TABLE jobs ADD COLUMN last_run_at TEXT NULL');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) throw err;
+  }
+
   return db;
 }
 
