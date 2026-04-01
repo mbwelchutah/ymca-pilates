@@ -13,7 +13,7 @@ const { createJob, getAllJobs } = require('./jobs');
 
 const LEAD_DAYS    = 3;
 const LEAD_MINUTES = 60;
-const BUFFER_MINUTES = 5; // booking opens this many minutes from now
+const BUFFER_MINUTES = 15; // booking opens this many minutes from now
 
 // Compute the target class datetime in Pacific time
 const offsetMs = (LEAD_DAYS * 24 * 60 + LEAD_MINUTES + BUFFER_MINUTES) * 60 * 1000;
