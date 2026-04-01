@@ -53,6 +53,7 @@ async function runBookingJob(job) {
     await page.click('#submit_button');
     await page.waitForSelector('input[type="password"]');
     await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+    console.log('Submitting login...');
     await Promise.all([
       page.waitForURL(url => {
         const s = url.toString();
@@ -60,11 +61,35 @@ async function runBookingJob(job) {
       }, { timeout: 30000 }),
       page.click('#submit_button'),
     ]);
+    console.log('Login submit complete. URL:', page.url());
+
+    // Auth check: confirm we are no longer on a login page
+    const postLoginUrl = page.url();
+    const passwordFieldGone = await page.locator('input[type="password"]').count() === 0;
+    const stillOnLogin = postLoginUrl.includes('/login') || postLoginUrl.includes('find_account');
+    console.log('Password field gone:', passwordFieldGone, '| Still on login page:', stillOnLogin);
+    if (stillOnLogin || !passwordFieldGone) {
+      console.log('Login appears to have failed.');
+      await snap();
+      return { status: 'error', message: 'Login failed or session not established', screenshotPath };
+    }
+    console.log('Auth looks valid — proceeding.');
 
     // Step 2: Go to schedule and filter by Stephanie Sanders instructor
+    console.log('Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(4000);
+    console.log('Schedule loaded. URL:', page.url());
+
+    // Auth check: if the schedule page is asking us to log in, session didn't carry over
+    const loginPrompt = await page.locator('text=/login to register/i').count();
+    if (loginPrompt > 0) {
+      console.log('Schedule page shows "Login to Register" — session not established.');
+      await snap();
+      return { status: 'error', message: 'Session not established — schedule page requires login', screenshotPath };
+    }
+    console.log('Auth valid on schedule page — continuing.');
 
     // Wait for any dropdown to have options loaded (Bubble.io loads them async)
     await page.waitForFunction(() => {
