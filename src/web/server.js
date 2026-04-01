@@ -834,6 +834,7 @@ function buildHtml(jobs, error, editError) {
       const rows  = document.querySelectorAll('.job-row');
       let   nextRow    = null;   // unbooked active job with smallest future diff
       let   nextDiff   = Infinity;
+      let   nextBoms   = null;   // absolute bookingOpenMs for nextRow (for formatCountdown)
       let   openNowRow = null;   // unbooked active job whose booking window is already open
 
       // Pass 1: update each row's countdown cell; find next-to-open unbooked job.
@@ -846,9 +847,10 @@ function buildHtml(jobs, error, editError) {
           const diff = boms - now;
           if (diff > 0 && diff < nextDiff) {
             nextDiff = diff;
+            nextBoms = boms;
             nextRow  = row;
           } else if (diff <= 0 && !openNowRow) {
-            openNowRow = row;  // first already-open candidate (most recently opened)
+            openNowRow = row;  // first already-open candidate
           }
         }
       });
@@ -872,10 +874,10 @@ function buildHtml(jobs, error, editError) {
             banner.textContent = '\uD83D\uDD25 ' + bannerTitle + ' \u2014 booking open now';
             banner.classList.add('sniper');
           } else if (nextDiff <= 60000) {
-            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextDiff);
+            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextBoms);
             banner.classList.add('warning');
           } else {
-            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextDiff);
+            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextBoms);
           }
         }
       }

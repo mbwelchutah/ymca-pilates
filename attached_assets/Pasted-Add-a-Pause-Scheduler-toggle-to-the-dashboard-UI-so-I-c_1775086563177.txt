@@ -1,0 +1,159 @@
+Add a “Pause Scheduler” toggle to the dashboard UI so I can temporarily stop automatic runs.
+
+Current state:
+
+* scheduler loop runs continuously
+* jobs execute automatically based on phase
+* UI allows manual runs
+* there is no way to pause automation
+
+Goal:
+Allow the user to pause and resume the scheduler safely from the UI.
+
+Do NOT:
+
+* redesign scheduler architecture
+* add job queues or workers
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Add global paused state
+
+Use a simple shared flag in memory.
+
+In `run-scheduler-loop.js`:
+
+1. Add at top:
+
+```js
+let schedulerPaused = false;
+```
+
+2. Export setter:
+
+```js
+module.exports.setSchedulerPaused = (value) => {
+  schedulerPaused = value;
+};
+```
+
+---
+
+## PART 2 — Respect pause in loop
+
+Before processing jobs:
+
+```js
+if (schedulerPaused) {
+  console.log("⏸ Scheduler paused — skipping tick");
+  return;
+}
+```
+
+---
+
+## PART 3 — Add routes in server.js
+
+Add:
+
+### Pause
+
+```js
+POST /pause-scheduler
+```
+
+### Resume
+
+```js
+POST /resume-scheduler
+```
+
+Each route:
+
+* imports `setSchedulerPaused`
+* sets true/false
+* returns 200
+
+---
+
+## PART 4 — Add UI button
+
+In Actions card:
+
+```html
+<button id="pause-btn">Pause Scheduler</button>
+<button id="resume-btn">Resume Scheduler</button>
+```
+
+---
+
+## PART 5 — Add client-side handlers
+
+```js
+async function pauseScheduler() {
+  await fetch('/pause-scheduler', { method: 'POST' });
+  updateSchedulerUI(true);
+}
+
+async function resumeScheduler() {
+  await fetch('/resume-scheduler', { method: 'POST' });
+  updateSchedulerUI(false);
+}
+```
+
+Attach to buttons.
+
+---
+
+## PART 6 — Add status indicator
+
+At top of page or near banner:
+
+```html
+<div id="scheduler-status">Running</div>
+```
+
+Update dynamically:
+
+```js
+function updateSchedulerUI(paused) {
+  const el = document.getElementById('scheduler-status');
+  el.textContent = paused ? "⏸ Paused" : "▶ Running";
+}
+```
+
+---
+
+## PART 7 — Persist pause state (simple)
+
+Use localStorage:
+
+```js
+localStorage.setItem("schedulerPaused", "true")
+```
+
+On load:
+
+* read it
+* call pause/resume accordingly
+
+---
+
+## PART 8 — Behavior rules
+
+* paused = no automatic runs
+* manual "Run Job" still works
+* UI clearly shows paused state
+* no scheduler logic changes beyond skip
+
+---
+
+## After changes, explain:
+
+* how pause flag works
+* how loop respects it
+* how UI controls it
+* what happens on page reload
+* limitations (process restart resets state)
