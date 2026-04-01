@@ -49,6 +49,32 @@ npm run scheduler:once         Check phases, run bot if eligible (exits after on
 npm run scheduler:run          Same as scheduler:once
 ```
 
+## Git Workflow (Simple)
+
+The Replit Git panel and terminal Git commands do exactly the same thing — use whichever feels easier.
+
+**Option A — Replit UI (recommended for beginners):**
+1. Make your changes
+2. Open the Git tab (branch icon in the left sidebar)
+3. Click "Stage and commit" — write a short description of your change
+4. Click "Push"
+
+**Option B — Terminal:**
+```bash
+git add .
+git commit -m "describe your change"
+git push
+```
+
+**How to verify your push worked:**
+Open your GitHub repo and check the latest commit — it should match the message you just wrote. If it does not, you probably forgot to push.
+
+**Always confirm you are on `main` before pushing:**
+```bash
+git branch --show-current
+```
+If it prints something other than `main`, switch back with `git checkout main`. Pushing from a different branch will not update `main`.
+
 ## Current limitations
 
 - No persistent scheduler loop — must be triggered manually or via GitHub Actions cron

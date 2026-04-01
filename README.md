@@ -51,8 +51,46 @@ src/
 
 - **Replit** is the main workspace. The app runs here. Secrets (`YMCA_EMAIL`, `YMCA_PASSWORD`) live in Replit's Secrets panel.
 - **GitHub** is source control and backup. Changes do not appear on GitHub until you commit and push them.
-- Use the **Version Control panel** (branch icon in the Replit left sidebar) to push and pull. Running `git push` directly in the terminal will fail — Replit's auth helper only works through the UI.
-- The `main` branch in Replit is the source of truth. Ignore stale branches on GitHub unless you intentionally branched.
+- The `main` branch is the source of truth. Ignore stale branches on GitHub unless you intentionally created them.
+
+---
+
+## Git Workflow (Simple)
+
+The Replit Git panel and terminal Git commands do exactly the same thing — use whichever feels easier.
+
+### Option A — Replit UI (recommended for beginners)
+
+1. Make your changes
+2. Open the **Git tab** (branch icon in the left sidebar)
+3. Click **"Stage and commit"** — write a short description of your change
+4. Click **"Push"**
+
+### Option B — Terminal
+
+```bash
+git add .
+git commit -m "describe your change"
+git push
+```
+
+### How to verify your push worked
+
+Open your GitHub repo and check the latest commit — it should match the message you just wrote. If it does not, you probably forgot to push.
+
+### Important: always be on `main`
+
+If you are on a different branch (for example, an old Claude-created branch), pushing will **not** update `main`. Confirm your branch before pushing:
+
+```bash
+git branch --show-current
+```
+
+It should print `main`. If it prints something else, switch back:
+
+```bash
+git checkout main
+```
 
 ---
 
@@ -106,8 +144,8 @@ node src/bot/register-pilates.js
 DRY_RUN=1 HEADLESS=false node src/bot/register-pilates.js
 ```
 
-**Check git status and push updates:**
-Use the Version Control panel in the Replit sidebar — do not use `git push` in the terminal.
+**Push your changes to GitHub:**
+Use either the Git tab in the Replit sidebar or `git add . && git commit -m "..." && git push` in the terminal — both work.
 
 ---
 
