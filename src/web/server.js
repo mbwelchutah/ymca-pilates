@@ -79,116 +79,106 @@ const html = `<!DOCTYPE html>
     <div id="status"></div>
   </div>
   <script>
-    async function register() {
-      const btn = document.getElementById('btn');
-      const status = document.getElementById('status');
+    let activeBtn = null;
+    let activeSuccessText = null;
+
+    async function startJob(url, btn, successText) {
+      const statusEl = document.getElementById('status');
       btn.disabled = true;
       btn.textContent = 'Running...';
-      status.className = 'running';
-      status.style.display = 'block';
-      status.textContent = 'Starting registration...';
-
+      statusEl.className = 'running';
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Starting...';
+      activeBtn = btn;
+      activeSuccessText = successText;
       try {
-        const res = await fetch('/register');
+        const res = await fetch(url);
         const data = await res.json();
-        status.textContent = data.log;
-        if (data.success) {
-          status.className = 'success';
-          btn.textContent = '✅ Registered!';
-        } else {
-          status.className = 'error';
+        if (!data.started) {
+          statusEl.className = 'error';
+          statusEl.textContent = data.log || 'Could not start job.';
           btn.textContent = 'Try Again';
           btn.disabled = false;
+          return;
         }
+        statusEl.textContent = 'Job started — checking progress...';
+        poll();
       } catch (e) {
-        status.className = 'error';
-        status.textContent = 'Network error: ' + e.message;
+        statusEl.className = 'error';
+        statusEl.textContent = 'Network error: ' + e.message;
         btn.textContent = 'Try Again';
         btn.disabled = false;
       }
     }
 
-    async function runFromDb() {
-      const btn = document.getElementById('btn2');
-      const status = document.getElementById('status');
-      btn.disabled = true;
-      btn.textContent = 'Running...';
-      status.className = 'running';
-      status.style.display = 'block';
-      status.textContent = 'Loading job from database...';
-
+    async function poll() {
+      const statusEl = document.getElementById('status');
       try {
-        const res = await fetch('/run-job');
+        const res = await fetch('/status');
         const data = await res.json();
-        status.textContent = data.log;
-        if (data.success) {
-          status.className = 'success';
-          btn.textContent = '✅ Done!';
+        statusEl.textContent = data.log;
+        if (data.active) {
+          setTimeout(poll, 2000);
         } else {
-          status.className = 'error';
-          btn.textContent = 'Try Again';
-          btn.disabled = false;
+          if (data.success) {
+            statusEl.className = 'success';
+            if (activeBtn) activeBtn.textContent = activeSuccessText;
+          } else {
+            statusEl.className = 'error';
+            if (activeBtn) { activeBtn.textContent = 'Try Again'; activeBtn.disabled = false; }
+          }
         }
       } catch (e) {
-        status.className = 'error';
-        status.textContent = 'Network error: ' + e.message;
-        btn.textContent = 'Try Again';
-        btn.disabled = false;
+        statusEl.textContent = 'Checking status... (' + e.message + ')';
+        setTimeout(poll, 3000);
       }
     }
+
+    function register() { startJob('/register', document.getElementById('btn'), '✅ Registered!'); }
+    function runFromDb() { startJob('/run-job', document.getElementById('btn2'), '✅ Done!'); }
   </script>
 </body>
 </html>`;
 
-let running = false;
+let jobState = { active: false, log: 'No job run yet.', success: null };
+
+function runInBackground(job) {
+  jobState = { active: true, log: 'Logging in...', success: null };
+  runBookingJob(job)
+    .then(result => {
+      jobState = { active: false, log: result.message, success: result.status === 'success' };
+    })
+    .catch(err => {
+      jobState = { active: false, log: 'Error: ' + err.message, success: false };
+    });
+}
 
 const server = http.createServer(async (req, res) => {
+  const json = (data) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  };
+
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(html);
+
+  } else if (req.method === 'GET' && req.url === '/status') {
+    json(jobState);
+
   } else if (req.method === 'GET' && req.url === '/register') {
-    if (running) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, log: 'Already running, please wait...' }));
-      return;
-    }
-    running = true;
-    try {
-      const result = await runBookingJob({ classTitle: 'Core Pilates' });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: result.status === 'success', log: result.message }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, log: 'Server error: ' + err.message }));
-    } finally {
-      running = false;
-    }
+    if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
+    runInBackground({ classTitle: 'Core Pilates' });
+    json({ started: true });
+
   } else if (req.method === 'GET' && req.url === '/run-job') {
-    // Load job id 1 from DB and run the bot using that data
+    if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const dbJob = getJobById(1);
-    if (!dbJob) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, log: 'No job found in database. Run: npm run db:test' }));
-      return;
-    }
-    if (running) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, log: 'Already running, please wait...' }));
-      return;
-    }
-    running = true;
-    try {
-      const job = { classTitle: dbJob.class_title };
-      console.log('Running job from DB:', job);
-      const result = await runBookingJob(job);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: result.status === 'success', log: result.message }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, log: 'Server error: ' + err.message }));
-    } finally {
-      running = false;
-    }
+    if (!dbJob) { json({ started: false, log: 'No job found in database. Run: npm run db:test' }); return; }
+    console.log('Running job from DB:', dbJob.class_title);
+    runInBackground({ classTitle: dbJob.class_title });
+    json({ started: true });
+
   } else {
     res.writeHead(404);
     res.end();
