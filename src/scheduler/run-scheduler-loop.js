@@ -12,6 +12,11 @@ const { runBookingJob } = require('../bot/register-pilates');
 const INTERVAL_MS     = 60 * 1000; // 60 seconds
 const ELIGIBLE_PHASES = ['warmup', 'sniper'];
 
+// In-memory concurrency guard.
+// Tracks job ids that are currently being run by the bot.
+// If a tick fires while a job is still running, that job is skipped.
+const runningJobs = new Set();
+
 function now() {
   return new Date().toLocaleString('en-US', {
     timeZone: 'America/Los_Angeles',
@@ -53,12 +58,22 @@ async function runTick() {
       continue;
     }
 
-    console.log(`  => RUNNING Job #${dbJob.id}...`);
+    // Concurrency guard — skip if this job is already running from a previous tick.
+    if (runningJobs.has(dbJob.id)) {
+      console.log(`  => SKIPPING Job #${dbJob.id} — already running`);
+      continue;
+    }
+
+    runningJobs.add(dbJob.id);
+    console.log(`  => RUNNING Job #${dbJob.id} (marked as running, ${runningJobs.size} job(s) active)...`);
     try {
       const result = await runBookingJob(job);
-      console.log(`  => Done. status: ${result.status} | ${result.message}`);
+      console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);
     } catch (err) {
-      console.error(`  => ERROR running job #${dbJob.id}:`, err.message);
+      console.error(`  => ERROR Job #${dbJob.id}:`, err.message);
+    } finally {
+      runningJobs.delete(dbJob.id);
+      console.log(`  => Job #${dbJob.id} removed from running set (${runningJobs.size} job(s) remaining).`);
     }
   }
 }
