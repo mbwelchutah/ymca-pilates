@@ -176,35 +176,57 @@ async function runBookingJob(job, opts = {}) {
       return false;
     }, { timeout: 15000 }).catch(() => console.log('⚠️ Dropdown options slow to load, proceeding anyway'));
 
-    // Find and select Stephanie Sanders using evaluate (Bubble needs dispatchEvent)
-    const selectedInstructor = await page.evaluate(() => {
-      const selects = document.querySelectorAll('select');
+    // Log all selects and their options so we can see what filters are available.
+    const allSelectInfo = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('select')).map((sel, i) => ({
+        index: i,
+        options: Array.from(sel.options).map(o => o.text),
+      }));
+    });
+    console.log('Available select dropdowns:', JSON.stringify(allSelectInfo));
+
+    const filterResults = await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll('select'));
+      const results = {};
+
+      // Try to apply a Yoga/Pilates category filter
+      for (const sel of selects) {
+        for (const opt of sel.options) {
+          const t = opt.text.toLowerCase();
+          if (t.includes('yoga') || t.includes('pilates')) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('input',  { bubbles: true }));
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            results.category = opt.text;
+            break;
+          }
+        }
+        if (results.category) break;
+      }
+
+      // Apply instructor filter (Stephanie)
       for (const sel of selects) {
         for (const opt of sel.options) {
           if (opt.text.toLowerCase().includes('stephanie')) {
             sel.value = opt.value;
-            sel.dispatchEvent(new Event('input', { bubbles: true }));
+            sel.dispatchEvent(new Event('input',  { bubbles: true }));
             sel.dispatchEvent(new Event('change', { bubbles: true }));
-            return opt.text;
+            results.instructor = opt.text;
+            break;
           }
         }
+        if (results.instructor) break;
       }
-      const allOpts = [];
-      for (const sel of selects) {
-        for (const opt of sel.options) {
-          allOpts.push(opt.text);
-        }
-      }
-      return 'NOT_FOUND:' + allOpts.join('|');
+
+      return results;
     });
 
-    if (selectedInstructor.startsWith('NOT_FOUND:')) {
-      console.log('⚠️ Stephanie not found. Available options: ' + selectedInstructor.replace('NOT_FOUND:', ''));
-      console.log('Proceeding without instructor filter...');
-    } else {
-      console.log('✅ Selected instructor: ' + selectedInstructor);
-    }
-    await page.waitForTimeout(2000);
+    if (filterResults.category)   console.log('✅ Applied category filter:', filterResults.category);
+    else                          console.log('⚠️ No yoga/pilates category option found — proceeding without category filter.');
+    if (filterResults.instructor) console.log('✅ Applied instructor filter:', filterResults.instructor);
+    else                          console.log('⚠️ Instructor "Stephanie" not found in any dropdown — proceeding without instructor filter.');
+
+    await page.waitForTimeout(2500); // wait for schedule to re-render with filters applied
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
@@ -354,18 +376,26 @@ async function runBookingJob(job, opts = {}) {
       await page.waitForTimeout(800); // let renderer populate newly-visible rows
     }
 
-    // Probe the DOM for any element containing the target time string.
-    // Returns the first few matching text snippets for diagnostics.
+    // Probe the DOM for any element containing the target time string, and also
+    // dump all unique time-range strings visible (e.g. "7:45 a - 8:45 a").
     async function probeTimeInDom() {
       return page.evaluate((timeStr) => {
         const found = [];
+        const timePattern = /\d+:\d+\s*[ap]/i;
+        const allTimes = new Set();
+
         for (const el of document.querySelectorAll('*')) {
-          if (found.length >= 6) break;
-          if (el.textContent.toLowerCase().includes(timeStr)) {
+          const txt = el.textContent.toLowerCase();
+          if (txt.includes(timeStr) && found.length < 6) {
             found.push(el.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
           }
+          // Collect short leaf-ish elements that look like a time range
+          if (timePattern.test(el.textContent) && el.children.length <= 3 &&
+              el.textContent.trim().length < 30) {
+            allTimes.add(el.textContent.replace(/\s+/g, ' ').trim());
+          }
         }
-        return found;
+        return { found, allTimes: [...allTimes].slice(0, 20) };
       }, classTimeNorm || '7:45 a');
     }
 
@@ -380,7 +410,8 @@ async function runBookingJob(job, opts = {}) {
         const card = await findTargetCard();
         if (card) { console.log('Found class on ' + tabText.trim()); return card; }
         const probe = await probeTimeInDom();
-        console.log('DOM probe for "' + (classTimeNorm||'7:45 a') + '" on ' + tabText.trim() + ':', probe.length ? probe : '(none found in DOM)');
+        console.log('DOM probe "' + (classTimeNorm||'7:45 a') + '" on ' + tabText.trim() + ':', probe.found.length ? probe.found : '(absent)');
+        console.log('All visible times on ' + tabText.trim() + ':', probe.allTimes.length ? probe.allTimes : '(none)');
         console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
       }
       return null;
@@ -403,7 +434,8 @@ async function runBookingJob(job, opts = {}) {
             console.log('Found class on exact date tab: ' + tabText.trim());
           } else {
             const probe = await probeTimeInDom();
-            console.log('DOM probe for "' + (classTimeNorm||'7:45 a') + '" on exact tab:', probe.length ? probe : '(none found in DOM)');
+            console.log('DOM probe "' + (classTimeNorm||'7:45 a') + '" on exact tab:', probe.found.length ? probe.found : '(absent)');
+            console.log('All visible times on exact tab:', probe.allTimes.length ? probe.allTimes : '(none)');
             console.log('Class not on exact date tab — falling back to full scan.');
           }
           exactTabClicked = true;
