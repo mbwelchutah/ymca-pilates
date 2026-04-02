@@ -1080,7 +1080,8 @@ function buildHtml(jobs, error, editError) {
 
     // Tick every second: update countdown cells, highlight the next job to open,
     // trigger sound alert in final 10 s, and refresh the sniper indicator.
-    setInterval(function() {
+    // Aligned to wall-clock second boundaries so digits roll exactly at :00.
+    function tick() {
       const now   = Date.now();
       const rows  = document.querySelectorAll('.job-row');
       let   nextRow    = null;   // unbooked active job with smallest future diff
@@ -1152,7 +1153,11 @@ function buildHtml(jobs, error, editError) {
       const cardCd = document.getElementById('sel-countdown');
       if (cardCd) applyCountdown(cardCd, selectedJobBookingOpen);
       updateSniperIndicator(selectedJobBookingOpen, selectedJobPhase);
-    }, 1000);
+    }
+    tick(); // initialize display immediately on load
+    (function scheduleTick() {
+      setTimeout(function() { tick(); scheduleTick(); }, 1000 - Date.now() % 1000);
+    })();
 
     // On load: restore the previously selected job from localStorage, or fall
     // back to the first row.  Sets userPinned only when a saved choice is found.
