@@ -251,11 +251,13 @@ async function runBookingJob(job, opts = {}) {
         const targetMin = parseMin(classTimeNorm);
         const timePattern = /\d+:\d+\s*[ap]\s*-\s*\d+:\d+\s*[ap]/i;
 
-        // Collect leaf-ish elements that contain an AM/PM time range.
+        // Collect leaf-ish elements that contain an AM/PM time range AND the instructor.
+        // Requiring the instructor prevents the fallback from picking a completely wrong class.
         const rowEls = [];
         for (const el of document.querySelectorAll('*')) {
           if (!timePattern.test(el.textContent)) continue;
           if (el.querySelectorAll('*').length > 20) continue; // skip broad containers
+          if (!el.textContent.toLowerCase().includes(instructorFirstName)) continue; // must have instructor
           rowEls.push(el);
         }
 
@@ -265,7 +267,7 @@ async function runBookingJob(job, opts = {}) {
           return { matched: null, fallback: null, debug: { candidateCount: 0, timeElTexts: [], classTimeNorm, instructorFirstName } };
         }
 
-        // Pick closest time; fall back to first row if no time can be parsed.
+        // Pick closest time to target; fall back to first instructor-matching row.
         let bestEl = rowEls[0];
         let bestDiff = Infinity;
         for (const el of rowEls) {
@@ -367,11 +369,14 @@ async function runBookingJob(job, opts = {}) {
       return { status: 'error', message: msg, screenshotPath };
     }
 
-    // Scroll the card into view and give any CSS animations time to settle,
-    // then prefer clicking a semantic child (button / anchor / role=button)
-    // rather than the wrapper div which may be partially off-screen or
-    // behind a sticky header.
-    await targetCard.scrollIntoViewIfNeeded();
+    // Scroll the card into view (5 s max — element may be in DOM but not yet
+    // visible if the tab panel is still animating; catch and continue rather
+    // than hanging the whole run for 30 s).
+    try {
+      await targetCard.scrollIntoViewIfNeeded({ timeout: 5000 });
+    } catch (scrollErr) {
+      console.log('⚠️ scrollIntoViewIfNeeded timed out:', scrollErr.message.split('\n')[0]);
+    }
     await page.waitForTimeout(300);
     console.log('Card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
     {
@@ -519,7 +524,11 @@ async function runBookingJob(job, opts = {}) {
         }
 
         if (targetCard) {
-          await targetCard.scrollIntoViewIfNeeded();
+          try {
+            await targetCard.scrollIntoViewIfNeeded({ timeout: 5000 });
+          } catch (scrollErr) {
+            console.log('⚠️ Retry scrollIntoViewIfNeeded timed out:', scrollErr.message.split('\n')[0]);
+          }
           await page.waitForTimeout(300);
           console.log('Retry card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
           const clickableRetry = targetCard.locator("button, a, [role='button']").first();
