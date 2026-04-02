@@ -193,33 +193,40 @@ async function runBookingJob(job, opts = {}) {
     //      exactly matches the target value and click it.
     //   4. We do this for every filter regardless of the pill's current label, so a
     //      stale session filter that didn't trigger a re-render gets refreshed too.
+    // Bubble.io dropdowns require a full pointer-event chain (pointerdown → mousedown
+    // → mouseup → click).  JS element.click() only fires the click event and misses
+    // pointerdown/mousedown, so Bubble's overlay never opens.
+    // Fix: get the wrapper's Bubble.io class suffix (unique per element), then use
+    // Playwright's native locator.click() which replays the full event sequence.
     async function applyFilterBySelectIndex(selectIndex, targetValue, filterLabel) {
-      // Click the visible wrapper around the hidden <select>.
-      const clickedWrapper = await page.evaluate((idx) => {
+      // Step 1: find the 5-char Bubble.io class that uniquely identifies this pill.
+      const bubbleClass = await page.evaluate((idx) => {
         const sels = document.querySelectorAll('select');
         if (idx >= sels.length) return null;
-        // Walk up until we find a rendered box (width > 20, height > 10).
         let el = sels[idx].parentElement;
         while (el && el !== document.body) {
           const r = el.getBoundingClientRect();
           if (r.width > 20 && r.height > 10) {
-            el.click();
-            return el.tagName + ' / ' + el.className.trim().slice(0, 60);
+            // Extract the short unique class like "cpieh" from "bubble-element Group cpieh ..."
+            const m = el.className.match(/\bcpi\w+\b/);
+            return m ? m[0] : null;
           }
           el = el.parentElement;
         }
         return null;
       }, selectIndex);
 
-      if (!clickedWrapper) {
-        console.log(`⚠️ Could not find wrapper for filter #${selectIndex} (${filterLabel})`);
+      if (!bubbleClass) {
+        console.log(`⚠️ Could not find Bubble class for filter #${selectIndex} (${filterLabel})`);
         return false;
       }
-      console.log(`  Opened filter #${selectIndex} (${filterLabel}) via [${clickedWrapper}], waiting for overlay...`);
-      await page.waitForTimeout(800);
+      console.log(`  Filter #${selectIndex} (${filterLabel}) pill class: .${bubbleClass} — clicking via Playwright...`);
 
-      // Find the first VISIBLE element whose trimmed text is exactly the target.
-      // isVisible() returns false for hidden <option> elements, so this is safe.
+      // Step 2: Use Playwright's native click (fires full pointer-event chain).
+      await page.locator(`.${bubbleClass}`).first().click();
+      await page.waitForTimeout(1200); // wait for overlay to render
+
+      // Step 3: Count all candidates before and after — overlay adds new visible ones.
       const optLocator = page.locator(`text=/^${targetValue.replace('/', '\\/')}$/`);
       const optCount   = await optLocator.count();
       console.log(`  Candidates matching "${targetValue}": ${optCount}`);
@@ -233,7 +240,7 @@ async function runBookingJob(job, opts = {}) {
         }
       }
       if (!optClicked) {
-        console.log(`⚠️ No visible "${targetValue}" option in overlay — closing.`);
+        console.log(`⚠️ No visible "${targetValue}" in overlay after click — closing.`);
         await page.keyboard.press('Escape');
         await page.waitForTimeout(400);
         return false;
