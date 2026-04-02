@@ -1,0 +1,135 @@
+Enhance screenshot-on-verification-failure by automatically tagging screenshots with the failure reason (time mismatch / instructor mismatch).
+
+Current state:
+
+* screenshots are captured on modal verification failure
+* filenames include timestamp and job id
+
+Goal:
+Make each screenshot self-explanatory by including the failure reason in the filename and logs.
+
+Do NOT:
+
+* remove existing screenshot logic
+* overcomplicate classification
+* slow down execution
+
+---
+
+# PART 1 — Determine failure reason
+
+Replace simple check:
+
+```js
+if (!matchesTime || !matchesInstructor)
+```
+
+With:
+
+```js
+let failureReason = [];
+
+if (!matchesTime) failureReason.push("time");
+if (!matchesInstructor) failureReason.push("instructor");
+
+const reasonTag = failureReason.join("-");
+```
+
+---
+
+# PART 2 — Update screenshot filename
+
+Replace:
+
+```js
+const filename = `screenshots/job-${job.id}-${getTimestamp()}.png`;
+```
+
+With:
+
+```js
+const filename = `screenshots/job-${job.id}-${reasonTag}-${getTimestamp()}.png`;
+```
+
+---
+
+# PART 3 — Add clear logging
+
+```js
+console.log("❌ MODAL VERIFICATION FAILED");
+console.log("Reason:", reasonTag);
+
+console.log("Expected:", {
+  time: expectedTime,
+  instructor: expectedInstructor
+});
+```
+
+---
+
+# PART 4 — Improve modal debug output
+
+```js
+console.log("Modal preview:");
+console.log(modalText.slice(0, 300));
+```
+
+---
+
+# PART 5 — Optional: add human-readable label
+
+```js
+const reasonLabel = {
+  "time": "Time mismatch",
+  "instructor": "Instructor mismatch",
+  "time-instructor": "Time + Instructor mismatch"
+}[reasonTag] || "Unknown mismatch";
+```
+
+---
+
+# PART 6 — Include reason in console output
+
+```js
+console.log("❌ Verification failed:", reasonLabel);
+```
+
+---
+
+# PART 7 — Example output
+
+Screenshots will now look like:
+
+```text
+screenshots/
+  job-2-time-2026-04-01T23-15-22.png
+  job-2-instructor-2026-04-01T23-18-10.png
+  job-2-time-instructor-2026-04-01T23-20-05.png
+```
+
+---
+
+# PART 8 — Behavior rules
+
+* always include reason in filename
+* multiple failures → combined tag
+* keep filenames short + readable
+* do not overwrite files
+
+---
+
+# FINAL RESULT
+
+Each failure now tells you instantly:
+
+* WHAT failed
+* WHEN it failed
+* WHAT the UI looked like
+
+---
+
+# AFTER CHANGES — explain:
+
+* how reasonTag is built
+* how filenames improve debugging
+* how this helps identify patterns quickly

@@ -339,10 +339,16 @@ async function runBookingJob(job, opts = {}) {
       const verifyInst  = modalText.includes(instructorFirstName);
       console.log('Modal verification —', JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
       if (!verifyTime || !verifyInst) {
-        console.log('❌ Modal verification failed — aborting to avoid wrong booking.');
+        const reasons = [];
+        if (!verifyTime) reasons.push('time');
+        if (!verifyInst) reasons.push('instructor');
+        const reasonTag = reasons.join('-');
+        const reasonLabel = { 'time': 'Time mismatch', 'instructor': 'Instructor mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Unknown mismatch';
+        console.log('❌ Modal verification failed:', reasonLabel);
+        console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
         console.log('Modal preview:', modalText.slice(0, 300));
-        await snap('verify-fail');
-        const failMsg = `Modal verification failed: expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
+        await snap(`verify-${reasonTag}`);
+        const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
         return { status: 'error', message: failMsg, screenshotPath };
       }
       console.log('✅ Modal verified — proceeding to booking.');
