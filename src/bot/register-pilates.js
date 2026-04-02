@@ -199,54 +199,83 @@ async function runBookingJob(job, opts = {}) {
     // Fix: get the wrapper's Bubble.io class suffix (unique per element), then use
     // Playwright's native locator.click() which replays the full event sequence.
     async function applyFilterBySelectIndex(selectIndex, targetValue, filterLabel) {
-      // Step 1: find the 5-char Bubble.io class that uniquely identifies this pill.
-      const bubbleClass = await page.evaluate((idx) => {
+      // Step 1: Walk up from the hidden <select> to find the INDIVIDUAL PILL wrapper.
+      // Key: the pill contains exactly 1 <select>; the filter bar row contains all 4.
+      // We use this to skip past the row and find the pill precisely.
+      const pillInfo = await page.evaluate((idx) => {
         const sels = document.querySelectorAll('select');
         if (idx >= sels.length) return null;
         let el = sels[idx].parentElement;
         while (el && el !== document.body) {
           const r = el.getBoundingClientRect();
-          if (r.width > 20 && r.height > 10) {
-            // Extract the short unique class like "cpieh" from "bubble-element Group cpieh ..."
+          const selectCount = el.querySelectorAll('select').length;
+          // Valid pill: visible dimensions AND contains exactly this one select
+          if (r.width > 20 && r.height > 10 && selectCount === 1) {
             const m = el.className.match(/\bcpi\w+\b/);
-            return m ? m[0] : null;
+            return { cls: m ? m[0] : null, w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) };
           }
           el = el.parentElement;
         }
         return null;
       }, selectIndex);
 
-      if (!bubbleClass) {
-        console.log(`⚠️ Could not find Bubble class for filter #${selectIndex} (${filterLabel})`);
+      if (!pillInfo || !pillInfo.cls) {
+        console.log(`⚠️ Could not find individual pill for filter #${selectIndex} (${filterLabel}). pillInfo:`, pillInfo);
         return false;
       }
-      console.log(`  Filter #${selectIndex} (${filterLabel}) pill class: .${bubbleClass} — clicking via Playwright...`);
+      console.log(`  Filter #${selectIndex} (${filterLabel}) pill: .${pillInfo.cls} ${pillInfo.w}×${pillInfo.h} @ (${pillInfo.x},${pillInfo.y}) — clicking...`);
 
-      // Step 2: Use Playwright's native click (fires full pointer-event chain).
-      await page.locator(`.${bubbleClass}`).first().click();
-      await page.waitForTimeout(1200); // wait for overlay to render
+      // Step 2: Playwright native click → fires full pointer-event chain Bubble.io needs.
+      const trigger = page.locator(`.${pillInfo.cls}`).first();
+      await trigger.waitFor({ state: 'visible' });
+      await trigger.scrollIntoViewIfNeeded();
+      await trigger.click();
+      console.log(`  Clicked pill — waiting for "${targetValue}" option to become visible...`);
 
-      // Step 3: Count all candidates before and after — overlay adds new visible ones.
-      const optLocator = page.locator(`text=/^${targetValue.replace('/', '\\/')}$/`);
-      const optCount   = await optLocator.count();
-      console.log(`  Candidates matching "${targetValue}": ${optCount}`);
-      let optClicked = false;
-      for (let i = 0; i < optCount; i++) {
-        const el = optLocator.nth(i);
+      // Step 3: Poll until a visible (rendered, non-option) element with targetValue appears.
+      // Uses offsetWidth/offsetHeight which are 0 for display:none elements (hidden <option>).
+      try {
+        await page.waitForFunction((val) => {
+          for (const el of document.querySelectorAll('*')) {
+            if (el.tagName === 'OPTION' || el.tagName === 'SELECT') continue;
+            if (el.textContent.trim() === val && el.offsetWidth > 0 && el.offsetHeight > 0)
+              return true;
+          }
+          return false;
+        }, targetValue, { timeout: 5000 });
+        console.log(`  Option "${targetValue}" is now visible in the overlay.`);
+      } catch {
+        console.log(`⚠️ Timed out waiting for visible "${targetValue}" in dropdown.`);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+        return false;
+      }
+
+      // Step 4: Click the visible option (excluding hidden <option>/<select> elements).
+      const allMatches = page.locator(`text=/^${targetValue.replace('/', '\\/')}$/`);
+      const total = await allMatches.count();
+      let clicked = false;
+      for (let i = 0; i < total; i++) {
+        const el = allMatches.nth(i);
+        const tag = await el.evaluate(n => n.tagName);
+        if (tag === 'OPTION' || tag === 'SELECT') continue;
         if (await el.isVisible()) {
+          await el.scrollIntoViewIfNeeded();
           await el.click();
-          optClicked = true;
+          clicked = true;
           break;
         }
       }
-      if (!optClicked) {
-        console.log(`⚠️ No visible "${targetValue}" in overlay after click — closing.`);
+      if (!clicked) {
+        console.log(`⚠️ Could not click visible "${targetValue}" — all matches were hidden.`);
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(400);
         return false;
       }
+
+      // Step 5: Verify the pill now shows the selected value.
       await page.waitForTimeout(2000);
-      console.log(`✅ Filter #${selectIndex} (${filterLabel}) → "${targetValue}"`);
+      const pillText = await trigger.textContent().catch(() => '(unknown)');
+      console.log(`✅ Filter #${selectIndex} (${filterLabel}) → "${targetValue}" | pill now shows: "${pillText.trim()}"`);
       return true;
     }
 
