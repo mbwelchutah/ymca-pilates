@@ -320,11 +320,12 @@ async function runBookingJob(job, opts = {}) {
 
         // Matching rules:
         //   - time: "7:45" followed by optional space then "a" or "A" (am indicator).
-        //     This matches "7:45 a", "7:45a", "7:45 AM", "7:45am" but NOT
-        //     "7:45 p" / "7:45pm" or end-times like "6:45 - 7:45 p".
+        //     Matches "7:45 a", "7:45a", "7:45 AM", "7:45am", "07:45 a", "07:45 AM"
+        //     but NOT "7:45 p" / "7:45pm" or end-times like "6:45 - 7:45 p".
+        //     \b0? handles both plain "7:45" and zero-padded "07:45" formats.
         //   - title: "Core Pilates" (case-insensitive, any whitespace)
         //   - instr: first name only ("stephanie" matches "Stephanie S.")
-        const timeAmRe = /\b7:45\s*a/i;
+        const timeAmRe = /\b0?7:45\s*a/i;
         const titleRe  = /core[\s\u00A0]+pilates/i;
         const instrRe  = new RegExp(instrFirst, 'i');
 
@@ -359,17 +360,21 @@ async function runBookingJob(job, opts = {}) {
 
           let score = 0;
           const reasons = [];
-          if (hasTitle) { score += 40; reasons.push('title+40'); }
-          if (hasTime)  { score += 40; reasons.push('time+40');  }
-          if (hasInstr) { score += 30; reasons.push('instr+30'); }
+          if (hasTitle) { score += 5; reasons.push('title+5'); }
+          if (hasTime)  { score += 5; reasons.push('time+5');  }
+          if (hasInstr) { score += 3; reasons.push('instr+3'); }
 
-          // Require score ≥ 80: must have at least TWO matching signals.
-          // - title + time = 80 ✓ (strongest: class name + correct start time)
-          // - title + instr = 70 ✗ (would match filter dropdown false positive)
-          // - time + instr  = 70 ✗ (would match wrong class with same instructor)
-          // - time alone    = 40 ✗ (too many classes end at 7:45)
-          // - title alone   = 40 ✗ (would match filter dropdown option list)
-          if (score < 80) continue;
+          // Require score ≥ 10: must have title + time (5+5=10).
+          // - title + time  = 10 ✓ (strongest — class name + correct start time)
+          // - title + time + instr = 13 ✓ (all three — best possible match)
+          // - title + instr =  8 ✗ (would find 2:45 PM Core Pilates by same instructor)
+          // - time  + instr =  8 ✗ (would find wrong class at same time)
+          // - title alone   =  5 ✗ (would match filter dropdown option list)
+          // - time alone    =  5 ✗ (too many classes share a start or end time)
+          // - instr alone   =  3 ✗ (far too broad — instructor teaches many classes)
+          // Tie-break: highest score wins; within same score, fewest descendants
+          // (most specific element) wins — so all-three (13) beats title+time (10).
+          if (score < 10) continue;
 
           allRows.push({
             el,
@@ -760,7 +765,9 @@ async function runBookingJob(job, opts = {}) {
     }
 
     // Scroll the card into view, then find the visible interactive child to click.
-    // The schedule row has: title (not clickable) + time/instructor row (clickable chevron).
+    // Primary strategy: locate button / [role="button"] / <a> inside the card —
+    // do NOT click invisible wrapper divs. Falls back to cursor:pointer child,
+    // then force-click the card itself as a last resort.
     try {
       await targetCard.scrollIntoViewIfNeeded({ timeout: 5000 });
     } catch (scrollErr) {
@@ -769,40 +776,16 @@ async function runBookingJob(job, opts = {}) {
     await page.waitForTimeout(300);
     console.log('Card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
     {
-      // Find the best interactive child inside the card to click.
-      // Priority order:
-      //   1. The card itself if it has role=button / tabindex / is <a>/<button>
-      //   2. A descendant with role=button, tabindex=0, <a>, or <button>
-      //   3. A descendant whose computed cursor is "pointer" (Bubble.io click targets)
-      //   4. Force-click the card itself as last resort
-      //
-      // We NEVER click invisible wrapper divs — we always prefer the visible
-      // interactive child that the user would actually click.
+      // Step 1: prefer button / [role="button"] / <a> inside the card
+      const clickable = targetCard.locator("button, [role='button'], a").first();
+      const hasClickable = (await clickable.count()) > 0;
 
-      // Check if the card element itself is the interactive target
-      const cardIsInteractive = await targetCard.evaluate(el => {
-        const tag = el.tagName.toLowerCase();
-        const role = (el.getAttribute('role') || '').toLowerCase();
-        const tab  = el.getAttribute('tabindex');
-        return tag === 'a' || tag === 'button' || role === 'button' || tab === '0';
-      }).catch(() => false);
-
-      // Look for explicit interactive descendants
-      const explicitChild = targetCard.locator(
-        "button, a, [role='button'], [tabindex='0']"
-      ).first();
-      const hasExplicit = !cardIsInteractive && (await explicitChild.count()) > 0;
-
-      let clickTarget;
-      let clickDesc;
-      if (cardIsInteractive) {
-        clickTarget = targetCard;
-        clickDesc   = 'card itself (role/tab/tag interactive)';
-      } else if (hasExplicit) {
-        clickTarget = explicitChild;
-        clickDesc   = 'explicit interactive child (role/tab/a/button)';
+      let clickTarget, clickDesc;
+      if (hasClickable) {
+        clickTarget = clickable;
+        clickDesc   = 'button/[role=button]/a child';
       } else {
-        // Find a cursor:pointer child via evaluate, mark it, then locate
+        // Step 2: find a cursor:pointer child
         const markedPointer = await page.evaluate(() => {
           const marked = document.querySelector('[data-target-class="yes"]');
           if (!marked) return false;
@@ -819,11 +802,11 @@ async function runBookingJob(job, opts = {}) {
         if (markedPointer) {
           clickTarget = page.locator('[data-click-target="yes"]').first();
           clickDesc   = 'cursor:pointer child';
-          // clean up after use
           page.evaluate(() =>
             document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
           ).catch(() => {});
         } else {
+          // Step 3: force-click the card itself as last resort
           clickTarget = targetCard;
           clickDesc   = 'card itself (last resort force click)';
         }
