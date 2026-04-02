@@ -21,7 +21,7 @@ try {
 async function runBookingJob(job, opts = {}) {
   const DRY_RUN = opts.dryRun !== undefined ? !!opts.dryRun : (process.env.DRY_RUN === '1');
   if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
-  const { classTitle, classTime, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
+  const { classTitle, classTime, instructor, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
   const DAY_SHORT = {
     Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
@@ -43,6 +43,10 @@ async function runBookingJob(job, opts = {}) {
   const classTimeNorm = classTime
     ? classTime.trim().toLowerCase().replace(/^(\d+:\d+)\s*(am|pm).*/, (_, t, ap) => t + ' ' + ap[0])
     : null;
+  // First name only for fuzzy instructor matching ("Stephanie Sanders" → "stephanie")
+  const instructorFirstName = instructor
+    ? instructor.trim().split(/\s+/)[0].toLowerCase()
+    : 'stephanie';
   let browser;
   let screenshotPath = null;
 
@@ -152,95 +156,78 @@ async function runBookingJob(job, opts = {}) {
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
-    // Step 3: Find the target class with Stephanie on the next available Wednesday.
-    // Two-pass strategy:
-    //   Pass 1 (strict)  — ancestor must contain the class title in its text.
-    //   Pass 2 (fallback) — if title not found in DOM, match by time + instructor only.
-    //                       Clicks the smallest ancestor of the Stephanie element that
-    //                       also contains the normalized time string.
+    // Step 3: Find the target class card.
+    // Strategy: time is primary discriminator; instructor first name is secondary.
+    // Class title match is optional — the YMCA embed does not always render it near the row.
+    // Algorithm: collect every element whose text contains both the normalized time string
+    // and the instructor's first name; pick the smallest such element (shortest textContent
+    // = most specific container); that element is the row to click.
     async function findTargetCard() {
-      const result = await page.evaluate(({ classTitleLower, classTimeNorm }) => {
+      const result = await page.evaluate(({ classTimeNorm, instructorFirstName, classTitleLower }) => {
         document.querySelectorAll('[data-target-class]').forEach(el => {
           el.removeAttribute('data-target-class');
         });
 
-        // Find elements whose own direct text nodes say "Stephanie S." (with dot).
-        const stephanieEls = [];
+        // Collect every element matching time + instructor first name.
+        const candidates = [];
         for (const el of document.querySelectorAll('*')) {
-          const directText = Array.from(el.childNodes)
-            .filter(n => n.nodeType === Node.TEXT_NODE)
-            .map(n => n.textContent.trim())
-            .filter(t => t.length > 0)
-            .join('');
-          if (/stephanie\s+s\./i.test(directText)) stephanieEls.push(el);
+          const txt = el.textContent.toLowerCase();
+          if (classTimeNorm && !txt.includes(classTimeNorm)) continue;
+          if (!txt.includes(instructorFirstName)) continue;
+          candidates.push(el);
         }
 
-        const timeRejected = [];
-
-        // --- Pass 1: original title-based match ---
-        if (classTitleLower) {
-          for (const stephanieEl of stephanieEls) {
-            let ancestor = stephanieEl.parentElement;
-            while (ancestor && ancestor !== document.body) {
-              const txt = ancestor.textContent.toLowerCase();
-              if (txt.includes(classTitleLower) && !txt.includes(classTitleLower + ' level 2')) {
-                let clickTarget = stephanieEl;
-                while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
-                  clickTarget = clickTarget.parentElement;
-                }
-                if (clickTarget.parentElement === ancestor) {
-                  const rowText = clickTarget.textContent.toLowerCase();
-                  if (classTimeNorm && !rowText.includes(classTimeNorm)) {
-                    timeRejected.push(clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
-                    break;
-                  }
-                  clickTarget.setAttribute('data-target-class', 'yes');
-                  return { matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), timeRejected, pass: 1, debug: null };
-                }
-                break;
-              }
-              ancestor = ancestor.parentElement;
+        // Debug: if no candidates, dump all elements containing the time string.
+        if (candidates.length === 0) {
+          const timeEls = [];
+          for (const el of document.querySelectorAll('*')) {
+            if (classTimeNorm && el.textContent.toLowerCase().includes(classTimeNorm)) {
+              timeEls.push(el.textContent.replace(/\s+/g, ' ').trim().slice(0, 100));
             }
           }
-        }
-
-        // --- Pass 2: fallback — match by smallest ancestor containing the time ---
-        // Handles cases where the class title isn't rendered near the row in the DOM.
-        if (classTimeNorm) {
-          for (const stephanieEl of stephanieEls) {
-            let ancestor = stephanieEl.parentElement;
-            while (ancestor && ancestor !== document.body) {
-              if (ancestor.textContent.toLowerCase().includes(classTimeNorm)) {
-                ancestor.setAttribute('data-target-class', 'yes');
-                return { matched: ancestor.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), timeRejected, pass: 2, debug: null };
-              }
-              ancestor = ancestor.parentElement;
+          return {
+            matched: null,
+            debug: {
+              candidateCount: 0,
+              timeElTexts: timeEls.slice(0, 6),
+              classTimeNorm,
+              instructorFirstName,
             }
-          }
+          };
         }
 
+        // Pick the most specific match — smallest textContent (fewest characters).
+        candidates.sort((a, b) => a.textContent.length - b.textContent.length);
+        const best = candidates[0];
+
+        // Soft title check — log if missing but don't reject.
+        const titlePresent = classTitleLower ? best.textContent.toLowerCase().includes(classTitleLower) : true;
+
+        best.setAttribute('data-target-class', 'yes');
         return {
-          matched: null,
-          timeRejected,
-          pass: 0,
-          debug: {
-            stephanieElCount: stephanieEls.length,
-            stephanieTexts: stephanieEls.slice(0, 4).map(el =>
-              el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60))
-          }
+          matched: best.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
+          titlePresent,
+          debug: null,
         };
-      }, { classTitleLower, classTimeNorm });
+      }, { classTimeNorm, instructorFirstName, classTitleLower });
 
-      if (result.timeRejected && result.timeRejected.length > 0) {
-        result.timeRejected.forEach(r => console.log('  Rejected (time mismatch):', r));
-      }
       if (result.matched) {
-        if (result.pass === 2) console.log('⚠️  Title not in DOM — matched by time+instructor fallback (pass 2)');
+        if (result.titlePresent === false) {
+          console.log(`⚠️  Class title "${classTitle}" not found in matched row — matched by time+instructor`);
+        }
         console.log('Matched row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 
-      if (result.debug) console.log('findTargetCard debug:', JSON.stringify(result.debug));
+      if (result.debug) {
+        console.log('findTargetCard: no match. debug =', JSON.stringify(result.debug));
+        if (result.debug.timeElTexts && result.debug.timeElTexts.length > 0) {
+          console.log('Elements containing time string:');
+          result.debug.timeElTexts.forEach(t => console.log(' ', t));
+        } else {
+          console.log('No elements found containing time string:', classTimeNorm);
+        }
+      }
       return null;
     }
 
@@ -293,7 +280,7 @@ async function runBookingJob(job, opts = {}) {
     }
 
     if (!targetCard) {
-      const msg = `Could not find ${classTitle} with Stephanie on any ${dayOfWeek || dayShort} tab.`;
+      const msg = `Could not find class at ${classTime || 'target time'} with instructor ${instructor || 'Stephanie'} on any ${dayOfWeek || dayShort} tab.`;
       console.log(msg);
       await snap();
       return { status: 'error', message: msg, screenshotPath };
