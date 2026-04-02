@@ -337,20 +337,36 @@ async function runBookingJob(job, opts = {}) {
     console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
-    // Scroll the schedule list back to the top so early-morning classes (which
-    // are above the initial scroll position) are rendered into the DOM before we
-    // scan for elements.  The page uses lazy/virtual rendering, so classes that
-    // are above the current scroll position may not be in the DOM at all.
+    // Scroll every scrollable element to the top so early-morning classes that
+    // use lazy/virtual rendering are brought into the DOM before we scan.
     async function scrollScheduleToTop() {
-      await page.evaluate(() => {
-        // Try every scrollable ancestor of a known time element.
-        const el = document.querySelector('[class*="schedule"], [class*="list"], [class*="events"]')
-          || document.querySelector('main, [role="main"]')
-          || document.body;
-        el.scrollTop = 0;
+      const scrolledCount = await page.evaluate(() => {
+        let n = 0;
+        document.querySelectorAll('*').forEach(el => {
+          if (el.scrollTop > 0) { el.scrollTop = 0; n++; }
+        });
         window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        return n;
       });
-      await page.waitForTimeout(600); // let the renderer populate newly-visible rows
+      console.log(`scrollScheduleToTop: reset ${scrolledCount} element(s).`);
+      await page.waitForTimeout(800); // let renderer populate newly-visible rows
+    }
+
+    // Probe the DOM for any element containing the target time string.
+    // Returns the first few matching text snippets for diagnostics.
+    async function probeTimeInDom() {
+      return page.evaluate((timeStr) => {
+        const found = [];
+        for (const el of document.querySelectorAll('*')) {
+          if (found.length >= 6) break;
+          if (el.textContent.toLowerCase().includes(timeStr)) {
+            found.push(el.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
+          }
+        }
+        return found;
+      }, classTimeNorm || '7:45 a');
     }
 
     // Helper: scan a set of day-tab locators and return the first card match.
@@ -363,6 +379,8 @@ async function runBookingJob(job, opts = {}) {
         await scrollScheduleToTop();
         const card = await findTargetCard();
         if (card) { console.log('Found class on ' + tabText.trim()); return card; }
+        const probe = await probeTimeInDom();
+        console.log('DOM probe for "' + (classTimeNorm||'7:45 a') + '" on ' + tabText.trim() + ':', probe.length ? probe : '(none found in DOM)');
         console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
       }
       return null;
@@ -381,8 +399,13 @@ async function runBookingJob(job, opts = {}) {
           await page.waitForTimeout(2000);
           await scrollScheduleToTop();
           targetCard = await findTargetCard();
-          if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
-          else            console.log('Class not on exact date tab — falling back to full scan.');
+          if (targetCard) {
+            console.log('Found class on exact date tab: ' + tabText.trim());
+          } else {
+            const probe = await probeTimeInDom();
+            console.log('DOM probe for "' + (classTimeNorm||'7:45 a') + '" on exact tab:', probe.length ? probe : '(none found in DOM)');
+            console.log('Class not on exact date tab — falling back to full scan.');
+          }
           exactTabClicked = true;
           break;
         }
