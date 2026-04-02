@@ -1,0 +1,153 @@
+Add a “Force Run Selected Job” feature that bypasses scheduler rules and executes the bot immediately.
+
+Current state:
+
+* scheduler logic enforces:
+
+  * phase (too_early, warmup, sniper, late)
+  * cooldown
+  * last_success_at (booked)
+  * concurrency guard
+* UI already has:
+
+  * Run Selected Job (direct)
+  * Run via Scheduler (full logic)
+
+Goal:
+Allow a controlled override that ignores scheduler restrictions and runs the job immediately.
+
+Do NOT:
+
+* remove existing safeguards globally
+* modify scheduler loop behavior
+* change DB schema
+* over-engineer
+
+---
+
+## PART 1 — Add server route
+
+In `src/web/server.js`, add:
+
+POST `/force-run-job`
+
+Logic:
+
+1. Read job id from query/body
+2. Load job via getJobById(id)
+3. Call:
+
+```js
+await runBookingJob(job);
+```
+
+4. Return:
+
+```js
+{ success: true, message: "Force run executed" }
+```
+
+Wrap in try/catch and return error message if it fails.
+
+---
+
+## PART 2 — Add UI button
+
+In Actions card:
+
+```html
+<button id="force-run-btn" class="danger">
+  Force Run (Ignore Rules)
+</button>
+```
+
+Style:
+
+* use warning/danger color (red tone)
+* make visually distinct from normal run
+
+---
+
+## PART 3 — Add confirmation (important)
+
+Before running:
+
+```js
+if (!confirm("Force run will ignore timing, cooldown, and booking status. Continue?")) {
+  return;
+}
+```
+
+---
+
+## PART 4 — Client handler
+
+```js
+async function forceRunSelected() {
+  const id = selectedJobId;
+  const status = document.getElementById("status-box");
+
+  if (!confirm("Force run ignores scheduler rules. Continue?")) return;
+
+  status.textContent = "Force running…";
+
+  try {
+    const res = await fetch(`/force-run-job?id=${id}`, {
+      method: "POST"
+    });
+
+    const data = await res.json();
+    status.textContent = data.message || "Force run complete";
+  } catch (e) {
+    status.textContent = "Force run failed";
+  }
+}
+```
+
+Attach to button.
+
+---
+
+## PART 5 — Label clearly (very important UX)
+
+Update button labels:
+
+* Run Selected Job → “Run Now (Direct)”
+* Run via Scheduler → “Run via Scheduler”
+* New → “⚠ Force Run (Ignore Rules)”
+
+---
+
+## PART 6 — Behavior rules
+
+Force run:
+
+* ignores:
+
+  * phase
+  * cooldown
+  * last_success_at
+* still respects:
+
+  * login flow
+  * selector logic
+* does NOT modify scheduler loop
+
+---
+
+## PART 7 — Logging clarity
+
+Console log:
+
+```js
+console.log(`⚠ FORCE RUN Job #${job.id} — ignoring scheduler rules`);
+```
+
+---
+
+## After changes, explain:
+
+* difference between direct, scheduler, and force run
+* when to use force run
+* what safeguards are bypassed
+* what still remains protected

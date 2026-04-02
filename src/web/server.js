@@ -590,7 +590,10 @@ function buildHtml(jobs, error, editError) {
       <div class="card-header"><h2>Actions</h2></div>
       <div class="card-body actions">
         <button class="btn btn-primary" id="btn-run" onclick="runSelected()">
-          Run Selected Job
+          &#9654; Run Now (Direct)
+        </button>
+        <button class="btn btn-danger" id="btn-force-run" onclick="forceRunSelected()">
+          &#9888; Force Run (Ignore Rules)
         </button>
         <button class="btn btn-secondary" id="btn-register" onclick="runRegister()">
           Run Default Job
@@ -1223,6 +1226,33 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
+    // ---- force run (bypasses all scheduler rules) ----
+
+    async function forceRunSelected() {
+      if (!selectedJobId) return;
+      if (!confirm('Force run ignores phase, cooldown, and booking status. Job #' + selectedJobId + ' will attempt to register immediately. Continue?')) return;
+      const btn      = document.getElementById('btn-force-run');
+      const statusEl = document.getElementById('status');
+      btn.disabled    = true;
+      btn.textContent = 'Force running\u2026';
+      stopDots();
+      startDots(statusEl, '\u26a0 Force running Job #' + selectedJobId);
+      try {
+        const res  = await fetch('/force-run-job?id=' + selectedJobId, { method: 'POST' });
+        const data = await res.json();
+        stopDots();
+        statusEl.textContent = data.message || 'Force run complete.';
+        statusEl.className   = data.success ? 'success' : 'error';
+      } catch (e) {
+        stopDots();
+        statusEl.className   = 'error';
+        statusEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.textContent = '\u26a0 Force Run (Ignore Rules)';
+        btn.disabled    = false;
+      }
+    }
+
     // ---- manual scheduler tick (selected job only) ----
 
     async function runSelectedScheduler() {
@@ -1379,6 +1409,30 @@ const server = http.createServer((req, res) => {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     runInBackground({ classTitle: 'Core Pilates', maxAttempts: 1 });
     json({ started: true });
+
+  } else if (req.method === 'POST' && path === '/force-run-job') {
+    const urlObj = new URL(req.url, 'http://localhost');
+    const jobId  = parseInt(urlObj.searchParams.get('id'), 10);
+    if (!jobId) { json({ success: false, message: 'Missing job id' }); return; }
+    const dbJob = getJobById(jobId);
+    if (!dbJob) { json({ success: false, message: `Job #${jobId} not found` }); return; }
+    console.log(`\u26a0 FORCE RUN Job #${dbJob.id} (${dbJob.class_title}) — ignoring scheduler rules`);
+    (async () => {
+      try {
+        const result = await runBookingJob({
+          classTitle: dbJob.class_title,
+          classTime:  dbJob.class_time,
+          dayOfWeek:  dbJob.day_of_week,
+          targetDate: dbJob.target_date || null,
+        });
+        setLastRun(dbJob.id, result.status, result.status === 'error' ? (result.message || null) : null);
+        json({ success: result.status !== 'error', message: `Job #${jobId}: ${result.status} — ${result.message}` });
+      } catch (err) {
+        console.error(`Force run error:`, err.message);
+        setLastRun(dbJob.id, 'error', err.message);
+        json({ success: false, message: err.message });
+      }
+    })();
 
   } else if (req.method === 'GET' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
