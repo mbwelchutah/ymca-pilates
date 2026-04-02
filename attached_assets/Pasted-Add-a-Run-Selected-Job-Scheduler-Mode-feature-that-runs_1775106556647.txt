@@ -1,0 +1,146 @@
+Add a “Run Selected Job (Scheduler Mode)” feature that runs a single job using full scheduler logic instead of calling the bot directly.
+
+Current state:
+
+* scheduler loop determines:
+
+  * eligibility (phase)
+  * cooldown
+  * already booked
+  * concurrency guard
+* UI can run a job directly (bypasses scheduler rules)
+* there is a run-eligible-jobs-once.js (or similar)
+
+Goal:
+Allow testing a single job exactly as the scheduler would run it.
+
+Do NOT:
+
+* duplicate scheduler logic
+* bypass safeguards (cooldown, booked, etc.)
+* change DB schema
+* over-engineer
+
+---
+
+## PART 1 — Extract reusable scheduler function
+
+In scheduler code (IMPORTANT):
+
+Refactor so logic becomes reusable:
+
+```js
+async function runEligibleJobs({ onlyJobId = null } = {}) {
+  const jobs = await getAllJobs();
+
+  for (const job of jobs) {
+
+    if (onlyJobId && job.id !== onlyJobId) continue;
+
+    // existing logic:
+    // - is_active
+    // - phase check
+    // - cooldown
+    // - last_success_at
+    // - concurrency guard
+
+    if (!eligible) continue;
+
+    await runBookingJob(job);
+  }
+}
+```
+
+Export this function.
+
+---
+
+## PART 2 — Add new route
+
+In server.js:
+
+```js
+POST /run-selected-scheduler
+```
+
+Logic:
+
+* read job id from body/query
+* call:
+
+```js
+await runEligibleJobs({ onlyJobId: id });
+```
+
+Return:
+
+```js
+{ success: true, message: "Scheduler run complete for selected job" }
+```
+
+---
+
+## PART 3 — Add UI button
+
+In Actions card:
+
+```html
+<button id="run-scheduler-selected">
+  Run Selected (Scheduler Mode)
+</button>
+```
+
+---
+
+## PART 4 — Client handler
+
+```js
+async function runSelectedScheduler() {
+  const id = selectedJobId;
+
+  const status = document.getElementById("status-box");
+  status.textContent = "Running via scheduler…";
+
+  try {
+    const res = await fetch(`/run-selected-scheduler?id=${id}`, {
+      method: "POST"
+    });
+
+    const data = await res.json();
+    status.textContent = data.message;
+  } catch (e) {
+    status.textContent = "Error running scheduler flow";
+  }
+}
+```
+
+---
+
+## PART 5 — Label clearly (important UX)
+
+Rename buttons:
+
+* "Run Selected Job" → direct bot run
+* "Run via Scheduler" → full system simulation
+
+---
+
+## PART 6 — Behavior rules
+
+* respects:
+
+  * cooldown
+  * booked state
+  * phase
+  * concurrency
+* may SKIP instead of RUN (this is correct)
+* logs WHY it skipped
+
+---
+
+## After changes, explain:
+
+* difference between direct run vs scheduler run
+* how filtering by job id works
+* why skip behavior is expected
+* when to use each button

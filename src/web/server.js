@@ -604,8 +604,11 @@ function buildHtml(jobs, error, editError) {
         <button class="btn btn-danger" id="btn-delete" onclick="deleteSelectedJob()">
           Delete Job
         </button>
+        <button class="btn btn-secondary" id="btn-run-sched-sel" onclick="runSelectedScheduler()">
+          &#9654; Run Selected (Scheduler Mode)
+        </button>
         <button class="btn btn-secondary" id="btn-run-tick" onclick="runSchedulerOnce()">
-          &#9654;&#9654; Run Scheduler Now
+          &#9654;&#9654; Run All (Scheduler Mode)
         </button>
         <button class="btn btn-muted" id="btn-pause" onclick="pauseScheduler()">
           &#9646;&#9646; Pause Scheduler
@@ -1220,7 +1223,33 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
-    // ---- manual scheduler tick ----
+    // ---- manual scheduler tick (selected job only) ----
+
+    async function runSelectedScheduler() {
+      if (!selectedJobId) return;
+      const btn      = document.getElementById('btn-run-sched-sel');
+      const statusEl = document.getElementById('status');
+      btn.disabled    = true;
+      btn.textContent = 'Running\u2026';
+      stopDots();
+      startDots(statusEl, 'Running scheduler mode for Job #' + selectedJobId);
+      try {
+        const res  = await fetch('/run-selected-scheduler?id=' + selectedJobId, { method: 'POST' });
+        const data = await res.json();
+        stopDots();
+        statusEl.textContent = data.message || 'Done.';
+        statusEl.className   = data.success ? 'success' : 'error';
+      } catch (e) {
+        stopDots();
+        statusEl.className   = 'error';
+        statusEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.textContent = '\u25BA Run Selected (Scheduler Mode)';
+        btn.disabled    = false;
+      }
+    }
+
+    // ---- manual scheduler tick (all jobs) ----
 
     async function runSchedulerOnce() {
       const btn      = document.getElementById('btn-run-tick');
@@ -1500,6 +1529,27 @@ const server = http.createServer((req, res) => {
         json({ success: true, message: summary + detail, results });
       } catch (err) {
         console.error('run-scheduler-once error:', err.message);
+        json({ success: false, message: err.message });
+      }
+    })();
+
+  } else if (req.method === 'POST' && path === '/run-selected-scheduler') {
+    const urlObj = new URL(req.url, `http://localhost`);
+    const jobId  = parseInt(urlObj.searchParams.get('id'), 10);
+    if (!jobId) { json({ success: false, message: 'Missing job id' }); return; }
+    (async () => {
+      try {
+        const results = await runTick({ onlyJobId: jobId });
+        const r = results[0];
+        if (!r) {
+          json({ success: true, message: `Job #${jobId} not found or inactive — nothing ran` });
+        } else if (r.status === 'skipped') {
+          json({ success: true, message: `Job #${jobId} skipped — ${r.message}` });
+        } else {
+          json({ success: r.status !== 'error', message: `Job #${jobId}: ${r.status} — ${r.message}`, result: r });
+        }
+      } catch (err) {
+        console.error('run-selected-scheduler error:', err.message);
         json({ success: false, message: err.message });
       }
     })();

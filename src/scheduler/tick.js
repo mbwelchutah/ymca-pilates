@@ -36,19 +36,23 @@ const runningJobs = new Set();
 
 // Executes one scheduler tick: loads active jobs, filters by phase/cooldown/
 // booked status, and runs eligible ones.
+// Options:
+//   onlyJobId {number|null} — when set, only that job id is considered.
 // Returns an array of result objects: { jobId, phase, status, message }.
-async function runTick() {
-  console.log(`\n[${nowLabel()}] --- Scheduler tick ---`);
+async function runTick({ onlyJobId = null } = {}) {
+  const label = onlyJobId ? `job #${onlyJobId} only` : 'all jobs';
+  console.log(`\n[${nowLabel()}] --- Scheduler tick (${label}) ---`);
 
   let jobs;
   try {
     jobs = getAllJobs().filter(j => j.is_active === 1);
+    if (onlyJobId) jobs = jobs.filter(j => j.id === onlyJobId);
   } catch (err) {
     console.error('  ERROR loading jobs:', err.message);
     return [];
   }
 
-  console.log(`  Active jobs: ${jobs.length}`);
+  console.log(`  Active jobs in scope: ${jobs.length}`);
   const results = [];
 
   for (const dbJob of jobs) {
