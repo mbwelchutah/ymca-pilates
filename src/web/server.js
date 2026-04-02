@@ -7,6 +7,7 @@ const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getPhase }           = require('../scheduler/booking-window');
 const { setSchedulerPaused } = require('../scheduler/scheduler-state');
+const { runTick }            = require('../scheduler/tick');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -602,6 +603,9 @@ function buildHtml(jobs, error, editError) {
         </button>
         <button class="btn btn-danger" id="btn-delete" onclick="deleteSelectedJob()">
           Delete Job
+        </button>
+        <button class="btn btn-secondary" id="btn-run-tick" onclick="runSchedulerOnce()">
+          &#9654;&#9654; Run Scheduler Now
         </button>
         <button class="btn btn-muted" id="btn-pause" onclick="pauseScheduler()">
           &#9646;&#9646; Pause Scheduler
@@ -1216,6 +1220,31 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
+    // ---- manual scheduler tick ----
+
+    async function runSchedulerOnce() {
+      const btn      = document.getElementById('btn-run-tick');
+      const statusEl = document.getElementById('status');
+      btn.disabled    = true;
+      btn.textContent = 'Running\u2026';
+      stopDots();
+      startDots(statusEl, 'Running scheduler tick');
+      try {
+        const res  = await fetch('/run-scheduler-once', { method: 'POST' });
+        const data = await res.json();
+        stopDots();
+        statusEl.textContent = data.message || 'Scheduler tick complete.';
+        statusEl.className   = data.success ? 'success' : 'error';
+      } catch (e) {
+        stopDots();
+        statusEl.className   = 'error';
+        statusEl.textContent = 'Network error: ' + e.message;
+      } finally {
+        btn.textContent = '\u25BA\u25BA Run Scheduler Now';
+        btn.disabled    = false;
+      }
+    }
+
     // ---- scheduler pause / resume ----
 
     function updateSchedulerUI(paused) {
@@ -1455,6 +1484,25 @@ const server = http.createServer((req, res) => {
       res.writeHead(302, { Location: '/' });
       res.end();
     });
+
+  } else if (req.method === 'POST' && path === '/run-scheduler-once') {
+    (async () => {
+      try {
+        const results = await runTick();
+        const ran     = results.filter(r => r.status !== 'skipped');
+        const skipped = results.filter(r => r.status === 'skipped');
+        const summary = ran.length
+          ? ran.map(r => `Job #${r.jobId}: ${r.status} — ${r.message}`).join('; ')
+          : 'No eligible jobs ran';
+        const detail  = skipped.length
+          ? ` (${skipped.length} skipped)`
+          : '';
+        json({ success: true, message: summary + detail, results });
+      } catch (err) {
+        console.error('run-scheduler-once error:', err.message);
+        json({ success: false, message: err.message });
+      }
+    })();
 
   } else if (req.method === 'POST' && path === '/pause-scheduler') {
     setSchedulerPaused(true);

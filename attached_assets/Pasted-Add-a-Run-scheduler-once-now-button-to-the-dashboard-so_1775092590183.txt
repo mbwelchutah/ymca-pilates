@@ -1,0 +1,113 @@
+Add a “Run scheduler once now” button to the dashboard so I can manually trigger a single scheduler tick without waiting 60 seconds.
+
+Current state:
+
+* scheduler loop runs every 60 seconds
+* there is already a script: run-eligible-jobs-once.js (or equivalent logic)
+* UI has Actions section with buttons
+* backend already supports running jobs
+
+Goal:
+Allow a manual one-time scheduler execution from the UI.
+
+Do NOT:
+
+* change scheduler loop logic
+* change DB schema
+* add frameworks
+* duplicate scheduler logic unnecessarily
+
+---
+
+## PART 1 — Add server route
+
+In `src/web/server.js`, add:
+
+```js
+POST /run-scheduler-once
+```
+
+This route should:
+
+* import the existing one-shot scheduler logic (same used by scheduler:run)
+* execute it once
+* return JSON:
+
+```js
+{ success: true, message: "Scheduler run complete" }
+```
+
+Wrap in try/catch and return error if needed.
+
+---
+
+## PART 2 — Add button to UI
+
+In the Actions card, add:
+
+```html
+<button id="run-once-btn">Run Scheduler Now</button>
+```
+
+Style:
+
+* full-width (mobile friendly)
+* secondary color (not primary run button)
+
+---
+
+## PART 3 — Add client-side handler
+
+In your existing script:
+
+```js
+async function runSchedulerOnce() {
+  const status = document.getElementById("status-box");
+
+  status.textContent = "Running scheduler…";
+
+  try {
+    const res = await fetch("/run-scheduler-once", { method: "POST" });
+    const data = await res.json();
+
+    status.textContent = data.message || "Scheduler run complete";
+  } catch (err) {
+    status.textContent = "Error running scheduler";
+  }
+}
+```
+
+Attach:
+
+```js
+document.getElementById("run-once-btn").onclick = runSchedulerOnce;
+```
+
+---
+
+## PART 4 — UX polish
+
+* Disable button while running
+* Re-enable after completion
+* Show which jobs ran (optional later)
+
+---
+
+## PART 5 — Behavior rules
+
+* respects existing logic:
+
+  * is_active
+  * cooldown
+  * last_success_at
+* does NOT bypass safeguards
+* does NOT interfere with loop
+
+---
+
+## After changes, explain:
+
+* how the route reuses scheduler logic
+* how the UI triggers it
+* how it differs from the loop
+* when to use it (testing vs normal operation)
