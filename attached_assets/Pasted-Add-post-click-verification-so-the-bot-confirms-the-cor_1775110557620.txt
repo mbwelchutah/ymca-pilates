@@ -1,0 +1,147 @@
+Add post-click verification so the bot confirms the correct class was selected before clicking Register/Waitlist.
+
+Current state:
+
+* bot selects best row using filtering + scoring
+* bot clicks row
+* immediately proceeds to register
+
+Problem:
+
+* fallback logic could still click wrong class in edge cases
+
+Goal:
+Verify the modal (or next screen) matches expected time + instructor BEFORE confirming booking.
+
+Do NOT:
+
+* remove existing logic
+* slow down flow significantly
+* rely on class title (still unreliable)
+
+---
+
+# PART 1 — After clicking row, wait for modal
+
+```js
+await matchedRow.click();
+
+// wait for modal or detail panel
+await page.waitForSelector("button:has-text('Register'), button:has-text('Waitlist')", {
+  timeout: 5000
+});
+```
+
+---
+
+# PART 2 — Extract modal text
+
+```js
+const modalText = (await page.locator("body").innerText()).toLowerCase();
+```
+
+(you can refine selector later if modal container is known)
+
+---
+
+# PART 3 — Normalize expected values
+
+```js
+const expectedTime = targetTime.toLowerCase().replace("am", "a").replace("pm", "p");
+
+const expectedInstructor = instructor.split(" ")[0].toLowerCase();
+```
+
+---
+
+# PART 4 — Verify match
+
+```js
+const matchesTime = modalText.includes(expectedTime);
+const matchesInstructor = modalText.includes(expectedInstructor);
+```
+
+---
+
+# PART 5 — Add confidence check BEFORE booking
+
+```js
+if (!matchesTime || !matchesInstructor) {
+  console.log("❌ MODAL VERIFICATION FAILED");
+
+  console.log("Expected time:", expectedTime);
+  console.log("Expected instructor:", expectedInstructor);
+
+  console.log("Modal content preview:");
+  console.log(modalText.slice(0, 300));
+
+  throw new Error("Modal verification failed — aborting booking");
+}
+```
+
+---
+
+# PART 6 — Only proceed if verified
+
+```js
+console.log("✅ Modal verified — proceeding to booking");
+
+await clickRegisterOrWaitlistButton();
+```
+
+---
+
+# PART 7 — Optional (very strong improvement)
+
+Add retry:
+
+```js
+if (!matchesTime) {
+  console.log("⚠️ Time mismatch — retrying selection once");
+  // re-run matching logic or pick next best row
+}
+```
+
+---
+
+# PART 8 — Logging (important for debugging)
+
+```js
+console.log("Verification result:");
+console.log({
+  matchesTime,
+  matchesInstructor,
+  expectedTime,
+  expectedInstructor
+});
+```
+
+---
+
+# PART 9 — Final safety hierarchy
+
+Final system becomes:
+
+1. filter (day + instructor)
+2. score rows
+3. pick best row
+4. click row
+5. verify modal
+6. ONLY THEN confirm booking
+
+---
+
+# PART 10 — Behavior rules
+
+* NEVER click Register if verification fails
+* fail safe > wrong booking
+* keep verification fast (< 100ms text check)
+* do not rely on class title
+
+---
+
+# AFTER CHANGES — explain:
+
+* how modal verification prevents bad clicks
+* why time + instructor are used (not title)
+* how this creates a “two-step confirmation”

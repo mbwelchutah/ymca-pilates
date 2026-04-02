@@ -318,6 +318,25 @@ async function runBookingJob(job, opts = {}) {
     await targetCard.click();
     await page.waitForTimeout(2000);
 
+    // Step 4b: Verify the modal/detail panel matches the expected time + instructor
+    // BEFORE attempting to click Register/Waitlist.  This is the safety gate that
+    // prevents a fallback selection from booking the wrong class.
+    // Uses page body text so it works regardless of Bubble.io's modal selector.
+    {
+      const modalText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+      const verifyTime  = !!classTimeNorm && modalText.includes(classTimeNorm);
+      const verifyInst  = modalText.includes(instructorFirstName);
+      console.log('Modal verification —', JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
+      if (!verifyTime || !verifyInst) {
+        console.log('❌ Modal verification failed — aborting to avoid wrong booking.');
+        console.log('Modal preview:', modalText.slice(0, 300));
+        await snap();
+        const failMsg = `Modal verification failed: expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
+        return { status: 'error', message: failMsg, screenshotPath };
+      }
+      console.log('✅ Modal verified — proceeding to booking.');
+    }
+
     // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet.
     // maxAttemptsOpt can be passed in job object (e.g. 1 for web UI, 20 for cron).
     const maxAttempts = maxAttemptsOpt || 20;
