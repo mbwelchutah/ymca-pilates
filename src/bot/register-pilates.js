@@ -278,6 +278,17 @@ async function runBookingJob(job, opts = {}) {
           if (diff < bestDiff) { bestDiff = diff; bestEl = el; }
         }
 
+        // Refuse the fallback if the closest match is more than 2 hours away —
+        // that means the class simply isn't on this tab, not that it's nearby.
+        const MAX_DIFF = 120; // minutes
+        if (targetMin !== null && bestDiff > MAX_DIFF) {
+          const bestText = bestEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
+          return {
+            matched: null, fallback: null, debug: null,
+            tooFar: { bestDiff, bestText, targetMin },
+          };
+        }
+
         bestEl.setAttribute('data-target-class', 'yes');
         return {
           matched: bestEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
@@ -300,6 +311,12 @@ async function runBookingJob(job, opts = {}) {
         }
         console.log('Matched row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
+      }
+
+      if (result.tooFar) {
+        const diffH = Math.round(result.tooFar.bestDiff / 60 * 10) / 10;
+        console.log(`⚠️  Fallback refused — closest Stephanie class is ${diffH} hr(s) from target (${classTimeNorm}). Closest: "${result.tooFar.bestText}"`);
+        console.log('   Class is not on this tab yet — registration may not be open.');
       }
 
       if (result.debug) {
