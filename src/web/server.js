@@ -1282,7 +1282,7 @@ function buildHtml(jobs, error, editError) {
           const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
           statusEl.className   = data.success ? 'success' : 'error';
           statusEl.textContent = prefix + data.log;
-          if (data.success) { triggerHapticFeedback(); triggerSuccessCheckmark(); }
+          if (data.success) triggerUnifiedSuccess();
           showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
@@ -1395,7 +1395,7 @@ function buildHtml(jobs, error, editError) {
         stopDots();
         statusEl.textContent = data.message || 'Force run complete.';
         statusEl.className   = data.success ? 'success' : 'error';
-        if (data.success) { triggerHapticFeedback(); triggerSuccessCheckmark(); }
+        if (data.success) triggerUnifiedSuccess();
       } catch (e) {
         stopDots();
         statusEl.className   = 'error';
@@ -1501,32 +1501,37 @@ function buildHtml(jobs, error, editError) {
       }
     })();
 
-    // ---- success checkmark ----
+    // ---- unified success feedback ----
 
-    function triggerSuccessCheckmark() {
+    function triggerFlash() {
+      var flash = document.getElementById('haptic-flash');
+      flash.classList.remove('haptic-active');
+      void flash.offsetWidth;
+      flash.classList.add('haptic-active');
+    }
+
+    function triggerBounce() {
+      var card = document.querySelector('.selected-job-card');
+      if (!card) return;
+      card.classList.remove('haptic-bounce');
+      void card.offsetWidth;
+      card.classList.add('haptic-bounce');
+    }
+
+    function triggerCheckmark() {
       var el = document.getElementById('success-checkmark');
       el.classList.remove('checkmark-show');
       void el.offsetWidth;
       el.classList.add('checkmark-show');
     }
 
-    // ---- haptic-style feedback on booking success ----
-
-    function triggerHapticFeedback() {
-      var flash = document.getElementById('haptic-flash');
-      var card  = document.querySelector('.selected-job-card');
-
-      flash.classList.remove('haptic-active');
-      void flash.offsetWidth;
-      flash.classList.add('haptic-active');
-
-      if (card) {
-        card.classList.remove('haptic-bounce');
-        void card.offsetWidth;
-        card.classList.add('haptic-bounce');
-      }
-
+    function triggerUnifiedSuccess() {
       if (navigator.vibrate) navigator.vibrate(10);
+      requestAnimationFrame(function() {
+        triggerFlash();
+        triggerBounce();
+        triggerCheckmark();
+      });
     }
 
     // ---- dry run toggle ----

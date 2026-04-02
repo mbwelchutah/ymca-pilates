@@ -1,0 +1,134 @@
+Synchronize success feedback (flash + bounce + checkmark) so they trigger within ~50ms and feel like one unified interaction.
+
+Current state:
+
+* triggerHapticFeedback() runs flash + bounce
+* triggerSuccessCheckmark() runs separately
+* timing may feel slightly off
+
+Goal:
+Make all success feedback feel like a single, tight “tap” event.
+
+Do NOT:
+
+* add delays longer than 50ms
+* create staggered animations
+* add new animation types
+
+---
+
+## PART 1 — Create unified trigger
+
+Replace separate calls with one function:
+
+```js
+function triggerUnifiedSuccess() {
+  triggerFlash();
+  triggerBounce();
+  triggerCheckmark();
+}
+```
+
+---
+
+## PART 2 — Split effects into atomic functions
+
+Refactor existing code:
+
+```js
+function triggerFlash() {
+  const flash = document.getElementById("haptic-flash");
+  flash.classList.remove("haptic-active");
+  void flash.offsetWidth;
+  flash.classList.add("haptic-active");
+}
+
+function triggerBounce() {
+  const card = document.querySelector(".selected-job-card");
+  if (!card) return;
+
+  card.classList.remove("haptic-bounce");
+  void card.offsetWidth;
+  card.classList.add("haptic-bounce");
+}
+
+function triggerCheckmark() {
+  const el = document.getElementById("success-checkmark");
+
+  el.classList.remove("checkmark-show");
+  void el.offsetWidth;
+  el.classList.add("checkmark-show");
+}
+```
+
+---
+
+## PART 3 — Call them in same frame
+
+This is the key:
+
+```js
+function triggerUnifiedSuccess() {
+  requestAnimationFrame(() => {
+    triggerFlash();
+    triggerBounce();
+    triggerCheckmark();
+  });
+}
+```
+
+This ensures:
+
+* all DOM updates land in same render cycle
+* no micro-delay between effects
+
+---
+
+## PART 4 — Use single trigger
+
+Replace:
+
+```js
+triggerHapticFeedback();
+triggerSuccessCheckmark();
+```
+
+With:
+
+```js
+triggerUnifiedSuccess();
+```
+
+---
+
+## PART 5 — Optional micro-offset (advanced polish)
+
+If needed, add tiny offset (~30ms):
+
+```js
+requestAnimationFrame(() => {
+  triggerFlash();
+  triggerBounce();
+
+  setTimeout(triggerCheckmark, 30);
+});
+```
+
+Only use if checkmark feels late — default should be same-frame.
+
+---
+
+## PART 6 — Behavior rules
+
+* All animations start within ~1 frame (~16ms)
+* No visible sequencing
+* No stacking (reset classes before applying)
+* Total duration still < 1s
+
+---
+
+## After changes, explain:
+
+* how requestAnimationFrame synchronizes timing
+* why same-frame execution feels better
+* when to use micro-offset vs not
