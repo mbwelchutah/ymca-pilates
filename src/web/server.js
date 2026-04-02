@@ -472,6 +472,22 @@ function buildHtml(jobs, error, editError) {
       margin-top: 5px;
       font-variant-numeric: tabular-nums;
     }
+    /* ---- rolling digit countdown ---- */
+    .digit {
+      display: inline-block;
+      position: relative;
+      overflow: hidden;
+      height: 1em;
+      vertical-align: bottom;
+    }
+    .digit-inner {
+      display: block;
+      transition: transform 180ms ease-out;
+    }
+    .digit.roll-up .digit-inner {
+      transform: translateY(-100%);
+    }
+
     .countdown-warning {
       color: #d62828 !important;
       font-weight: 600;
@@ -942,19 +958,78 @@ function buildHtml(jobs, error, editError) {
       return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
     }
 
+    // Builds the .digit span structure for a countdown string from scratch.
+    function initCountdownDigits(el, text) {
+      el.innerHTML = '';
+      for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (ch === ':') {
+          var sep = document.createElement('span');
+          sep.textContent = ':';
+          el.appendChild(sep);
+        } else {
+          var d = document.createElement('span');
+          d.className = 'digit';
+          var inner = document.createElement('span');
+          inner.className = 'digit-inner';
+          inner.textContent = ch;
+          d.appendChild(inner);
+          el.appendChild(d);
+        }
+      }
+    }
+
+    // Slides a single .digit span to its new value; no-op if unchanged.
+    function animateDigit(el, newVal) {
+      var inner = el.querySelector('.digit-inner');
+      if (!inner || inner.textContent === newVal) return;
+      var next = document.createElement('span');
+      next.className = 'digit-inner';
+      next.textContent = newVal;
+      el.appendChild(next);
+      requestAnimationFrame(function() { el.classList.add('roll-up'); });
+      setTimeout(function() {
+        el.classList.remove('roll-up');
+        el.innerHTML = '<span class="digit-inner">' + newVal + '</span>';
+      }, 180);
+    }
+
+    // Animates only the digits that changed; rebuilds if format length changed.
+    function updateCountdownDigits(el, newText) {
+      var digitEls  = el.querySelectorAll('.digit');
+      var newDigits = newText.replace(/:/g, '').split('');
+      if (digitEls.length !== newDigits.length) {
+        initCountdownDigits(el, newText);
+        return;
+      }
+      for (var i = 0; i < newDigits.length; i++) {
+        animateDigit(digitEls[i], newDigits[i]);
+      }
+    }
+
     // Applies countdown text + warning class to a single element.
     // el: DOM element.  bookingOpenMs: epoch ms for when booking opens.
     function applyCountdown(el, bookingOpenMs) {
-      if (!bookingOpenMs) { el.textContent = ''; el.classList.remove('countdown-warning'); return; }
-      const diff     = bookingOpenMs - Date.now();
-      const label    = formatCountdown(bookingOpenMs);
+      if (!bookingOpenMs) {
+        el.innerHTML = '';
+        el.textContent = '';
+        el.classList.remove('countdown-warning');
+        return;
+      }
+      const diff      = bookingOpenMs - Date.now();
       const isWarning = diff > 0 && diff <= 60000;
       if (diff <= 0) {
+        if (el.querySelector('.digit')) el.innerHTML = '';
         el.textContent = '\uD83D\uDD25 OPEN';
         el.classList.remove('countdown-warning');
       } else {
-        el.textContent = label;
+        const label = formatCountdown(bookingOpenMs);
         el.classList.toggle('countdown-warning', isWarning);
+        if (!el.querySelector('.digit')) {
+          initCountdownDigits(el, label);
+        } else {
+          updateCountdownDigits(el, label);
+        }
       }
     }
 

@@ -1,0 +1,141 @@
+Add subtle rolling digit transitions to the countdown timer so number changes feel smooth and premium.
+
+Current state:
+
+* countdown updates every second
+* numbers change instantly (snap)
+* UI is already polished with animations
+
+Goal:
+Make countdown numbers transition smoothly using a small vertical slide (“rolling digit” effect).
+
+Do NOT:
+
+* animate the entire timer block
+* slow down updates
+* add complex libraries
+* over-engineer
+
+---
+
+## PART 1 — Update HTML structure
+
+Instead of plain text:
+
+```html
+<span class="countdown">02:14:09</span>
+```
+
+Render digits individually:
+
+```html
+<span class="countdown">
+  <span class="digit">0</span>
+  <span class="digit">2</span>
+  <span>:</span>
+  <span class="digit">1</span>
+  <span class="digit">4</span>
+  <span>:</span>
+  <span class="digit">0</span>
+  <span class="digit">9</span>
+</span>
+```
+
+---
+
+## PART 2 — Add CSS for rolling effect
+
+```css
+.digit {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  height: 1em;
+}
+
+.digit-inner {
+  display: block;
+  transition: transform 180ms ease-out;
+}
+
+.digit.roll-up .digit-inner {
+  transform: translateY(-100%);
+}
+```
+
+---
+
+## PART 3 — Update rendering logic
+
+When countdown updates:
+
+1. Compare old digits vs new digits
+2. Only animate digits that changed
+
+---
+
+## PART 4 — Update digit smoothly
+
+```js
+function updateDigit(el, newValue) {
+  const inner = el.querySelector(".digit-inner");
+
+  if (!inner || inner.textContent === newValue) return;
+
+  // create next value
+  const next = document.createElement("span");
+  next.className = "digit-inner";
+  next.textContent = newValue;
+
+  el.appendChild(next);
+
+  // trigger animation
+  requestAnimationFrame(() => {
+    el.classList.add("roll-up");
+  });
+
+  // cleanup after animation
+  setTimeout(() => {
+    el.classList.remove("roll-up");
+    el.innerHTML = `<span class="digit-inner">${newValue}</span>`;
+  }, 180);
+}
+```
+
+---
+
+## PART 5 — Apply during countdown update
+
+Instead of replacing text:
+
+```js
+el.textContent = formatCountdown(diff);
+```
+
+Split into digits and call updateDigit() for each position.
+
+---
+
+## PART 6 — Keep it subtle
+
+* duration: ~150–200ms
+* only animate changed digits
+* no bouncing or overshoot
+* no horizontal movement
+
+---
+
+## PART 7 — Behavior rules
+
+* works every second
+* does NOT lag timer
+* handles 09 → 08 correctly
+* handles minute rollover cleanly
+
+---
+
+## After changes, explain:
+
+* how digit comparison works
+* why only changed digits animate
+* how performance is kept lightweight
