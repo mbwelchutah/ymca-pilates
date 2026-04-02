@@ -186,36 +186,46 @@ async function runBookingJob(job, opts = {}) {
     console.log('Available select dropdowns:', JSON.stringify(allSelectInfo));
 
     // Bubble.io ignores programmatic changes to hidden <select> elements.
-    // The schedule only re-renders when we click the VISIBLE pill-dropdown UI.
-    // Strategy: click the pill that shows the default label to open it, then
-    // click the target option that appears.  A pill that was already set to the
-    // right value is silently skipped.
-    async function applyFilterPill(defaultLabel, targetValue) {
-      // text=/^Label$/ matches BOTH the visible pill AND any hidden <option> with
-      // the same text.  Iterate all matches and click the first VISIBLE one.
-      const candidates = page.locator(`text=/^${defaultLabel}$/i`);
-      const total = await candidates.count();
-      let clicked = false;
-      for (let i = 0; i < total; i++) {
-        const el = candidates.nth(i);
-        if (await el.isVisible()) {
-          await el.click();
-          clicked = true;
-          break;
+    // Bubble.io dropdown strategy:
+    //   1. The real <select> is hidden (display:none). Its PARENT is the visible pill.
+    //   2. We click the parent wrapper to open the custom dropdown overlay.
+    //   3. After the overlay appears, we find the first VISIBLE element whose text
+    //      exactly matches the target value and click it.
+    //   4. We do this for every filter regardless of the pill's current label, so a
+    //      stale session filter that didn't trigger a re-render gets refreshed too.
+    async function applyFilterBySelectIndex(selectIndex, targetValue, filterLabel) {
+      // Click the visible wrapper around the hidden <select>.
+      const clickedWrapper = await page.evaluate((idx) => {
+        const sels = document.querySelectorAll('select');
+        if (idx >= sels.length) return null;
+        // Walk up until we find a rendered box (width > 20, height > 10).
+        let el = sels[idx].parentElement;
+        while (el && el !== document.body) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 20 && r.height > 10) {
+            el.click();
+            return el.tagName + ' / ' + el.className.trim().slice(0, 60);
+          }
+          el = el.parentElement;
         }
-      }
-      if (!clicked) {
-        console.log(`ℹ️  No visible "${defaultLabel}" element found — already filtered or label differs.`);
+        return null;
+      }, selectIndex);
+
+      if (!clickedWrapper) {
+        console.log(`⚠️ Could not find wrapper for filter #${selectIndex} (${filterLabel})`);
         return false;
       }
-      console.log(`  Opened "${defaultLabel}" dropdown, looking for "${targetValue}"...`);
+      console.log(`  Opened filter #${selectIndex} (${filterLabel}) via [${clickedWrapper}], waiting for overlay...`);
       await page.waitForTimeout(800);
-      // Click the first visible option matching targetValue
-      const opts = page.locator(`text=/^${targetValue}$/`);
-      const optTotal = await opts.count();
+
+      // Find the first VISIBLE element whose trimmed text is exactly the target.
+      // isVisible() returns false for hidden <option> elements, so this is safe.
+      const optLocator = page.locator(`text=/^${targetValue.replace('/', '\\/')}$/`);
+      const optCount   = await optLocator.count();
+      console.log(`  Candidates matching "${targetValue}": ${optCount}`);
       let optClicked = false;
-      for (let i = 0; i < optTotal; i++) {
-        const el = opts.nth(i);
+      for (let i = 0; i < optCount; i++) {
+        const el = optLocator.nth(i);
         if (await el.isVisible()) {
           await el.click();
           optClicked = true;
@@ -223,23 +233,24 @@ async function runBookingJob(job, opts = {}) {
         }
       }
       if (!optClicked) {
-        console.log(`⚠️ No visible "${targetValue}" option found in dropdown.`);
+        console.log(`⚠️ No visible "${targetValue}" option in overlay — closing.`);
         await page.keyboard.press('Escape');
         await page.waitForTimeout(400);
         return false;
       }
-      await page.waitForTimeout(1800);
-      console.log(`✅ Filter applied: ${defaultLabel} → ${targetValue}`);
+      await page.waitForTimeout(2000);
+      console.log(`✅ Filter #${selectIndex} (${filterLabel}) → "${targetValue}"`);
       return true;
     }
 
-    const categoryApplied  = await applyFilterPill('Category',   'Yoga/Pilates');
-    const instructorApplied = await applyFilterPill('Instructor', 'Stephanie Sanders');
+    // select index 0 = Category, index 2 = Instructor (confirmed from dropdown log above)
+    const categoryApplied  = await applyFilterBySelectIndex(0, 'Yoga/Pilates',     'Category');
+    const instructorApplied = await applyFilterBySelectIndex(2, 'Stephanie Sanders', 'Instructor');
 
     if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
     if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
 
-    await page.waitForTimeout(1500); // wait for schedule to re-render after filters
+    await page.waitForTimeout(1500); // let schedule re-render with both filters active
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
