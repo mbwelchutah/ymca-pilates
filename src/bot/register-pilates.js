@@ -5,6 +5,7 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 const { chromium } = require('playwright');
+const { getBookingWindow } = require('../scheduler/booking-window');
 
 const isHeadless = process.env.HEADLESS !== 'false';
 
@@ -603,6 +604,10 @@ async function runBookingJob(job, opts = {}) {
     console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
+    // Track the best tab to re-click during polling (prefer exact date match).
+    let pollTabIndex = 0;
+    let pollTabText  = '';
+
     // Try exact date tab first, then fall back to scanning all matching day tabs.
     if (targetDayNum !== null) {
       let exactTabClicked = false;
@@ -610,11 +615,30 @@ async function runBookingJob(job, opts = {}) {
         const tabText = await dayTabs.nth(w).textContent();
         const tabNum  = parseInt(tabText.replace(/\D+/g, ''), 10);
         if (tabNum === targetDayNum) {
+          pollTabIndex = w;
+          pollTabText  = tabText.trim();
           console.log('Clicking exact date tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
-          targetCard = await findCardOnTab(tabText.trim());
-          if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
-          else            console.log('Class not on exact date tab — falling back to full scan.');
+          await page.waitForTimeout(2000); // let tab render
+
+          // Check if we're close to the booking window opening.
+          // If so, skip the 90-second scroll scan — we'll enter poll mode shortly anyway.
+          let nearOpen = false;
+          try {
+            const { bookingOpen: bwChk } = getBookingWindow(job);
+            nearOpen = bwChk && (bwChk.getTime() - Date.now()) < 15 * 60 * 1000;
+          } catch { /* ignore */ }
+
+          if (nearOpen) {
+            // Quick scan only — polling will handle the precise timing
+            targetCard = await findTargetCard();
+            if (targetCard) console.log('Found class on exact date tab (quick scan): ' + tabText.trim());
+            else            console.log('Class not yet visible (within 15 min of open) — going to poll mode.');
+          } else {
+            targetCard = await findCardOnTab(tabText.trim());
+            if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
+            else            console.log('Class not on exact date tab — will try polling if within booking window.');
+          }
           exactTabClicked = true;
           break;
         }
@@ -625,16 +649,107 @@ async function runBookingJob(job, opts = {}) {
     }
 
     // Fallback: scan all matching day tabs in order.
+    // Skip if we're within the poll window — the booking window is about to open
+    // and slow scroll scans (230 steps × 400 ms ≈ 90 s per tab) just waste time
+    // when polling will start in moments anyway.
     if (!targetCard) {
-      for (let w = 0; w < dayTabCount; w++) {
-        const tabText = await dayTabs.nth(w).textContent();
-        console.log('Trying tab: ' + tabText.trim());
-        await dayTabs.nth(w).click();
-        targetCard = await findCardOnTab(tabText.trim());
-        if (targetCard) { console.log('Found class on ' + tabText.trim()); break; }
-        console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
+      let skipFallback = false;
+      try {
+        const { bookingOpen: bwCheck } = getBookingWindow(job);
+        if (bwCheck && (bwCheck.getTime() - Date.now()) < 15 * 60 * 1000) {
+          console.log('Within 15 min of booking open — skipping fallback scroll scan, going to poll mode.');
+          skipFallback = true;
+          if (!pollTabText && dayTabCount > 0) {
+            pollTabText  = (await dayTabs.nth(0).textContent()).trim();
+            pollTabIndex = 0;
+          }
+        }
+      } catch { /* ignore — booking-window calc failed, run fallback normally */ }
+
+      if (!skipFallback) {
+        for (let w = 0; w < dayTabCount; w++) {
+          const tabText = await dayTabs.nth(w).textContent();
+          if (!pollTabText) { pollTabIndex = w; pollTabText = tabText.trim(); }
+          console.log('Trying tab: ' + tabText.trim());
+          await dayTabs.nth(w).click();
+          targetCard = await findCardOnTab(tabText.trim());
+          if (targetCard) { console.log('Found class on ' + tabText.trim()); break; }
+          console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
+        }
       }
     }
+
+    // ── HOLD-AND-POLL ────────────────────────────────────────────────────────
+    // If the class still isn't visible, check whether the booking window opens
+    // within the next 15 minutes.  If so, keep the browser alive, sleep until
+    // exactly the opening second, then poll every 5 seconds until the card
+    // appears (or up to 20 minutes after the open time).
+    //
+    // This is the core sniper mechanic: we pre-warm the browser (login +
+    // navigate + filters) during warmup phase, then click the instant the
+    // YMCA unlocks the class — rather than starting a cold browser run at
+    // open time and arriving 3 minutes late.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (!targetCard && pollTabText) {
+      let bwOpen;
+      try {
+        ({ bookingOpen: bwOpen } = getBookingWindow(job));
+      } catch (e) {
+        bwOpen = null;
+      }
+
+      const POLL_LEAD_MS    = 15 * 60 * 1000; // start polling if open is ≤15 min away
+      const POLL_TIMEOUT_MS = 20 * 60 * 1000; // give up 20 min after open
+      const POLL_SLEEP_MS   =  5 * 1000;      // check every 5 seconds once open
+      const msUntilOpen     = bwOpen ? (bwOpen.getTime() - Date.now()) : Infinity;
+
+      if (bwOpen && msUntilOpen < POLL_LEAD_MS) {
+        const openStr = bwOpen.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+        console.log(`\n⏳ Booking window opens at ${openStr} PT (${Math.round(msUntilOpen / 1000)}s away) — entering hold-and-poll mode.`);
+        console.log(`   Will re-click "${pollTabText}" tab every 5 s until class appears or 20 min after open.\n`);
+
+        const pollDeadline = bwOpen.getTime() + POLL_TIMEOUT_MS;
+        let attempt = 0;
+
+        while (!targetCard && Date.now() < pollDeadline) {
+          attempt++;
+          const msLeft = bwOpen.getTime() - Date.now();
+
+          if (msLeft > POLL_SLEEP_MS) {
+            // Still before open — sleep in chunks (wake up 1 s early to be ready)
+            const sleepMs = Math.min(msLeft - 1000, 10000); // max 10 s sleep chunk
+            console.log(`  [poll #${attempt}] ${Math.round(msLeft / 1000)}s until open — sleeping ${Math.round(sleepMs / 1000)}s...`);
+            await page.waitForTimeout(sleepMs);
+            continue; // re-evaluate timing, don't click yet
+          }
+
+          // At or past opening time: re-click the tab and scan
+          console.log(`  [poll #${attempt}] Clicking "${pollTabText}" tab (${msLeft > 0 ? Math.round(msLeft / 1000) + 's before open' : Math.round(-msLeft / 1000) + 's after open'})...`);
+          try {
+            await dayTabs.nth(pollTabIndex).click();
+          } catch {
+            // Tab locator stale — re-query
+            const freshTabs = page.locator(`text=/${dayShort} \\d+/`);
+            if (await freshTabs.count() > pollTabIndex) await freshTabs.nth(pollTabIndex).click();
+          }
+          await page.waitForTimeout(2000); // let Bubble.io re-render
+          targetCard = await findTargetCard();
+          if (targetCard) {
+            console.log(`\n✅ Class appeared on poll attempt #${attempt} — proceeding to register!\n`);
+          } else {
+            console.log(`  [poll #${attempt}] Not yet visible — waiting ${POLL_SLEEP_MS / 1000}s...`);
+            await page.waitForTimeout(POLL_SLEEP_MS);
+          }
+        }
+
+        if (!targetCard) {
+          console.log(`⚠️ Poll timed out (${POLL_TIMEOUT_MS / 60000} min after open) — class never appeared.`);
+        }
+      } else if (bwOpen) {
+        console.log(`Booking window opens in ${Math.round(msUntilOpen / 60000)} min — too far away to poll. Exiting for scheduler retry.`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (!targetCard) {
       const msg = `Could not find visible row matching Core Pilates / 7:45 / Stephanie on ${dayShort} ${targetDayNum || '(any)'}.`;
