@@ -7,7 +7,7 @@ const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
-const { setSchedulerPaused } = require('../scheduler/scheduler-state');
+const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
 
 const PORT = process.env.PORT || 5000;
@@ -2235,3 +2235,22 @@ server.on('error', (err) => {
   }
 });
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
+
+// ---------------------------------------------------------------------------
+// Built-in scheduler loop — fires a tick every 60 s so booking jobs auto-run
+// when their window opens without needing a separate process.
+// ---------------------------------------------------------------------------
+const SCHEDULER_INTERVAL_MS = 60 * 1000;
+function schedulerTick() {
+  if (isSchedulerPaused()) {
+    console.log('[Scheduler] paused — skipping tick');
+    return;
+  }
+  runTick().catch(err => console.error('[Scheduler] tick error:', err.message));
+}
+// Delay first tick 30 s so the server is fully warm before the first run.
+setTimeout(() => {
+  schedulerTick();
+  setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
+}, 30 * 1000);
+console.log(`Scheduler loop armed — ticking every ${SCHEDULER_INTERVAL_MS / 1000}s (first tick in 30s).`);
