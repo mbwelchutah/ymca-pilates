@@ -348,6 +348,21 @@ async function runBookingJob(job, opts = {}) {
         console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
         console.log('Modal preview:', modalText.slice(0, 300));
         await snap(`verify-${reasonTag}`);
+        // Write JSON sidecar alongside the screenshot so the dashboard can show
+        // contextual trace details without a database.
+        if (screenshotPath) {
+          try {
+            const meta = {
+              reason: reasonTag,
+              expectedTime: classTimeNorm,
+              expectedInstructor: instructorFirstName,
+              classTitle: classTitle || null,
+              modalPreview: modalText.slice(0, 300),
+              timestamp: new Date().toISOString(),
+            };
+            fs.writeFileSync(screenshotPath.replace('.png', '.json'), JSON.stringify(meta, null, 2));
+          } catch (e) { console.log('Meta write failed:', e.message); }
+        }
         const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
         return { status: 'error', message: failMsg, screenshotPath };
       }

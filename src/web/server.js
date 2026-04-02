@@ -700,6 +700,56 @@ function buildHtml(jobs, error, editError) {
       color: #aaa;
       padding: 8px 0;
     }
+    /* ---- Trace viewer modal ---- */
+    .trace-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .trace-modal.hidden { display: none; }
+    .trace-content {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      max-width: min(600px, 92vw);
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .trace-content img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #eee;
+      margin-bottom: 14px;
+      display: block;
+    }
+    .trace-row { margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+    .trace-row strong { color: #333; }
+    .trace-preview {
+      background: #f7f7f7;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 4px;
+      color: #555;
+    }
+    .trace-close {
+      display: block;
+      margin-top: 14px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -931,6 +981,15 @@ function buildHtml(jobs, error, editError) {
     </div>
 
   </div><!-- /page -->
+
+  <!-- Trace viewer modal — populated by openTrace() -->
+  <div id="trace-viewer" class="trace-modal hidden">
+    <div class="trace-content">
+      <img id="trace-image" alt="Failure screenshot">
+      <div id="trace-details"></div>
+      <span class="trace-close" id="trace-close">Tap anywhere to close</span>
+    </div>
+  </div>
 
   <script>
     // ---- state ----
@@ -1742,7 +1801,7 @@ function buildHtml(jobs, error, editError) {
           var ts    = new Date(f.mtime).toLocaleString();
           var item  = document.createElement('div');
           item.className = 'failure-item';
-          item.onclick   = function() { window.open('/screenshots/' + f.name, '_blank'); };
+          item.onclick   = function() { openTrace(f); };
           item.innerHTML =
             '<img class="failure-thumb" src="/screenshots/' + f.name + '" alt="' + f.reason + '">' +
             '<div><div class="failure-reason">\u274C ' + label + '</div><div class="failure-ts">' + ts + '</div></div>';
@@ -1752,6 +1811,36 @@ function buildHtml(jobs, error, editError) {
     }
     loadFailures();
     setInterval(loadFailures, 10000);
+
+    // ---- Trace viewer ----
+    function openTrace(f) {
+      var modal   = document.getElementById('trace-viewer');
+      var img     = document.getElementById('trace-image');
+      var details = document.getElementById('trace-details');
+      if (!modal) return;
+      img.src = '/screenshots/' + f.name;
+      var meta = f.meta || {};
+      var label = REASON_LABELS[f.reason] || ('Failure: ' + f.reason);
+      var ts    = new Date(f.mtime).toLocaleString();
+      details.innerHTML =
+        '<div class="trace-row"><strong>Reason:</strong> ' + label + '</div>' +
+        '<div class="trace-row"><strong>When:</strong> ' + ts + '</div>' +
+        (meta.expectedTime     ? '<div class="trace-row"><strong>Expected time:</strong> ' + meta.expectedTime + '</div>' : '') +
+        (meta.expectedInstructor ? '<div class="trace-row"><strong>Expected instructor:</strong> ' + meta.expectedInstructor + '</div>' : '') +
+        (meta.classTitle       ? '<div class="trace-row"><strong>Class:</strong> ' + meta.classTitle + '</div>' : '') +
+        (meta.modalPreview     ? '<div class="trace-row"><strong>Page text seen:</strong><div class="trace-preview">' + meta.modalPreview + '</div></div>' : '');
+      modal.classList.remove('hidden');
+    }
+    (function() {
+      var modal = document.getElementById('trace-viewer');
+      var inner = modal && modal.querySelector('.trace-content');
+      if (!modal) return;
+      modal.addEventListener('click', function(e) {
+        if (e.target === modal || e.target === document.getElementById('trace-close')) {
+          modal.classList.add('hidden');
+        }
+      });
+    })();
   </script>
 </body>
 </html>`;
@@ -2046,9 +2135,11 @@ const server = http.createServer((req, res) => {
       .filter(n => n.endsWith('.png') && n.includes('verify-'))
       .map(name => {
         const mtime = fsM.statSync(pathM.join(dir, name)).mtimeMs;
-        // Extract reason tag: "2026-04-08T14-52Z-verify-time.png" → "time"
         const m = name.match(/verify-([^.]+)\.png$/);
-        return { name, mtime, reason: m ? m[1] : 'unknown' };
+        const metaPath = pathM.join(dir, name.replace('.png', '.json'));
+        let meta = {};
+        try { if (fsM.existsSync(metaPath)) meta = JSON.parse(fsM.readFileSync(metaPath, 'utf8')); } catch (_) {}
+        return { name, mtime, reason: m ? m[1] : 'unknown', meta };
       })
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, 5);

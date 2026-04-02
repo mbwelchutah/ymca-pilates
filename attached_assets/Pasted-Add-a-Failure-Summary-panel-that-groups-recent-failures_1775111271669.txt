@@ -1,0 +1,177 @@
+Add a “Failure Summary” panel that groups recent failures by reason and shows counts so patterns are immediately visible.
+
+Current state:
+
+* failure screenshots saved with reason tags (time / instructor / both)
+* dashboard shows last 5 failures with thumbnails
+* metadata includes reason
+
+Goal:
+Display a grouped summary like:
+
+Time mismatch → 4
+Instructor mismatch → 1
+Time + Instructor → 2
+
+Do NOT:
+
+* add database
+* over-engineer aggregation
+* slow down UI
+
+---
+
+# PART 1 — Extend /api/failures response
+
+Modify existing endpoint to ALSO return counts:
+
+```js
+app.get("/api/failures", (req, res) => {
+  const dir = "screenshots";
+
+  if (!fs.existsSync(dir)) {
+    return res.json({ recent: [], summary: {} });
+  }
+
+  const files = fs.readdirSync(dir)
+    .filter(f => f.endsWith(".png"))
+    .map(name => {
+      const parts = name.split("-");
+      const reason = parts[2]; // job-2-time-...
+      const time = fs.statSync(path.join(dir, name)).mtime;
+
+      return { name, reason, time };
+    });
+
+  // sort newest first
+  const sorted = files.sort((a, b) => b.time - a.time);
+
+  // last 5 for UI
+  const recent = sorted.slice(0, 5);
+
+  // group counts
+  const summary = {};
+
+  for (const f of files) {
+    summary[f.reason] = (summary[f.reason] || 0) + 1;
+  }
+
+  res.json({ recent, summary });
+});
+```
+
+---
+
+# PART 2 — Add UI panel (above or beside failures)
+
+```html
+<div class="card">
+  <div class="card-title">Failure Summary</div>
+  <div id="failure-summary"></div>
+</div>
+```
+
+---
+
+# PART 3 — Style (clean + iOS-like)
+
+```css
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 14px;
+}
+
+.summary-count {
+  font-weight: 600;
+}
+
+.summary-time { color: #e63946; }
+.summary-instructor { color: #f4a261; }
+.summary-both { color: #d62828; }
+```
+
+---
+
+# PART 4 — Render summary
+
+```js
+async function loadFailures() {
+  const res = await fetch("/api/failures");
+  const data = await res.json();
+
+  renderFailures(data.recent);
+  renderSummary(data.summary);
+}
+```
+
+---
+
+## PART 5 — Summary renderer
+
+```js
+function renderSummary(summary) {
+  const el = document.getElementById("failure-summary");
+  el.innerHTML = "";
+
+  const labels = {
+    "time": "Time mismatch",
+    "instructor": "Instructor mismatch",
+    "time-instructor": "Time + Instructor"
+  };
+
+  for (const key in summary) {
+    const item = document.createElement("div");
+    item.className = "summary-item";
+
+    item.innerHTML = `
+      <span>${labels[key] || key}</span>
+      <span class="summary-count">${summary[key]}</span>
+    `;
+
+    el.appendChild(item);
+  }
+}
+```
+
+---
+
+# PART 6 — Optional (very useful)
+
+Sort by highest count:
+
+```js
+Object.entries(summary)
+  .sort((a, b) => b[1] - a[1])
+```
+
+---
+
+# PART 7 — Behavior
+
+Now dashboard shows:
+
+Failure Summary
+Time mismatch → 4
+Instructor mismatch → 1
+
+Recent Failures
+[thumbnails below]
+
+---
+
+# FINAL RESULT
+
+You can instantly answer:
+
+* “what is breaking most often?”
+* “is this a systemic issue?”
+
+---
+
+# AFTER CHANGES — explain:
+
+* how grouping works
+* why counts matter
+* how this reveals patterns quickly
