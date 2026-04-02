@@ -185,48 +185,44 @@ async function runBookingJob(job, opts = {}) {
     });
     console.log('Available select dropdowns:', JSON.stringify(allSelectInfo));
 
-    const filterResults = await page.evaluate(() => {
-      const selects = Array.from(document.querySelectorAll('select'));
-      const results = {};
-
-      // Try to apply a Yoga/Pilates category filter
-      for (const sel of selects) {
-        for (const opt of sel.options) {
-          const t = opt.text.toLowerCase();
-          if (t.includes('yoga') || t.includes('pilates')) {
-            sel.value = opt.value;
-            sel.dispatchEvent(new Event('input',  { bubbles: true }));
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-            results.category = opt.text;
-            break;
-          }
-        }
-        if (results.category) break;
+    // Bubble.io ignores programmatic changes to hidden <select> elements.
+    // The schedule only re-renders when we click the VISIBLE pill-dropdown UI.
+    // Strategy: click the pill that shows the default label to open it, then
+    // click the target option that appears.  A pill that was already set to the
+    // right value is silently skipped.
+    async function applyFilterPill(defaultLabel, targetValue) {
+      // The pill shows defaultLabel when unset, or targetValue when already set.
+      // Click it only when it's showing the unset default label.
+      const pill = page.locator(`text=/^${defaultLabel}$/i`).first();
+      const pillCount = await pill.count();
+      if (pillCount === 0) {
+        console.log(`ℹ️  "${defaultLabel}" pill not found — already filtered or page differs.`);
+        return false;
       }
-
-      // Apply instructor filter (Stephanie)
-      for (const sel of selects) {
-        for (const opt of sel.options) {
-          if (opt.text.toLowerCase().includes('stephanie')) {
-            sel.value = opt.value;
-            sel.dispatchEvent(new Event('input',  { bubbles: true }));
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-            results.instructor = opt.text;
-            break;
-          }
-        }
-        if (results.instructor) break;
+      await pill.click();
+      console.log(`  Opened "${defaultLabel}" dropdown, looking for "${targetValue}"...`);
+      await page.waitForTimeout(600);
+      try {
+        await page.locator(`text=/^${targetValue}$/`).first().click({ timeout: 4000 });
+        await page.waitForTimeout(1800);
+        console.log(`✅ Filter applied: ${defaultLabel} → ${targetValue}`);
+        return true;
+      } catch(e) {
+        console.log(`⚠️ Could not click "${targetValue}" in dropdown:`, e.message.split('\n')[0]);
+        // Press Escape to close the dropdown before giving up
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+        return false;
       }
+    }
 
-      return results;
-    });
+    const categoryApplied  = await applyFilterPill('Category',   'Yoga/Pilates');
+    const instructorApplied = await applyFilterPill('Instructor', 'Stephanie Sanders');
 
-    if (filterResults.category)   console.log('✅ Applied category filter:', filterResults.category);
-    else                          console.log('⚠️ No yoga/pilates category option found — proceeding without category filter.');
-    if (filterResults.instructor) console.log('✅ Applied instructor filter:', filterResults.instructor);
-    else                          console.log('⚠️ Instructor "Stephanie" not found in any dropdown — proceeding without instructor filter.');
+    if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
+    if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
 
-    await page.waitForTimeout(2500); // wait for schedule to re-render with filters applied
+    await page.waitForTimeout(1500); // wait for schedule to re-render after filters
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
