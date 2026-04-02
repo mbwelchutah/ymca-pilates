@@ -1,0 +1,118 @@
+Add a debug overlay that visually highlights the element before clicking it.
+
+Current state:
+
+* bot selects a row (matchedRow)
+* click sometimes fails due to visibility issues
+
+Goal:
+Visually highlight the element in the browser before clicking so it's obvious what the bot is targeting.
+
+Do NOT:
+
+* change selection logic
+* slow down production runs (make it optional)
+* rely on external libraries
+
+---
+
+# PART 1 — Add highlight function
+
+```js
+async function highlightElement(page, locator) {
+  await page.evaluate((el) => {
+    el.style.outline = "3px solid red";
+    el.style.backgroundColor = "rgba(255,0,0,0.1)";
+    el.style.transition = "all 0.2s ease";
+  }, await locator.elementHandle());
+}
+```
+
+---
+
+# PART 2 — Add toggle (debug mode)
+
+At top of file:
+
+```js
+const DEBUG_HIGHLIGHT = true;
+```
+
+---
+
+# PART 3 — Use before click
+
+Before your click:
+
+```js
+if (DEBUG_HIGHLIGHT) {
+  await matchedRow.scrollIntoViewIfNeeded();
+  await highlightElement(page, matchedRow);
+  await page.waitForTimeout(500);
+}
+```
+
+---
+
+# PART 4 — Highlight clickable child (better)
+
+```js
+const clickable = matchedRow.locator("button, a, [role='button']").first();
+
+if (DEBUG_HIGHLIGHT) {
+  await clickable.scrollIntoViewIfNeeded();
+  await highlightElement(page, clickable);
+  await page.waitForTimeout(500);
+}
+```
+
+---
+
+# PART 5 — Optional: remove highlight after click
+
+```js
+await page.evaluate((el) => {
+  el.style.outline = "";
+  el.style.backgroundColor = "";
+}, await clickable.elementHandle());
+```
+
+---
+
+# PART 6 — Optional (advanced): label overlay
+
+```js
+await page.evaluate((el) => {
+  const tag = document.createElement("div");
+  tag.innerText = "CLICK TARGET";
+  tag.style.position = "absolute";
+  tag.style.background = "red";
+  tag.style.color = "white";
+  tag.style.fontSize = "10px";
+  tag.style.padding = "2px 4px";
+  tag.style.zIndex = "9999";
+
+  const rect = el.getBoundingClientRect();
+  tag.style.top = rect.top + "px";
+  tag.style.left = rect.left + "px";
+
+  document.body.appendChild(tag);
+}, await clickable.elementHandle());
+```
+
+---
+
+# PART 7 — Behavior rules
+
+* highlight ONLY in debug mode
+* duration: ~300–500ms
+* do not block flow
+* always scroll before highlighting
+
+---
+
+# AFTER CHANGES — explain:
+
+* how highlight works via page.evaluate
+* why this helps debug invisible elements
+* how to disable in production

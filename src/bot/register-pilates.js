@@ -8,6 +8,42 @@ const { chromium } = require('playwright');
 
 const isHeadless = process.env.HEADLESS !== 'false';
 
+// Set to false to skip visual highlights in production.
+// When true, the bot outlines the click target in the live browser and
+// appends a floating "CLICK TARGET" label — both visible in screenshots.
+const DEBUG_HIGHLIGHT = true;
+
+async function highlightElement(page, locator) {
+  try {
+    const el = await locator.elementHandle();
+    if (!el) return;
+    await page.evaluate((node) => {
+      node.style.outline = '3px solid red';
+      node.style.backgroundColor = 'rgba(255,0,0,0.1)';
+      node.style.transition = 'all 0.2s ease';
+      // Floating label so it shows up clearly in screenshots.
+      const tag = document.createElement('div');
+      tag.className = '__pw_debug_label__';
+      tag.textContent = 'CLICK TARGET';
+      Object.assign(tag.style, {
+        position: 'fixed',
+        background: 'red',
+        color: 'white',
+        fontSize: '11px',
+        fontWeight: 'bold',
+        padding: '2px 6px',
+        borderRadius: '3px',
+        zIndex: '999999',
+        pointerEvents: 'none',
+      });
+      const rect = node.getBoundingClientRect();
+      tag.style.top  = Math.max(0, rect.top  - 20) + 'px';
+      tag.style.left = Math.max(0, rect.left)       + 'px';
+      document.body.appendChild(tag);
+    }, el);
+  } catch (e) { console.log('highlight skipped:', e.message); }
+}
+
 // Use the system Chromium (installed via Nix) so the required shared libraries
 // (libgbm, libglib, etc.) are available. Playwright's bundled chrome-headless-shell
 // cannot find them in this environment.
@@ -336,6 +372,10 @@ async function runBookingJob(job, opts = {}) {
     {
       const clickable = targetCard.locator("button, a, [role='button']").first();
       const hasClickable = (await clickable.count()) > 0;
+      if (DEBUG_HIGHLIGHT) {
+        await highlightElement(page, hasClickable ? clickable : targetCard);
+        await page.waitForTimeout(400); // pause so highlight is visible in screenshot
+      }
       try {
         if (hasClickable) {
           await clickable.click();
@@ -474,6 +514,10 @@ async function runBookingJob(job, opts = {}) {
           console.log('Retry card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
           const clickableRetry = targetCard.locator("button, a, [role='button']").first();
           const hasClickableRetry = (await clickableRetry.count()) > 0;
+          if (DEBUG_HIGHLIGHT) {
+            await highlightElement(page, hasClickableRetry ? clickableRetry : targetCard);
+            await page.waitForTimeout(400);
+          }
           try {
             if (hasClickableRetry) {
               await clickableRetry.click();
