@@ -516,6 +516,32 @@ function buildHtml(jobs, error, editError) {
     }
     .unpin-btn:hover { color: #1d3557; }
 
+    /* ---- live-mode global tint ---- */
+    body.live-mode {
+      background-color: #fff7f7;
+    }
+    body.live-mode .card {
+      border-color: #ffe0e0;
+    }
+    body.live-mode .banner {
+      background: #fff1f1;
+    }
+    body.live-mode .btn-primary {
+      background-color: #e63946;
+    }
+    body.live-mode .btn-primary:hover {
+      background-color: #c1121f;
+    }
+    #live-mode-indicator {
+      font-size: 13px;
+      font-weight: 500;
+      color: #d62828;
+      text-align: center;
+      margin-bottom: -8px;
+      display: none;
+    }
+    #live-mode-indicator.visible { display: block; }
+
     /* ---- dry-run toggle ---- */
     .dry-run-row {
       display: flex;
@@ -583,6 +609,7 @@ function buildHtml(jobs, error, editError) {
       <h1>&#x1F9D8; YMCA Pilates</h1>
       <p>Booking control panel</p>
     </div>
+    <div id="live-mode-indicator">&#x1F680; Live Mode Active</div>
 
     <div id="next-job-banner" class="banner hidden"></div>
 
@@ -1425,10 +1452,16 @@ function buildHtml(jobs, error, editError) {
     // ---- dry run toggle ----
 
     function updateDryRunUI(enabled) {
-      const ind = document.getElementById('dry-run-indicator');
+      const ind  = document.getElementById('dry-run-indicator');
+      const live = document.getElementById('live-mode-indicator');
       ind.textContent  = enabled ? '\u{1F9EA} Dry Run' : '\u{1F680} Live';
       ind.className    = enabled ? 'mode-dry' : 'mode-live';
+      document.body.classList.toggle('live-mode', !enabled);
+      live.classList.toggle('visible', !enabled);
     }
+
+    // Apply initial live-mode state from server-rendered flag (no flicker on load).
+    updateDryRunUI(${JSON.stringify(dryRunEnabled)});
 
     document.getElementById('dry-run-toggle').addEventListener('change', async function() {
       const enabled = this.checked;
