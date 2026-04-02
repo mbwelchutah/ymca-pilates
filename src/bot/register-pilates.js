@@ -340,8 +340,11 @@ async function runBookingJob(job, opts = {}) {
       const result = await page.evaluate(({ classTimeNorm, instructorFirstName, classTitleLower }) => {
         const timePattern = /\d+:\d+\s*[ap]\s*-\s*\d+:\d+\s*[ap]/i;
 
-        // Extract the H:MM portion of the target (e.g. "7:45" from "7:45 a")
-        const targetHM = classTimeNorm ? classTimeNorm.replace(/\s*[ap].*/i, '').trim() : null;
+        // Extract H:MM and AM/PM from target (e.g. "7:45 a" → hm="7:45", ap="a").
+        // Both parts are needed: "7:45 p" must NOT match target "7:45 a".
+        const targetTimeParts = (classTimeNorm || '').match(/(\d+:\d+)\s*([ap])/i);
+        const targetHM = targetTimeParts ? targetTimeParts[1] : null;         // "7:45"
+        const targetAP = targetTimeParts ? targetTimeParts[2].toLowerCase() : null; // "a"
 
         function parseMin(t) {
           const m = (t || '').match(/(\d+):(\d+)\s*([ap])/i);
@@ -373,12 +376,17 @@ async function runBookingJob(job, opts = {}) {
 
           if (classTitleLower && txt.includes(classTitleLower)) { score += 40; reasons.push('title+40'); }
 
-          // Time match: only match the START time of the range (before the " - ").
-          // "6:45 p - 7:45 p" has startTime "6:45" — must NOT match target "7:45".
-          // "7:45 a - 8:45 a" has startTime "7:45" — correctly matches target "7:45".
-          if (targetHM) {
-            const startMatch = txt.match(/(\d+:\d+)\s*[ap]\s*-/i);
-            if (startMatch && startMatch[1] === targetHM) { score += 40; reasons.push('time+40'); }
+          // Time match: START time H:MM AND AM/PM must both match.
+          // "7:45 p - 8:15 p" → start="7:45", ap="p" → does NOT match target "7:45 a".
+          // "7:45 a - 8:45 a" → start="7:45", ap="a" → correctly matches target "7:45 a".
+          if (targetHM && targetAP) {
+            const startMatch = txt.match(/(\d+:\d+)\s*([ap])\s*-/i);
+            if (startMatch &&
+                startMatch[1] === targetHM &&
+                startMatch[2].toLowerCase() === targetAP) {
+              score += 40;
+              reasons.push('time+40');
+            }
           }
 
           if (instructorFirstName && txt.includes(instructorFirstName)) { score += 20; reasons.push('instr+20'); }
@@ -456,11 +464,18 @@ async function runBookingJob(job, opts = {}) {
       const WAIT_MS     = 300; // ms between steps for virtual-list re-render
 
       for (let step = 0; step < MAX_STEPS; step++) {
-        // Check if targetTime is already visible in the DOM
+        // Check if targetTime is already visible in the DOM.
+        // Match against the START of a time-range (H:MM a/p followed by " -")
+        // so "7:45 a" matches "7:45 a - 8:45 a" but not "6:45 p - 7:45 a".
         const found = await page.evaluate((t) => {
+          // Extract H:MM and AM/PM from the search string
+          const parts = t.match(/(\d+:\d+)\s*([ap])/i);
+          if (!parts) return false;
+          const hm = parts[1], ap = parts[2].toLowerCase();
+          const re = new RegExp(hm.replace(':', '\\:') + '\\s*' + ap + '\\s*-', 'i');
           for (const el of document.querySelectorAll('*')) {
             if (el.tagName === 'OPTION' || el.tagName === 'SELECT') continue;
-            if (el.textContent.toLowerCase().includes(t)) {
+            if (re.test(el.textContent)) {
               const r = el.getBoundingClientRect();
               if (r.width > 0 && r.height > 0) return true;
             }
