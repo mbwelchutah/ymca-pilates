@@ -934,6 +934,15 @@ async function runBookingJob(job, opts = {}) {
     // Try the best candidate first; if post-click verification fails, attempt
     // the second-best candidate once (PART 6).
     // Rules: only try second-best once; never skip verification; fail safe.
+    //
+    // Status semantics for modal-verification failures:
+    //   - Time mismatch → the 7:45 AM class is not on the schedule → not_found
+    //     (we clicked something with the right title/instructor but wrong time,
+    //     which definitively means our target slot hasn't appeared yet)
+    //   - Instructor mismatch or unexpected exception → error
+    //     (something unexpected happened that warrants investigation)
+    const isTimeMismatch = r => r.reasonTag === 'time' || r.reasonTag === 'time-instructor';
+
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
 
     if (!firstResult.ok) {
@@ -951,6 +960,13 @@ async function runBookingJob(job, opts = {}) {
 
         const secondResult = await attemptClickAndVerify(_lastSecondCard, 'second-best candidate');
         if (!secondResult.ok) {
+          // Both candidates had the wrong time → target class is not on the schedule
+          if (isTimeMismatch(secondResult)) {
+            const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+            console.log(`ℹ️  ${msg}`);
+            await snap('not-found-time-mismatch');
+            return { status: 'not_found', message: msg, screenshotPath };
+          }
           return { status: 'error', message: secondResult.failMsg, screenshotPath };
         }
         // Second-best passed verification — fall through to the booking step
@@ -958,7 +974,14 @@ async function runBookingJob(job, opts = {}) {
         if (_lastSecondCard) {
           console.log(`   Second-best exists (score ${_lastSecondScore}) but is below fallback floor (${CONFIDENCE_THRESHOLD - 2}) — not trying.`);
         } else {
-          console.log('   No second-best candidate available — aborting.');
+          console.log('   No second-best candidate available.');
+        }
+        // Time mismatch with no fallback → target class absent from schedule
+        if (isTimeMismatch(firstResult)) {
+          const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+          console.log(`ℹ️  ${msg}`);
+          await snap('not-found-time-mismatch');
+          return { status: 'not_found', message: msg, screenshotPath };
         }
         return { status: 'error', message: firstResult.failMsg, screenshotPath };
       }
