@@ -326,10 +326,12 @@ function buildHtml(jobs, error, editError) {
       font-family: 'SF Mono', 'Fira Code', monospace;
       color: #555;
       min-height: 44px;
+      transition: opacity 150ms ease-out, transform 150ms ease-out;
     }
     #status.running { color: #856404; }
     #status.success { color: #155724; }
     #status.error   { color: #721c24; }
+    .status-fade-out { opacity: 0 !important; transform: translateY(4px); }
     .last-run {
       font-size: 12px;
       color: #bbb;
@@ -1280,9 +1282,13 @@ function buildHtml(jobs, error, editError) {
         } else {
           stopDots();
           const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
-          statusEl.className   = data.success ? 'success' : 'error';
-          statusEl.textContent = prefix + data.log;
-          if (data.success) triggerUnifiedSuccess();
+          statusEl.className = data.success ? 'success' : 'error';
+          if (data.success) {
+            triggerUnifiedSuccess();
+            updateStatusSmooth(statusEl, prefix + data.log);
+          } else {
+            statusEl.textContent = prefix + data.log;
+          }
           showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
@@ -1393,9 +1399,13 @@ function buildHtml(jobs, error, editError) {
         const res  = await fetch('/force-run-job?id=' + selectedJobId, { method: 'POST' });
         const data = await res.json();
         stopDots();
-        statusEl.textContent = data.message || 'Force run complete.';
-        statusEl.className   = data.success ? 'success' : 'error';
-        if (data.success) triggerUnifiedSuccess();
+        statusEl.className = data.success ? 'success' : 'error';
+        if (data.success) {
+          triggerUnifiedSuccess();
+          updateStatusSmooth(statusEl, data.message || 'Force run complete.');
+        } else {
+          statusEl.textContent = data.message || 'Force run complete.';
+        }
       } catch (e) {
         stopDots();
         statusEl.className   = 'error';
@@ -1500,6 +1510,16 @@ function buildHtml(jobs, error, editError) {
         updateSchedulerUI(false);
       }
     })();
+
+    // ---- smooth status text update (success path only) ----
+
+    function updateStatusSmooth(el, text) {
+      el.classList.add('status-fade-out');
+      setTimeout(function() {
+        el.textContent = text;
+        el.classList.remove('status-fade-out'); // transition back to opacity:1
+      }, 120);
+    }
 
     // ---- unified success feedback ----
 
