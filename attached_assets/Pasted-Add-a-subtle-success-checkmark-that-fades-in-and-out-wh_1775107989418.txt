@@ -1,0 +1,143 @@
+Add a subtle success checkmark that fades in and out when a booking succeeds.
+
+Current state:
+
+* success triggers haptic-style flash + bounce
+* UI updates result text
+* app is used primarily on iPhone
+
+Goal:
+Show a clean, temporary checkmark confirmation that feels like iOS success feedback.
+
+Do NOT:
+
+* add large banners or modals
+* block the UI
+* make it flashy or distracting
+* over-engineer
+
+---
+
+## PART 1 — Add checkmark element
+
+Place near top of body:
+
+```html
+<div id="success-checkmark">✓</div>
+```
+
+---
+
+## PART 2 — Style it (centered + subtle)
+
+```css
+#success-checkmark {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  font-size: 48px;
+  color: #34c759; /* iOS green */
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.checkmark-show {
+  animation: checkmarkFade 1s ease-out;
+}
+
+@keyframes checkmarkFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+```
+
+---
+
+## PART 3 — Trigger on success
+
+In your result handling:
+
+```js
+if (result.status === "success") {
+  triggerSuccessCheckmark();
+}
+```
+
+---
+
+## PART 4 — Show function
+
+```js
+function triggerSuccessCheckmark() {
+  const el = document.getElementById("success-checkmark");
+
+  el.classList.remove("checkmark-show");
+  void el.offsetWidth; // reset animation
+  el.classList.add("checkmark-show");
+}
+```
+
+---
+
+## PART 5 — Combine with existing feedback
+
+Trigger ALL together:
+
+```js
+if (result.status === "success") {
+  triggerHapticFeedback();
+  triggerSuccessCheckmark();
+}
+```
+
+---
+
+## PART 6 — Behavior rules
+
+* show only on:
+
+  * success
+  * optionally already_registered
+
+* duration: ~1 second total
+
+* no interaction blocking
+
+* fades out automatically
+
+---
+
+## PART 7 — Optional polish (nice touch)
+
+Make it feel more iOS:
+
+```css
+#success-checkmark {
+  text-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+}
+```
+
+---
+
+## After changes, explain:
+
+* how the animation works
+* why it fades instead of staying
+* how it combines with haptic feedback
+* why timing is ~1 second

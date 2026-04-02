@@ -540,6 +540,29 @@ function buildHtml(jobs, error, editError) {
       100% { transform: scale(1); }
     }
 
+    /* ---- success checkmark ---- */
+    #success-checkmark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      font-size: 48px;
+      color: #34c759;
+      text-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 10000;
+    }
+    .checkmark-show {
+      animation: checkmarkFade 1s ease-out;
+    }
+    @keyframes checkmarkFade {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+      20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+      80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+    }
+
     /* ---- live-mode global tint ---- */
     body.live-mode {
       background-color: #fff7f7;
@@ -628,6 +651,7 @@ function buildHtml(jobs, error, editError) {
 </head>
 <body>
   <div id="haptic-flash"></div>
+  <div id="success-checkmark">&#x2713;</div>
   <div class="page">
 
     <div class="page-header">
@@ -1257,7 +1281,7 @@ function buildHtml(jobs, error, editError) {
           const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
           statusEl.className   = data.success ? 'success' : 'error';
           statusEl.textContent = prefix + data.log;
-          if (data.success) triggerHapticFeedback();
+          if (data.success) { triggerHapticFeedback(); triggerSuccessCheckmark(); }
           showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
@@ -1370,7 +1394,7 @@ function buildHtml(jobs, error, editError) {
         stopDots();
         statusEl.textContent = data.message || 'Force run complete.';
         statusEl.className   = data.success ? 'success' : 'error';
-        if (data.success) triggerHapticFeedback();
+        if (data.success) { triggerHapticFeedback(); triggerSuccessCheckmark(); }
       } catch (e) {
         stopDots();
         statusEl.className   = 'error';
@@ -1475,6 +1499,15 @@ function buildHtml(jobs, error, editError) {
         updateSchedulerUI(false);
       }
     })();
+
+    // ---- success checkmark ----
+
+    function triggerSuccessCheckmark() {
+      var el = document.getElementById('success-checkmark');
+      el.classList.remove('checkmark-show');
+      void el.offsetWidth;
+      el.classList.add('checkmark-show');
+    }
 
     // ---- haptic-style feedback on booking success ----
 
