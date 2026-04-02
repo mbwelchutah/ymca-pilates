@@ -372,7 +372,15 @@ async function runBookingJob(job, opts = {}) {
           const reasons = [];
 
           if (classTitleLower && txt.includes(classTitleLower)) { score += 40; reasons.push('title+40'); }
-          if (targetHM && txt.includes(targetHM))               { score += 40; reasons.push('time+40'); }
+
+          // Time match: only match the START time of the range (before the " - ").
+          // "6:45 p - 7:45 p" has startTime "6:45" — must NOT match target "7:45".
+          // "7:45 a - 8:45 a" has startTime "7:45" — correctly matches target "7:45".
+          if (targetHM) {
+            const startMatch = txt.match(/(\d+:\d+)\s*[ap]\s*-/i);
+            if (startMatch && startMatch[1] === targetHM) { score += 40; reasons.push('time+40'); }
+          }
+
           if (instructorFirstName && txt.includes(instructorFirstName)) { score += 20; reasons.push('instr+20'); }
 
           return {
@@ -389,7 +397,10 @@ async function runBookingJob(job, opts = {}) {
 
         const scoredLog = scored.map(s => ({ score: s.score, reasons: s.reasons, text: s.text }));
 
-        if (scored.length === 0 || scored[0].score === 0) {
+        // Require at least one strong signal (title or start-time match = 40 pts).
+        // A score of only 20 (instructor name only) is too weak — wrong class avoided.
+        const MIN_SCORE = 40;
+        if (scored.length === 0 || scored[0].score < MIN_SCORE) {
           return { matched: null, scoredLog };
         }
 
@@ -417,8 +428,10 @@ async function runBookingJob(job, opts = {}) {
         return page.locator('[data-target-class="yes"]').first();
       }
 
-      const allTexts = (result.scoredLog || []).map(s => s.text).join(' | ');
-      console.log(`⚠️ No card scored > 0. Visible cards: ${allTexts || '(none)'}`);
+      const topScored = (result.scoredLog || []).slice(0, 5);
+      console.log(`⚠️ No card met minimum score (${topScored.length} candidates seen):`);
+      topScored.forEach((s, i) => console.log(`  [${i}] score=${s.score} "${s.text}"`));
+      if (topScored.length === 0) console.log('  (no visible card candidates on this tab)');
       return null;
     }
 
