@@ -554,13 +554,14 @@ function buildHtml(jobs, error, editError) {
       z-index: 10000;
     }
     .checkmark-show {
-      animation: checkmarkFade 1s ease-out;
+      animation: checkmarkSpring 900ms cubic-bezier(0.22, 1.4, 0.36, 1) forwards;
     }
-    @keyframes checkmarkFade {
-      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-      20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
-      80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-      100% { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+    @keyframes checkmarkSpring {
+      0%  { opacity: 0; filter: blur(4px); transform: translate(-50%, -50%) scale(0.7); }
+      40% { opacity: 1; filter: blur(0);   transform: translate(-50%, -50%) scale(1.08); }
+      65% {                                transform: translate(-50%, -50%) scale(0.96); }
+      85% {                                transform: translate(-50%, -50%) scale(1.02); }
+      100%{ opacity: 0;                    transform: translate(-50%, -50%) scale(1); }
     }
 
     /* ---- live-mode global tint ---- */
