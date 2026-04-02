@@ -326,7 +326,33 @@ async function runBookingJob(job, opts = {}) {
       return { status: 'error', message: msg, screenshotPath };
     }
 
-    await targetCard.click();
+    // Scroll the card into view and give any CSS animations time to settle,
+    // then prefer clicking a semantic child (button / anchor / role=button)
+    // rather than the wrapper div which may be partially off-screen or
+    // behind a sticky header.
+    await targetCard.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    console.log('Card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
+    {
+      const clickable = targetCard.locator("button, a, [role='button']").first();
+      const hasClickable = (await clickable.count()) > 0;
+      try {
+        if (hasClickable) {
+          await clickable.click();
+        } else {
+          await targetCard.click();
+        }
+      } catch (clickErr) {
+        console.log('⚠️ Normal click failed, trying force fallback:', clickErr.message);
+        await targetCard.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(200);
+        if (hasClickable) {
+          await clickable.click({ force: true });
+        } else {
+          await targetCard.click({ force: true });
+        }
+      }
+    }
     await page.waitForTimeout(2000);
 
     // Step 4b: Verify the modal/detail panel matches the expected time + instructor
@@ -442,7 +468,27 @@ async function runBookingJob(job, opts = {}) {
           }
         }
 
-        if (targetCard) await targetCard.click().catch(() => {});
+        if (targetCard) {
+          await targetCard.scrollIntoViewIfNeeded();
+          await page.waitForTimeout(300);
+          console.log('Retry card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
+          const clickableRetry = targetCard.locator("button, a, [role='button']").first();
+          const hasClickableRetry = (await clickableRetry.count()) > 0;
+          try {
+            if (hasClickableRetry) {
+              await clickableRetry.click();
+            } else {
+              await targetCard.click();
+            }
+          } catch (retryErr) {
+            console.log('⚠️ Retry click fallback:', retryErr.message);
+            if (hasClickableRetry) {
+              await clickableRetry.click({ force: true });
+            } else {
+              await targetCard.click({ force: true });
+            }
+          }
+        }
         await page.waitForTimeout(2000);
       }
     }
