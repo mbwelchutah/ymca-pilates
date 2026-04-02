@@ -357,29 +357,31 @@ async function runBookingJob(job, opts = {}) {
         }
 
         const allRows = [];
+        const timeAmRe = /7:45[\s\u00A0]{0,4}a(?:m\b|\s|\u00A0|[-\u2013\u2014])/i;
 
         for (const el of document.querySelectorAll('*')) {
           if (SKIP_TAGS.has(el.tagName)) continue;
+
+          // Defense-in-depth: skip massive wrappers (real card rows have < 500 descendants).
+          // Check this cheaply BEFORE reading textContent on huge trees.
+          if (el.querySelectorAll('*').length > 500) continue;
 
           const raw  = el.textContent || '';
           const txt  = norm(raw);
           const txtL = txt.toLowerCase();
 
-          // Fast pre-filter: must contain "7:45" somewhere
-          if (!txtL.includes('7:45')) continue;
+          // Fast pre-filter: must contain the AM time string (not just "7:45" which
+          // could be a PM class that happens to share the hour).
+          if (!timeAmRe.test(raw) && !timeAmRe.test(txt)) continue;
 
           let score = 0;
           const reasons = [];
 
-          // --- Time signal (+40) ---
+          // --- Time signal (+40) --- MANDATORY: element must contain the AM time.
           // Accept: "7:45 a", "7:45a", "7:45 AM", "7:45am", "7:45\u00A0a"
           // Reject: "7:45 p", "7:45 PM", "7:45pm"
-          // The raw text is used so we also catch \u00A0 before normalisation.
-          const timeAmRe = /7:45[\s\u00A0]{0,4}a(?:m\b|\s|\u00A0|[-\u2013\u2014])/i;
-          if (timeAmRe.test(raw) || timeAmRe.test(txt)) {
-            score += 40;
-            reasons.push('time+40');
-          }
+          score += 40;
+          reasons.push('time+40');
 
           // --- Title signal (+40) ---
           if (classTitleLower && txtL.includes(classTitleLower)) {
@@ -393,8 +395,9 @@ async function runBookingJob(job, opts = {}) {
             reasons.push('instr+20');
           }
 
-          // Require at least one strong signal (time OR title).
-          if (score < 40) continue;
+          // Require at least one more signal beyond time (title OR instructor).
+          // A lone time match (score=40) is too ambiguous — lots of 7:45 AM classes exist.
+          if (score < 60) continue;
 
           const r = el.getBoundingClientRect();
           allRows.push({
@@ -430,12 +433,12 @@ async function runBookingJob(job, opts = {}) {
 
       // Log every scored candidate before deciding.
       if (result.allResults && result.allResults.length > 0) {
-        console.log(`  Scored candidates (${result.allResults.length} with score≥40):`);
+        console.log(`  Scored candidates (${result.allResults.length} with time+40 + score≥60):`);
         result.allResults.forEach((r, i) =>
           console.log(`    [${i}] score=${r.score} desc=${r.desc} visible=${r.visible} (${r.reasons.join(',')}) "${r.txt}"`)
         );
       } else {
-        console.log('  No candidates scored ≥40 for "Core Pilates" / "7:45 AM" / "Stephanie".');
+        console.log('  No candidates with time+title/instr signal (time+40 required, score≥60).');
       }
 
       if (!result.matched) return null;
@@ -445,10 +448,31 @@ async function runBookingJob(job, opts = {}) {
     }
 
     // Scroll the LARGEST VISIBLE scrollable panel (the schedule list) by `amount` px.
-    // Uses visible area (r.height) not scrollHeight so we pick the on-screen panel,
-    // not the outer page wrapper that may be taller but mostly offscreen.
+    // Uses mouse.wheel() to fire native scroll events that Bubble.io's virtual
+    // RepeatingGroup listens to for re-rendering.  Direct scrollTop writes are silent
+    // and don't trigger re-renders — so we wheel-scroll instead.
     async function scrollSchedulePanel(amount) {
-      await page.evaluate((amt) => {
+      if (amount < -10000) {
+        // RESET: use both direct scrollTop (fast) and a large upward wheel (fires events).
+        await page.evaluate(() => {
+          let best = null, bestH = 0;
+          for (const el of document.querySelectorAll('*')) {
+            const s = getComputedStyle(el);
+            if (s.overflowY !== 'auto' && s.overflowY !== 'scroll' &&
+                s.overflow  !== 'auto' && s.overflow  !== 'scroll') continue;
+            if (el.scrollHeight <= el.clientHeight + 50) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width < 100 || r.height < 100) continue;
+            if (r.height > bestH) { best = el; bestH = r.height; }
+          }
+          if (best) { best.scrollTop = 0; best.dispatchEvent(new Event('scroll', { bubbles: true })); }
+        });
+        return;
+      }
+
+      // INCREMENTAL: use page.mouse.wheel() so Bubble.io fires scroll/virtual-scroll events.
+      // First, move mouse to centre of the schedule panel to make sure the wheel targets it.
+      const center = await page.evaluate(() => {
         let best = null, bestH = 0;
         for (const el of document.querySelectorAll('*')) {
           const s = getComputedStyle(el);
@@ -456,15 +480,22 @@ async function runBookingJob(job, opts = {}) {
               s.overflow  !== 'auto' && s.overflow  !== 'scroll') continue;
           if (el.scrollHeight <= el.clientHeight + 50) continue;
           const r = el.getBoundingClientRect();
-          if (r.width < 100 || r.height < 100) continue; // must be a real panel
+          if (r.width < 100 || r.height < 100) continue;
           if (r.height > bestH) { best = el; bestH = r.height; }
         }
-        if (best) {
-          best.scrollTop = Math.max(0, best.scrollTop + amt);
-        } else {
-          window.scrollBy(0, amt);
-        }
-      }, amount);
+        if (!best) return null;
+        const r = best.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      });
+      if (center) {
+        await page.mouse.move(center.x, center.y);
+        await page.mouse.wheel(0, amount);
+      } else {
+        // Fallback: wheel at the middle of the viewport.
+        const vp = page.viewportSize();
+        await page.mouse.move(Math.round(vp.width / 2), Math.round(vp.height / 2));
+        await page.mouse.wheel(0, amount);
+      }
     }
 
     // After a tab click: immediate DOM search → slow-scroll retry if not found.
@@ -477,20 +508,65 @@ async function runBookingJob(job, opts = {}) {
 
       console.log(`  Not found immediately — resetting panel and scrolling to find card on ${tabLabel}...`);
 
+      // Diagnostic: snapshot + dump visible time strings so we know what's rendered.
+      await snap(`scroll-top-${tabLabel.replace(/\s+/g, '-')}`);
+      const visTimeCls = await page.evaluate(() => {
+        const timeRe = /\d{1,2}:\d{2}/;
+        return [...document.querySelectorAll('*')]
+          .filter(e => e.children.length === 0 && e.offsetWidth > 0 && e.offsetHeight > 0
+                    && timeRe.test(e.textContent))
+          .slice(0, 20)
+          .map(e => e.textContent.trim().slice(0, 60));
+      }).catch(() => []);
+      console.log(`  Visible times at top: ${JSON.stringify(visTimeCls)}`);
+
+      // Diagnostic: find what element scrollSchedulePanel would use.
+      const scrollInfo = await page.evaluate(() => {
+        let best = null, bestH = 0;
+        for (const el of document.querySelectorAll('*')) {
+          const s = getComputedStyle(el);
+          if (s.overflowY !== 'auto' && s.overflowY !== 'scroll' &&
+              s.overflow  !== 'auto' && s.overflow  !== 'scroll') continue;
+          if (el.scrollHeight <= el.clientHeight + 50) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 100 || r.height < 100) continue;
+          if (r.height > bestH) { best = el; bestH = r.height; }
+        }
+        if (!best) return { found: false, scrollTop: null, scrollHeight: null, clientHeight: null };
+        return { found: true, tag: best.tagName, cls: best.className.slice(0, 80),
+                 scrollTop: best.scrollTop, scrollHeight: best.scrollHeight,
+                 clientHeight: best.clientHeight, h: Math.round(best.getBoundingClientRect().height) };
+      }).catch(() => ({ found: false }));
+      console.log(`  Scroll container: ${JSON.stringify(scrollInfo)}`);
+
       // Reset the schedule panel to its top.
       await scrollSchedulePanel(-999999);
       await page.waitForTimeout(400);
 
       // Slow downward sweep: 150 px steps, up to 80 steps (12 000 px total).
+      // 400ms wait gives Bubble.io's virtual scroll time to re-render after each wheel event.
       const STEP_PX   = 150;
       const MAX_STEPS = 80;
       for (let step = 0; step < MAX_STEPS; step++) {
         await scrollSchedulePanel(STEP_PX);
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(400);
         card = await findTargetCard();
         if (card) {
           console.log(`  Found card after ${step + 1} scroll step(s).`);
           return card;
+        }
+        // Mid-scroll diagnostic at step 20: dump visible times to trace scroll progress
+        if (step === 19) {
+          const midTimes = await page.evaluate(() => {
+            const timeRe = /\d{1,2}:\d{2}/;
+            return [...document.querySelectorAll('*')]
+              .filter(e => e.children.length === 0 && e.offsetWidth > 0 && e.offsetHeight > 0
+                        && timeRe.test(e.textContent))
+              .slice(0, 15)
+              .map(e => e.textContent.trim().slice(0, 60));
+          }).catch(() => []);
+          await snap(`scroll-mid-${tabLabel.replace(/\s+/g, '-')}`);
+          console.log(`  [step 20] Visible times mid-scroll: ${JSON.stringify(midTimes)}`);
         }
       }
 

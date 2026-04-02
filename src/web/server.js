@@ -216,6 +216,7 @@ function buildHtml(jobs, error, editError) {
     .table-scroll {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch; /* smooth momentum scroll on iOS */
+      touch-action: pan-x;              /* let iOS pass vertical swipes to the page */
     }
     .jobs-table {
       width: 100%;
