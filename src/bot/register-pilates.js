@@ -59,13 +59,22 @@ async function runBookingJob(job, opts = {}) {
 
     const snap = async (label = '') => {
       try {
-        fs.mkdirSync('screenshots', { recursive: true });
+        const dir = 'screenshots';
+        fs.mkdirSync(dir, { recursive: true });
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const suffix = label ? `-${label}` : '';
-        const p = `screenshots/${ts}${suffix}.png`;
+        const p = `${dir}/${ts}${suffix}.png`;
         await page.screenshot({ path: p, fullPage: true });
         screenshotPath = p;
         console.log('Screenshot saved:', p);
+        // Keep only the 20 most recent screenshots to prevent disk bloat.
+        const files = fs.readdirSync(dir)
+          .map(name => ({ name, mtime: fs.statSync(require('path').join(dir, name)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        files.slice(20).forEach(f => {
+          try { fs.unlinkSync(require('path').join(dir, f.name)); console.log('Deleted old screenshot:', f.name); }
+          catch (_) {}
+        });
       } catch (e) {
         console.log('Screenshot failed:', e.message);
       }

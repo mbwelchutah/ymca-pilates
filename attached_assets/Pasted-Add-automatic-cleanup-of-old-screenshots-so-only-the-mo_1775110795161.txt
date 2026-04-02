@@ -1,0 +1,124 @@
+Add automatic cleanup of old screenshots so only the most recent 20 are kept.
+
+Current state:
+
+* screenshots are saved on verification failure
+* filenames include timestamps
+* screenshots folder will grow over time
+
+Goal:
+Automatically delete older screenshots and keep only the latest 20 files.
+
+Do NOT:
+
+* delete screenshots during debugging runs unexpectedly
+* block execution
+* over-engineer
+
+---
+
+## PART 1 — Add cleanup function
+
+```js
+const fs = require("fs");
+const path = require("path");
+
+function cleanupScreenshots() {
+  const dir = "screenshots";
+
+  if (!fs.existsSync(dir)) return;
+
+  const files = fs.readdirSync(dir)
+    .map(name => ({
+      name,
+      time: fs.statSync(path.join(dir, name)).mtime.getTime()
+    }))
+    .sort((a, b) => b.time - a.time); // newest first
+
+  const MAX_FILES = 20;
+
+  if (files.length <= MAX_FILES) return;
+
+  const toDelete = files.slice(MAX_FILES);
+
+  for (const file of toDelete) {
+    const filePath = path.join(dir, file.name);
+    fs.unlinkSync(filePath);
+    console.log("🧹 Deleted old screenshot:", file.name);
+  }
+}
+```
+
+---
+
+## PART 2 — Call cleanup after saving screenshot
+
+Right after:
+
+```js
+await page.screenshot({ path: filename, fullPage: true });
+```
+
+Add:
+
+```js
+cleanupScreenshots();
+```
+
+---
+
+## PART 3 — Optional: run cleanup at startup
+
+Add once when app starts:
+
+```js
+cleanupScreenshots();
+```
+
+---
+
+## PART 4 — Safety rules
+
+* only delete files inside /screenshots
+* sort by modified time (newest kept)
+* never delete if <= 20 files
+* synchronous delete is OK (small number of files)
+
+---
+
+## PART 5 — Logging
+
+```js
+console.log(`📁 Screenshot count: ${files.length}`);
+```
+
+(optional for debugging)
+
+---
+
+## PART 6 — Behavior
+
+* new screenshot saved
+* cleanup runs immediately
+* oldest files removed
+* newest 20 always preserved
+
+---
+
+## FINAL RESULT
+
+Your system now:
+
+* captures failures ✔
+* keeps useful history ✔
+* prevents disk bloat ✔
+* requires zero maintenance ✔
+
+---
+
+## AFTER CHANGES — explain:
+
+* how files are sorted by time
+* why newest are preserved
+* when cleanup runs
+* why limit = 20 is safe
