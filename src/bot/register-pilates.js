@@ -226,92 +226,53 @@ async function runBookingJob(job, opts = {}) {
         console.log(`⚠️ Could not find individual pill for filter #${selectIndex} (${filterLabel}). pillInfo:`, pillInfo);
         return false;
       }
-      console.log(`  Filter #${selectIndex} (${filterLabel}) pill: .${pillInfo.cls} ${pillInfo.w}×${pillInfo.h} @ (${pillInfo.x},${pillInfo.y}) — clicking...`);
+      console.log(`  Filter #${selectIndex} (${filterLabel}) pill: .${pillInfo.cls} ${pillInfo.w}×${pillInfo.h} @ (${pillInfo.x},${pillInfo.y}) — trying native select first...`);
 
-      // Step 2: Playwright native click → fires full pointer-event chain Bubble.io needs.
-      const trigger = page.locator(`.${pillInfo.cls}`).first();
-      await trigger.waitFor({ state: 'visible' });
-      await trigger.scrollIntoViewIfNeeded();
-      await trigger.click();
-      console.log(`  Clicked pill — checking open state...`);
-
-      // Step 2a: Check aria-expanded on the pill or any child (Method A from guide).
-      const ariaOpen = await trigger.evaluate(el => {
-        if (el.getAttribute('aria-expanded') === 'true') return true;
-        for (const child of el.querySelectorAll('[aria-expanded]'))
-          if (child.getAttribute('aria-expanded') === 'true') return true;
-        return false;
-      }).catch(() => false);
-      if (ariaOpen) {
-        console.log(`  Dropdown open confirmed via aria-expanded.`);
-      } else {
-        console.log(`  No aria-expanded=true found — waiting for visible option as open signal.`);
-      }
-
-      // Take a debug snapshot immediately after the click so we can see what rendered.
-      await snap(`filter-${selectIndex}-after-click`);
-
-      // Step 3: Poll until a visible (rendered, non-option) element with targetValue appears.
-      // This is the most reliable open-state signal (Method B from guide).
-      // offsetWidth/offsetHeight are 0 for display:none elements (hidden <option>).
+      // Strategy A: Use Playwright's page.selectOption() on the native hidden <select>.
+      // Playwright fires the full input/change/blur event chain; Bubble.io may honour it.
+      // Return early if the class count changes — means the filter actually applied.
       try {
-        await page.waitForFunction((val) => {
+        const initialCount = await page.evaluate(() => {
           for (const el of document.querySelectorAll('*')) {
-            if (el.tagName === 'OPTION' || el.tagName === 'SELECT') continue;
-            if (el.textContent.trim() === val && el.offsetWidth > 0 && el.offsetHeight > 0)
-              return true;
+            const m = el.textContent.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+            if (m && el.children.length === 0) return parseInt(m[1], 10);
           }
-          return false;
-        }, targetValue, { timeout: 5000 });
-        console.log(`  Option "${targetValue}" is now visible in the overlay.`);
-      } catch {
-        // Snapshot the failed state so we can diagnose visually.
-        await snap(`filter-${selectIndex}-timeout`);
-        // Dump the top visible text elements to narrow down what IS on screen.
-        const visibleTexts = await page.evaluate(() =>
-          [...document.querySelectorAll('*')]
-            .filter(e => e.tagName !== 'OPTION' && e.tagName !== 'SELECT' &&
-                         e.offsetWidth > 0 && e.offsetHeight > 0 &&
-                         e.children.length === 0 && e.textContent.trim().length > 0)
-            .slice(0, 30)
-            .map(e => `[${e.tagName}] "${e.textContent.trim()}"`)
-        ).catch(() => []);
-        console.log(`⚠️ Timed out waiting for visible "${targetValue}". Visible leaves:\n  ${visibleTexts.join('\n  ')}`);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(300);
-        return false;
-      }
-
-      // Step 4: Click the visible option (excluding hidden <option>/<select> elements).
-      const allMatches = page.locator(`text=/^${targetValue.replace('/', '\\/')}$/`);
-      const total = await allMatches.count();
-      let clicked = false;
-      for (let i = 0; i < total; i++) {
-        const el = allMatches.nth(i);
-        const tag = await el.evaluate(n => n.tagName);
-        if (tag === 'OPTION' || tag === 'SELECT') continue;
-        if (await el.isVisible()) {
-          await el.scrollIntoViewIfNeeded();
-          await el.click();
-          clicked = true;
-          break;
+          return null;
+        });
+        await page.locator('select').nth(selectIndex).selectOption(targetValue, { timeout: 3000 });
+        await page.waitForTimeout(2500);
+        const newCount = await page.evaluate(() => {
+          for (const el of document.querySelectorAll('*')) {
+            const m = el.textContent.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+            if (m && el.children.length === 0) return parseInt(m[1], 10);
+          }
+          return null;
+        });
+        console.log(`  Native selectOption for "${targetValue}": class count ${initialCount} → ${newCount}`);
+        if (newCount !== null && newCount !== initialCount) {
+          console.log(`✅ Filter #${selectIndex} (${filterLabel}) applied via native select — count changed!`);
+          return true;
         }
-      }
-      if (!clicked) {
-        console.log(`⚠️ Could not click visible "${targetValue}" — all matches were hidden.`);
-        await page.keyboard.press('Escape');
-        return false;
-      }
-
-      // Step 5: Verify the pill now shows the selected value.
-      await page.waitForTimeout(2000);
-      const pillText = await trigger.textContent().catch(() => '(unknown)');
-      console.log(`✅ Filter #${selectIndex} (${filterLabel}) → "${targetValue}" | pill now shows: "${pillText.trim()}"`);
-      return true;
+        // Native selectOption did not change the class count → filter had no effect.
+      // Do NOT fall back to pill click: in headless mode, opening the Bubble.io custom
+      // dropdown without completing a selection leaves it in a partially-applied state
+      // that corrupts subsequent filter attempts (observed: count dropped from 79→14
+      // when pill was clicked but option was never selected).
+      console.log(`  Native selectOption did not change class count — skipping pill click to avoid state corruption.`);
+      return false;
+    } catch (nse) {
+      console.log(`  Native selectOption threw: ${nse.message} — skipping pill click to avoid state corruption.`);
+      return false;
     }
+    // (pill-click approach removed: Bubble.io custom dropdowns never open in headless mode
+    //  and partial clicks corrupt the filter state)
+  }
 
-    // select index 0 = Category, index 2 = Instructor (confirmed from dropdown log above)
-    const categoryApplied  = await applyFilterBySelectIndex(0, 'Yoga/Pilates',     'Category');
+    // Filter strategy: Category (index 0) + Instructor (index 2) via native selectOption.
+    // Event Name filter (index 3) is intentionally skipped: its native selectOption fails
+    // ("did not find some options") and the pill-click fallback corrupts Bubble.io state
+    // by partially opening the dropdown (observed: count went 79→14 from an aborted click).
+    const categoryApplied   = await applyFilterBySelectIndex(0, 'Yoga/Pilates',      'Category');
     const instructorApplied = await applyFilterBySelectIndex(2, 'Stephanie Sanders', 'Instructor');
 
     if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
@@ -325,19 +286,20 @@ async function runBookingJob(job, opts = {}) {
     // Step 3: Find the target class card.
     //
     // Strategy:
-    //  A) Search the ENTIRE DOM (including off-screen elements) for any element
-    //     that contains the target time ("7:45") + AM marker + optionally the
-    //     class title and instructor first name.
-    //     Non-breaking spaces (\u00A0) are normalized before matching.
-    //  B) Score each matching element:
-    //       title "core pilates"  → +40 pts
-    //       time  "7:45" + AM     → +40 pts  ("7:45 a", "7:45 AM", "7:45am" all match)
-    //       instructor first name → +20 pts  ("stephanie" matches "Stephanie S.")
-    //  C) Pick the highest-scoring, most-specific (fewest descendants) element.
-    //  D) If no element is found immediately, slowly scroll the LARGEST VISIBLE
-    //     scrollable panel (the schedule list) and retry up to 60 steps.
-    //  E) Scroll the winning element into view, then click its visible interactive
-    //     child (button / a / role=button / tabindex) — NOT an invisible wrapper.
+    //  A) Collect ALL visible card-level DOM nodes (min 3, max 300 descendants,
+    //     min 100×30 px bounding box).
+    //  B) Log every candidate row's text so we can see what's in the DOM.
+    //  C) Score each row loosely:
+    //       title match "Core Pilates"  → +40  (case-insensitive substring)
+    //       time  match "7:45"          → +40  (digits only — no AM/PM assumption)
+    //       instr match "Stephanie"     → +30  (first name only)
+    //  D) Pick the highest-scoring, most-specific (fewest descendants) element
+    //     with score ≥ 40 (i.e. at least one signal).
+    //  E) If not found immediately, slowly scroll the schedule list (80 px steps)
+    //     and retry at each step.
+    //  F) Scroll the winning element into view, then find and click its visible
+    //     interactive child: role=button, tabindex=0, <a>, <button>, or the
+    //     element itself if it is one of those — never an invisible wrapper div.
     // ---------------------------------------------------------------------------
 
     async function findTargetCard() {
@@ -347,103 +309,120 @@ async function runBookingJob(job, opts = {}) {
           .forEach(el => el.removeAttribute('data-target-class'))
       );
 
-      const result = await page.evaluate(({ classTitleLower, instructorFirstName }) => {
-        const SKIP_TAGS = new Set(['OPTION','SELECT','SCRIPT','STYLE','HEAD','HTML','BODY','NOSCRIPT']);
+      const result = await page.evaluate(({ classTitleLower, instrFirst }) => {
+        const SKIP_TAGS = new Set(['OPTION','SELECT','SCRIPT','STYLE','HEAD','HTML','BODY','NOSCRIPT','SVG','PATH']);
 
-        // Normalize: collapse all whitespace including \u00A0 (non-breaking space used
-        // by Bubble.io) so the regex doesn't fail on invisible whitespace variants.
+        // Normalize: collapse all whitespace variants (including Bubble.io's \u00A0)
         function norm(txt) {
-          return (txt || '').replace(/[\s\u00A0]+/g, ' ').trim();
+          return (txt || '').replace(/[\s\u00A0\u2009\u202f]+/g, ' ').trim();
         }
 
-        const allRows = [];
-        const timeAmRe = /7:45[\s\u00A0]{0,4}a(?:m\b|\s|\u00A0|[-\u2013\u2014])/i;
+        // Matching rules:
+        //   - time: "7:45" followed by optional space then "a" or "A" (am indicator).
+        //     This matches "7:45 a", "7:45a", "7:45 AM", "7:45am" but NOT
+        //     "7:45 p" / "7:45pm" or end-times like "6:45 - 7:45 p".
+        //   - title: "Core Pilates" (case-insensitive, any whitespace)
+        //   - instr: first name only ("stephanie" matches "Stephanie S.")
+        const timeAmRe = /\b7:45\s*a/i;
+        const titleRe  = /core[\s\u00A0]+pilates/i;
+        const instrRe  = new RegExp(instrFirst, 'i');
+
+        const allRows  = [];   // every node with ≥1 signal
+        const allTexts = [];   // ALL candidate texts for diagnostic logging
 
         for (const el of document.querySelectorAll('*')) {
           if (SKIP_TAGS.has(el.tagName)) continue;
 
-          // Defense-in-depth: skip massive wrappers (real card rows have < 500 descendants).
-          // Check this cheaply BEFORE reading textContent on huge trees.
-          if (el.querySelectorAll('*').length > 500) continue;
+          const desc = el.querySelectorAll('*').length;
+          // 100-desc cap: excludes page wrappers, filter dropdowns (~200+ desc),
+          // and repeating-group containers, while keeping individual class cards (~20-50 desc).
+          if (desc > 100) continue;
+          if (desc < 2)   continue;   // skip bare text wrappers / leaf nodes
 
           const raw  = el.textContent || '';
           const txt  = norm(raw);
-          const txtL = txt.toLowerCase();
+          if (!txt) continue;
 
-          // Fast pre-filter: must contain the AM time string (not just "7:45" which
-          // could be a PM class that happens to share the hour).
-          if (!timeAmRe.test(raw) && !timeAmRe.test(txt)) continue;
+          const hasTime  = timeAmRe.test(txt);
+          const hasTitle = titleRe.test(txt);
+          const hasInstr = instrRe.test(txt);
+
+          // Collect all card-sized nodes for diagnostic logging
+          const r = el.getBoundingClientRect();
+          const looks_card = r.width >= 100 && r.height >= 30;
+          if (looks_card && (hasTitle || hasTime || hasInstr)) {
+            allTexts.push({ desc, txt: txt.slice(0, 150), hasTime, hasTitle, hasInstr });
+          }
+
+          if (!hasTitle && !hasTime && !hasInstr) continue;
 
           let score = 0;
           const reasons = [];
+          if (hasTitle) { score += 40; reasons.push('title+40'); }
+          if (hasTime)  { score += 40; reasons.push('time+40');  }
+          if (hasInstr) { score += 30; reasons.push('instr+30'); }
 
-          // --- Time signal (+40) --- MANDATORY: element must contain the AM time.
-          // Accept: "7:45 a", "7:45a", "7:45 AM", "7:45am", "7:45\u00A0a"
-          // Reject: "7:45 p", "7:45 PM", "7:45pm"
-          score += 40;
-          reasons.push('time+40');
+          // Require score ≥ 80: must have at least TWO matching signals.
+          // - title + time = 80 ✓ (strongest: class name + correct start time)
+          // - title + instr = 70 ✗ (would match filter dropdown false positive)
+          // - time + instr  = 70 ✗ (would match wrong class with same instructor)
+          // - time alone    = 40 ✗ (too many classes end at 7:45)
+          // - title alone   = 40 ✗ (would match filter dropdown option list)
+          if (score < 80) continue;
 
-          // --- Title signal (+40) ---
-          if (classTitleLower && txtL.includes(classTitleLower)) {
-            score += 40;
-            reasons.push('title+40');
-          }
-
-          // --- Instructor first-name signal (+20) ---
-          if (instructorFirstName && txtL.includes(instructorFirstName.toLowerCase())) {
-            score += 20;
-            reasons.push('instr+20');
-          }
-
-          // Require at least one more signal beyond time (title OR instructor).
-          // A lone time match (score=40) is too ambiguous — lots of 7:45 AM classes exist.
-          if (score < 60) continue;
-
-          const r = el.getBoundingClientRect();
           allRows.push({
             el,
             score,
             reasons,
-            desc: el.querySelectorAll('*').length,
-            visible: r.width > 0 && r.height > 0,
+            desc,
+            visible: looks_card,
             txt: txt.slice(0, 200),
           });
         }
 
-        // Sort: highest score first; tie-break on fewest descendants (most specific row).
+        // Sort: highest score first; tie-break on fewest descendants (most specific)
         allRows.sort((a, b) => b.score - a.score || a.desc - b.desc);
 
-        if (allRows.length === 0) return { matched: null, allResults: [] };
+        if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
 
-        // Mark the best match so Playwright can locate it.
+        // Mark the best match so Playwright can locate it via attribute selector
         allRows[0].el.setAttribute('data-target-class', 'yes');
 
         return {
-          matched: allRows[0].txt,
-          score:   allRows[0].score,
-          reasons: allRows[0].reasons,
-          desc:    allRows[0].desc,
-          visible: allRows[0].visible,
-          allResults: allRows.map(r => ({
-            score: r.score, reasons: r.reasons, desc: r.desc, visible: r.visible,
-            txt: r.txt.slice(0, 120),
-          })).slice(0, 10),
+          matched:    allRows[0].txt,
+          score:      allRows[0].score,
+          reasons:    allRows[0].reasons,
+          desc:       allRows[0].desc,
+          visible:    allRows[0].visible,
+          allResults: allRows.slice(0, 15).map(r => ({
+            score: r.score, reasons: r.reasons.join(','), desc: r.desc,
+            visible: r.visible, txt: r.txt.slice(0, 120),
+          })),
+          allTexts,
         };
-      }, { classTitleLower, instructorFirstName });
+      }, { classTitleLower, instrFirst: instructorFirstName });
 
-      // Log every scored candidate before deciding.
-      if (result.allResults && result.allResults.length > 0) {
-        console.log(`  Scored candidates (${result.allResults.length} with time+40 + score≥60):`);
-        result.allResults.forEach((r, i) =>
-          console.log(`    [${i}] score=${r.score} desc=${r.desc} visible=${r.visible} (${r.reasons.join(',')}) "${r.txt}"`)
+      // Log ALL visible rows that contained any signal (title, time, or instructor)
+      if (result.allTexts && result.allTexts.length > 0) {
+        console.log(`  Visible rows with any signal (${result.allTexts.length}):`);
+        result.allTexts.forEach((r, i) =>
+          console.log(`    row[${i}] desc=${r.desc} T=${r.hasTitle?1:0} t=${r.hasTime?1:0} I=${r.hasInstr?1:0} "${r.txt}"`)
         );
       } else {
-        console.log('  No candidates with time+title/instr signal (time+40 required, score≥60).');
+        console.log('  No visible rows matched title / time / instructor at all.');
+      }
+
+      // Log every scored candidate
+      if (result.allResults && result.allResults.length > 0) {
+        console.log(`  Scored candidates (${result.allResults.length}):`);
+        result.allResults.forEach((r, i) =>
+          console.log(`    [${i}] score=${r.score} desc=${r.desc} visible=${r.visible} (${r.reasons}) "${r.txt}"`)
+        );
       }
 
       if (!result.matched) return null;
 
-      console.log(`✅ Best card (score=${result.score} desc=${result.desc} visible=${result.visible}): "${result.matched}"`);
+      console.log(`✅ Best card (score=${result.score} desc=${result.desc}): "${result.matched}"`);
       return page.locator('[data-target-class="yes"]').first();
     }
 
@@ -508,17 +487,25 @@ async function runBookingJob(job, opts = {}) {
 
       console.log(`  Not found immediately — resetting panel and scrolling to find card on ${tabLabel}...`);
 
-      // Diagnostic: snapshot + dump visible time strings so we know what's rendered.
+      // Diagnostic: snapshot + dump TRULY VIEWPORT-VISIBLE time strings.
+      // Use getBoundingClientRect() so we only log what's actually on screen —
+      // offsetWidth/Height is layout size and includes off-screen scroll content.
       await snap(`scroll-top-${tabLabel.replace(/\s+/g, '-')}`);
       const visTimeCls = await page.evaluate(() => {
         const timeRe = /\d{1,2}:\d{2}/;
+        const vw = window.innerWidth, vh = window.innerHeight;
         return [...document.querySelectorAll('*')]
-          .filter(e => e.children.length === 0 && e.offsetWidth > 0 && e.offsetHeight > 0
-                    && timeRe.test(e.textContent))
+          .filter(e => {
+            if (e.children.length !== 0) return false;
+            if (!timeRe.test(e.textContent)) return false;
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= vh
+                && r.left >= 0 && r.right <= vw;
+          })
           .slice(0, 20)
           .map(e => e.textContent.trim().slice(0, 60));
       }).catch(() => []);
-      console.log(`  Visible times at top: ${JSON.stringify(visTimeCls)}`);
+      console.log(`  Viewport-visible times at top: ${JSON.stringify(visTimeCls)}`);
 
       // Diagnostic: find what element scrollSchedulePanel would use.
       const scrollInfo = await page.evaluate(() => {
@@ -539,34 +526,70 @@ async function runBookingJob(job, opts = {}) {
       }).catch(() => ({ found: false }));
       console.log(`  Scroll container: ${JSON.stringify(scrollInfo)}`);
 
-      // Reset the schedule panel to its top.
+      // Phase 1: Scroll UP from the current position.
+      // Clicking the day tab lands at the afternoon/evening classes (e.g. 2:45 PM on Wed 08).
+      // The 7:45 AM target is EARLIER in the day, so we must go backward first.
+      const STEP_PX     = 80;
+      const MAX_UP      = 80;   // 80 × 80px = 6400px backward — covers midnight→2:45 PM gap
+      const MAX_DOWN    = 150;  // 150 × 80px = 12 000px forward — full week sweep
+      console.log(`  Phase 1: scrolling UP ${MAX_UP} steps to find AM class above current position...`);
+      for (let step = 0; step < MAX_UP; step++) {
+        await scrollSchedulePanel(-STEP_PX);
+        await page.waitForTimeout(400);
+        card = await findTargetCard();
+        if (card) {
+          console.log(`  Found card after ${step + 1} upward scroll step(s).`);
+          return card;
+        }
+        if (step === 29) {
+          const midTimes = await page.evaluate(() => {
+            const timeRe = /\d{1,2}:\d{2}/;
+            const vh = window.innerHeight;
+            return [...document.querySelectorAll('*')]
+              .filter(e => {
+                if (e.children.length !== 0) return false;
+                if (!timeRe.test(e.textContent)) return false;
+                const r = e.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= vh;
+              })
+              .slice(0, 15)
+              .map(e => e.textContent.trim().slice(0, 60));
+          }).catch(() => []);
+          await snap(`scroll-up30-${tabLabel.replace(/\s+/g, '-')}`);
+          console.log(`  [up step 30] Visible times: ${JSON.stringify(midTimes)}`);
+        }
+      }
+
+      // Phase 2: Reset to top and sweep downward.
+      console.log(`  Phase 2: resetting to top and scrolling DOWN ${MAX_DOWN} steps...`);
       await scrollSchedulePanel(-999999);
       await page.waitForTimeout(400);
 
-      // Slow downward sweep: 150 px steps, up to 80 steps (12 000 px total).
-      // 400ms wait gives Bubble.io's virtual scroll time to re-render after each wheel event.
-      const STEP_PX   = 150;
-      const MAX_STEPS = 80;
-      for (let step = 0; step < MAX_STEPS; step++) {
+      for (let step = 0; step < MAX_DOWN; step++) {
         await scrollSchedulePanel(STEP_PX);
         await page.waitForTimeout(400);
         card = await findTargetCard();
         if (card) {
-          console.log(`  Found card after ${step + 1} scroll step(s).`);
+          console.log(`  Found card after ${step + 1} downward scroll step(s).`);
           return card;
         }
-        // Mid-scroll diagnostic at step 20: dump visible times to trace scroll progress
-        if (step === 19) {
+        // Mid-scroll diagnostic at step 30 (≈2400 px): snapshot + viewport-visible times.
+        if (step === 29) {
           const midTimes = await page.evaluate(() => {
             const timeRe = /\d{1,2}:\d{2}/;
+            const vh = window.innerHeight;
             return [...document.querySelectorAll('*')]
-              .filter(e => e.children.length === 0 && e.offsetWidth > 0 && e.offsetHeight > 0
-                        && timeRe.test(e.textContent))
+              .filter(e => {
+                if (e.children.length !== 0) return false;
+                if (!timeRe.test(e.textContent)) return false;
+                const r = e.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= vh;
+              })
               .slice(0, 15)
               .map(e => e.textContent.trim().slice(0, 60));
           }).catch(() => []);
           await snap(`scroll-mid-${tabLabel.replace(/\s+/g, '-')}`);
-          console.log(`  [step 20] Visible times mid-scroll: ${JSON.stringify(midTimes)}`);
+          console.log(`  [down step 30] Visible times mid-scroll: ${JSON.stringify(midTimes)}`);
         }
       }
 
@@ -630,13 +653,70 @@ async function runBookingJob(job, opts = {}) {
     await page.waitForTimeout(300);
     console.log('Card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
     {
-      // Prefer explicit interactive elements; chevrons in Bubble.io often have role=button
-      // or tabindex but are not <button> or <a> tags.
-      const clickable = targetCard.locator("button, a, [role='button'], [tabindex='0']").first();
-      const hasClickable = (await clickable.count()) > 0;
+      // Find the best interactive child inside the card to click.
+      // Priority order:
+      //   1. The card itself if it has role=button / tabindex / is <a>/<button>
+      //   2. A descendant with role=button, tabindex=0, <a>, or <button>
+      //   3. A descendant whose computed cursor is "pointer" (Bubble.io click targets)
+      //   4. Force-click the card itself as last resort
+      //
+      // We NEVER click invisible wrapper divs — we always prefer the visible
+      // interactive child that the user would actually click.
+
+      // Check if the card element itself is the interactive target
+      const cardIsInteractive = await targetCard.evaluate(el => {
+        const tag = el.tagName.toLowerCase();
+        const role = (el.getAttribute('role') || '').toLowerCase();
+        const tab  = el.getAttribute('tabindex');
+        return tag === 'a' || tag === 'button' || role === 'button' || tab === '0';
+      }).catch(() => false);
+
+      // Look for explicit interactive descendants
+      const explicitChild = targetCard.locator(
+        "button, a, [role='button'], [tabindex='0']"
+      ).first();
+      const hasExplicit = !cardIsInteractive && (await explicitChild.count()) > 0;
+
+      let clickTarget;
+      let clickDesc;
+      if (cardIsInteractive) {
+        clickTarget = targetCard;
+        clickDesc   = 'card itself (role/tab/tag interactive)';
+      } else if (hasExplicit) {
+        clickTarget = explicitChild;
+        clickDesc   = 'explicit interactive child (role/tab/a/button)';
+      } else {
+        // Find a cursor:pointer child via evaluate, mark it, then locate
+        const markedPointer = await page.evaluate(() => {
+          const marked = document.querySelector('[data-target-class="yes"]');
+          if (!marked) return false;
+          for (const child of marked.querySelectorAll('*')) {
+            const r = child.getBoundingClientRect();
+            if (r.width < 20 || r.height < 10) continue;
+            if (getComputedStyle(child).cursor === 'pointer') {
+              child.setAttribute('data-click-target', 'yes');
+              return true;
+            }
+          }
+          return false;
+        });
+        if (markedPointer) {
+          clickTarget = page.locator('[data-click-target="yes"]').first();
+          clickDesc   = 'cursor:pointer child';
+          // clean up after use
+          page.evaluate(() =>
+            document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
+          ).catch(() => {});
+        } else {
+          clickTarget = targetCard;
+          clickDesc   = 'card itself (last resort force click)';
+        }
+      }
+
+      console.log(`Clicking: ${clickDesc}`);
       if (DEBUG_HIGHLIGHT) {
-        await highlightElement(page, hasClickable ? clickable : targetCard);
-        await page.waitForTimeout(400); // pause so highlight is visible in screenshot
+        await highlightElement(page, clickTarget);
+        await page.waitForTimeout(400);
       }
       if (DEBUG_PAUSE) {
         console.log('⏸  Pausing before click — Playwright Inspector is open.');
@@ -644,20 +724,12 @@ async function runBookingJob(job, opts = {}) {
         await page.pause();
       }
       try {
-        if (hasClickable) {
-          await clickable.click();
-        } else {
-          await targetCard.click();
-        }
+        await clickTarget.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+        await clickTarget.click({ timeout: 5000 });
       } catch (clickErr) {
-        console.log('⚠️ Normal click failed, trying force fallback:', clickErr.message);
-        await targetCard.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(200);
-        if (hasClickable) {
-          await clickable.click({ force: true });
-        } else {
-          await targetCard.click({ force: true });
-        }
+        console.log('⚠️ Normal click failed, force-clicking:', clickErr.message.split('\n')[0]);
+        await targetCard.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+        await targetCard.click({ force: true });
       }
     }
     await page.waitForTimeout(2000);
@@ -667,7 +739,11 @@ async function runBookingJob(job, opts = {}) {
     // prevents a fallback selection from booking the wrong class.
     // Uses page body text so it works regardless of Bubble.io's modal selector.
     {
-      const modalText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+      // Normalize all whitespace variants (incl. Bubble.io's non-breaking spaces \u00A0)
+      // before comparing — the modal uses \u00A0 in time strings like "7:45\u00A0a"
+      // which wouldn't match "7:45 a" as a plain string.includes() comparison.
+      const rawModal   = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+      const modalText  = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
       const verifyTime  = !!classTimeNorm && modalText.includes(classTimeNorm);
       const verifyInst  = modalText.includes(instructorFirstName);
       console.log('Modal verification —', JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));

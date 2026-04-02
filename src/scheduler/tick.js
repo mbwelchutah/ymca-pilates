@@ -9,8 +9,9 @@ const { getPhase }               = require('./booking-window');
 const { runBookingJob }          = require('../bot/register-pilates');
 const { getDryRun }              = require('../bot/dry-run-state');
 
-const COOLDOWN_MS     = 30 * 60 * 1000;   // skip if ran within this window
-const ELIGIBLE_PHASES = ['warmup', 'sniper'];
+const COOLDOWN_MS        = 30 * 60 * 1000;  // cooldown for warmup phase
+const COOLDOWN_HOT_MS    =  5 * 60 * 1000;  // shorter cooldown for sniper/late — must retry fast
+const ELIGIBLE_PHASES    = ['warmup', 'sniper', 'late'];
 
 // Returns true if the ISO timestamp falls within the current UTC calendar week
 // (Monday 00:00 UTC through Sunday 23:59 UTC).
@@ -102,12 +103,16 @@ async function runTick({ onlyJobId = null } = {}) {
     }
 
     // Cooldown guard.
+    // Sniper and late phases get a short 5-min cooldown so the bot can retry quickly
+    // after a warmup miss (warmup runs 10 min before the window opens; if it fails because
+    // the class isn't listed yet, sniper/late must retry within minutes of opening).
     if (dbJob.last_run_at) {
-      const msSinceRun = Date.now() - new Date(dbJob.last_run_at).getTime();
-      if (msSinceRun < COOLDOWN_MS) {
+      const msSinceRun  = Date.now() - new Date(dbJob.last_run_at).getTime();
+      const cooldownFor = (phase === 'sniper' || phase === 'late') ? COOLDOWN_HOT_MS : COOLDOWN_MS;
+      if (msSinceRun < cooldownFor) {
         const minAgo = Math.round(msSinceRun / 60000);
         const prevResult = dbJob.last_result || 'unknown';
-        console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago, last result: ${prevResult})`);
+        console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago, last result: ${prevResult}, cooldown: ${cooldownFor/60000} min)`);
         results.push({ jobId: dbJob.id, phase, status: 'skipped', message: `cooldown (ran ${minAgo} min ago, last: ${prevResult})` });
         continue;
       }
