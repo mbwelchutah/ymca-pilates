@@ -321,38 +321,28 @@ async function runBookingJob(job, opts = {}) {
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
-    // Step 3: Find the target class card.
-    // Strategy: time is primary discriminator; instructor first name is secondary.
-    // Class title match is optional — the YMCA embed does not always render it near the row.
-    // Algorithm: collect every element whose text contains both the normalized time string
-    // and the instructor's first name; pick the smallest such element (shortest textContent
-    // = most specific container); that element is the row to click.
+    // Step 3: Find the target class card using scored visible-card matching.
+    //
+    // Scoring (per visible card container):
+    //   title contains classTitle  → +40 pts  (e.g. "Core Pilates")
+    //   time  contains H:MM part   → +40 pts  (e.g. "7:45" matches "7:45 a - 8:45 a")
+    //   text  contains instructor first name → +20 pts  (e.g. "Stephanie" matches "Stephanie S.")
+    //
+    // Card containers: elements with 2–15 descendants that contain a time-range pattern
+    // and have non-zero screen dimensions (visible to the user).
     async function findTargetCard() {
+      // Clear any previous marker
+      await page.evaluate(() =>
+        document.querySelectorAll('[data-target-class]')
+          .forEach(el => el.removeAttribute('data-target-class'))
+      );
+
       const result = await page.evaluate(({ classTimeNorm, instructorFirstName, classTitleLower }) => {
-        document.querySelectorAll('[data-target-class]').forEach(el => {
-          el.removeAttribute('data-target-class');
-        });
+        const timePattern = /\d+:\d+\s*[ap]\s*-\s*\d+:\d+\s*[ap]/i;
 
-        // --- Primary match: time + instructor first name ---
-        const candidates = [];
-        for (const el of document.querySelectorAll('*')) {
-          const txt = el.textContent.toLowerCase();
-          if (classTimeNorm && !txt.includes(classTimeNorm)) continue;
-          if (!txt.includes(instructorFirstName)) continue;
-          candidates.push(el);
-        }
+        // Extract the H:MM portion of the target (e.g. "7:45" from "7:45 a")
+        const targetHM = classTimeNorm ? classTimeNorm.replace(/\s*[ap].*/i, '').trim() : null;
 
-        if (candidates.length > 0) {
-          // Pick smallest (most specific) element.
-          candidates.sort((a, b) => a.textContent.length - b.textContent.length);
-          const best = candidates[0];
-          const titlePresent = classTitleLower ? best.textContent.toLowerCase().includes(classTitleLower) : true;
-          best.setAttribute('data-target-class', 'yes');
-          return { matched: best.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), titlePresent, fallback: null, debug: null };
-        }
-
-        // --- Fallback: find rows by AM/PM time pattern ---
-        // Parse "H:MM a" or "H:MM p" → minutes since midnight for closest-time ranking.
         function parseMin(t) {
           const m = (t || '').match(/(\d+):(\d+)\s*([ap])/i);
           if (!m) return null;
@@ -361,86 +351,74 @@ async function runBookingJob(job, opts = {}) {
           if (m[3].toLowerCase() === 'a' && h === 12) h = 0;
           return h * 60 + min;
         }
-        const targetMin = parseMin(classTimeNorm);
-        const timePattern = /\d+:\d+\s*[ap]\s*-\s*\d+:\d+\s*[ap]/i;
 
-        // Collect leaf-ish elements that contain an AM/PM time range AND the instructor.
-        // Requiring the instructor prevents the fallback from picking a completely wrong class.
-        const rowEls = [];
+        // Collect visible card containers
+        const cards = [];
         for (const el of document.querySelectorAll('*')) {
+          if (el.tagName === 'OPTION' || el.tagName === 'SELECT' ||
+              el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
           if (!timePattern.test(el.textContent)) continue;
-          if (el.querySelectorAll('*').length > 20) continue; // skip broad containers
-          if (!el.textContent.toLowerCase().includes(instructorFirstName)) continue; // must have instructor
-          rowEls.push(el);
+          const descCount = el.querySelectorAll('*').length;
+          if (descCount < 2 || descCount > 25) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          cards.push(el);
         }
 
-        const rowTexts = rowEls.map(el => el.textContent.replace(/\s+/g, ' ').trim().slice(0, 100));
+        // Score each card
+        const scored = cards.map(el => {
+          const txt = el.textContent.toLowerCase().replace(/\s+/g, ' ');
+          let score = 0;
+          const reasons = [];
 
-        if (rowEls.length === 0) {
-          return { matched: null, fallback: null, debug: { candidateCount: 0, timeElTexts: [], classTimeNorm, instructorFirstName } };
-        }
+          if (classTitleLower && txt.includes(classTitleLower)) { score += 40; reasons.push('title+40'); }
+          if (targetHM && txt.includes(targetHM))               { score += 40; reasons.push('time+40'); }
+          if (instructorFirstName && txt.includes(instructorFirstName)) { score += 20; reasons.push('instr+20'); }
 
-        // Pick closest time to target; fall back to first instructor-matching row.
-        let bestEl = rowEls[0];
-        let bestDiff = Infinity;
-        for (const el of rowEls) {
-          if (targetMin === null) break; // no target time — use first row
-          const rowMin = parseMin(el.textContent);
-          if (rowMin === null) continue;
-          const diff = Math.abs(rowMin - targetMin);
-          if (diff < bestDiff) { bestDiff = diff; bestEl = el; }
-        }
-
-        // Refuse the fallback if the closest match is more than 2 hours away —
-        // that means the class simply isn't on this tab, not that it's nearby.
-        const MAX_DIFF = 120; // minutes
-        if (targetMin !== null && bestDiff > MAX_DIFF) {
-          const bestText = bestEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 80);
           return {
-            matched: null, fallback: null, debug: null,
-            tooFar: { bestDiff, bestText, targetMin },
+            el,
+            score,
+            reasons,
+            text: el.textContent.replace(/\s+/g, ' ').trim().slice(0, 140),
+            len: el.textContent.length,
           };
+        });
+
+        // Sort: highest score first; tie-break on shorter text (more specific)
+        scored.sort((a, b) => b.score - a.score || a.len - b.len);
+
+        const scoredLog = scored.map(s => ({ score: s.score, reasons: s.reasons, text: s.text }));
+
+        if (scored.length === 0 || scored[0].score === 0) {
+          return { matched: null, scoredLog };
         }
 
-        bestEl.setAttribute('data-target-class', 'yes');
+        scored[0].el.setAttribute('data-target-class', 'yes');
         return {
-          matched: bestEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
-          titlePresent: classTitleLower ? bestEl.textContent.toLowerCase().includes(classTitleLower) : true,
-          fallback: targetMin !== null ? 'closest-time' : 'first-row',
-          fallbackRowTexts: rowTexts,
-          debug: null,
+          matched: scored[0].text,
+          score: scored[0].score,
+          reasons: scored[0].reasons,
+          scoredLog,
         };
       }, { classTimeNorm, instructorFirstName, classTitleLower });
 
+      // Always log every candidate and its score
+      if (result.scoredLog && result.scoredLog.length > 0) {
+        console.log(`  Visible card candidates (${result.scoredLog.length}):`);
+        result.scoredLog.slice(0, 10).forEach((s, i) =>
+          console.log(`    [${i}] score=${s.score} (${s.reasons.join(',')}) "${s.text}"`)
+        );
+      } else {
+        console.log('  No visible card candidates found on this tab.');
+      }
+
       if (result.matched) {
-        if (result.fallback) {
-          console.log(`⚠️  Primary match failed — using ${result.fallback} fallback`);
-          if (result.fallbackRowTexts) {
-            console.log('Available rows on this tab:');
-            result.fallbackRowTexts.forEach((t, i) => console.log(`  [${i}] ${t}`));
-          }
-        } else if (result.titlePresent === false) {
-          console.log(`⚠️  Class title "${classTitle}" not in matched row — matched by time+instructor`);
-        }
-        console.log('Matched row:', result.matched);
+        console.log(`✅ Best card (score=${result.score}, ${result.reasons.join(',')}): "${result.matched}"`);
         return page.locator('[data-target-class="yes"]').first();
       }
 
-      if (result.tooFar) {
-        const diffH = Math.round(result.tooFar.bestDiff / 60 * 10) / 10;
-        console.log(`⚠️  Fallback refused — closest Stephanie class is ${diffH} hr(s) from target (${classTimeNorm}). Closest: "${result.tooFar.bestText}"`);
-        console.log('   Class is not on this tab yet — registration may not be open.');
-      }
-
-      if (result.debug) {
-        console.log('findTargetCard: no match.', JSON.stringify(result.debug));
-        if (result.debug.timeElTexts && result.debug.timeElTexts.length > 0) {
-          console.log('Elements containing time string:');
-          result.debug.timeElTexts.forEach(t => console.log(' ', t));
-        } else {
-          console.log('No elements found matching time string:', classTimeNorm);
-        }
-      }
+      const allTexts = (result.scoredLog || []).map(s => s.text).join(' | ');
+      console.log(`⚠️ No card scored > 0. Visible cards: ${allTexts || '(none)'}`);
       return null;
     }
 
@@ -450,21 +428,66 @@ async function runBookingJob(job, opts = {}) {
     console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
-    // Scroll every scrollable element to the top so early-morning classes that
-    // use lazy/virtual rendering are brought into the DOM before we scan.
-    async function scrollScheduleToTop() {
-      const scrolledCount = await page.evaluate(() => {
-        let n = 0;
-        document.querySelectorAll('*').forEach(el => {
-          if (el.scrollTop > 0) { el.scrollTop = 0; n++; }
-        });
-        window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-        return n;
-      });
-      console.log(`scrollScheduleToTop: reset ${scrolledCount} element(s).`);
-      await page.waitForTimeout(800); // let renderer populate newly-visible rows
+    // Scroll the schedule panel progressively DOWNWARD until the target time string
+    // appears as a visible (non-zero-dimension) element in the DOM.
+    // Without filters the schedule starts at midnight; 7:45 AM is further down the
+    // virtual list, so scrolling to the TOP is the wrong direction.
+    // Strategy:
+    //   1. Find the tallest scrollable container on the page (the schedule panel).
+    //   2. Step its scrollTop down by SCROLL_STEP pixels, wait for re-render.
+    //   3. After each step check if any visible non-OPTION element contains targetTime.
+    //   4. Stop when found, or when we hit the bottom, or after MAX_STEPS iterations.
+    async function scrollToFindTime(targetTime) {
+      const SCROLL_STEP = 300;
+      const MAX_STEPS   = 60;  // 60 × 300 = 18 000 px max travel
+      const WAIT_MS     = 300; // ms between steps for virtual-list re-render
+
+      for (let step = 0; step < MAX_STEPS; step++) {
+        // Check if targetTime is already visible in the DOM
+        const found = await page.evaluate((t) => {
+          for (const el of document.querySelectorAll('*')) {
+            if (el.tagName === 'OPTION' || el.tagName === 'SELECT') continue;
+            if (el.textContent.toLowerCase().includes(t)) {
+              const r = el.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) return true;
+            }
+          }
+          return false;
+        }, targetTime);
+
+        if (found) {
+          console.log(`scrollToFindTime: "${targetTime}" visible after ${step} scroll step(s).`);
+          return true;
+        }
+
+        // Scroll the tallest scrollable container downward
+        const atBottom = await page.evaluate((step) => {
+          let best = null;
+          for (const el of document.querySelectorAll('*')) {
+            const s = getComputedStyle(el);
+            const scrollable = s.overflow === 'auto' || s.overflow === 'scroll' ||
+                               s.overflowY === 'auto' || s.overflowY === 'scroll';
+            if (scrollable && el.scrollHeight > el.clientHeight + 50) {
+              if (!best || el.scrollHeight > best.scrollHeight) best = el;
+            }
+          }
+          if (best) {
+            best.scrollTop += step;
+            return best.scrollTop >= best.scrollHeight - best.clientHeight - 5;
+          }
+          window.scrollBy(0, step);
+          return window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 5;
+        }, SCROLL_STEP);
+
+        await page.waitForTimeout(WAIT_MS);
+
+        if (atBottom) {
+          console.log(`scrollToFindTime: reached bottom without finding "${targetTime}" (step ${step}).`);
+          return false;
+        }
+      }
+      console.log(`scrollToFindTime: max steps reached without finding "${targetTime}".`);
+      return false;
     }
 
     // Probe the DOM for any element containing the target time string, and also
@@ -492,16 +515,17 @@ async function runBookingJob(job, opts = {}) {
 
     // Helper: scan a set of day-tab locators and return the first card match.
     async function scanTabs(tabs, count) {
+      const searchTime = classTimeNorm || '7:45 a';
       for (let w = 0; w < count; w++) {
         const tabText = await tabs.nth(w).textContent();
         console.log('Trying tab: ' + tabText.trim());
         await tabs.nth(w).click();
         await page.waitForTimeout(2000);
-        await scrollScheduleToTop();
+        await scrollToFindTime(searchTime);
         const card = await findTargetCard();
         if (card) { console.log('Found class on ' + tabText.trim()); return card; }
         const probe = await probeTimeInDom();
-        console.log('DOM probe "' + (classTimeNorm||'7:45 a') + '" on ' + tabText.trim() + ':', probe.found.length ? probe.found : '(absent)');
+        console.log('DOM probe "' + searchTime + '" on ' + tabText.trim() + ':', probe.found.length ? probe.found : '(absent)');
         console.log('All visible times on ' + tabText.trim() + ':', probe.allTimes.length ? probe.allTimes : '(none)');
         console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
       }
@@ -511,6 +535,7 @@ async function runBookingJob(job, opts = {}) {
     // If targetDate is set, click that specific date tab first (faster and unambiguous).
     // Fall back to scanning all matching day tabs if the exact tab isn't visible yet.
     if (targetDayNum !== null) {
+      const searchTime = classTimeNorm || '7:45 a';
       let exactTabClicked = false;
       for (let w = 0; w < dayTabCount; w++) {
         const tabText = await dayTabs.nth(w).textContent();
@@ -519,13 +544,13 @@ async function runBookingJob(job, opts = {}) {
           console.log('Clicking exact date tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
           await page.waitForTimeout(2000);
-          await scrollScheduleToTop();
+          await scrollToFindTime(searchTime);
           targetCard = await findTargetCard();
           if (targetCard) {
             console.log('Found class on exact date tab: ' + tabText.trim());
           } else {
             const probe = await probeTimeInDom();
-            console.log('DOM probe "' + (classTimeNorm||'7:45 a') + '" on exact tab:', probe.found.length ? probe.found : '(absent)');
+            console.log('DOM probe "' + searchTime + '" on exact tab:', probe.found.length ? probe.found : '(absent)');
             console.log('All visible times on exact tab:', probe.allTimes.length ? probe.allTimes : '(none)');
             console.log('Class not on exact date tab — falling back to full scan.');
           }
@@ -684,13 +709,14 @@ async function runBookingJob(job, opts = {}) {
         // Re-find the correct day tab after reload, using exact-date if available.
         const dayTabsRetry    = page.locator(`text=/${dayShort} \\d+/`);
         const dayTabCountRetry = await dayTabsRetry.count();
+        const retrySearchTime = classTimeNorm || '7:45 a';
         if (targetDayNum !== null) {
           for (let w = 0; w < dayTabCountRetry; w++) {
             const tabText = await dayTabsRetry.nth(w).textContent();
             if (parseInt(tabText.replace(/\D+/g, ''), 10) === targetDayNum) {
               await dayTabsRetry.nth(w).click();
               await page.waitForTimeout(2000);
-              await scrollScheduleToTop();
+              await scrollToFindTime(retrySearchTime);
               targetCard = await findTargetCard();
               break;
             }
@@ -700,7 +726,7 @@ async function runBookingJob(job, opts = {}) {
           for (let w = 0; w < dayTabCountRetry; w++) {
             await dayTabsRetry.nth(w).click();
             await page.waitForTimeout(2000);
-            await scrollScheduleToTop();
+            await scrollToFindTime(retrySearchTime);
             targetCard = await findTargetCard();
             if (targetCard) break;
           }
