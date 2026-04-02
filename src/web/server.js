@@ -516,21 +516,28 @@ function buildHtml(jobs, error, editError) {
     }
     .unpin-btn:hover { color: #1d3557; }
 
-    /* ---- haptic flash ---- */
-    @keyframes haptic-flash {
-      0%   { opacity: 0.55; }
-      100% { opacity: 0; }
-    }
+    /* ---- haptic feedback ---- */
     #haptic-flash {
       position: fixed;
       inset: 0;
-      background: white;
       pointer-events: none;
-      opacity: 0;
+      background: rgba(52, 199, 89, 0);
       z-index: 9999;
     }
-    #haptic-flash.flash {
-      animation: haptic-flash 320ms ease-out forwards;
+    .haptic-active {
+      animation: hapticFlash 220ms ease-out;
+    }
+    @keyframes hapticFlash {
+      0%   { background: rgba(52, 199, 89, 0.18); }
+      100% { background: rgba(52, 199, 89, 0); }
+    }
+    .haptic-bounce {
+      animation: hapticBounce 160ms ease-out;
+    }
+    @keyframes hapticBounce {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.015); }
+      100% { transform: scale(1); }
     }
 
     /* ---- live-mode global tint ---- */
@@ -637,7 +644,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Selected Job -->
-    <div class="card">
+    <div class="card selected-job-card">
       <div class="card-header"><h2>Selected Job</h2></div>
       <div class="card-body">
         <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
@@ -1250,7 +1257,7 @@ function buildHtml(jobs, error, editError) {
           const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
           statusEl.className   = data.success ? 'success' : 'error';
           statusEl.textContent = prefix + data.log;
-          if (data.success) triggerSuccessFlash();
+          if (data.success) triggerHapticFeedback();
           showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
@@ -1363,7 +1370,7 @@ function buildHtml(jobs, error, editError) {
         stopDots();
         statusEl.textContent = data.message || 'Force run complete.';
         statusEl.className   = data.success ? 'success' : 'error';
-        if (data.success) triggerSuccessFlash();
+        if (data.success) triggerHapticFeedback();
       } catch (e) {
         stopDots();
         statusEl.className   = 'error';
@@ -1469,13 +1476,23 @@ function buildHtml(jobs, error, editError) {
       }
     })();
 
-    // ---- haptic-style flash on booking success ----
+    // ---- haptic-style feedback on booking success ----
 
-    function triggerSuccessFlash() {
-      var el = document.getElementById('haptic-flash');
-      el.classList.remove('flash');
-      void el.offsetWidth; // force reflow so animation restarts every time
-      el.classList.add('flash');
+    function triggerHapticFeedback() {
+      var flash = document.getElementById('haptic-flash');
+      var card  = document.querySelector('.selected-job-card');
+
+      flash.classList.remove('haptic-active');
+      void flash.offsetWidth;
+      flash.classList.add('haptic-active');
+
+      if (card) {
+        card.classList.remove('haptic-bounce');
+        void card.offsetWidth;
+        card.classList.add('haptic-bounce');
+      }
+
+      if (navigator.vibrate) navigator.vibrate(10);
     }
 
     // ---- dry run toggle ----

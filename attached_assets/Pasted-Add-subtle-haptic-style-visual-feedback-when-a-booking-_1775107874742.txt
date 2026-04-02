@@ -1,0 +1,141 @@
+Add subtle “haptic-style” visual feedback when a booking succeeds so the UI feels responsive and iOS-like.
+
+Current state:
+
+* jobs return status (success, error, etc.)
+* UI updates status and badges
+* app is used primarily on iPhone
+
+Goal:
+Simulate a native iOS “success tap” using fast, subtle visual feedback.
+
+Do NOT:
+
+* flash the whole screen aggressively
+* use long animations
+* reduce readability
+* over-engineer
+
+---
+
+## PART 1 — Add feedback layer
+
+Add once inside <body>:
+
+```html
+<div id="haptic-flash"></div>
+```
+
+---
+
+## PART 2 — Add subtle iOS-style flash
+
+```css
+#haptic-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(52, 199, 89, 0); /* iOS green */
+  z-index: 999;
+}
+
+.haptic-active {
+  animation: hapticFlash 220ms ease-out;
+}
+
+@keyframes hapticFlash {
+  0%   { background: rgba(52, 199, 89, 0.18); }
+  100% { background: rgba(52, 199, 89, 0); }
+}
+```
+
+---
+
+## PART 3 — Add “tap bounce” to Selected Job card
+
+```css
+.haptic-bounce {
+  animation: hapticBounce 160ms ease-out;
+}
+
+@keyframes hapticBounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+```
+
+---
+
+## PART 4 — Trigger on success
+
+Where you handle results:
+
+```js
+if (result.status === "success") {
+  triggerHapticFeedback();
+}
+```
+
+---
+
+## PART 5 — Feedback function
+
+```js
+function triggerHapticFeedback() {
+  const flash = document.getElementById("haptic-flash");
+  const card = document.querySelector(".selected-job-card");
+
+  // flash
+  flash.classList.remove("haptic-active");
+  void flash.offsetWidth;
+  flash.classList.add("haptic-active");
+
+  // bounce
+  if (card) {
+    card.classList.remove("haptic-bounce");
+    void card.offsetWidth;
+    card.classList.add("haptic-bounce");
+  }
+}
+```
+
+---
+
+## PART 6 — Optional (very nice on iPhone)
+
+Add native vibration (if supported):
+
+```js
+if (navigator.vibrate) {
+  navigator.vibrate(10);
+}
+```
+
+Keep it very short (10ms).
+
+---
+
+## PART 7 — Behavior rules
+
+Trigger ONLY on:
+
+* success
+* optionally already_registered
+
+DO NOT trigger on:
+
+* error
+* skipped
+* cooldown
+
+Keep total animation under 250ms.
+
+---
+
+## After changes, explain:
+
+* how the flash works
+* how the bounce works
+* why timing is short
+* how this mimics iOS haptic feedback
