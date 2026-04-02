@@ -57,13 +57,15 @@ async function runBookingJob(job, opts = {}) {
     });
     const page = await browser.newPage();
 
-    const snap = async () => {
+    const snap = async (label = '') => {
       try {
         fs.mkdirSync('screenshots', { recursive: true });
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const p = `screenshots/${ts}.png`;
-        await page.screenshot({ path: p });
+        const suffix = label ? `-${label}` : '';
+        const p = `screenshots/${ts}${suffix}.png`;
+        await page.screenshot({ path: p, fullPage: true });
         screenshotPath = p;
+        console.log('Screenshot saved:', p);
       } catch (e) {
         console.log('Screenshot failed:', e.message);
       }
@@ -330,7 +332,7 @@ async function runBookingJob(job, opts = {}) {
       if (!verifyTime || !verifyInst) {
         console.log('❌ Modal verification failed — aborting to avoid wrong booking.');
         console.log('Modal preview:', modalText.slice(0, 300));
-        await snap();
+        await snap('verify-fail');
         const failMsg = `Modal verification failed: expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
         return { status: 'error', message: failMsg, screenshotPath };
       }

@@ -1,0 +1,140 @@
+Add screenshot-on-verification-failure so the bot captures evidence when modal verification fails.
+
+Current state:
+
+* bot selects row using filtering + scoring
+* bot verifies modal (time + instructor)
+* bot aborts if verification fails
+
+Goal:
+Automatically capture a screenshot when verification fails to help debug edge cases.
+
+Do NOT:
+
+* remove existing verification logic
+* block execution for long periods
+* over-engineer logging
+
+---
+
+# PART 1 — Create screenshots folder (if not exists)
+
+At startup or before saving:
+
+```js
+const fs = require("fs");
+
+if (!fs.existsSync("screenshots")) {
+  fs.mkdirSync("screenshots");
+}
+```
+
+---
+
+# PART 2 — Add timestamp helper
+
+```js
+function getTimestamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+```
+
+---
+
+# PART 3 — Capture screenshot on failure
+
+Inside your verification block:
+
+```js
+if (!matchesTime || !matchesInstructor) {
+  console.log("❌ MODAL VERIFICATION FAILED");
+
+  const filename = `screenshots/verify-fail-${getTimestamp()}.png`;
+
+  await page.screenshot({
+    path: filename,
+    fullPage: true
+  });
+
+  console.log("📸 Screenshot saved:", filename);
+
+  console.log("Expected:", {
+    time: expectedTime,
+    instructor: expectedInstructor
+  });
+
+  console.log("Modal preview:");
+  console.log(modalText.slice(0, 300));
+
+  throw new Error("Modal verification failed — aborting booking");
+}
+```
+
+---
+
+# PART 4 — Optional: also capture success (debug mode only)
+
+```js
+if (process.env.DEBUG_SHOTS === "1") {
+  await page.screenshot({
+    path: `screenshots/success-${getTimestamp()}.png`
+  });
+}
+```
+
+---
+
+# PART 5 — Improve naming for debugging
+
+Use job info in filename:
+
+```js
+const filename = `screenshots/job-${job.id}-${getTimestamp()}.png`;
+```
+
+---
+
+# PART 6 — Behavior rules
+
+* only screenshot on:
+
+  * verification failure
+  * optional debug mode
+
+* keep filenames unique
+
+* do not overwrite
+
+* do not block flow
+
+---
+
+# PART 7 — What this gives you
+
+Each failure now includes:
+
+* exact UI state
+* what bot saw
+* what bot expected
+* visual confirmation of mismatch
+
+---
+
+# FINAL FLOW (complete system)
+
+1. filter (day + instructor)
+2. score rows
+3. select best row
+4. click row
+5. verify modal
+6. ❌ if mismatch → screenshot + abort
+7. ✅ if match → proceed to booking
+
+---
+
+# AFTER CHANGES — explain:
+
+* how screenshot helps debug UI issues
+* how filenames are structured
+* when screenshots are triggered
+* why this prevents blind failures
