@@ -516,6 +516,23 @@ function buildHtml(jobs, error, editError) {
     }
     .unpin-btn:hover { color: #1d3557; }
 
+    /* ---- haptic flash ---- */
+    @keyframes haptic-flash {
+      0%   { opacity: 0.55; }
+      100% { opacity: 0; }
+    }
+    #haptic-flash {
+      position: fixed;
+      inset: 0;
+      background: white;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 9999;
+    }
+    #haptic-flash.flash {
+      animation: haptic-flash 320ms ease-out forwards;
+    }
+
     /* ---- live-mode global tint ---- */
     body.live-mode {
       background-color: #fff7f7;
@@ -603,6 +620,7 @@ function buildHtml(jobs, error, editError) {
   </style>
 </head>
 <body>
+  <div id="haptic-flash"></div>
   <div class="page">
 
     <div class="page-header">
@@ -1232,6 +1250,7 @@ function buildHtml(jobs, error, editError) {
           const prefix = jobLabel ? jobLabel + ' \u2014 ' : '';
           statusEl.className   = data.success ? 'success' : 'error';
           statusEl.textContent = prefix + data.log;
+          if (data.success) triggerSuccessFlash();
           showLastRun(data.success, data.log);
           if (activeBtn) {
             activeBtn.textContent = data.success ? activeSuccessText : activeBtnOriginalLabel;
@@ -1344,6 +1363,7 @@ function buildHtml(jobs, error, editError) {
         stopDots();
         statusEl.textContent = data.message || 'Force run complete.';
         statusEl.className   = data.success ? 'success' : 'error';
+        if (data.success) triggerSuccessFlash();
       } catch (e) {
         stopDots();
         statusEl.className   = 'error';
@@ -1448,6 +1468,15 @@ function buildHtml(jobs, error, editError) {
         updateSchedulerUI(false);
       }
     })();
+
+    // ---- haptic-style flash on booking success ----
+
+    function triggerSuccessFlash() {
+      var el = document.getElementById('haptic-flash');
+      el.classList.remove('flash');
+      void el.offsetWidth; // force reflow so animation restarts every time
+      el.classList.add('flash');
+    }
 
     // ---- dry run toggle ----
 
