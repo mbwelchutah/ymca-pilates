@@ -152,15 +152,19 @@ async function runBookingJob(job, opts = {}) {
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
-    // Step 3: Find the target class with Stephanie on the next available Wednesday
+    // Step 3: Find the target class with Stephanie on the next available Wednesday.
+    // Two-pass strategy:
+    //   Pass 1 (strict)  — ancestor must contain the class title in its text.
+    //   Pass 2 (fallback) — if title not found in DOM, match by time + instructor only.
+    //                       Clicks the smallest ancestor of the Stephanie element that
+    //                       also contains the normalized time string.
     async function findTargetCard() {
       const result = await page.evaluate(({ classTitleLower, classTimeNorm }) => {
         document.querySelectorAll('[data-target-class]').forEach(el => {
           el.removeAttribute('data-target-class');
         });
 
-        // Find elements whose own direct text nodes say "Stephanie S." (with dot)
-        // The dot distinguishes "Stephanie S." from "Stephanie Sanders" in the filter.
+        // Find elements whose own direct text nodes say "Stephanie S." (with dot).
         const stephanieEls = [];
         for (const el of document.querySelectorAll('*')) {
           const directText = Array.from(el.childNodes)
@@ -173,40 +177,52 @@ async function runBookingJob(job, opts = {}) {
 
         const timeRejected = [];
 
-        for (const stephanieEl of stephanieEls) {
-          let ancestor = stephanieEl.parentElement;
-          while (ancestor && ancestor !== document.body) {
-            const txt = ancestor.textContent.toLowerCase();
-            // First ancestor with the class title but NOT "level 2" = the class card
-            if (txt.includes(classTitleLower) && !txt.includes(classTitleLower + ' level 2')) {
-              // Trace back from stephanieEl to its direct-child-of-ancestor level
-              let clickTarget = stephanieEl;
-              while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
-                clickTarget = clickTarget.parentElement;
-              }
-              if (clickTarget.parentElement === ancestor) {
-                const rowText = clickTarget.textContent.toLowerCase();
-                // Time check: skip this row if it doesn't match the intended time
-                if (classTimeNorm && !rowText.includes(classTimeNorm)) {
-                  timeRejected.push(clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
-                  break; // wrong time — try next stephanieEl
+        // --- Pass 1: original title-based match ---
+        if (classTitleLower) {
+          for (const stephanieEl of stephanieEls) {
+            let ancestor = stephanieEl.parentElement;
+            while (ancestor && ancestor !== document.body) {
+              const txt = ancestor.textContent.toLowerCase();
+              if (txt.includes(classTitleLower) && !txt.includes(classTitleLower + ' level 2')) {
+                let clickTarget = stephanieEl;
+                while (clickTarget.parentElement && clickTarget.parentElement !== ancestor) {
+                  clickTarget = clickTarget.parentElement;
                 }
-                clickTarget.setAttribute('data-target-class', 'yes');
-                return {
-                  matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
-                  timeRejected,
-                  debug: null
-                };
+                if (clickTarget.parentElement === ancestor) {
+                  const rowText = clickTarget.textContent.toLowerCase();
+                  if (classTimeNorm && !rowText.includes(classTimeNorm)) {
+                    timeRejected.push(clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
+                    break;
+                  }
+                  clickTarget.setAttribute('data-target-class', 'yes');
+                  return { matched: clickTarget.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), timeRejected, pass: 1, debug: null };
+                }
+                break;
               }
-              break;
+              ancestor = ancestor.parentElement;
             }
-            ancestor = ancestor.parentElement;
+          }
+        }
+
+        // --- Pass 2: fallback — match by smallest ancestor containing the time ---
+        // Handles cases where the class title isn't rendered near the row in the DOM.
+        if (classTimeNorm) {
+          for (const stephanieEl of stephanieEls) {
+            let ancestor = stephanieEl.parentElement;
+            while (ancestor && ancestor !== document.body) {
+              if (ancestor.textContent.toLowerCase().includes(classTimeNorm)) {
+                ancestor.setAttribute('data-target-class', 'yes');
+                return { matched: ancestor.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), timeRejected, pass: 2, debug: null };
+              }
+              ancestor = ancestor.parentElement;
+            }
           }
         }
 
         return {
           matched: null,
           timeRejected,
+          pass: 0,
           debug: {
             stephanieElCount: stephanieEls.length,
             stephanieTexts: stephanieEls.slice(0, 4).map(el =>
@@ -219,6 +235,7 @@ async function runBookingJob(job, opts = {}) {
         result.timeRejected.forEach(r => console.log('  Rejected (time mismatch):', r));
       }
       if (result.matched) {
+        if (result.pass === 2) console.log('⚠️  Title not in DOM — matched by time+instructor fallback (pass 2)');
         console.log('Matched row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
