@@ -126,7 +126,8 @@ async function runTick({ onlyJobId = null } = {}) {
     try {
       const result = await runBookingJob(job, { dryRun: getDryRun() });
       lastResult = result.status;
-      if (result.status === 'error') lastErrMsg = result.message || null;
+      const NON_SUCCESS = ['error', 'found_not_open_yet', 'not_found'];
+      if (NON_SUCCESS.includes(result.status)) lastErrMsg = result.message || null;
       console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);
       results.push({ jobId: dbJob.id, phase, status: result.status, message: result.message });
     } catch (err) {

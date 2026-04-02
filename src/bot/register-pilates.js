@@ -423,7 +423,8 @@ async function runBookingJob(job, opts = {}) {
 
       if (!result.matched) return null;
 
-      console.log(`✅ Best card (score=${result.score} desc=${result.desc}): "${result.matched}"`);
+      console.log(`Best match score: ${result.score} (${result.reasons ? result.reasons.join(', ') : ''})`);
+      console.log(`Selected row: "${result.matched.slice(0, 120)}"`);
       return page.locator('[data-target-class="yes"]').first();
     }
 
@@ -752,10 +753,10 @@ async function runBookingJob(job, opts = {}) {
     // ─────────────────────────────────────────────────────────────────────────
 
     if (!targetCard) {
-      const msg = `Could not find visible row matching Core Pilates / 7:45 / Stephanie on ${dayShort} ${targetDayNum || '(any)'}.`;
+      const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
-      await snap();
-      return { status: 'error', message: msg, screenshotPath };
+      await snap('not-found');
+      return { status: 'not_found', message: msg, screenshotPath };
     }
 
     // Scroll the card into view, then find the visible interactive child to click.
@@ -922,7 +923,7 @@ async function runBookingJob(job, opts = {}) {
           break;
         }
         await registerBtn.first().click();
-        console.log('SUCCESS: Registered for Core Pilates 7:45 AM with Stephanie');
+        console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'}`);
         registered = true;
         break;
       } else if (hasWaitlist) {
@@ -932,13 +933,42 @@ async function runBookingJob(job, opts = {}) {
           break;
         }
         await waitlistBtn.first().click();
-        console.log('WAITLIST: Class full — joined waitlist for Core Pilates 7:45 AM');
+        console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
         registered = true;
         break;
       } else {
-        console.log('Attempt ' + attempt + ': No register/waitlist button found.' + (DRY_RUN ? ' (dry run — pausing 10s for inspection)' : ' Retrying in 30s...'));
+        // No Register or Waitlist button visible.
+        // On the first attempt, decide whether to wait (booking opens soon) or
+        // report "found but not open" immediately so the scheduler can retry.
+        if (attempt === 1) {
+          let msUntilBwOpen = Infinity;
+          try {
+            const { bookingOpen: bwNow } = getBookingWindow(job);
+            if (bwNow) msUntilBwOpen = bwNow.getTime() - Date.now();
+          } catch { /* ignore — conservative: stay in loop */ }
+
+          if (msUntilBwOpen > 15 * 60 * 1000) {
+            // Booking window is more than 15 min away — class is on the schedule
+            // but registration is not open.  Return informational status immediately
+            // rather than spinning for 10 minutes.
+            const classDesc = [
+              classTitle,
+              `${dayShort}${targetDayNum ? ' ' + targetDayNum : ''}`,
+              classTimeNorm || classTime,
+              instructor || 'Stephanie',
+            ].join(' · ');
+            const msg = `Class found on schedule (${classDesc}). Registration is not open yet. Bot will retry during booking window.`;
+            console.log('ℹ️  ' + msg);
+            await snap('found-not-open');
+            return { status: 'found_not_open_yet', message: msg, screenshotPath };
+          }
+          // Within 15-min sniper window — keep polling quickly.
+          console.log(`Attempt 1: No register/waitlist button. Booking window opens in ${Math.round(msUntilBwOpen / 1000)}s — polling every 5s...`);
+        } else {
+          console.log(`Attempt ${attempt}: No register/waitlist button.` + (DRY_RUN ? ' (dry run — pausing 10s)' : ' Retrying in 5s...'));
+        }
         if (DRY_RUN) { await page.waitForTimeout(10000); break; }
-        await page.waitForTimeout(30000);
+        await page.waitForTimeout(5000);
         await page.reload();
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(3000);
@@ -1004,10 +1034,16 @@ async function runBookingJob(job, opts = {}) {
     }
 
     if (!registered) {
-      const msg = 'Registration did not open within the retry window.';
-      console.log('FAILED: ' + msg);
-      await snap();
-      return { status: 'error', message: msg, screenshotPath };
+      const classDesc = [
+        classTitle,
+        `${dayShort}${targetDayNum ? ' ' + targetDayNum : ''}`,
+        classTimeNorm || classTime,
+        instructor || 'Stephanie',
+      ].join(' · ');
+      const msg = `Class found on schedule (${classDesc}). Registration did not open within the retry window.`;
+      console.log('ℹ️  ' + msg);
+      await snap('found-not-open');
+      return { status: 'found_not_open_yet', message: msg, screenshotPath };
     }
 
     const successMsg = DRY_RUN

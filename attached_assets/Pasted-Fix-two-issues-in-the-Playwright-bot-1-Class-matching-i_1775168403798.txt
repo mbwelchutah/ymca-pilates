@@ -1,0 +1,191 @@
+Fix two issues in the Playwright bot:
+
+1. Class matching is too strict and fails even when the class is visible
+2. Status messaging incorrectly reports “not found” when the class is actually present but booking is not open
+
+---
+
+## GOAL
+
+Make the bot:
+
+* reliably find the visible class row on the schedule
+* correctly report:
+
+  * “found but not open yet”
+  * instead of “not found”
+
+---
+
+## DO NOT
+
+* change scheduler timing
+* change booking window logic
+* change DB schema
+* remove verification logic
+
+---
+
+# PART 1 — Fix class matching (critical)
+
+The class row is already visible in the UI:
+
+* Core Pilates
+* 7:45 a - 8:45 a
+* Stephanie S.
+
+So matching must be **fuzzy + user-visible based**, NOT exact.
+
+### Replace existing strict matching with scoring logic:
+
+1. Collect visible rows/cards for the selected day
+
+2. For each row:
+
+   * get `innerText().toLowerCase()`
+
+3. Score each row:
+
+* title contains "core pilates" → +5
+* time contains "7:45" → +5
+* instructor contains "stephanie" → +3
+
+4. Normalize:
+
+* treat "7:45 AM" and "7:45 a" as equivalent
+* match instructor by first name only
+
+5. Log all rows:
+
+```js
+console.log("Row:", text.slice(0, 120), "Score:", score);
+```
+
+6. Select highest score
+
+7. If best score < threshold → THEN it's truly "not found"
+
+---
+
+## Clicking fix (VERY important)
+
+Do NOT click wrapper divs.
+
+Instead:
+
+```js
+const clickable = bestMatch.locator('button, [role="button"], a').first();
+await clickable.scrollIntoViewIfNeeded();
+await clickable.click();
+```
+
+---
+
+# PART 2 — Add correct state handling
+
+Separate these clearly:
+
+### State A — class row found
+
+### State B — registration NOT open yet
+
+### State C — booking available
+
+---
+
+# PART 3 — Detect “not open yet”
+
+After clicking class row:
+
+If NO button exists for:
+
+* Register
+* Book
+* Waitlist
+
+Then:
+
+```js
+return {
+  status: "found_not_open_yet",
+  message: "Class found but registration not open yet"
+};
+```
+
+---
+
+# PART 4 — Update messaging
+
+Replace incorrect message:
+
+❌ "Could not find class..."
+
+WITH:
+
+✅ "Class found on schedule (Core Pilates · Wed 08 · 7:45 a · Stephanie). Registration is not open yet. Bot will retry during booking window."
+
+---
+
+# PART 5 — Only use “not found” when TRUE
+
+Use "not_found" ONLY if:
+
+* no visible row matched after scanning
+
+---
+
+# PART 6 — Improve logs
+
+Add:
+
+```js
+console.log("Best match score:", bestScore);
+console.log("Selected row:", selectedText);
+```
+
+---
+
+# PART 7 — Dashboard result states
+
+Use:
+
+* success
+* already_registered
+* found_not_open_yet
+* error
+* not_found
+
+---
+
+# PART 8 — Keep verification step
+
+After click:
+
+* verify modal still matches:
+
+  * time
+  * instructor
+
+Abort if mismatch
+
+---
+
+# FINAL RESULT
+
+The bot will now:
+
+1. FIND the class reliably
+2. DISTINGUISH between:
+
+   * not found
+   * found but not open
+3. REPORT correctly in UI
+
+---
+
+# AFTER CHANGES — explain:
+
+* how matching logic changed
+* why previous strict matching failed
+* how new status messages work
+* difference between “not found” vs “found_not_open_yet”

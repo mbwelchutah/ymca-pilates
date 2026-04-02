@@ -109,7 +109,7 @@ function buildHtml(jobs, error, editError) {
             data-booking-open="${bookingOpenMs || ''}"
             onclick="selectJob(this, true)">
           <td class="job-id">#${j.id}</td>
-          <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong>${j.last_result === 'error' && j.last_error_message ? ` <span class="row-warn" title="${esc(j.last_error_message)}">&#9888;</span>` : ''}</td>
+          <td><span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}" title="${j.is_active ? 'Active' : 'Inactive'}"></span><strong>${esc(j.class_title)}</strong>${['error','not_found','found_not_open_yet'].includes(j.last_result) && j.last_error_message ? ` <span class="row-warn" title="${esc(j.last_error_message)}">&#9888;</span>` : ''}</td>
           <td>${esc(j.day_of_week  || '\u2014')}</td>
           <td>${esc(j.class_time   || '\u2014')}</td>
           <td>${esc(j.target_date  || '\u2014')}</td>
@@ -286,6 +286,8 @@ function buildHtml(jobs, error, editError) {
     /* Result badge colours */
     .badge-result-success            { background: #d4edda; color: #155724; }
     .badge-result-already_registered { background: #d1ecf1; color: #0c5460; }
+    .badge-result-found_not_open_yet { background: #fff3cd; color: #856404; }
+    .badge-result-not_found          { background: #e2e3e5; color: #383d41; }
     .badge-result-error              { background: #f8d7da; color: #721c24; }
     .badge-result-none               { background: transparent; color: #ccc; font-weight: 400; }
 
@@ -821,8 +823,8 @@ function buildHtml(jobs, error, editError) {
           <span class="run-label">Result:</span>
           <span id="sel-last-result">${first ? resultBadge(first.last_result) : resultBadge(null)}</span>
         </div>
-        ${first && first.last_result === 'error' && first.last_error_message
-          ? `<div class="sel-error-box" id="sel-error-box"><span class="err-label">Last Error</span>${esc(first.last_error_message)}</div>`
+        ${first && ['error','not_found','found_not_open_yet'].includes(first.last_result) && first.last_error_message
+          ? `<div class="sel-error-box" id="sel-error-box"><span class="err-label">${first.last_result === 'found_not_open_yet' ? 'Last Info' : first.last_result === 'not_found' ? 'Not Found' : 'Last Error'}</span>${esc(first.last_error_message)}</div>`
           : `<div class="sel-error-box" id="sel-error-box" style="display:none"><span class="err-label">Last Error</span><span id="sel-error-text"></span></div>`
         }
       </div>
@@ -1034,7 +1036,7 @@ function buildHtml(jobs, error, editError) {
     let selectedJobTargetDate = ${JSON.stringify(first ? (first.target_date  || '') : '')};
     let selectedJobIsActive      = ${first ? (first.is_active ? 'true' : 'false') : 'true'};
     let selectedJobLastSuccessAt = ${JSON.stringify(first ? (first.last_success_at || '') : '')};
-    let selectedJobLastErrMsg    = ${JSON.stringify(first && first.last_result === 'error' ? (first.last_error_message || '') : '')};
+    let selectedJobLastErrMsg    = ${JSON.stringify(first && ['error','not_found','found_not_open_yet'].includes(first.last_result) ? (first.last_error_message || '') : '')};
     let selectedJobBookingOpen   = ${firstBookingOpenMs || 'null'};
     let activeBtn             = null;
     let activeSuccessText     = null;
@@ -1379,11 +1381,17 @@ function buildHtml(jobs, error, editError) {
         }
       }
 
-      // Show or hide the error message box
+      // Show or hide the message box for non-success statuses
       const errBox = document.getElementById('sel-error-box');
       if (errBox) {
-        const errText = document.getElementById('sel-error-text');
-        if (selectedJobLastResult === 'error' && selectedJobLastErrMsg) {
+        const MSG_STATUSES = ['error', 'not_found', 'found_not_open_yet'];
+        if (MSG_STATUSES.includes(selectedJobLastResult) && selectedJobLastErrMsg) {
+          const label = selectedJobLastResult === 'found_not_open_yet' ? 'Last Info'
+                      : selectedJobLastResult === 'not_found'          ? 'Not Found'
+                      : 'Last Error';
+          const labelEl = errBox.querySelector('.err-label');
+          if (labelEl) labelEl.textContent = label;
+          const errText = document.getElementById('sel-error-text');
           if (errText) errText.textContent = selectedJobLastErrMsg;
           else errBox.lastChild.textContent = selectedJobLastErrMsg;
           errBox.style.display = '';
@@ -1973,8 +1981,9 @@ const server = http.createServer((req, res) => {
           dayOfWeek:  dbJob.day_of_week,
           targetDate: dbJob.target_date || null,
         }, { dryRun: getDryRun() });
-        setLastRun(dbJob.id, result.status, result.status === 'error' ? (result.message || null) : null);
-        json({ success: result.status !== 'error', message: `Job #${jobId}: ${result.status} — ${result.message}` });
+        const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found'];
+        setLastRun(dbJob.id, result.status, NON_SUCCESS_STATUSES.includes(result.status) ? (result.message || null) : null);
+        json({ success: !NON_SUCCESS_STATUSES.includes(result.status), message: `Job #${jobId}: ${result.status} — ${result.message}` });
       } catch (err) {
         console.error(`Force run error:`, err.message);
         setLastRun(dbJob.id, 'error', err.message);

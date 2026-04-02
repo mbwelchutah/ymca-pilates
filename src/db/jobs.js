@@ -31,20 +31,22 @@ function getJobById(id) {
 }
 
 // Records the completion time and outcome of a job run.
-// status should be "success", "already_registered", "error", or similar.
-// errorMessage: pass the failure description when status === "error"; pass
-//   null (or omit) for all other outcomes — it will be cleared in the DB.
+// status should be one of: "success", "already_registered", "found_not_open_yet",
+//   "not_found", "error".
+// errorMessage: pass the failure/info description for non-success statuses; pass
+//   null (or omit) for success/already_registered — it will be cleared in the DB.
 //
-// last_success_at: set to now on "success"; COALESCE preserves it otherwise.
-// last_error_message: set to errorMessage on "error"; NULL on any success/clean exit.
-// Statuses that count as "we got the spot" — both clear the error and stamp last_success_at.
+// last_success_at: set to now on "success"/"already_registered"; COALESCE preserves it otherwise.
+// last_error_message: set to errorMessage for non-success statuses; NULL on success.
 const SUCCESS_STATUSES = ['success', 'already_registered'];
+// Statuses that carry an informational message to show in the dashboard
+const MESSAGE_STATUSES = ['error', 'found_not_open_yet', 'not_found'];
 
 function setLastRun(id, status, errorMessage) {
   const db        = openDb();
   const ts        = new Date().toISOString();
   const successAt = SUCCESS_STATUSES.includes(status) ? ts : null;
-  const errMsg    = status === 'error' ? (errorMessage || 'Unknown error') : null;
+  const errMsg    = MESSAGE_STATUSES.includes(status) ? (errorMessage || status) : null;
   db.prepare(`
     UPDATE jobs
     SET last_run_at         = ?,
