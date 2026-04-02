@@ -750,6 +750,31 @@ function buildHtml(jobs, error, editError) {
       font-size: 13px;
       cursor: pointer;
     }
+    /* ---- Failure summary ---- */
+    #failure-summary-empty { font-size: 13px; color: #aaa; padding: 4px 0; }
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      font-size: 14px;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .summary-item:last-child { border-bottom: none; }
+    .summary-label { color: #444; }
+    .summary-count {
+      font-weight: 700;
+      font-size: 15px;
+      min-width: 28px;
+      text-align: right;
+      border-radius: 10px;
+      padding: 1px 8px;
+      background: #f0f0f0;
+      color: #333;
+    }
+    .summary-reason-time            .summary-count { background: #fde8e8; color: #c0392b; }
+    .summary-reason-instructor      .summary-count { background: #fff3e0; color: #b45309; }
+    .summary-reason-time-instructor .summary-count { background: #fbe9e7; color: #922b21; }
   </style>
 </head>
 <body>
@@ -970,6 +995,13 @@ function buildHtml(jobs, error, editError) {
       <div class="card-body status-body">
         <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
         <div class="last-run" id="last-run" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Failure Summary</h2></div>
+      <div class="card-body">
+        <div id="failure-summary"><span id="failure-summary-empty">No failures recorded.</span></div>
       </div>
     </div>
 
@@ -1787,8 +1819,29 @@ function buildHtml(jobs, error, editError) {
       'verify-instructor':'Instructor mismatch',
       'verify-time-instructor': 'Time + Instructor mismatch',
     };
+    function renderSummary(summary) {
+      var el = document.getElementById('failure-summary');
+      if (!el) return;
+      var entries = Object.entries(summary).sort(function(a, b) { return b[1] - a[1]; });
+      if (!entries.length) {
+        el.innerHTML = '<span id="failure-summary-empty">No failures recorded.</span>';
+        return;
+      }
+      el.innerHTML = '';
+      entries.forEach(function(pair) {
+        var key = pair[0], count = pair[1];
+        var label = REASON_LABELS[key] || key;
+        var item  = document.createElement('div');
+        item.className = 'summary-item summary-reason-' + key;
+        item.innerHTML = '<span class="summary-label">' + label + '</span><span class="summary-count">' + count + '</span>';
+        el.appendChild(item);
+      });
+    }
     function loadFailures() {
-      fetch('/api/failures').then(function(r){ return r.json(); }).then(function(files) {
+      fetch('/api/failures').then(function(r){ return r.json(); }).then(function(data) {
+        var files = Array.isArray(data) ? data : (data.recent || []);
+        var summary = (!Array.isArray(data) && data.summary) ? data.summary : {};
+        renderSummary(summary);
         var container = document.getElementById('failure-list');
         if (!container) return;
         if (!files.length) {
@@ -2128,10 +2181,10 @@ const server = http.createServer((req, res) => {
     return;
 
   } else if (req.method === 'GET' && path === '/api/failures') {
-    // Return last 5 verify-fail screenshots, newest first.
+    // Return last 5 verify-fail screenshots + grouped counts across all verify-fails.
     const fsM = require('fs'), pathM = require('path'), dir = 'screenshots';
-    if (!fsM.existsSync(dir)) { json([]); return; }
-    const files = fsM.readdirSync(dir)
+    if (!fsM.existsSync(dir)) { json({ recent: [], summary: {} }); return; }
+    const all = fsM.readdirSync(dir)
       .filter(n => n.endsWith('.png') && n.includes('verify-'))
       .map(name => {
         const mtime = fsM.statSync(pathM.join(dir, name)).mtimeMs;
@@ -2141,9 +2194,11 @@ const server = http.createServer((req, res) => {
         try { if (fsM.existsSync(metaPath)) meta = JSON.parse(fsM.readFileSync(metaPath, 'utf8')); } catch (_) {}
         return { name, mtime, reason: m ? m[1] : 'unknown', meta };
       })
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, 5);
-    json(files);
+      .sort((a, b) => b.mtime - a.mtime);
+    // Grouped counts over all verify-fail files (not just top 5).
+    const summary = {};
+    for (const f of all) { summary[f.reason] = (summary[f.reason] || 0) + 1; }
+    json({ recent: all.slice(0, 5), summary });
 
   } else if (req.method === 'GET' && path.startsWith('/screenshots/')) {
     // Serve screenshot images statically.
