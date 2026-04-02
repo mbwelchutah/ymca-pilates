@@ -290,12 +290,13 @@ async function runBookingJob(job, opts = {}) {
     //  A) Collect ALL visible card-level DOM nodes (min 3, max 300 descendants,
     //     min 100×30 px bounding box).
     //  B) Log every candidate row's text so we can see what's in the DOM.
-    //  C) Score each row loosely:
-    //       title match "Core Pilates"  → +40  (case-insensitive substring)
-    //       time  match "7:45"          → +40  (digits only — no AM/PM assumption)
-    //       instr match "Stephanie"     → +30  (first name only)
+    //  C) Score each row:
+    //       title match "Core Pilates"  → +5  (case-insensitive substring)
+    //       time  match "7:45"          → +5  (AM indicator — never PM)
+    //       instr match "Stephanie"     → +3  (first name only)
     //  D) Pick the highest-scoring, most-specific (fewest descendants) element
-    //     with score ≥ 40 (i.e. at least one signal).
+    //     with score ≥ CONFIDENCE_THRESHOLD.  If the best fails post-click
+    //     verification the second-best is tried once.
     //  E) If not found immediately, slowly scroll the schedule list (80 px steps)
     //     and retry at each step.
     //  F) Scroll the winning element into view, then find and click its visible
@@ -303,14 +304,31 @@ async function runBookingJob(job, opts = {}) {
     //     element itself if it is one of those — never an invisible wrapper div.
     // ---------------------------------------------------------------------------
 
-    async function findTargetCard() {
-      // Clear any previous marker
-      await page.evaluate(() =>
-        document.querySelectorAll('[data-target-class]')
-          .forEach(el => el.removeAttribute('data-target-class'))
-      );
+    // Minimum score to consider a row a class candidate.
+    // title+time=10 (7:45 AM class), title+instructor=8 (same-instructor class).
+    // Setting 8 allows title+instructor rows through; the post-click modal
+    // verification is the real safety gate that rejects wrong-time matches.
+    const CONFIDENCE_THRESHOLD = 8;
 
-      const result = await page.evaluate(({ classTitleLower, instrFirst }) => {
+    // Side-channel from the most recent findTargetCard() call — used by the
+    // second-best fallback so we can try the next-ranked candidate once if the
+    // best candidate fails modal verification.
+    let _lastSecondCard  = null;   // Playwright locator or null
+    let _lastBestScore   = 0;
+    let _lastBestText    = '';
+    let _lastSecondScore = 0;
+    let _lastSecondText  = '';
+
+    async function findTargetCard() {
+      // Clear any previous markers (best and second-best)
+      await page.evaluate(() => {
+        document.querySelectorAll('[data-target-class]')
+          .forEach(el => el.removeAttribute('data-target-class'));
+        document.querySelectorAll('[data-target-class-second]')
+          .forEach(el => el.removeAttribute('data-target-class-second'));
+      });
+
+      const result = await page.evaluate(({ classTitleLower, instrFirst, confidenceThreshold }) => {
         const SKIP_TAGS = new Set(['OPTION','SELECT','SCRIPT','STYLE','HEAD','HTML','BODY','NOSCRIPT','SVG','PATH']);
 
         // Normalize: collapse all whitespace variants (including Bubble.io's \u00A0)
@@ -364,17 +382,17 @@ async function runBookingJob(job, opts = {}) {
           if (hasTime)  { score += 5; reasons.push('time+5');  }
           if (hasInstr) { score += 3; reasons.push('instr+3'); }
 
-          // Require score ≥ 10: must have title + time (5+5=10).
-          // - title + time  = 10 ✓ (strongest — class name + correct start time)
-          // - title + time + instr = 13 ✓ (all three — best possible match)
-          // - title + instr =  8 ✗ (would find 2:45 PM Core Pilates by same instructor)
-          // - time  + instr =  8 ✗ (would find wrong class at same time)
-          // - title alone   =  5 ✗ (would match filter dropdown option list)
-          // - time alone    =  5 ✗ (too many classes share a start or end time)
-          // - instr alone   =  3 ✗ (far too broad — instructor teaches many classes)
+          // Require score ≥ confidenceThreshold (8).
+          // - title + time + instr = 13 ✓ (best — 7:45 AM class with all three signals)
+          // - title + time         = 10 ✓ (strong — correct class name + correct time)
+          // - title + instr        =  8 ✓ (passes threshold; verified by modal check)
+          // - time  + instr        =  8 ✓ (passes threshold; verified by modal check)
+          // - title alone          =  5 ✗ (matches filter dropdown option labels)
+          // - time alone           =  5 ✗ (too many classes share a start or end time)
+          // - instr alone          =  3 ✗ (far too broad — instructor teaches many classes)
           // Tie-break: highest score wins; within same score, fewest descendants
-          // (most specific element) wins — so all-three (13) beats title+time (10).
-          if (score < 10) continue;
+          // (most specific element) wins — so 7:45 AM (13) always beats 2:45 PM (8).
+          if (score < confidenceThreshold) continue;
 
           allRows.push({
             el,
@@ -391,22 +409,30 @@ async function runBookingJob(job, opts = {}) {
 
         if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
 
-        // Mark the best match so Playwright can locate it via attribute selector
+        // Mark best match so Playwright can locate it via attribute selector
         allRows[0].el.setAttribute('data-target-class', 'yes');
 
+        // Mark second-best if it exists and score >= threshold - 2 (qualifies as fallback)
+        const secondRow = allRows.length > 1 ? allRows[1] : null;
+        if (secondRow && secondRow.score >= confidenceThreshold - 2) {
+          secondRow.el.setAttribute('data-target-class-second', 'yes');
+        }
+
         return {
-          matched:    allRows[0].txt,
-          score:      allRows[0].score,
-          reasons:    allRows[0].reasons,
-          desc:       allRows[0].desc,
-          visible:    allRows[0].visible,
+          matched:      allRows[0].txt,
+          score:        allRows[0].score,
+          reasons:      allRows[0].reasons,
+          desc:         allRows[0].desc,
+          visible:      allRows[0].visible,
+          secondMatched: secondRow && secondRow.score >= confidenceThreshold - 2 ? secondRow.txt : null,
+          secondScore:   secondRow ? secondRow.score : null,
           allResults: allRows.slice(0, 15).map(r => ({
             score: r.score, reasons: r.reasons.join(','), desc: r.desc,
             visible: r.visible, txt: r.txt.slice(0, 120),
           })),
           allTexts,
         };
-      }, { classTitleLower, instrFirst: instructorFirstName });
+      }, { classTitleLower, instrFirst: instructorFirstName, confidenceThreshold: CONFIDENCE_THRESHOLD });
 
       // Log ALL visible rows that contained any signal (title, time, or instructor)
       if (result.allTexts && result.allTexts.length > 0) {
@@ -426,10 +452,32 @@ async function runBookingJob(job, opts = {}) {
         );
       }
 
-      if (!result.matched) return null;
+      if (!result.matched) {
+        // No candidate passed CONFIDENCE_THRESHOLD — update side-channel and return null
+        _lastBestScore   = 0;
+        _lastBestText    = '';
+        _lastSecondCard  = null;
+        _lastSecondScore = 0;
+        _lastSecondText  = '';
+        return null;
+      }
 
-      console.log(`Best match score: ${result.score} (${result.reasons ? result.reasons.join(', ') : ''})`);
+      // Update side-channel closure vars for the second-best fallback
+      _lastBestScore   = result.score;
+      _lastBestText    = result.matched;
+      _lastSecondScore = result.secondScore || 0;
+      _lastSecondText  = result.secondMatched || '';
+      _lastSecondCard  = result.secondMatched
+        ? page.locator('[data-target-class-second="yes"]').first()
+        : null;
+
+      // PART 7 — required log lines
+      console.log(`Best score: ${result.score} (${result.reasons ? result.reasons.join(', ') : ''})`);
+      console.log(`Second-best score: ${_lastSecondScore || 'none'}`);
       console.log(`Selected row: "${result.matched.slice(0, 120)}"`);
+      if (_lastSecondText) {
+        console.log(`Second-best row: "${_lastSecondText.slice(0, 120)}"`);
+      }
       return page.locator('[data-target-class="yes"]').first();
     }
 
@@ -764,117 +812,156 @@ async function runBookingJob(job, opts = {}) {
       return { status: 'not_found', message: msg, screenshotPath };
     }
 
-    // Scroll the card into view, then find the visible interactive child to click.
-    // Primary strategy: locate button / [role="button"] / <a> inside the card —
-    // do NOT click invisible wrapper divs. Falls back to cursor:pointer child,
-    // then force-click the card itself as a last resort.
-    try {
-      await targetCard.scrollIntoViewIfNeeded({ timeout: 5000 });
-    } catch (scrollErr) {
-      console.log('⚠️ scrollIntoViewIfNeeded timed out:', scrollErr.message.split('\n')[0]);
-    }
-    await page.waitForTimeout(300);
-    console.log('Card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
-    {
-      // Step 1: prefer button / [role="button"] / <a> inside the card
-      const clickable = targetCard.locator("button, [role='button'], a").first();
-      const hasClickable = (await clickable.count()) > 0;
-
-      let clickTarget, clickDesc;
-      if (hasClickable) {
-        clickTarget = clickable;
-        clickDesc   = 'button/[role=button]/a child';
-      } else {
-        // Step 2: find a cursor:pointer child
-        const markedPointer = await page.evaluate(() => {
-          const marked = document.querySelector('[data-target-class="yes"]');
-          if (!marked) return false;
-          for (const child of marked.querySelectorAll('*')) {
-            const r = child.getBoundingClientRect();
-            if (r.width < 20 || r.height < 10) continue;
-            if (getComputedStyle(child).cursor === 'pointer') {
-              child.setAttribute('data-click-target', 'yes');
-              return true;
-            }
-          }
-          return false;
-        });
-        if (markedPointer) {
-          clickTarget = page.locator('[data-click-target="yes"]').first();
-          clickDesc   = 'cursor:pointer child';
-          page.evaluate(() =>
-            document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
-          ).catch(() => {});
-        } else {
-          // Step 3: force-click the card itself as last resort
-          clickTarget = targetCard;
-          clickDesc   = 'card itself (last resort force click)';
-        }
-      }
-
-      console.log(`Clicking: ${clickDesc}`);
-      if (DEBUG_HIGHLIGHT) {
-        await highlightElement(page, clickTarget);
-        await page.waitForTimeout(400);
-      }
-      if (DEBUG_PAUSE) {
-        console.log('⏸  Pausing before click — Playwright Inspector is open.');
-        console.log('👉 Hover elements, test selectors, then press Resume to continue.');
-        await page.pause();
-      }
+    // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
+    // Scrolls the card into view, clicks its interactive child (button/link/
+    // cursor:pointer fallback → force-click last resort), waits for the modal
+    // to render, and verifies that the opened modal shows the expected time and
+    // instructor.  Returns { ok: true } on success or
+    // { ok: false, failMsg, reasonTag } on verification failure.
+    // Never throws — all errors are returned as { ok: false }.
+    // ────────────────────────────────────────────────────────────────────────────
+    async function attemptClickAndVerify(card, candidateLabel) {
       try {
-        await clickTarget.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
-        await clickTarget.click({ timeout: 5000 });
-      } catch (clickErr) {
-        console.log('⚠️ Normal click failed, force-clicking:', clickErr.message.split('\n')[0]);
-        await targetCard.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
-        await targetCard.click({ force: true });
+        // Scroll card into view
+        try {
+          await card.scrollIntoViewIfNeeded({ timeout: 5000 });
+        } catch (scrollErr) {
+          console.log(`⚠️ [${candidateLabel}] scrollIntoViewIfNeeded timed out:`, scrollErr.message.split('\n')[0]);
+        }
+        await page.waitForTimeout(300);
+        console.log(`Card visible (${candidateLabel}):`, await card.isVisible(), '| box:', JSON.stringify(await card.boundingBox()));
+
+        // Step 1: prefer button / [role="button"] / <a> inside the card
+        const clickable    = card.locator("button, [role='button'], a").first();
+        const hasClickable = (await clickable.count()) > 0;
+
+        let clickTarget, clickDesc;
+        if (hasClickable) {
+          clickTarget = clickable;
+          clickDesc   = 'button/[role=button]/a child';
+        } else {
+          // Step 2: cursor:pointer child — evaluate directly on the card element
+          const markedPointer = await card.evaluate(el => {
+            for (const child of el.querySelectorAll('*')) {
+              const r = child.getBoundingClientRect();
+              if (r.width < 20 || r.height < 10) continue;
+              if (getComputedStyle(child).cursor === 'pointer') {
+                child.setAttribute('data-click-target', 'yes');
+                return true;
+              }
+            }
+            return false;
+          });
+          if (markedPointer) {
+            clickTarget = page.locator('[data-click-target="yes"]').first();
+            clickDesc   = 'cursor:pointer child';
+            page.evaluate(() =>
+              document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
+            ).catch(() => {});
+          } else {
+            // Step 3: force-click the card itself as last resort
+            clickTarget = card;
+            clickDesc   = 'card itself (last resort force click)';
+          }
+        }
+
+        console.log(`Clicking: ${clickDesc}`);
+        if (DEBUG_HIGHLIGHT) {
+          await highlightElement(page, clickTarget);
+          await page.waitForTimeout(400);
+        }
+        if (DEBUG_PAUSE) {
+          console.log('⏸  Pausing before click — Playwright Inspector is open.');
+          console.log('👉 Hover elements, test selectors, then press Resume to continue.');
+          await page.pause();
+        }
+        try {
+          await clickTarget.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+          await clickTarget.click({ timeout: 5000 });
+        } catch (clickErr) {
+          console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
+          await card.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+          await card.click({ force: true });
+        }
+        await page.waitForTimeout(2000);
+
+        // Verify the modal matches expected time + instructor.
+        // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
+        const rawModal  = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
+        const verifyTime = !!classTimeNorm && modalText.includes(classTimeNorm);
+        const verifyInst = modalText.includes(instructorFirstName);
+        console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
+
+        if (!verifyTime || !verifyInst) {
+          const reasons = [];
+          if (!verifyTime) reasons.push('time');
+          if (!verifyInst) reasons.push('instructor');
+          const reasonTag   = reasons.join('-');
+          const reasonLabel = { 'time': 'Time mismatch', 'instructor': 'Instructor mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Unknown mismatch';
+          console.log(`❌ Modal verification failed (${candidateLabel}):`, reasonLabel);
+          console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
+          console.log('Modal preview:', modalText.slice(0, 300));
+          await snap(`verify-${reasonTag}`);
+          // Write JSON sidecar so the dashboard can show contextual trace details
+          if (screenshotPath) {
+            try {
+              const meta = {
+                reason: reasonTag, expectedTime: classTimeNorm,
+                expectedInstructor: instructorFirstName,
+                classTitle: classTitle || null,
+                modalPreview: modalText.slice(0, 300),
+                timestamp: new Date().toISOString(),
+              };
+              fs.writeFileSync(screenshotPath.replace('.png', '.json'), JSON.stringify(meta, null, 2));
+            } catch (e) { console.log('Meta write failed:', e.message); }
+          }
+          const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
+          return { ok: false, failMsg, reasonTag };
+        }
+
+        console.log(`✅ Modal verified (${candidateLabel}) — proceeding to booking.`);
+        return { ok: true };
+
+      } catch (err) {
+        const failMsg = `Unexpected error during click/verify (${candidateLabel}): ${err.message}`;
+        console.log('❌', failMsg);
+        return { ok: false, failMsg, reasonTag: 'error' };
       }
     }
-    await page.waitForTimeout(2000);
+    // ────────────────────────────────────────────────────────────────────────────
 
-    // Step 4b: Verify the modal/detail panel matches the expected time + instructor
-    // BEFORE attempting to click Register/Waitlist.  This is the safety gate that
-    // prevents a fallback selection from booking the wrong class.
-    // Uses page body text so it works regardless of Bubble.io's modal selector.
-    {
-      // Normalize all whitespace variants (incl. Bubble.io's non-breaking spaces \u00A0)
-      // before comparing — the modal uses \u00A0 in time strings like "7:45\u00A0a"
-      // which wouldn't match "7:45 a" as a plain string.includes() comparison.
-      const rawModal   = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-      const modalText  = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
-      const verifyTime  = !!classTimeNorm && modalText.includes(classTimeNorm);
-      const verifyInst  = modalText.includes(instructorFirstName);
-      console.log('Modal verification —', JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
-      if (!verifyTime || !verifyInst) {
-        const reasons = [];
-        if (!verifyTime) reasons.push('time');
-        if (!verifyInst) reasons.push('instructor');
-        const reasonTag = reasons.join('-');
-        const reasonLabel = { 'time': 'Time mismatch', 'instructor': 'Instructor mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Unknown mismatch';
-        console.log('❌ Modal verification failed:', reasonLabel);
-        console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
-        console.log('Modal preview:', modalText.slice(0, 300));
-        await snap(`verify-${reasonTag}`);
-        // Write JSON sidecar alongside the screenshot so the dashboard can show
-        // contextual trace details without a database.
-        if (screenshotPath) {
-          try {
-            const meta = {
-              reason: reasonTag,
-              expectedTime: classTimeNorm,
-              expectedInstructor: instructorFirstName,
-              classTitle: classTitle || null,
-              modalPreview: modalText.slice(0, 300),
-              timestamp: new Date().toISOString(),
-            };
-            fs.writeFileSync(screenshotPath.replace('.png', '.json'), JSON.stringify(meta, null, 2));
-          } catch (e) { console.log('Meta write failed:', e.message); }
+    // Try the best candidate first; if post-click verification fails, attempt
+    // the second-best candidate once (PART 6).
+    // Rules: only try second-best once; never skip verification; fail safe.
+    const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
+
+    if (!firstResult.ok) {
+      // Decide whether to try the second-best fallback
+      const secondQualifies = _lastSecondCard && _lastSecondScore >= CONFIDENCE_THRESHOLD - 2;
+
+      if (secondQualifies) {
+        console.log(`⚠️ Best match failed verification, trying second-best candidate once`);
+        console.log(`   Best score: ${_lastBestScore} | Selected row: "${_lastBestText.slice(0, 100)}"`);
+        console.log(`   Second-best score: ${_lastSecondScore} | Row: "${_lastSecondText.slice(0, 100)}"`);
+
+        // Dismiss the current modal before clicking a different card
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(1200);
+
+        const secondResult = await attemptClickAndVerify(_lastSecondCard, 'second-best candidate');
+        if (!secondResult.ok) {
+          return { status: 'error', message: secondResult.failMsg, screenshotPath };
         }
-        const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
-        return { status: 'error', message: failMsg, screenshotPath };
+        // Second-best passed verification — fall through to the booking step
+      } else {
+        if (_lastSecondCard) {
+          console.log(`   Second-best exists (score ${_lastSecondScore}) but is below fallback floor (${CONFIDENCE_THRESHOLD - 2}) — not trying.`);
+        } else {
+          console.log('   No second-best candidate available — aborting.');
+        }
+        return { status: 'error', message: firstResult.failMsg, screenshotPath };
       }
-      console.log('✅ Modal verified — proceeding to booking.');
     }
 
     // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet.

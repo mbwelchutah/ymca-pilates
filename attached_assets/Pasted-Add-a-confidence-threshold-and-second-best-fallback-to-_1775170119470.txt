@@ -1,0 +1,160 @@
+Add a confidence threshold and second-best fallback to the class selection logic.
+
+Current issue:
+
+* the bot can fail too early or over-trust a weak row match
+* I want a safer best-match system that can try the second-best candidate once
+
+Goal:
+Use scoring to choose the best visible class row, require minimum confidence, and if the first candidate fails post-click verification, try the second-best candidate one time.
+
+Do NOT:
+
+* change scheduler timing
+* remove the existing post-click verification step
+* click multiple rows blindly
+* over-engineer
+
+## PART 1 — Score all visible rows/cards
+
+After landing on the correct day tab, collect the visible rows/cards for that day.
+
+For each row:
+
+* read `innerText().toLowerCase()`
+* score it using:
+
+  * title contains `"core pilates"` → +5
+  * time contains `"7:45"` → +5
+  * instructor contains `"stephanie"` → +3
+
+Use loose matching:
+
+* treat `"7:45 AM"` and `"7:45 a"` as equivalent
+* treat `"Stephanie Sanders"` and `"Stephanie S."` as equivalent by matching first name
+
+Log each row:
+
+```js
+console.log("Row score:", score, "|", text.slice(0, 120));
+```
+
+## PART 2 — Sort candidates
+
+Store candidates as objects:
+
+```js
+{ row, text, score }
+```
+
+Then sort descending by score:
+
+```js
+const candidates = rowsWithScores.sort((a, b) => b.score - a.score);
+const best = candidates[0];
+const second = candidates[1];
+```
+
+## PART 3 — Add confidence threshold
+
+Use:
+
+```js
+const CONFIDENCE_THRESHOLD = 8;
+```
+
+Decision rule:
+
+* if no best candidate exists → fail
+* if best.score < CONFIDENCE_THRESHOLD → fail with a clear error:
+  `"No high-confidence class match found"`
+
+Do NOT click anything below threshold.
+
+## PART 4 — Click best candidate first
+
+For the best candidate:
+
+* scroll into view
+* highlight in debug mode if that exists
+* click the visible interactive child inside the row/card:
+
+  * button
+  * link
+  * role=button
+  * chevron if present
+
+Do NOT click invisible wrapper divs.
+
+## PART 5 — Keep post-click verification
+
+After clicking:
+
+* verify modal/details still match expected time
+* verify modal/details still match expected instructor
+
+If verification passes:
+
+* continue normally
+
+## PART 6 — Add second-best fallback
+
+If the best candidate fails verification:
+
+* if second exists and second.score is close enough, try it ONCE
+* use:
+
+```js
+second.score >= CONFIDENCE_THRESHOLD - 2
+```
+
+Log clearly:
+
+```js
+console.log("⚠️ Best match failed verification, trying second-best candidate once");
+```
+
+Then:
+
+* return to the list if needed
+* click second-best candidate
+* run the same verification again
+
+If second-best also fails:
+
+* abort with a clear error
+
+Do NOT try more than two candidates.
+
+## PART 7 — Improve logs
+
+Add logs for:
+
+* best score
+* second-best score
+* selected candidate text
+* whether second-best fallback was used
+
+Example:
+
+```js
+console.log("Best score:", best?.score);
+console.log("Second-best score:", second?.score);
+console.log("Selected row:", best?.text?.slice(0, 120));
+```
+
+## PART 8 — Keep behavior safe
+
+Rules:
+
+* only try second-best once
+* never skip verification
+* never proceed to booking without verification passing
+* fail safe > wrong booking
+
+## AFTER CHANGES — explain:
+
+1. how scoring works
+2. why threshold prevents weak matches
+3. when second-best fallback triggers
+4. why only one fallback is allowed
