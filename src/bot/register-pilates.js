@@ -463,6 +463,23 @@ async function runBookingJob(job, opts = {}) {
       const MAX_STEPS   = 60;  // 60 × 300 = 18 000 px max travel
       const WAIT_MS     = 300; // ms between steps for virtual-list re-render
 
+      // Always start from the top so a previous pass that reached the bottom
+      // doesn't cause an immediate "reached bottom at step 0" on re-entry.
+      await page.evaluate(() => {
+        let best = null;
+        for (const el of document.querySelectorAll('*')) {
+          const s = getComputedStyle(el);
+          const scrollable = s.overflow === 'auto' || s.overflow === 'scroll' ||
+                             s.overflowY === 'auto' || s.overflowY === 'scroll';
+          if (scrollable && el.scrollHeight > el.clientHeight + 50) {
+            if (!best || el.scrollHeight > best.scrollHeight) best = el;
+          }
+        }
+        if (best) best.scrollTop = 0;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForTimeout(400); // brief pause for virtual list to re-render at top
+
       for (let step = 0; step < MAX_STEPS; step++) {
         // Check if targetTime is already visible in the DOM.
         // Match against the START of a time-range (H:MM a/p followed by " -")
