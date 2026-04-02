@@ -1,0 +1,129 @@
+Add a “click by index fallback” to the Playwright bot so it can still select the correct class when text matching fails.
+
+Current state:
+
+* primary match uses time + fuzzy instructor
+* sometimes fails due to UI differences (abbreviated names, missing titles)
+
+Goal:
+If no match is found, fall back to clicking the correct row by index.
+
+Do NOT:
+
+* remove existing matching logic
+* hardcode a single index
+* break existing success path
+
+---
+
+## PART 1 — Collect all visible class rows
+
+```js
+const rows = await page.locator('div:has-text(" a - ")').all();
+```
+
+(or your existing selector for class rows)
+
+---
+
+## PART 2 — Try primary match first
+
+```js
+let matchedRow = null;
+
+for (const row of rows) {
+  const text = (await row.innerText()).toLowerCase();
+
+  if (text.includes(normalizedTime) && matchesInstructor(text, instructor)) {
+    matchedRow = row;
+    break;
+  }
+}
+```
+
+---
+
+## PART 3 — Add index fallback
+
+If no match found:
+
+```js
+if (!matchedRow && rows.length > 0) {
+  console.log("⚠️ No exact match — using index fallback");
+
+  // safest fallback: first row (or configurable)
+  matchedRow = rows[0];
+}
+```
+
+---
+
+## PART 4 — Optional smarter fallback (recommended)
+
+Instead of always row[0], choose closest time:
+
+```js
+function timeToMinutes(t) {
+  // convert "7:45 AM" → minutes since midnight
+}
+
+let bestRow = null;
+let smallestDiff = Infinity;
+
+for (const row of rows) {
+  const text = await row.innerText();
+  const rowTime = extractTime(text);
+
+  const diff = Math.abs(timeToMinutes(rowTime) - timeToMinutes(targetTime));
+
+  if (diff < smallestDiff) {
+    smallestDiff = diff;
+    bestRow = row;
+  }
+}
+
+matchedRow = bestRow;
+```
+
+---
+
+## PART 5 — Click result
+
+```js
+if (matchedRow) {
+  await matchedRow.click();
+} else {
+  throw new Error("No rows available to click");
+}
+```
+
+---
+
+## PART 6 — Logging (VERY important)
+
+```js
+console.log("Available rows:");
+for (const row of rows) {
+  console.log(await row.innerText());
+}
+
+console.log("Selected row:", await matchedRow.innerText());
+```
+
+---
+
+## PART 7 — Behavior rules
+
+Priority order:
+
+1. exact match (time + instructor)
+2. closest time match
+3. first row fallback
+
+---
+
+## After changes, explain:
+
+* how fallback is triggered
+* why index fallback improves reliability
+* how closest-time logic works

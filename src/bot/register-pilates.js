@@ -168,7 +168,7 @@ async function runBookingJob(job, opts = {}) {
           el.removeAttribute('data-target-class');
         });
 
-        // Collect every element matching time + instructor first name.
+        // --- Primary match: time + instructor first name ---
         const candidates = [];
         for (const el of document.querySelectorAll('*')) {
           const txt = el.textContent.toLowerCase();
@@ -177,55 +177,84 @@ async function runBookingJob(job, opts = {}) {
           candidates.push(el);
         }
 
-        // Debug: if no candidates, dump all elements containing the time string.
-        if (candidates.length === 0) {
-          const timeEls = [];
-          for (const el of document.querySelectorAll('*')) {
-            if (classTimeNorm && el.textContent.toLowerCase().includes(classTimeNorm)) {
-              timeEls.push(el.textContent.replace(/\s+/g, ' ').trim().slice(0, 100));
-            }
-          }
-          return {
-            matched: null,
-            debug: {
-              candidateCount: 0,
-              timeElTexts: timeEls.slice(0, 6),
-              classTimeNorm,
-              instructorFirstName,
-            }
-          };
+        if (candidates.length > 0) {
+          // Pick smallest (most specific) element.
+          candidates.sort((a, b) => a.textContent.length - b.textContent.length);
+          const best = candidates[0];
+          const titlePresent = classTitleLower ? best.textContent.toLowerCase().includes(classTitleLower) : true;
+          best.setAttribute('data-target-class', 'yes');
+          return { matched: best.textContent.replace(/\s+/g, ' ').trim().slice(0, 120), titlePresent, fallback: null, debug: null };
         }
 
-        // Pick the most specific match — smallest textContent (fewest characters).
-        candidates.sort((a, b) => a.textContent.length - b.textContent.length);
-        const best = candidates[0];
+        // --- Fallback: find rows by AM/PM time pattern ---
+        // Parse "H:MM a" or "H:MM p" → minutes since midnight for closest-time ranking.
+        function parseMin(t) {
+          const m = (t || '').match(/(\d+):(\d+)\s*([ap])/i);
+          if (!m) return null;
+          let h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+          if (m[3].toLowerCase() === 'p' && h !== 12) h += 12;
+          if (m[3].toLowerCase() === 'a' && h === 12) h = 0;
+          return h * 60 + min;
+        }
+        const targetMin = parseMin(classTimeNorm);
+        const timePattern = /\d+:\d+\s*[ap]\s*-\s*\d+:\d+\s*[ap]/i;
 
-        // Soft title check — log if missing but don't reject.
-        const titlePresent = classTitleLower ? best.textContent.toLowerCase().includes(classTitleLower) : true;
+        // Collect leaf-ish elements that contain an AM/PM time range.
+        const rowEls = [];
+        for (const el of document.querySelectorAll('*')) {
+          if (!timePattern.test(el.textContent)) continue;
+          if (el.querySelectorAll('*').length > 20) continue; // skip broad containers
+          rowEls.push(el);
+        }
 
-        best.setAttribute('data-target-class', 'yes');
+        const rowTexts = rowEls.map(el => el.textContent.replace(/\s+/g, ' ').trim().slice(0, 100));
+
+        if (rowEls.length === 0) {
+          return { matched: null, fallback: null, debug: { candidateCount: 0, timeElTexts: [], classTimeNorm, instructorFirstName } };
+        }
+
+        // Pick closest time; fall back to first row if no time can be parsed.
+        let bestEl = rowEls[0];
+        let bestDiff = Infinity;
+        for (const el of rowEls) {
+          if (targetMin === null) break; // no target time — use first row
+          const rowMin = parseMin(el.textContent);
+          if (rowMin === null) continue;
+          const diff = Math.abs(rowMin - targetMin);
+          if (diff < bestDiff) { bestDiff = diff; bestEl = el; }
+        }
+
+        bestEl.setAttribute('data-target-class', 'yes');
         return {
-          matched: best.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
-          titlePresent,
+          matched: bestEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 120),
+          titlePresent: classTitleLower ? bestEl.textContent.toLowerCase().includes(classTitleLower) : true,
+          fallback: targetMin !== null ? 'closest-time' : 'first-row',
+          fallbackRowTexts: rowTexts,
           debug: null,
         };
       }, { classTimeNorm, instructorFirstName, classTitleLower });
 
       if (result.matched) {
-        if (result.titlePresent === false) {
-          console.log(`⚠️  Class title "${classTitle}" not found in matched row — matched by time+instructor`);
+        if (result.fallback) {
+          console.log(`⚠️  Primary match failed — using ${result.fallback} fallback`);
+          if (result.fallbackRowTexts) {
+            console.log('Available rows on this tab:');
+            result.fallbackRowTexts.forEach((t, i) => console.log(`  [${i}] ${t}`));
+          }
+        } else if (result.titlePresent === false) {
+          console.log(`⚠️  Class title "${classTitle}" not in matched row — matched by time+instructor`);
         }
         console.log('Matched row:', result.matched);
         return page.locator('[data-target-class="yes"]').first();
       }
 
       if (result.debug) {
-        console.log('findTargetCard: no match. debug =', JSON.stringify(result.debug));
+        console.log('findTargetCard: no match.', JSON.stringify(result.debug));
         if (result.debug.timeElTexts && result.debug.timeElTexts.length > 0) {
           console.log('Elements containing time string:');
           result.debug.timeElTexts.forEach(t => console.log(' ', t));
         } else {
-          console.log('No elements found containing time string:', classTimeNorm);
+          console.log('No elements found matching time string:', classTimeNorm);
         }
       }
       return null;
