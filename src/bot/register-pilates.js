@@ -337,6 +337,22 @@ async function runBookingJob(job, opts = {}) {
     console.log(`Searching ${dayTabCount} "${dayShort}" tab(s) on the schedule page.`);
     let targetCard = null;
 
+    // Scroll the schedule list back to the top so early-morning classes (which
+    // are above the initial scroll position) are rendered into the DOM before we
+    // scan for elements.  The page uses lazy/virtual rendering, so classes that
+    // are above the current scroll position may not be in the DOM at all.
+    async function scrollScheduleToTop() {
+      await page.evaluate(() => {
+        // Try every scrollable ancestor of a known time element.
+        const el = document.querySelector('[class*="schedule"], [class*="list"], [class*="events"]')
+          || document.querySelector('main, [role="main"]')
+          || document.body;
+        el.scrollTop = 0;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForTimeout(600); // let the renderer populate newly-visible rows
+    }
+
     // Helper: scan a set of day-tab locators and return the first card match.
     async function scanTabs(tabs, count) {
       for (let w = 0; w < count; w++) {
@@ -344,6 +360,7 @@ async function runBookingJob(job, opts = {}) {
         console.log('Trying tab: ' + tabText.trim());
         await tabs.nth(w).click();
         await page.waitForTimeout(2000);
+        await scrollScheduleToTop();
         const card = await findTargetCard();
         if (card) { console.log('Found class on ' + tabText.trim()); return card; }
         console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
@@ -362,6 +379,7 @@ async function runBookingJob(job, opts = {}) {
           console.log('Clicking exact date tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
           await page.waitForTimeout(2000);
+          await scrollScheduleToTop();
           targetCard = await findTargetCard();
           if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
           else            console.log('Class not on exact date tab — falling back to full scan.');
@@ -526,6 +544,7 @@ async function runBookingJob(job, opts = {}) {
             if (parseInt(tabText.replace(/\D+/g, ''), 10) === targetDayNum) {
               await dayTabsRetry.nth(w).click();
               await page.waitForTimeout(2000);
+              await scrollScheduleToTop();
               targetCard = await findTargetCard();
               break;
             }
@@ -535,6 +554,7 @@ async function runBookingJob(job, opts = {}) {
           for (let w = 0; w < dayTabCountRetry; w++) {
             await dayTabsRetry.nth(w).click();
             await page.waitForTimeout(2000);
+            await scrollScheduleToTop();
             targetCard = await findTargetCard();
             if (targetCard) break;
           }
