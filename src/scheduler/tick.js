@@ -7,6 +7,7 @@
 const { getAllJobs, setLastRun } = require('../db/jobs');
 const { getPhase }               = require('./booking-window');
 const { runBookingJob }          = require('../bot/register-pilates');
+const { getDryRun }              = require('../bot/dry-run-state');
 
 const COOLDOWN_MS     = 30 * 60 * 1000;   // skip if ran within this window
 const ELIGIBLE_PHASES = ['warmup', 'sniper'];
@@ -118,7 +119,7 @@ async function runTick({ onlyJobId = null } = {}) {
     let lastResult = 'error';
     let lastErrMsg = null;
     try {
-      const result = await runBookingJob(job);
+      const result = await runBookingJob(job, { dryRun: getDryRun() });
       lastResult = result.status;
       if (result.status === 'error') lastErrMsg = result.message || null;
       console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);

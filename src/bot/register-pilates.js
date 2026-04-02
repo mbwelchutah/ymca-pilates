@@ -6,9 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const { chromium } = require('playwright');
 
-const DRY_RUN = process.env.DRY_RUN === '1';
 const isHeadless = process.env.HEADLESS !== 'false';
-if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
 
 // Use the system Chromium (installed via Nix) so the required shared libraries
 // (libgbm, libglib, etc.) are available. Playwright's bundled chrome-headless-shell
@@ -20,7 +18,9 @@ try {
   CHROMIUM_PATH = null;
 }
 
-async function runBookingJob(job) {
+async function runBookingJob(job, opts = {}) {
+  const DRY_RUN = opts.dryRun !== undefined ? !!opts.dryRun : (process.env.DRY_RUN === '1');
+  if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
   const { classTitle, classTime, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
   const DAY_SHORT = {

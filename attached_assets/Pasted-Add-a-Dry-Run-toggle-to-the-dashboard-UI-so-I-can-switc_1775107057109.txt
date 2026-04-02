@@ -1,0 +1,198 @@
+Add a “Dry Run” toggle to the dashboard UI so I can switch between test mode and real booking without changing code.
+
+Current state:
+
+* bot supports DRY_RUN via environment variable or flag
+* UI has buttons but no mode toggle
+* app will be used primarily on iPhone
+
+Goal:
+Provide a simple, iOS-style toggle to control dry run mode globally.
+
+Do NOT:
+
+* change booking logic structure
+* add frameworks
+* over-engineer
+
+---
+
+## PART 1 — Add global dry run state (server)
+
+In server.js:
+
+1. Add:
+
+```js
+let dryRunEnabled = true;
+```
+
+2. Export setter:
+
+```js
+module.exports.setDryRun = (value) => {
+  dryRunEnabled = value;
+};
+```
+
+3. When running jobs (ALL paths):
+
+* pass:
+
+```js
+runBookingJob(job, { dryRun: dryRunEnabled });
+```
+
+---
+
+## PART 2 — Add routes
+
+Add:
+
+POST `/set-dry-run`
+
+Logic:
+
+* read boolean from request
+* update dryRunEnabled
+* return `{ success: true, dryRun: true/false }`
+
+---
+
+## PART 3 — Add iOS-style toggle
+
+In UI (Actions or top banner area):
+
+```html
+<div class="toggle-row">
+  <span>Dry Run</span>
+  <label class="switch">
+    <input type="checkbox" id="dry-run-toggle" checked>
+    <span class="slider"></span>
+  </label>
+</div>
+```
+
+---
+
+## PART 4 — iOS switch styling
+
+```css
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 28px;
+}
+
+.switch input {
+  display: none;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  background-color: #ccc;
+  border-radius: 28px;
+  top: 0; left: 0; right: 0; bottom: 0;
+  transition: 0.2s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 24px;
+  width: 24px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+
+input:checked + .slider {
+  background-color: #34c759; /* iOS green */
+}
+
+input:checked + .slider:before {
+  transform: translateX(22px);
+}
+```
+
+---
+
+## PART 5 — Client-side logic
+
+```js
+const toggle = document.getElementById("dry-run-toggle");
+
+toggle.addEventListener("change", async () => {
+  const enabled = toggle.checked;
+
+  await fetch("/set-dry-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled })
+  });
+
+  updateDryRunUI(enabled);
+});
+```
+
+---
+
+## PART 6 — Show mode clearly
+
+Add indicator in Selected Job card or banner:
+
+```html
+<div id="dry-run-indicator">🧪 Dry Run Mode</div>
+```
+
+Update:
+
+```js
+function updateDryRunUI(enabled) {
+  const el = document.getElementById("dry-run-indicator");
+  el.textContent = enabled ? "🧪 Dry Run Mode" : "🚀 Live Mode";
+}
+```
+
+---
+
+## PART 7 — Persist state (important)
+
+Use localStorage:
+
+```js
+localStorage.setItem("dryRun", enabled);
+```
+
+On load:
+
+* restore toggle state
+* sync with server
+
+---
+
+## PART 8 — Behavior rules
+
+* Dry run ON:
+
+  * no actual booking clicks
+  * full navigation + validation still runs
+
+* Dry run OFF:
+
+  * real booking happens
+
+* Toggle takes effect immediately (no refresh)
+
+---
+
+## After changes, explain:
+
+* how dryRun state flows from UI → server → bot
+* how toggle works visually
+* how state persists
+* what happens when switching modes mid-session

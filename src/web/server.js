@@ -5,6 +5,7 @@ const { URL } = require('url');
 const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
+const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
 const { setSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
@@ -16,6 +17,7 @@ const HOST = '0.0.0.0';
 // HTML builder — generates the full page with jobs injected server-side.
 // ---------------------------------------------------------------------------
 function buildHtml(jobs, error, editError) {
+  const dryRunEnabled = getDryRun();
   const hasJobs = jobs && jobs.length > 0;
   const first   = hasJobs ? jobs[0] : null;
   const firstLabel = first
@@ -513,6 +515,65 @@ function buildHtml(jobs, error, editError) {
       padding: 0;
     }
     .unpin-btn:hover { color: #1d3557; }
+
+    /* ---- dry-run toggle ---- */
+    .dry-run-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #fff;
+      border-radius: 10px;
+      border: 1.5px solid #e0e6ef;
+      margin-bottom: 4px;
+    }
+    .dry-run-label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .dry-run-label strong { font-size: 15px; color: #1a1a2e; }
+    .dry-run-label small  { font-size: 12px; color: #888; }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+    .switch input { display: none; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      background-color: #ccc;
+      border-radius: 28px;
+      top: 0; left: 0; right: 0; bottom: 0;
+      transition: background-color 0.2s;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 24px;
+      width: 24px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+    input:checked + .slider { background-color: #34c759; }
+    input:checked + .slider:before { transform: translateX(22px); }
+
+    #dry-run-indicator {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: inline-block;
+    }
+    #dry-run-indicator.mode-dry  { background: #e8f5e9; color: #2e7d32; }
+    #dry-run-indicator.mode-live { background: #fff3e0; color: #e65100; }
   </style>
 </head>
 <body>
@@ -525,7 +586,10 @@ function buildHtml(jobs, error, editError) {
 
     <div id="next-job-banner" class="banner hidden"></div>
 
-    <div id="scheduler-status" class="scheduler-status">&#9654; Scheduler running</div>
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
+      <span id="dry-run-indicator" class="${dryRunEnabled ? 'mode-dry' : 'mode-live'}">${dryRunEnabled ? '&#x1F9EA; Dry Run' : '&#x1F680; Live'}</span>
+      <div id="scheduler-status" class="scheduler-status" style="margin:0">&#9654; Scheduler running</div>
+    </div>
 
     <!-- Selected Job -->
     <div class="card">
@@ -589,6 +653,16 @@ function buildHtml(jobs, error, editError) {
     <div class="card">
       <div class="card-header"><h2>Actions</h2></div>
       <div class="card-body actions">
+        <div class="dry-run-row">
+          <div class="dry-run-label">
+            <strong>Dry Run Mode</strong>
+            <small>When ON, bot navigates but never clicks Register/Waitlist</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="dry-run-toggle" ${dryRunEnabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
         <button class="btn btn-primary" id="btn-run" onclick="runSelected()">
           &#9654; Run Now (Direct)
         </button>
@@ -1347,6 +1421,44 @@ function buildHtml(jobs, error, editError) {
         updateSchedulerUI(false);
       }
     })();
+
+    // ---- dry run toggle ----
+
+    function updateDryRunUI(enabled) {
+      const ind = document.getElementById('dry-run-indicator');
+      ind.textContent  = enabled ? '\u{1F9EA} Dry Run' : '\u{1F680} Live';
+      ind.className    = enabled ? 'mode-dry' : 'mode-live';
+    }
+
+    document.getElementById('dry-run-toggle').addEventListener('change', async function() {
+      const enabled = this.checked;
+      localStorage.setItem('dryRun', enabled ? 'true' : 'false');
+      updateDryRunUI(enabled);
+      try {
+        await fetch('/set-dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled }),
+        });
+      } catch (e) {
+        console.error('Failed to update dry-run state:', e.message);
+      }
+    });
+
+    // On load: restore dry-run state from localStorage and sync with server.
+    (function() {
+      const stored = localStorage.getItem('dryRun');
+      if (stored !== null) {
+        const enabled = stored === 'true';
+        document.getElementById('dry-run-toggle').checked = enabled;
+        updateDryRunUI(enabled);
+        fetch('/set-dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled }),
+        }).catch(function() {});
+      }
+    })();
   </script>
 </body>
 </html>`;
@@ -1368,7 +1480,7 @@ let jobState = { active: false, log: 'No job run yet.', success: null };
 
 function runInBackground(job) {
   jobState = { active: true, log: 'Logging in...', success: null };
-  runBookingJob(job)
+  runBookingJob(job, { dryRun: getDryRun() })
     .then(result => {
       jobState = { active: false, log: result.message, success: result.status === 'success' };
       if (job.id) {
@@ -1424,7 +1536,7 @@ const server = http.createServer((req, res) => {
           classTime:  dbJob.class_time,
           dayOfWeek:  dbJob.day_of_week,
           targetDate: dbJob.target_date || null,
-        });
+        }, { dryRun: getDryRun() });
         setLastRun(dbJob.id, result.status, result.status === 'error' ? (result.message || null) : null);
         json({ success: result.status !== 'error', message: `Job #${jobId}: ${result.status} — ${result.message}` });
       } catch (err) {
@@ -1617,6 +1729,21 @@ const server = http.createServer((req, res) => {
     setSchedulerPaused(false);
     console.log('Scheduler resumed via UI.');
     json({ ok: true, paused: false });
+
+  } else if (req.method === 'POST' && path === '/set-dry-run') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const { enabled } = JSON.parse(body);
+        setDryRun(!!enabled);
+        console.log(`Dry run ${getDryRun() ? 'ENABLED' : 'DISABLED'} via UI.`);
+        json({ success: true, dryRun: getDryRun() });
+      } catch {
+        json({ success: false, message: 'Invalid JSON' });
+      }
+    });
+    return;
 
   } else {
     res.writeHead(404);
