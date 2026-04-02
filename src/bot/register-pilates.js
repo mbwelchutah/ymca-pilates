@@ -97,6 +97,9 @@ async function runBookingJob(job, opts = {}) {
       ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
     });
     const page = await browser.newPage();
+    // Explicit viewport so Bubble.io renders the desktop filter-pill layout,
+    // not a collapsed mobile layout that behaves differently.
+    await page.setViewportSize({ width: 1280, height: 800 });
 
     const snap = async (label = '') => {
       try {
@@ -230,10 +233,27 @@ async function runBookingJob(job, opts = {}) {
       await trigger.waitFor({ state: 'visible' });
       await trigger.scrollIntoViewIfNeeded();
       await trigger.click();
-      console.log(`  Clicked pill — waiting for "${targetValue}" option to become visible...`);
+      console.log(`  Clicked pill — checking open state...`);
+
+      // Step 2a: Check aria-expanded on the pill or any child (Method A from guide).
+      const ariaOpen = await trigger.evaluate(el => {
+        if (el.getAttribute('aria-expanded') === 'true') return true;
+        for (const child of el.querySelectorAll('[aria-expanded]'))
+          if (child.getAttribute('aria-expanded') === 'true') return true;
+        return false;
+      }).catch(() => false);
+      if (ariaOpen) {
+        console.log(`  Dropdown open confirmed via aria-expanded.`);
+      } else {
+        console.log(`  No aria-expanded=true found — waiting for visible option as open signal.`);
+      }
+
+      // Take a debug snapshot immediately after the click so we can see what rendered.
+      await snap(`filter-${selectIndex}-after-click`);
 
       // Step 3: Poll until a visible (rendered, non-option) element with targetValue appears.
-      // Uses offsetWidth/offsetHeight which are 0 for display:none elements (hidden <option>).
+      // This is the most reliable open-state signal (Method B from guide).
+      // offsetWidth/offsetHeight are 0 for display:none elements (hidden <option>).
       try {
         await page.waitForFunction((val) => {
           for (const el of document.querySelectorAll('*')) {
@@ -245,7 +265,18 @@ async function runBookingJob(job, opts = {}) {
         }, targetValue, { timeout: 5000 });
         console.log(`  Option "${targetValue}" is now visible in the overlay.`);
       } catch {
-        console.log(`⚠️ Timed out waiting for visible "${targetValue}" in dropdown.`);
+        // Snapshot the failed state so we can diagnose visually.
+        await snap(`filter-${selectIndex}-timeout`);
+        // Dump the top visible text elements to narrow down what IS on screen.
+        const visibleTexts = await page.evaluate(() =>
+          [...document.querySelectorAll('*')]
+            .filter(e => e.tagName !== 'OPTION' && e.tagName !== 'SELECT' &&
+                         e.offsetWidth > 0 && e.offsetHeight > 0 &&
+                         e.children.length === 0 && e.textContent.trim().length > 0)
+            .slice(0, 30)
+            .map(e => `[${e.tagName}] "${e.textContent.trim()}"`)
+        ).catch(() => []);
+        console.log(`⚠️ Timed out waiting for visible "${targetValue}". Visible leaves:\n  ${visibleTexts.join('\n  ')}`);
         await page.keyboard.press('Escape');
         await page.waitForTimeout(300);
         return false;

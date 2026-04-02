@@ -1,0 +1,133 @@
+Add dropdown open-state detection using aria-expanded or class changes to make dropdown interaction fully reliable.
+
+Current issue:
+
+* dropdown click works inconsistently
+* options sometimes not visible when clicked
+
+Goal:
+Wait for dropdown to be CONFIRMED open before selecting option.
+
+Do NOT:
+
+* rely on fixed timeouts
+* click hidden elements
+* skip verification
+
+---
+
+# PART 1 — Click dropdown trigger
+
+```js
+const dropdown = page.getByText("Category", { exact: true });
+
+await dropdown.waitFor({ state: "visible" });
+await dropdown.scrollIntoViewIfNeeded();
+await dropdown.click();
+```
+
+---
+
+# PART 2 — Detect open state (METHOD A — aria-expanded)
+
+```js
+try {
+  await expect(dropdown).toHaveAttribute("aria-expanded", "true", {
+    timeout: 2000
+  });
+  console.log("✅ Dropdown opened (aria)");
+} catch (e) {
+  console.log("⚠️ No aria-expanded — falling back to DOM detection");
+}
+```
+
+---
+
+# PART 3 — Detect open state (METHOD B — visible options)
+
+```js
+const option = page.getByText("Yoga/Pilates");
+
+await option.waitFor({ state: "visible", timeout: 3000 });
+```
+
+👉 THIS is your most reliable signal
+
+---
+
+# PART 4 — Optional: detect class change (advanced)
+
+```js
+await page.waitForFunction(() => {
+  const el = document.querySelector('[data-target-class="yes"]');
+  return el && el.classList.toString().includes("open");
+});
+```
+
+(use only if you identify correct class)
+
+---
+
+# PART 5 — Click option ONLY after confirmed open
+
+```js
+await option.scrollIntoViewIfNeeded();
+await option.click();
+```
+
+---
+
+# PART 6 — Verify selection
+
+```js
+await expect(dropdown).toContainText("Yoga");
+```
+
+---
+
+# PART 7 — Add retry wrapper (production-safe)
+
+```js
+async function selectDropdownSafe(label, value) {
+  const dropdown = page.getByText(label);
+
+  await dropdown.waitFor({ state: "visible" });
+  await dropdown.click();
+
+  const option = page.getByText(value);
+
+  await option.waitFor({ state: "visible", timeout: 3000 });
+
+  await option.click();
+
+  await expect(dropdown).toContainText(value.split("/")[0]);
+}
+```
+
+---
+
+# PART 8 — Debug logging
+
+```js
+console.log("Opening dropdown:", label);
+console.log("Waiting for option:", value);
+```
+
+---
+
+# FINAL FLOW
+
+1. wait for dropdown visible
+2. click dropdown
+3. wait for OPEN STATE
+4. wait for option visible
+5. click option
+6. verify
+
+---
+
+# AFTER CHANGES — explain:
+
+* how aria-expanded helps detect open state
+* why visible option is most reliable signal
+* why this removes race conditions
