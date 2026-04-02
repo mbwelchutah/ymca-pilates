@@ -1,0 +1,132 @@
+Add an optional “interactive pause before click” mode so the bot stops and lets you inspect the page manually before clicking.
+
+Current state:
+
+* bot selects matchedRow
+* highlight overlay shows target
+* click sometimes fails and is hard to debug
+
+Goal:
+Pause execution right before click so user can:
+
+* inspect DOM
+* test selectors
+* confirm correct element
+* manually interact if needed
+
+Do NOT:
+
+* enable by default in production
+* break existing flow
+* rely on timeouts instead of pause
+
+---
+
+# PART 1 — Add toggle
+
+At top of file:
+
+```js
+const DEBUG_PAUSE = true;
+```
+
+---
+
+# PART 2 — Ensure headed mode (IMPORTANT)
+
+In your Playwright launch:
+
+```js
+const browser = await chromium.launch({
+  headless: false
+});
+```
+
+👉 pause WILL NOT work in headless mode ([Playwright][1])
+
+---
+
+# PART 3 — Insert pause before click
+
+Right before clicking:
+
+```js
+if (DEBUG_PAUSE) {
+  console.log("⏸ Pausing before click — inspect element");
+
+  await matchedRow.scrollIntoViewIfNeeded();
+
+  await page.pause();
+}
+```
+
+---
+
+# PART 4 — Optional: pause only on failure risk
+
+Better version:
+
+```js
+if (DEBUG_PAUSE && bestScore < 70) {
+  console.log("⏸ Low confidence — pausing for inspection");
+  await page.pause();
+}
+```
+
+---
+
+# PART 5 — What happens when paused
+
+When this runs:
+
+* browser freezes
+* Playwright Inspector opens
+* you can:
+
+  * hover elements
+  * test selectors
+  * run commands in console
+  * manually click
+
+Then:
+👉 press **Resume** to continue ([BrowserStack][2])
+
+---
+
+# PART 6 — Add console hint
+
+```js
+console.log("👉 Use Playwright Inspector to test selectors");
+console.log("👉 Click Resume when ready");
+```
+
+---
+
+# PART 7 — Optional: pause on failure
+
+```js
+if (!matchesTime || !matchesInstructor) {
+  console.log("❌ Verification failed — entering debug pause");
+  await page.pause();
+}
+```
+
+---
+
+# PART 8 — Behavior rules
+
+* only enabled in debug mode
+* requires headed browser
+* does not affect production runs
+* resumes exactly where it paused
+
+---
+
+# AFTER CHANGES — explain:
+
+* how page.pause() works
+* why it requires headed mode
+* how this helps debug click issues
+
+[1]: https://playwright.dev/docs/api/class-page?utm_source=chatgpt.com "Page"
+[2]: https://www.browserstack.com/guide/playwright-pause-sleep?utm_source=chatgpt.com "How to Pause Tests in Playwright"

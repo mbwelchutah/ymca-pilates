@@ -13,6 +13,11 @@ const isHeadless = process.env.HEADLESS !== 'false';
 // appends a floating "CLICK TARGET" label — both visible in screenshots.
 const DEBUG_HIGHLIGHT = true;
 
+// Set to true (+ run with HEADLESS=false) to open Playwright Inspector just
+// before the card click. page.pause() is a no-op in headless mode, so this
+// has zero effect on normal / production runs even if accidentally left true.
+const DEBUG_PAUSE = false;
+
 async function highlightElement(page, locator) {
   try {
     const el = await locator.elementHandle();
@@ -376,6 +381,11 @@ async function runBookingJob(job, opts = {}) {
         await highlightElement(page, hasClickable ? clickable : targetCard);
         await page.waitForTimeout(400); // pause so highlight is visible in screenshot
       }
+      if (DEBUG_PAUSE) {
+        console.log('⏸  Pausing before click — Playwright Inspector is open.');
+        console.log('👉 Hover elements, test selectors, then press Resume to continue.');
+        await page.pause();
+      }
       try {
         if (hasClickable) {
           await clickable.click();
@@ -517,6 +527,11 @@ async function runBookingJob(job, opts = {}) {
           if (DEBUG_HIGHLIGHT) {
             await highlightElement(page, hasClickableRetry ? clickableRetry : targetCard);
             await page.waitForTimeout(400);
+          }
+          if (DEBUG_PAUSE) {
+            console.log('⏸  Pausing before retry click — Playwright Inspector is open.');
+            console.log('👉 Hover elements, test selectors, then press Resume to continue.');
+            await page.pause();
           }
           try {
             if (hasClickableRetry) {
