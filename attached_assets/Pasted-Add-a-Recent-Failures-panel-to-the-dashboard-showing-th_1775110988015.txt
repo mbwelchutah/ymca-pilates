@@ -1,0 +1,180 @@
+Add a “Recent Failures” panel to the dashboard showing the last 5 screenshot failures with reason tags and thumbnails.
+
+Current state:
+
+* screenshots saved with reason-tagged filenames:
+  job-2-time-2026-...png
+* cleanup keeps last 20
+* failures are only visible in filesystem
+
+Goal:
+Display last 5 failures directly in the UI with:
+
+* thumbnail preview
+* failure reason (time / instructor / both)
+* timestamp
+
+Do NOT:
+
+* add database tables
+* over-engineer backend
+* block UI
+
+---
+
+# PART 1 — Add backend route
+
+In server.js:
+
+GET `/api/failures`
+
+```js
+const fs = require("fs");
+const path = require("path");
+
+app.get("/api/failures", (req, res) => {
+  const dir = "screenshots";
+
+  if (!fs.existsSync(dir)) {
+    return res.json([]);
+  }
+
+  const files = fs.readdirSync(dir)
+    .filter(f => f.endsWith(".png"))
+    .map(name => {
+      const parts = name.split("-");
+      const reason = parts[2]; // job-2-time-...
+      const time = fs.statSync(path.join(dir, name)).mtime;
+
+      return {
+        name,
+        reason,
+        time
+      };
+    })
+    .sort((a, b) => b.time - a.time)
+    .slice(0, 5);
+
+  res.json(files);
+});
+```
+
+---
+
+# PART 2 — Serve screenshots statically
+
+```js
+app.use("/screenshots", express.static("screenshots"));
+```
+
+---
+
+# PART 3 — Add UI panel
+
+Place BELOW your main cards:
+
+```html
+<div class="card">
+  <div class="card-title">Recent Failures</div>
+  <div id="failure-list"></div>
+</div>
+```
+
+---
+
+# PART 4 — Style thumbnails (iOS-like)
+
+```css
+.failure-item {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.failure-thumb {
+  width: 80px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #eee;
+}
+
+.failure-meta {
+  font-size: 12px;
+}
+
+.failure-reason {
+  font-weight: 600;
+  color: #d62828;
+}
+```
+
+---
+
+# PART 5 — Fetch + render
+
+```js
+async function loadFailures() {
+  const res = await fetch("/api/failures");
+  const data = await res.json();
+
+  const container = document.getElementById("failure-list");
+  container.innerHTML = "";
+
+  data.forEach(f => {
+    const el = document.createElement("div");
+    el.className = "failure-item";
+
+    el.innerHTML = `
+      <img src="/screenshots/${f.name}" class="failure-thumb" />
+      <div class="failure-meta">
+        <div class="failure-reason">❌ ${f.reason}</div>
+        <div>${new Date(f.time).toLocaleString()}</div>
+      </div>
+    `;
+
+    container.appendChild(el);
+  });
+}
+```
+
+---
+
+# PART 6 — Auto-refresh
+
+```js
+setInterval(loadFailures, 5000);
+loadFailures();
+```
+
+---
+
+# PART 7 — Optional polish
+
+* click thumbnail → open full image:
+
+```js
+el.onclick = () => window.open(`/screenshots/${f.name}`, "_blank");
+```
+
+---
+
+# FINAL RESULT
+
+Dashboard now shows:
+
+[thumbnail]  ❌ time
+Apr 1, 10:45 PM
+
+[thumbnail]  ❌ instructor
+Apr 1, 10:42 PM
+
+---
+
+# AFTER CHANGES — explain:
+
+* how files are parsed into reasons
+* how thumbnails are loaded
+* how refresh works
+* why no DB is needed

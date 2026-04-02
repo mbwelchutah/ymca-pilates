@@ -1,0 +1,181 @@
+Add “tap thumbnail → replay last run (mini trace)” so clicking a failure screenshot shows contextual details of that run.
+
+Current state:
+
+* failure panel shows last 5 screenshots
+* filenames include reason + timestamp
+* screenshots stored locally
+
+Goal:
+When clicking a failure thumbnail, show a lightweight “trace replay”:
+
+* screenshot (large)
+* reason (time / instructor)
+* expected vs actual values
+* modal text preview (if available)
+
+Do NOT:
+
+* implement full Playwright tracing
+* add database
+* over-engineer
+
+---
+
+# PART 1 — Save metadata alongside screenshot
+
+When saving screenshot, ALSO save JSON:
+
+```js
+const meta = {
+  jobId: job.id,
+  reason: reasonTag,
+  expectedTime,
+  expectedInstructor,
+  modalPreview: modalText.slice(0, 300),
+  timestamp: new Date().toISOString()
+};
+
+const metaFile = filename.replace(".png", ".json");
+
+fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
+```
+
+---
+
+# PART 2 — Extend /api/failures
+
+Return metadata too:
+
+```js
+const metaPath = path.join(dir, name.replace(".png", ".json"));
+
+let meta = {};
+if (fs.existsSync(metaPath)) {
+  meta = JSON.parse(fs.readFileSync(metaPath));
+}
+
+return {
+  name,
+  reason,
+  time,
+  meta
+};
+```
+
+---
+
+# PART 3 — Add modal viewer UI
+
+Add hidden panel:
+
+```html
+<div id="trace-viewer" class="trace-modal hidden">
+  <div class="trace-content">
+    <img id="trace-image" />
+    <div id="trace-details"></div>
+  </div>
+</div>
+```
+
+---
+
+# PART 4 — Style (iOS-like modal)
+
+```css
+.trace-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.trace-content {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+```
+
+---
+
+# PART 5 — Click thumbnail → open trace
+
+Update failure item:
+
+```js
+el.onclick = () => openTrace(f);
+```
+
+---
+
+# PART 6 — Render trace details
+
+```js
+function openTrace(f) {
+  const modal = document.getElementById("trace-viewer");
+  const img = document.getElementById("trace-image");
+  const details = document.getElementById("trace-details");
+
+  img.src = `/screenshots/${f.name}`;
+
+  details.innerHTML = `
+    <div><strong>Reason:</strong> ${f.meta.reason}</div>
+    <div><strong>Expected Time:</strong> ${f.meta.expectedTime}</div>
+    <div><strong>Instructor:</strong> ${f.meta.expectedInstructor}</div>
+    <div><strong>Preview:</strong><br/>${f.meta.modalPreview}</div>
+  `;
+
+  modal.classList.remove("hidden");
+}
+```
+
+---
+
+# PART 7 — Close modal
+
+```js
+document.getElementById("trace-viewer").onclick = () => {
+  document.getElementById("trace-viewer").classList.add("hidden");
+};
+```
+
+---
+
+# PART 8 — Behavior
+
+Now:
+
+tap thumbnail →
+
+→ opens full screenshot
+→ shows failure reason
+→ shows expected vs actual
+→ shows modal snippet
+
+---
+
+# FINAL RESULT
+
+You now have:
+
+[thumbnail] → tap → full debug panel
+
+Instead of:
+❌ “why did it fail?”
+
+You get:
+✅ “it failed because instructor didn’t match”
+
+---
+
+# AFTER CHANGES — explain:
+
+* how metadata is stored alongside screenshots
+* how UI reconstructs failure context
+* why this is “mini trace” vs full Playwright trace

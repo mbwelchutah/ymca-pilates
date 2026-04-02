@@ -666,6 +666,40 @@ function buildHtml(jobs, error, editError) {
     }
     #dry-run-indicator.mode-dry  { background: #e8f5e9; color: #2e7d32; }
     #dry-run-indicator.mode-live { background: #fff3e0; color: #e65100; }
+    /* ---- Recent Failures panel ---- */
+    .failure-item {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+    }
+    .failure-item:last-child { border-bottom: none; }
+    .failure-thumb {
+      width: 80px;
+      height: 56px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid #eee;
+      flex-shrink: 0;
+      background: #f5f5f5;
+    }
+    .failure-reason {
+      font-size: 12px;
+      font-weight: 600;
+      color: #d62828;
+    }
+    .failure-ts {
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
+    }
+    #failure-list-empty {
+      font-size: 13px;
+      color: #aaa;
+      padding: 8px 0;
+    }
   </style>
 </head>
 <body>
@@ -886,6 +920,13 @@ function buildHtml(jobs, error, editError) {
       <div class="card-body status-body">
         <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
         <div class="last-run" id="last-run" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Recent Failures</h2></div>
+      <div class="card-body">
+        <div id="failure-list"><span id="failure-list-empty">No failures recorded.</span></div>
       </div>
     </div>
 
@@ -1677,6 +1718,40 @@ function buildHtml(jobs, error, editError) {
         }).catch(function() {});
       }
     })();
+
+    // ---- Recent Failures panel ----
+    var REASON_LABELS = {
+      'time':             'Time mismatch',
+      'instructor':       'Instructor mismatch',
+      'time-instructor':  'Time + Instructor mismatch',
+      'verify-time':      'Time mismatch',
+      'verify-instructor':'Instructor mismatch',
+      'verify-time-instructor': 'Time + Instructor mismatch',
+    };
+    function loadFailures() {
+      fetch('/api/failures').then(function(r){ return r.json(); }).then(function(files) {
+        var container = document.getElementById('failure-list');
+        if (!container) return;
+        if (!files.length) {
+          container.innerHTML = '<span id="failure-list-empty">No failures recorded.</span>';
+          return;
+        }
+        container.innerHTML = '';
+        files.forEach(function(f) {
+          var label = REASON_LABELS[f.reason] || ('Failure: ' + f.reason);
+          var ts    = new Date(f.mtime).toLocaleString();
+          var item  = document.createElement('div');
+          item.className = 'failure-item';
+          item.onclick   = function() { window.open('/screenshots/' + f.name, '_blank'); };
+          item.innerHTML =
+            '<img class="failure-thumb" src="/screenshots/' + f.name + '" alt="' + f.reason + '">' +
+            '<div><div class="failure-reason">\u274C ' + label + '</div><div class="failure-ts">' + ts + '</div></div>';
+          container.appendChild(item);
+        });
+      }).catch(function(){});
+    }
+    loadFailures();
+    setInterval(loadFailures, 10000);
   </script>
 </body>
 </html>`;
@@ -1962,6 +2037,30 @@ const server = http.createServer((req, res) => {
       }
     });
     return;
+
+  } else if (req.method === 'GET' && path === '/api/failures') {
+    // Return last 5 verify-fail screenshots, newest first.
+    const fsM = require('fs'), pathM = require('path'), dir = 'screenshots';
+    if (!fsM.existsSync(dir)) { json([]); return; }
+    const files = fsM.readdirSync(dir)
+      .filter(n => n.endsWith('.png') && n.includes('verify-'))
+      .map(name => {
+        const mtime = fsM.statSync(pathM.join(dir, name)).mtimeMs;
+        // Extract reason tag: "2026-04-08T14-52Z-verify-time.png" → "time"
+        const m = name.match(/verify-([^.]+)\.png$/);
+        return { name, mtime, reason: m ? m[1] : 'unknown' };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 5);
+    json(files);
+
+  } else if (req.method === 'GET' && path.startsWith('/screenshots/')) {
+    // Serve screenshot images statically.
+    const fsM = require('fs'), pathM = require('path');
+    const file = pathM.join('screenshots', pathM.basename(path));
+    if (!fsM.existsSync(file)) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    fsM.createReadStream(file).pipe(res);
 
   } else {
     res.writeHead(404);
