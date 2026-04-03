@@ -1060,7 +1060,7 @@ function buildHtml(jobs, error, editError) {
   <div class="page">
 
     <div class="page-header">
-      <h1>&#x1F916; YMCA BOT</h1>
+      <h1>&#x1F9D8; YMCA BOT</h1>
       <p>Booking control panel</p>
     </div>
     <div id="live-mode-indicator">&#x1F680; Live Mode Active</div>
