@@ -1,0 +1,129 @@
+Stop changing theories. The root cause has already been identified and verified.
+
+Please harden and lock in the exact fix that is now known to be correct.
+
+## Facts already established
+
+1. The class row is already visible on the schedule before booking opens.
+   Example on Wed 08:
+
+   * Core Pilates
+   * 7:45 a - 8:45 a
+   * Stephanie S.
+
+2. The Playwright browser was rendering times in UTC, causing a +7 hour shift:
+
+   * 7:45 a PDT appeared as 2:45 pm in the bot modal
+   * 10:35 a appeared as 5:35 pm
+   * 11:45 a appeared as 6:45 pm
+
+3. The correct fix is to set the Playwright browser context timezone to:
+
+   * `America/Los_Angeles`
+
+4. There was also a confirmed time-regex bug:
+
+   * `\b0?7:45\s*a` failed on combined card text like `Eugene Y7:45 a`
+   * the correct match is the looser pattern using the visible time text, e.g. `/7:45\s*a/i`
+
+5. After these fixes, the correct pre-open result is:
+
+   * `found_not_open_yet`
+   * because the class is found, but registration is not open yet
+
+## Goal
+
+Do a final hardening pass so this behavior is stable and the code does NOT drift back toward the wrong explanation.
+
+## Do NOT
+
+* do NOT reintroduce any explanation that says the class row itself appears only when booking opens
+* do NOT remove the Pacific timezone fix
+* do NOT go back to strict full-name matching
+* do NOT go back to brittle word-boundary time regex
+* do NOT change scheduler timing
+
+## Please do only this
+
+### PART 1 — Lock timezone to Pacific in the browser context
+
+Ensure the Playwright browser context is created with:
+
+```js
+timezoneId: "America/Los_Angeles"
+```
+
+Viewport should be set at the context level if needed.
+Do not leave any redundant page-level viewport code behind.
+
+### PART 2 — Keep the looser visible-time matching
+
+Use visible-time matching that correctly recognizes:
+
+* `7:45 AM`
+* `7:45 a`
+
+Do not use the old leading word-boundary pattern that failed against combined text.
+
+### PART 3 — Keep visible-row scoring
+
+The visible row for the class should score strongly when it contains:
+
+* `Core Pilates`
+* `7:45`
+* `Stephanie`
+
+Keep the scoring approach and keep logging the row scores.
+
+### PART 4 — Keep row-anchored click behavior
+
+After finding the best visible row:
+
+* scroll it into view
+* click the visible interactive child inside that row only
+* do NOT click generic image targets or wrapper divs
+
+### PART 5 — Keep modal verification
+
+After click:
+
+* verify expected time in Pacific-visible format
+* verify instructor by first-name/fuzzy match
+* abort if mismatch
+
+### PART 6 — Keep correct status messaging
+
+If the class row is found and clicked correctly but booking is not open yet, return:
+
+```js
+status: "found_not_open_yet"
+```
+
+with a message like:
+
+`Class found on schedule (Core Pilates · Wed 08 · 7:45 a · Stephanie). Registration is not open yet. Bot will retry during booking window.`
+
+Do NOT call this “not found.”
+
+### PART 7 — Add one final verification log block
+
+On every run, log all of these together in one place:
+
+* context timezone
+* expected target time
+* matched row score
+* matched row text preview
+* modal time text preview
+* final status
+
+Example format is fine as JSON or structured console logs.
+
+### PART 8 — Final explanation
+
+After making changes, explain only:
+
+1. where timezone is set
+2. where the time regex / time matching was fixed
+3. why the old UTC rendering caused the 2:45 pm mismatch
+4. why the correct pre-open state is `found_not_open_yet`
+5. confirmation that the old “class appears only when booking opens” theory is no longer used

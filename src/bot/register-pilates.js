@@ -90,7 +90,30 @@ async function runBookingJob(job, opts = {}) {
     ? instructor.trim().split(/\s+/)[0].toLowerCase()
     : 'stephanie';
   let browser;
-  let screenshotPath = null;
+  let screenshotPath   = null;
+  let _lastBestScore   = 0;
+  let _lastBestText    = '';
+  let _lastSecondCard  = null;
+  let _lastSecondScore = 0;
+  let _lastSecondText  = '';
+  let _lastModalPreview = '';
+
+  // logRunSummary — defined before the try block so it is in scope for both
+  // the try body and the catch handler.  Returns `result` so it can be inlined:
+  //   return logRunSummary({ status: '...', message: '...', screenshotPath });
+  function logRunSummary(result) {
+    console.log('\n--- RUN SUMMARY ---');
+    console.log(JSON.stringify({
+      contextTimezone:   'America/Los_Angeles',
+      expectedTime:      classTimeNorm || classTime || '(unknown)',
+      matchedRowScore:   _lastBestScore,
+      matchedRowPreview: _lastBestText     ? _lastBestText.slice(0, 100)     : '(no match)',
+      modalTimePreview:  _lastModalPreview || '(no modal opened)',
+      finalStatus:       result.status,
+    }, null, 2));
+    console.log('-------------------\n');
+    return result;
+  }
 
   try {
     browser = await chromium.launch({
@@ -155,7 +178,7 @@ async function runBookingJob(job, opts = {}) {
     if (stillOnLogin || !passwordFieldGone) {
       console.log('Login appears to have failed.');
       await snap();
-      return { status: 'error', message: 'Login failed or session not established', screenshotPath };
+      return logRunSummary({ status: 'error', message: 'Login failed or session not established', screenshotPath });
     }
     console.log('Auth looks valid — proceeding.');
 
@@ -171,7 +194,7 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
-      return { status: 'error', message: 'Session not established — schedule page requires login', screenshotPath };
+      return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath });
     }
     console.log('Auth valid on schedule page — continuing.');
 
@@ -314,14 +337,11 @@ async function runBookingJob(job, opts = {}) {
     // verification is the real safety gate that rejects wrong-time matches.
     const CONFIDENCE_THRESHOLD = 8;
 
-    // Side-channel from the most recent findTargetCard() call — used by the
-    // second-best fallback so we can try the next-ranked candidate once if the
-    // best candidate fails modal verification.
-    let _lastSecondCard  = null;   // Playwright locator or null
-    let _lastBestScore   = 0;
-    let _lastBestText    = '';
-    let _lastSecondScore = 0;
-    let _lastSecondText  = '';
+    // Side-channel vars (_lastBestScore, _lastBestText, _lastSecondCard,
+    // _lastSecondScore, _lastSecondText, _lastModalPreview) are declared
+    // before the try block so logRunSummary() can access them from both
+    // the try body and the catch handler.  They are updated by findTargetCard()
+    // and attemptClickAndVerify() as the run progresses.
 
     async function findTargetCard() {
       // Clear any previous markers (best and second-best)
@@ -814,7 +834,7 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await snap('not-found');
-      return { status: 'not_found', message: msg, screenshotPath };
+      return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
     }
 
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
@@ -894,6 +914,11 @@ async function runBookingJob(job, opts = {}) {
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
         const rawModal  = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
         const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
+        // Capture a short window around the time match for the consolidated run summary.
+        const _tmIdx = modalText.indexOf('7:45');
+        _lastModalPreview = _tmIdx >= 0
+          ? modalText.slice(Math.max(0, _tmIdx - 12), _tmIdx + 45).replace(/\s+/g, ' ').trim()
+          : modalText.slice(0, 60);
         const verifyTime = !!classTimeNorm && modalText.includes(classTimeNorm);
         const verifyInst = modalText.includes(instructorFirstName);
         console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
@@ -970,9 +995,9 @@ async function runBookingJob(job, opts = {}) {
             const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await snap('not-found-time-mismatch');
-            return { status: 'not_found', message: msg, screenshotPath };
+            return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
           }
-          return { status: 'error', message: secondResult.failMsg, screenshotPath };
+          return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath });
         }
         // Second-best passed verification — fall through to the booking step
       } else {
@@ -986,9 +1011,9 @@ async function runBookingJob(job, opts = {}) {
           const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await snap('not-found-time-mismatch');
-          return { status: 'not_found', message: msg, screenshotPath };
+          return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
         }
-        return { status: 'error', message: firstResult.failMsg, screenshotPath };
+        return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath });
       }
     }
 
@@ -1011,7 +1036,7 @@ async function runBookingJob(job, opts = {}) {
       if (hasLoginButton) {
         console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
         await snap();
-        return { status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath };
+        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath });
       }
 
       if (hasRegister) {
@@ -1058,7 +1083,7 @@ async function runBookingJob(job, opts = {}) {
             const msg = `Class found on schedule (${classDesc}). Registration is not open yet. Bot will retry during booking window.`;
             console.log('ℹ️  ' + msg);
             await snap('found-not-open');
-            return { status: 'found_not_open_yet', message: msg, screenshotPath };
+            return logRunSummary({ status: 'found_not_open_yet', message: msg, screenshotPath });
           }
           // Within 15-min sniper window — keep polling quickly.
           console.log(`Attempt 1: No register/waitlist button. Booking window opens in ${Math.round(msUntilBwOpen / 1000)}s — polling every 5s...`);
@@ -1141,18 +1166,18 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Class found on schedule (${classDesc}). Registration did not open within the retry window.`;
       console.log('ℹ️  ' + msg);
       await snap('found-not-open');
-      return { status: 'found_not_open_yet', message: msg, screenshotPath };
+      return logRunSummary({ status: 'found_not_open_yet', message: msg, screenshotPath });
     }
 
     const successMsg = DRY_RUN
       ? `DRY RUN complete for ${classTitle}`
       : `Registered for ${classTitle} with Stephanie`;
     await snap();
-    return { status: 'success', message: successMsg, screenshotPath };
+    return logRunSummary({ status: 'success', message: successMsg, screenshotPath });
 
   } catch (err) {
     console.error('❌ Error:', err.message);
-    return { status: 'error', message: err.message, screenshotPath };
+    return logRunSummary({ status: 'error', message: err.message, screenshotPath });
   } finally {
     if (browser) await browser.close();
   }
