@@ -593,6 +593,38 @@ function buildHtml(jobs, error, editError) {
     }
     .unpin-btn:hover { color: #1d3557; }
 
+    /* ---- success pulse (selected-job card) ---- */
+    .sel-success-pulse {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0;
+      pointer-events: none;
+      margin-top: 8px;
+    }
+    .sel-success-pulse.active {
+      animation: successPulse 1100ms ease-out forwards;
+    }
+    @keyframes successPulse {
+      0%   { opacity: 0;   transform: scale(1.05); }
+      15%  { opacity: 1;   transform: scale(1.00); }
+      70%  { opacity: 0.9; transform: scale(1.00); }
+      100% { opacity: 0;   transform: scale(0.97); }
+    }
+    .ssp-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22,163,74,0.18);
+      flex-shrink: 0;
+    }
+    .ssp-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #16a34a;
+      letter-spacing: 0.01em;
+    }
+
     /* ---- haptic feedback ---- */
     #haptic-flash {
       position: fixed;
@@ -1219,6 +1251,9 @@ function buildHtml(jobs, error, editError) {
         <div id="sel-booked-box" class="sel-booked-box" ${firstIsBooked ? '' : 'style="display:none"'}>
           <span class="booked-icon">&#10003;</span>
           <span id="sel-booked-text">${first && first.target_date ? `Booked for ${esc(first.target_date)}` : 'Booked this week'}</span>
+        </div>
+        <div id="sel-success-pulse" class="sel-success-pulse">
+          <span class="ssp-dot"></span><span class="ssp-label">Booked!</span>
         </div>
         <div class="pin-indicator" id="sel-pin-box" style="display:none">
           &#128204; Pinned&nbsp;<button class="unpin-btn" onclick="unpin()">Unpin</button>
@@ -2241,12 +2276,21 @@ function buildHtml(jobs, error, editError) {
       el.classList.add('checkmark-show');
     }
 
+    function triggerSuccessPulse() {
+      var el = document.getElementById('sel-success-pulse');
+      if (!el) return;
+      el.classList.remove('active');
+      void el.offsetWidth;
+      el.classList.add('active');
+    }
+
     function triggerUnifiedSuccess() {
       if (navigator.vibrate) navigator.vibrate(10);
       requestAnimationFrame(function() {
         triggerFlash();
         triggerBounce();
         triggerCheckmark();
+        triggerSuccessPulse();
       });
     }
 
