@@ -957,6 +957,51 @@ function buildHtml(jobs, error, editError) {
 
       /* ---- More Actions button (mobile) ---- */
       .mobile-more-btn { display: block !important; }
+
+      /* ================================================================
+         MOBILE APP-LIKE POLISH
+         ================================================================ */
+
+      /* More breathing room between sections */
+      .page { gap: 20px; }
+
+      /* Safe-area-aware top padding on iPhone */
+      .main-container {
+        padding-top: max(20px, calc(14px + env(safe-area-inset-top)));
+      }
+
+      /* Compact app-name header — not the focal point on mobile */
+      .page-header { padding: 0; }
+      .page-header h1 { font-size: 17px; }
+      .page-header p  { display: none; }
+
+      /* Live-mode indicator duplicates dry-run badge — hide on mobile */
+      #live-mode-indicator { display: none; }
+
+      /* Selected Job: remove admin label, bigger hero typography */
+      .selected-job-card .card-header { display: none; }
+      .selected-job-card .card-body   { padding: 20px 18px 18px; }
+      .selected-job-card .selected-summary {
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+      }
+      .selected-job-card .selected-meta {
+        font-size: 14px;
+        margin-top: 6px;
+        line-height: 1.5;
+        color: #666;
+      }
+      .selected-job-card .sel-countdown { font-size: 14px; margin-top: 6px; }
+
+      /* Selected job card slightly stronger shadow = hero card */
+      .selected-job-card {
+        box-shadow: 0 3px 20px rgba(0,0,0,0.10);
+      }
+
+      /* Actions card: remove admin-style "Actions" label on mobile */
+      [data-mobile-section="actions"] .card-header { display: none; }
     }
 
     /* Desktop: hide mobile cards and More Actions button */
@@ -1068,6 +1113,10 @@ function buildHtml(jobs, error, editError) {
       /* Reset desktop color overrides that bleed in via .sniper class */
       #next-job-banner.sniper  { color: #1a1a2e; font-weight: normal; }
       #next-job-banner.warning { background: rgba(255,255,255,0.97); border-color: rgba(0,0,0,0.07); }
+      /* Slightly larger type in the banner for easy one-glance reading */
+      #next-job-banner .bnr-title { font-size: 15px; }
+      #next-job-banner .bnr-sub   { font-size: 13px; }
+      #next-job-banner:not(.hidden) { padding: 12px 16px; }
 
       /* Mode switcher — segmented control */
       .mode-seg {

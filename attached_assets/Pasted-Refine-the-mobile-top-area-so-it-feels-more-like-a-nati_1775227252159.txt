@@ -1,0 +1,110 @@
+Refine the mobile top area so it feels more like a native iPhone app launch/header experience.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI and top-of-screen presentation.
+
+GOAL:
+Make the top of the mobile interface feel more like a real iPhone app:
+- cleaner app-like header
+- stronger identity
+- calmer hierarchy
+- safe-area aware
+- suitable for adding to the iPhone home screen
+
+1) ADD A MOBILE APP HEADER
+
+At the top of the mobile UI, create a dedicated header section that feels like an app header, not a dashboard title.
+
+Include:
+- a small app icon / app badge area on the left
+- app name or short title
+- short subtitle or status line on the right/below
+- selected job summary or current mode if it fits cleanly
+
+This should sit above the Now / Next banner and main content.
+
+2) ADD A SIMPLE APP ICON / BADGE
+
+Create a small square or rounded-square icon area that looks like an iPhone app icon placeholder.
+
+Style:
+- rounded square
+- soft background color or subtle gradient
+- centered glyph/emoji/initials
+- clean Apple-like feel
+
+Examples:
+- “Y”
+- “YM”
+- a simple dumbbell / yoga / calendar symbol if already available
+- do NOT add heavy artwork or external assets unless easy
+
+Keep it lightweight and code-based if possible.
+
+3) APP TITLE + SUBTITLE
+
+Next to or below the icon, show:
+- app title, e.g. “YMCA Booker”
+- subtitle/status line, e.g.:
+  - “Core Pilates Assistant”
+  - “Ready”
+  - “Dry Run Mode”
+  - “Live Mode”
+
+Keep this calm and minimal.
+
+4) SAFE-AREA AWARE TOP SPACING
+
+Use iPhone-safe spacing at the top:
+- include top padding that respects the notch/status area if needed
+- keep the header from feeling jammed into the screen edge
+- maintain a clean top margin
+
+5) STICKY / NON-STICKY DECISION
+
+If it looks good:
+- the top app header can remain static
+- the Now / Next banner below it can stay sticky
+
+Do NOT make too many stacked sticky elements if that hurts usability.
+
+6) APP-LIKE VISUAL STYLE
+
+Make the header feel like a native app launch zone:
+- clean white or very soft neutral background
+- subtle separation from body content
+- stronger typography than normal cards
+- a little more breathing room than the rest of the page
+
+Avoid:
+- heavy borders
+- loud colors
+- clutter
+- lots of badges at once
+
+7) OPTIONAL HOME-SCREEN FEEL
+
+If easy:
+- make the icon area and title feel like something that would look good when saved as a home-screen web app
+- keep it simple and polished
+
+8) MOBILE ONLY
+
+This is primarily for mobile:
+@media (max-width: 768px)
+
+Desktop should remain mostly unchanged.
+
+AFTER CHANGES EXPLAIN:
+- how the mobile app-style header was added
+- how the icon/badge area was created
+- how safe-area spacing was handled
+- how this improves the iPhone app feel without changing logic

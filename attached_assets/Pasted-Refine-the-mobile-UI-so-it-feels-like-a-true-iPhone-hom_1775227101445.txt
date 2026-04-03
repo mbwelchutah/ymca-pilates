@@ -1,0 +1,126 @@
+Refine the mobile UI so it feels like a true iPhone home-screen app.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI and visual hierarchy.
+
+GOAL:
+Make the app feel calmer, cleaner, and more like a native iPhone utility:
+- larger readable type
+- more breathing room
+- fewer visible controls at once
+- stronger top-level hierarchy
+- safe-area aware bottom and top spacing
+- easy one-handed use
+
+1) MOBILE-FIRST HOME-SCREEN FEEL
+
+Under mobile breakpoint:
+@media (max-width: 768px)
+
+Refine the page so it feels like an app dashboard, not a desktop admin page.
+
+2) APP-LIKE TOP AREA
+
+At the top of the mobile UI:
+- add a more app-like header area
+- include:
+  - app title or simple title
+  - selected job title
+  - short subtitle (day / time / instructor)
+  - live status / dry run / booked / waiting if already available
+
+Keep it visually clean and compact.
+
+3) BIGGER MOBILE TYPOGRAPHY
+
+Improve mobile readability:
+- larger title text
+- slightly larger job titles
+- more generous line height
+- more spacing between sections
+
+Do not overdo it — just make it clearly easier to read on iPhone.
+
+4) BETTER SAFE-AREA SPACING
+
+Use iPhone-safe spacing:
+- padding-top with safe area support if helpful
+- padding-bottom: env(safe-area-inset-bottom)
+- make sure sticky bottom controls do not collide with Home indicator
+- make sure top content does not feel jammed against screen edges
+
+5) CALMER VISUAL HIERARCHY
+
+Reduce “dashboard clutter” on mobile:
+- fewer visible buttons in the main scroll
+- keep destructive controls hidden in More Actions
+- use subtle card grouping
+- keep primary actions obvious
+- reduce visual competition between cards, badges, and buttons
+
+6) JOB CARDS SHOULD FEEL NATIVE
+
+Polish the mobile job cards:
+- rounded corners
+- comfortable padding
+- subtle border or shadow
+- cleaner internal spacing
+- selected state should be obvious but soft
+- tap feedback should remain subtle
+
+7) TOP STATUS / NEXT CLASS AREA
+
+Polish the “Now / Next Class” banner:
+- make it feel integrated with the rest of the mobile UI
+- slightly stronger hierarchy than a normal card
+- still subtle, not flashy
+- easy to scan with one glance
+
+8) STICKY BOTTOM ACTION BAR
+
+Keep the sticky bottom Run bar, but polish it further:
+- make it feel more native
+- good spacing
+- clean rounded top edge
+- subtle border/shadow
+- primary button strongest
+- tap targets comfortably large
+
+9) BUTTON / CONTROL SIZING
+
+Ensure all important tap targets are iPhone-friendly:
+- comfortable minimum touch size
+- enough spacing between controls
+- toggles and buttons should not feel cramped
+
+10) REDUCE DESKTOP LEFTOVERS ON MOBILE
+
+On mobile:
+- hide or simplify anything that still feels too “admin dashboard”
+- preserve function, but reduce density
+- mobile should prioritize:
+  - selected job
+  - next action
+  - next class timing
+  - job cards
+  - more actions hidden
+
+11) KEEP DESKTOP INTACT
+
+Desktop should remain mostly unchanged.
+This is a mobile polish pass only.
+
+AFTER CHANGES EXPLAIN:
+- what was changed to make it feel more like an iPhone app
+- how typography and spacing were improved
+- how safe-area spacing was handled
+- what was simplified on mobile
+- what remains intentionally unchanged
