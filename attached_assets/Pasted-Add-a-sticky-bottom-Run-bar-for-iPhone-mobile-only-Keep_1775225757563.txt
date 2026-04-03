@@ -1,0 +1,76 @@
+Add a sticky bottom Run bar for iPhone/mobile only.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- DB
+- routes
+- job behavior
+
+Only improve the mobile UI.
+
+GOAL:
+On iPhone, keep the main run action always reachable with a sticky bottom bar, while preserving the current desktop layout.
+
+1) MOBILE ONLY
+Use a mobile breakpoint like:
+@media (max-width: 768px) { ... }
+
+Desktop should stay unchanged.
+
+2) ADD STICKY BOTTOM RUN BAR
+On mobile, add a fixed bottom action bar that stays visible while scrolling.
+
+Inside it, include:
+- primary button: Run Selected (Scheduler Mode)
+- optional secondary small button: Run Now (Direct)
+
+Keep it simple:
+- full-width bar
+- clean iOS-like styling
+- rounded top corners
+- subtle shadow
+- safe-area bottom padding
+
+Use CSS like:
+position: fixed;
+left: 0;
+right: 0;
+bottom: 0;
+z-index: 1000;
+padding-bottom: env(safe-area-inset-bottom);
+
+3) MAKE ROOM FOR THE BAR
+Because the bar is fixed, add enough bottom padding to the main mobile scroll container so content is not hidden behind it.
+
+Example:
+padding-bottom: 110px;
+or whatever fits the final bar height cleanly.
+
+4) iOS-FRIENDLY BUTTON SIZING
+Make sure the sticky buttons are easy to tap:
+- minimum height around 44px or larger
+- good spacing
+- not cramped
+- primary action visually strongest
+
+5) KEEP MAIN ACTIONS CLEAN
+If the sticky bottom bar is present on mobile:
+- remove duplicate primary run buttons from the visible Actions stack
+- keep low-frequency actions in More Actions
+- do NOT remove the actions entirely, just avoid redundant clutter on mobile
+
+6) PRESERVE EXISTING LOGIC
+The sticky Run Selected button should call the exact same existing action/handler as the current Run Selected (Scheduler Mode) button.
+The optional Run Now (Direct) button should call the same existing handler as the current direct run button.
+
+Do NOT create new backend behavior.
+
+7) EXPLAIN AFTER CHANGES
+Explain:
+- how the sticky bottom bar was added
+- how safe-area spacing was handled
+- how content was padded so nothing is hidden
+- which duplicate buttons were removed from the mobile visible stack
