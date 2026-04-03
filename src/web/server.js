@@ -922,7 +922,7 @@ function buildHtml(jobs, error, editError) {
     #sticky-run-bar {
       display: none;               /* hidden on desktop */
     }
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       #sticky-run-bar {
         display: flex;
         align-items: center;
@@ -959,11 +959,14 @@ function buildHtml(jobs, error, editError) {
         font-size: 13px;
         font-weight: 600;
         min-height: 50px;
-        min-width: 90px;
+        min-width: 120px;
         cursor: pointer;
         padding: 0 12px;
       }
       #sticky-run-bar .srb-secondary:active { background: #e0e0e0; }
+
+      /* Hide duplicate run buttons in Actions card — they live in the sticky bar */
+      #btn-run, #btn-run-sched-sel { display: none !important; }
 
       /* Extra bottom padding so content clears the sticky bar */
       .main-container {
@@ -1245,8 +1248,8 @@ function buildHtml(jobs, error, editError) {
 
   <!-- Sticky bottom run bar (mobile only — fixed position, outside scroll container) -->
   <div id="sticky-run-bar">
-    <button class="srb-primary" onclick="runSelectedScheduler()">&#9654; Run Selected</button>
-    <button class="srb-secondary" onclick="runSelected()">Direct</button>
+    <button class="srb-primary" onclick="runSelectedScheduler()">&#9654; Run Selected (Scheduler Mode)</button>
+    <button class="srb-secondary" onclick="runSelected()">Run Now (Direct)</button>
   </div>
 
   <!-- Trace viewer modal — populated by openTrace() -->
