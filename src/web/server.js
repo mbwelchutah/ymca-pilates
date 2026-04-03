@@ -3016,6 +3016,7 @@ function buildHtml(jobs, error, editError) {
       var twTitle = document.getElementById('tw-title');
       var twMeta  = document.getElementById('tw-meta');
       var twPill  = document.getElementById('tw-pill');
+      var twBadge = document.getElementById('tw-mode-badge');
       if (!twTitle) return;
 
       // Title
@@ -3053,6 +3054,11 @@ function buildHtml(jobs, error, editError) {
         twPill.textContent = cdText || '\u2014';
         twPill.className   = 'tw-pill';
         if (twLabel) twLabel.textContent = 'NEXT CLASS';
+      }
+
+      // Mode badge: text reflects current dry-run state; CSS hides it when Live
+      if (twBadge) {
+        twBadge.textContent = document.body.classList.contains('live-mode') ? '' : 'Dry Run';
       }
     }
 
