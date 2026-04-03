@@ -182,7 +182,7 @@ async function runBookingJob(job, opts = {}) {
     }
     console.log('Auth looks valid — proceeding.');
 
-    // Step 2: Go to schedule and filter by Stephanie Sanders instructor
+    // Step 2: Go to schedule and filter by the job's instructor
     console.log('Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
     await page.waitForLoadState('networkidle');
@@ -300,8 +300,31 @@ async function runBookingJob(job, opts = {}) {
     // Event Name filter (index 3) is intentionally skipped: its native selectOption fails
     // ("did not find some options") and the pill-click fallback corrupts Bubble.io state
     // by partially opening the dropdown (observed: count went 79→14 from an aborted click).
-    const categoryApplied   = await applyFilterBySelectIndex(0, 'Yoga/Pilates',      'Category');
-    const instructorApplied = await applyFilterBySelectIndex(2, 'Stephanie Sanders', 'Instructor');
+    const categoryApplied = await applyFilterBySelectIndex(0, 'Yoga/Pilates', 'Category');
+
+    // Resolve instructor filter value: the DB may store just a first name (e.g. "Gretl")
+    // or a full name (e.g. "Stephanie Sanders").  Find the best match from the dropdown
+    // so selectOption() can do an exact-text match against the option element.
+    let instructorForFilter = null;
+    if (instructor) {
+      const instrDropdown = allSelectInfo.find(s => s.index === 2);
+      if (instrDropdown) {
+        const instrLower = instructor.trim().toLowerCase();
+        // Prefer exact match first, then starts-with, then contains
+        const exactMatch    = instrDropdown.options.find(o => o.trim().toLowerCase() === instrLower);
+        const startsMatch   = instrDropdown.options.find(o => o.trim().toLowerCase().startsWith(instrLower));
+        const containsMatch = instrDropdown.options.find(o => o.trim().toLowerCase().includes(instrLower));
+        instructorForFilter = exactMatch || startsMatch || containsMatch || null;
+        if (instructorForFilter) {
+          console.log(`  Instructor lookup: "${instructor}" → "${instructorForFilter}"`);
+        } else {
+          console.log(`  ⚠️ Instructor lookup: no dropdown option matched "${instructor}" — will scan without instructor filter.`);
+        }
+      }
+    }
+    const instructorApplied = instructorForFilter
+      ? await applyFilterBySelectIndex(2, instructorForFilter, 'Instructor')
+      : false;
 
     if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
     if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
@@ -319,7 +342,7 @@ async function runBookingJob(job, opts = {}) {
     //  B) Log every candidate row's text so we can see what's in the DOM.
     //  C) Score each row:
     //       title match "Core Pilates"  → +5  (case-insensitive substring)
-    //       time  match "7:45"          → +5  (AM indicator — never PM)
+    //       time  match classTimeNorm    → +5  (e.g. "7:45 a" for AM, "4:20 p" for PM)
     //       instr match "Stephanie"     → +3  (first name only)
     //  D) Pick the highest-scoring, most-specific (fewest descendants) element
     //     with score ≥ CONFIDENCE_THRESHOLD.  If the best fails post-click
@@ -352,7 +375,7 @@ async function runBookingJob(job, opts = {}) {
           .forEach(el => el.removeAttribute('data-target-class-second'));
       });
 
-      const result = await page.evaluate(({ classTitleLower, instrFirst, confidenceThreshold }) => {
+      const result = await page.evaluate(({ classTitleLower, instrFirst, confidenceThreshold, classTimeNorm }) => {
         const SKIP_TAGS = new Set(['OPTION','SELECT','SCRIPT','STYLE','HEAD','HTML','BODY','NOSCRIPT','SVG','PATH']);
 
         // Normalize: collapse all whitespace variants (including Bubble.io's \u00A0)
@@ -361,14 +384,21 @@ async function runBookingJob(job, opts = {}) {
         }
 
         // Matching rules:
-        //   - time: "7:45" followed by optional space then "a" or "A" (am indicator).
-        //     Matches "7:45 a", "7:45a", "7:45 AM", "7:45am", "07:45 a", "07:45 AM"
-        //     and also "Eugene Y7:45 a" (Y and 7 are both word chars → \b fails there).
-        //     We do NOT use \b or ^/$ anchors — the trailing "a" is the sole AM guard;
-        //     "7:45 p" / "7:45pm" never end with "a" so they are safely excluded.
+        //   - time: built dynamically from classTimeNorm passed in from the outer scope.
+        //     "7:45 a"  → /7:45\s*a/i   (AM class)
+        //     "4:20 p"  → /4:20\s*p/i   (PM class)
+        //     The AM/PM letter after the digits is the sole discriminator; no \b anchor
+        //     is used because adjacent word chars (e.g. "Eugene Y7:45 a") prevent \b
+        //     from firing before the digit.
         //   - title: "Core Pilates" (case-insensitive, any whitespace)
-        //   - instr: first name only ("stephanie" matches "Stephanie S.")
-        const timeAmRe = /7:45\s*a/i;
+        //   - instr: first name only ("gretl" matches "Gretl G.", "stephanie" matches "Stephanie S.")
+        let timeAmRe;
+        if (classTimeNorm) {
+          const _tm = classTimeNorm.match(/^(\d+:\d+)\s*([ap])/i);
+          timeAmRe = _tm ? new RegExp(_tm[1] + '\\s*' + _tm[2], 'i') : /(?!)/;
+        } else {
+          timeAmRe = /(?!)/; // no time specified — never score on time alone
+        }
         const titleRe  = /core[\s\u00A0]+pilates/i;
         const instrRe  = new RegExp(instrFirst, 'i');
 
@@ -457,7 +487,7 @@ async function runBookingJob(job, opts = {}) {
           })),
           allTexts,
         };
-      }, { classTitleLower, instrFirst: instructorFirstName, confidenceThreshold: CONFIDENCE_THRESHOLD });
+      }, { classTitleLower, instrFirst: instructorFirstName, confidenceThreshold: CONFIDENCE_THRESHOLD, classTimeNorm });
 
       // Log ALL visible rows that contained any signal (title, time, or instructor)
       if (result.allTexts && result.allTexts.length > 0) {
@@ -915,7 +945,9 @@ async function runBookingJob(job, opts = {}) {
         const rawModal  = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
         const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
         // Capture a short window around the time match for the consolidated run summary.
-        const _tmIdx = modalText.indexOf('7:45');
+        // Use the actual time digits from classTimeNorm (e.g. "7:45" or "4:20").
+        const _timeDigits = classTimeNorm ? classTimeNorm.split(/\s/)[0] : '';
+        const _tmIdx = _timeDigits ? modalText.indexOf(_timeDigits) : -1;
         _lastModalPreview = _tmIdx >= 0
           ? modalText.slice(Math.max(0, _tmIdx - 12), _tmIdx + 45).replace(/\s+/g, ' ').trim()
           : modalText.slice(0, 60);

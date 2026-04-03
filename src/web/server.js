@@ -1976,10 +1976,11 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const result = await runBookingJob({
-          classTitle: dbJob.class_title,
-          classTime:  dbJob.class_time,
-          dayOfWeek:  dbJob.day_of_week,
-          targetDate: dbJob.target_date || null,
+          classTitle:  dbJob.class_title,
+          classTime:   dbJob.class_time,
+          instructor:  dbJob.instructor  || null,
+          dayOfWeek:   dbJob.day_of_week,
+          targetDate:  dbJob.target_date  || null,
         }, { dryRun: getDryRun() });
         const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found'];
         setLastRun(dbJob.id, result.status, NON_SUCCESS_STATUSES.includes(result.status) ? (result.message || null) : null);
@@ -2004,6 +2005,7 @@ const server = http.createServer((req, res) => {
       id:          dbJob.id,
       classTitle:  dbJob.class_title,
       classTime:   dbJob.class_time,
+      instructor:  dbJob.instructor   || null,
       dayOfWeek:   dbJob.day_of_week,
       targetDate:  dbJob.target_date  || null,
       maxAttempts: 1,

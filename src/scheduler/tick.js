@@ -59,10 +59,11 @@ async function runTick({ onlyJobId = null } = {}) {
 
   for (const dbJob of jobs) {
     const job = {
-      classTitle: dbJob.class_title,
-      classTime:  dbJob.class_time,
-      dayOfWeek:  dbJob.day_of_week,
-      targetDate: dbJob.target_date || null,
+      classTitle:  dbJob.class_title,
+      classTime:   dbJob.class_time,
+      instructor:  dbJob.instructor  || null,
+      dayOfWeek:   dbJob.day_of_week,
+      targetDate:  dbJob.target_date  || null,
     };
 
     let phase;
