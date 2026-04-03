@@ -23,7 +23,7 @@ function useCountdown(targetMs: number | null) {
     if (!targetMs) { setDisplay(''); return }
     const tick = () => {
       const diff = targetMs - Date.now()
-      if (diff <= 0) { setDisplay('Now'); return }
+      if (diff <= 0) { setDisplay(''); return }
       const d = Math.floor(diff / 86400000)
       const h = Math.floor((diff % 86400000) / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
@@ -40,20 +40,20 @@ function useCountdown(targetMs: number | null) {
 }
 
 const PHASE_CONFIG: Record<Phase, { label: string; dotColor: 'gray' | 'amber' | 'blue' | 'green' | 'red'; headerSubtitle: string }> = {
-  too_early:  { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting' },
+  too_early:  { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting'      },
   warmup:     { label: 'Opening Soon',  dotColor: 'amber', headerSubtitle: 'Opening Soon' },
-  sniper:     { label: 'Booking Now',   dotColor: 'blue',  headerSubtitle: 'Booking Now' },
-  late:       { label: 'Window Closed', dotColor: 'red',   headerSubtitle: 'Window Closed' },
-  unknown:    { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting' },
+  sniper:     { label: 'Booking Now',   dotColor: 'blue',  headerSubtitle: 'Booking Now'  },
+  late:       { label: 'Window Closed', dotColor: 'red',   headerSubtitle: 'Window Closed'},
+  unknown:    { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting'      },
 }
 
 const RESULT_CONFIG: Record<string, { label: string; dotColor: 'gray' | 'green' | 'amber' | 'red' | 'blue' }> = {
-  booked:              { label: 'Booked',          dotColor: 'green' },
+  booked:              { label: 'Booked',           dotColor: 'green' },
   dry_run:             { label: 'Simulated Booking', dotColor: 'blue'  },
-  found_not_open_yet:  { label: 'Not Open Yet',    dotColor: 'amber' },
-  not_found:           { label: 'Class Not Found', dotColor: 'red'   },
-  error:               { label: 'Error',            dotColor: 'red'   },
-  skipped:             { label: 'Skipped',          dotColor: 'gray'  },
+  found_not_open_yet:  { label: 'Not Open Yet',     dotColor: 'amber' },
+  not_found:           { label: 'Class Not Found',  dotColor: 'red'   },
+  error:               { label: 'Error',             dotColor: 'red'   },
+  skipped:             { label: 'Skipped',           dotColor: 'gray'  },
 }
 
 function formatDayTime(job: Job) {
@@ -67,7 +67,6 @@ const PHASE_STEP: Record<Phase, number> = { too_early: 0, warmup: 1, sniper: 2, 
 
 export function NowScreen({ appState, selectedJobId, loading, error, refresh }: NowScreenProps) {
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
-  // Prefer the selected job's own enriched phase/window; fall back to appState top-level.
   const phase: Phase = (job?.phase ?? appState.phase) as Phase
   const cfg = PHASE_CONFIG[phase]
   const countdown = useCountdown(job?.bookingOpenMs ?? appState.bookingOpenMs ?? null)
@@ -112,7 +111,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   return (
     <>
       <AppHeader
-        subtitle={cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : ' · Live')}
+        subtitle={cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : '')}
       />
 
       <ScreenContainer>
@@ -142,16 +141,33 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               </p>
             </>
           ) : (
-            <p className="text-[17px] text-text-secondary mb-3">No class selected</p>
+            <div className="mb-3">
+              <p className="text-[22px] font-semibold text-text-primary">No class selected</p>
+              <p className="text-[13px] text-text-secondary mt-1">
+                Add a class in the Plan tab to start watching
+              </p>
+            </div>
           )}
 
-          {/* Booked success OR countdown */}
+          {/* Booked → success; Sniper → booking in progress; Late → closed; else → countdown */}
           {isBooked ? (
             <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="green" />
               <span className="text-[17px] font-semibold text-accent-green">
                 {job?.last_result === 'dry_run' ? 'Simulated Booking' : 'Booked'}
               </span>
+            </div>
+          ) : phase === 'sniper' ? (
+            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              <StatusDot color="blue" />
+              <span className="text-[17px] font-semibold text-accent-blue">
+                Booking in progress…
+              </span>
+            </div>
+          ) : phase === 'late' ? (
+            <div className="bg-surface rounded-xl px-4 py-3 flex items-center gap-2.5">
+              <StatusDot color="gray" />
+              <span className="text-[16px] text-text-secondary">Booking window has closed</span>
             </div>
           ) : (
             <div className="bg-surface rounded-xl px-4 py-3 flex items-baseline gap-2">
@@ -168,24 +184,25 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           <SectionHeader title="Progress" />
           <div className="flex items-center mt-2 gap-1">
             {STEPS.map((step, i) => {
-              const done    = i < stepIdx
-              const current = i === stepIdx
-              const future  = i > stepIdx
+              // When booked, the current (Done) step is also highlighted green
+              const done    = i < stepIdx || (isBooked && i === stepIdx)
+              const current = i === stepIdx && !isBooked
+              const future  = !done && !current
               return (
                 <div key={step} className="flex-1 flex flex-col items-center gap-1.5">
                   <div
                     className={`
                       h-1.5 w-full rounded-pill
-                      ${done    ? 'bg-accent-green'  : ''}
-                      ${current ? 'bg-accent-blue'   : ''}
-                      ${future  ? 'bg-divider'        : ''}
+                      ${done    ? 'bg-accent-green' : ''}
+                      ${current ? 'bg-accent-blue'  : ''}
+                      ${future  ? 'bg-divider'       : ''}
                     `}
                   />
                   <span className={`
                     text-[10px] font-medium text-center leading-tight
-                    ${done    ? 'text-accent-green'    : ''}
-                    ${current ? 'text-accent-blue'     : ''}
-                    ${future  ? 'text-text-muted'      : ''}
+                    ${done    ? 'text-accent-green' : ''}
+                    ${current ? 'text-accent-blue'  : ''}
+                    ${future  ? 'text-text-muted'   : ''}
                   `}>
                     {step}
                   </span>
@@ -205,13 +222,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           <>
             <SectionHeader title="Details" />
             <Card padding="none">
-              <DetailRow label="Job" value={`#${job.id}`} />
+              <DetailRow label="Class" value={`#${job.id}`} />
               <DetailRow label="Status" value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
-              <DetailRow label="Opens" value={(job?.bookingOpenMs ?? appState.bookingOpenMs)
+              <DetailRow label="Window Opens" value={(job?.bookingOpenMs ?? appState.bookingOpenMs)
                 ? new Date((job?.bookingOpenMs ?? appState.bookingOpenMs)!).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
                 : '—'
               } />
-              <DetailRow label="Last Run" value={job.last_run_at ? new Date(job.last_run_at).toLocaleString() : '—'} />
+              <DetailRow label="Last Run" value={job.last_run_at
+                ? new Date(job.last_run_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                : '—'
+              } />
               <DetailRow label="Mode" value={appState.dryRun ? 'Simulation' : 'Live'} last />
             </Card>
           </>

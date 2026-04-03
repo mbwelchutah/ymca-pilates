@@ -172,7 +172,7 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
           <>
             <SectionHeader title="Booking Window" />
             <Card padding="none">
-              <DetailRow label="Job" value={selectedJob ? `#${selectedJob.id} — ${selectedJob.name}` : '—'} />
+              <DetailRow label="Job" value={selectedJob ? `#${selectedJob.id} — ${selectedJob.class_title}` : '—'} />
               <DetailRow label="Opens" value={fmt(bookingOpenMs)} />
               <DetailRow label="Warmup" value={warmupMs ? fmt(warmupMs) : '—'} last />
             </Card>
