@@ -149,12 +149,16 @@ function buildHtml(jobs, error, editError) {
             data-last-error-msg="${esc(j.last_error_message || '')}"
             data-booking-open="${bookingOpenMs || ''}"
             onclick="selectMobileCard(this)">
-          <div class="mjc-row">
-            <span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}"></span>
-            <strong class="mjc-title">${esc(j.class_title)}</strong>
-            <span class="mjc-id">#${j.id}</span>
+          <div class="mjc-top">
+            <div class="mjc-title-group">
+              <strong class="mjc-title">${esc(j.class_title)}</strong>
+              <span class="mjc-id">#${j.id}</span>
+            </div>
+            <span class="mjc-status-badge ${j.is_active ? 'mjc-status-active' : 'mjc-status-inactive'}">${j.is_active ? 'Active' : 'Off'}</span>
           </div>
-          <div class="mjc-meta">${esc(j.day_of_week || '\u2014')} \u00b7 ${esc(j.class_time || '\u2014')} \u00b7 ${esc(j.instructor || '\u2014')}</div>
+          <div class="mjc-detail">${esc(j.day_of_week || '\u2014')} \u00b7 ${esc(j.class_time || '\u2014')}</div>
+          ${j.instructor ? `<div class="mjc-detail">${esc(j.instructor)}</div>` : ''}
+          ${j.target_date ? `<div class="mjc-detail mjc-date-line">\uD83D\uDCC5\u00a0${esc(j.target_date)}</div>` : ''}
           <div class="mjc-badges">
             <span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>
             ${jobBooked ? '<span class="badge-booked">\u2713\u00a0Booked</span>' : ''}
@@ -847,28 +851,69 @@ function buildHtml(jobs, error, editError) {
       .desktop-table-card { display: none !important; }
       .mobile-jobs-card   { display: block !important; }
 
+      /* Strip the outer card shell so individual cards float freely */
+      .mobile-jobs-card {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 12px 0 0;
+      }
+      .mobile-jobs-card .card-header {
+        background: transparent;
+        border-bottom: none;
+        padding-left: 2px;
+        padding-bottom: 6px;
+      }
+
+      /* Individual floating card */
       .mobile-job-card {
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.09), 0 0 1px rgba(0,0,0,0.05);
+        margin-bottom: 10px;
         padding: 14px 16px;
-        border-bottom: 1px solid #f0f0f0;
         cursor: pointer;
-        transition: background 0.12s;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
       }
-      .mobile-job-card:last-child { border-bottom: none; }
-      .mobile-job-card:active     { background: #f5f8ff; }
-      .mobile-job-card.selected   {
-        background: #eef3ff;
-        box-shadow: inset 4px 0 0 #457b9d;
+      .mobile-job-card:last-child { margin-bottom: 0; }
+      .mobile-job-card:active {
+        transform: scale(0.978);
+        box-shadow: 0 0 2px rgba(0,0,0,0.05);
       }
-      .mjc-row {
+      .mobile-job-card.selected {
+        box-shadow: 0 0 0 2px #0071e3, 0 2px 10px rgba(0,113,227,0.10);
+      }
+
+      /* Card internal layout */
+      .mjc-top {
         display: flex;
-        align-items: center;
-        gap: 7px;
-        margin-bottom: 4px;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 7px;
       }
-      .mjc-title { font-size: 15px; font-weight: 600; color: #1a1a2e; flex: 1; }
-      .mjc-id    { font-size: 11px; color: #bbb; font-weight: 400; }
-      .mjc-meta  { font-size: 13px; color: #666; margin-bottom: 7px; }
-      .mjc-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+      .mjc-title-group { flex: 1; }
+      .mjc-title { font-size: 15px; font-weight: 700; color: #1a1a2e; display: block; }
+      .mjc-id    { font-size: 11px; color: #c8c8c8; font-weight: 400; display: block; margin-top: 1px; }
+      .mjc-status-badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 20px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .mjc-status-active   { background: #e6f4ea; color: #2a7a36; }
+      .mjc-status-inactive { background: #f2f2f7; color: #aaa; }
+      .mjc-detail {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 3px;
+        line-height: 1.45;
+      }
+      .mjc-date-line { color: #888; }
+      .mjc-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
 
       /* ---- More Actions button (mobile) ---- */
       .mobile-more-btn { display: block !important; }

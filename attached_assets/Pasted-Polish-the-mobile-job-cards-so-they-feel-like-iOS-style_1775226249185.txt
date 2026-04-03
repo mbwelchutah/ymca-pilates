@@ -1,0 +1,135 @@
+Polish the mobile job cards so they feel like iOS-style cards (similar to Settings / Wallet).
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job selection behavior
+
+Only improve visual layout and interaction for mobile.
+
+GOAL:
+Make each job feel like a clean, tappable iPhone card with clear hierarchy.
+
+---
+
+1) CARD STYLE
+
+For mobile job cards:
+
+- white background
+- rounded corners (14–16px)
+- subtle shadow or very light border
+- comfortable padding (12–16px)
+- spacing between cards
+
+Avoid:
+- heavy borders
+- loud colors
+- cramped layout
+
+---
+
+2) TAP FEEDBACK (IMPORTANT)
+
+Add simple iOS-style tap feedback:
+
+On tap:
+- slight scale down (e.g. 0.98)
+- quick transition (100–150ms)
+
+Optional:
+- light background change
+
+Keep subtle — not flashy.
+
+---
+
+3) LAYOUT INSIDE CARD
+
+Structure each card like:
+
+Top row:
+- Title (bold)
+- Status badge (right side)
+
+Second row:
+- Day + Time
+
+Third row:
+- Instructor
+
+Fourth row (optional):
+- Target date
+
+Bottom row:
+- small badges (Active, Phase, Last Result)
+
+Keep alignment clean and readable.
+
+---
+
+4) STATUS BADGES
+
+Use small rounded badges:
+
+Examples:
+- Active → green dot or soft green badge
+- Inactive → gray
+- Booked → green
+- Error → red
+- Waiting → neutral / amber
+
+Keep badges small and consistent.
+
+---
+
+5) SELECTED CARD STATE
+
+When a card is selected:
+
+- slightly stronger border or shadow
+- subtle highlight (not bright)
+- do NOT use heavy color fills
+
+Example:
+- light blue outline
+- slightly elevated shadow
+
+---
+
+6) SPACING + READABILITY
+
+- increase vertical spacing between rows
+- avoid text crowding
+- ensure comfortable thumb reading
+
+---
+
+7) KEEP INTERACTION SIMPLE
+
+- tapping card selects it (same logic as before)
+- no new gestures needed
+- no swipe actions
+
+---
+
+8) MOBILE ONLY
+
+Apply this only under mobile breakpoint:
+@media (max-width: 768px)
+
+Desktop stays unchanged.
+
+---
+
+AFTER CHANGES EXPLAIN:
+
+- how card layout was improved
+- how tap feedback works
+- how selected state is shown
+- how badges are styled
+- what was kept intentionally simple
