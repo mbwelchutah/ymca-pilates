@@ -1699,6 +1699,7 @@ function buildHtml(jobs, error, editError) {
       .tw-bottom-row {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         margin-top: 14px;
       }
       .tw-pill {
@@ -1891,7 +1892,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Today widget: glanceable top card (mobile only, hidden on desktop) -->
-    <div id="today-widget" class="today-widget">
+    <div id="today-widget" class="today-widget mobile-only">
       <div class="tw-top-row">
         <span class="tw-label" id="tw-label">NEXT CLASS</span>
         <span class="tw-mode-badge" id="tw-mode-badge">${dryRunEnabled ? 'Dry Run' : ''}</span>
