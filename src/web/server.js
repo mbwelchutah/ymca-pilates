@@ -208,6 +208,33 @@ function buildHtml(jobs, error, editError) {
     .page-header h1 { font-size: 23px; font-weight: 700; color: #1a1a2e; }
     .page-header p  { font-size: 14px; color: #888; margin-top: 5px; }
 
+    /* ---- Mobile app header (hidden on desktop) ---- */
+    #mobile-app-header { display: none; }
+    .mah-icon {
+      width: 54px; height: 54px;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #1c2340, #2f5bde);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(47,91,222,0.25);
+    }
+    .mah-text { display: flex; flex-direction: column; gap: 2px; }
+    .mah-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    .mah-sub {
+      font-size: 13px;
+      color: #888;
+      font-weight: 500;
+      letter-spacing: 0;
+      margin-top: 1px;
+    }
+
     /* ---- next-job global banner ---- */
     .banner         { background:#f1faee; border:1px solid #d8e2dc; padding:10px 14px; border-radius:8px; font-size:14px; }
     .banner.hidden  { display:none; }
@@ -1085,6 +1112,18 @@ function buildHtml(jobs, error, editError) {
       /* Mode switcher card — visible at full mobile width */
       #mode-switcher { display: block !important; }
 
+      /* ---- Mobile app header ---- */
+      #mobile-app-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: max(18px, calc(12px + env(safe-area-inset-top))) 4px 14px;
+      }
+      /* Main container: header owns the top safe-area, so container needs no top pad */
+      .main-container { padding-top: 0; }
+      /* Hide the desktop-style page header entirely on mobile */
+      .page-header { display: none; }
+
       /* ---- Mobile top banner (sticky, iOS card style) ---- */
       #next-job-banner:not(.hidden) {
         display: flex;
@@ -1264,6 +1303,15 @@ function buildHtml(jobs, error, editError) {
 
   <div class="main-container">
   <div class="page">
+
+    <!-- Mobile app-style header: hidden on desktop, shown on mobile -->
+    <div id="mobile-app-header">
+      <div class="mah-icon">&#x1F9D8;</div>
+      <div class="mah-text">
+        <div class="mah-title">YMCA Booker</div>
+        <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
+      </div>
+    </div>
 
     <div class="page-header">
       <h1>&#x1F9D8; YMCA BOT</h1>
@@ -2356,10 +2404,12 @@ function buildHtml(jobs, error, editError) {
     function updateDryRunUI(enabled) {
       const ind  = document.getElementById('dry-run-indicator');
       const live = document.getElementById('live-mode-indicator');
-      ind.textContent  = enabled ? '\u{1F9EA} Dry Run' : '\u{1F680} Live';
+      ind.textContent  = enabled ? '\\u{1F9EA} Dry Run' : '\\u{1F680} Live';
       ind.className    = enabled ? 'mode-dry' : 'mode-live';
       document.body.classList.toggle('live-mode', !enabled);
       live.classList.toggle('visible', !enabled);
+      const mahStatus = document.getElementById('mah-status');
+      if (mahStatus) mahStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
     }
 
     // Apply initial live-mode state from server-rendered flag (no flicker on load).

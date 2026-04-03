@@ -1,0 +1,141 @@
+Enable a clean iPhone home-screen (PWA) app experience for the UI.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve how the app behaves when saved to the iPhone home screen.
+
+---
+
+GOAL:
+When the user adds the app to their iPhone home screen:
+- it opens full-screen (no Safari UI)
+- it feels like a native app
+- top/bottom spacing respects safe areas
+- header + layout feel clean and intentional
+
+---
+
+1) ADD WEB APP MANIFEST
+
+Create a manifest.json file and link it in HTML.
+
+Include:
+
+{
+  "name": "YMCA Booker",
+  "short_name": "YMCA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+If icon files don’t exist:
+- create simple placeholder icons or reuse existing assets
+
+---
+
+2) ADD iOS META TAGS
+
+In the HTML <head>, add:
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="YMCA Booker">
+
+Also include viewport:
+
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+---
+
+3) SAFE AREA SUPPORT
+
+Ensure layout respects iPhone safe areas:
+
+Add padding where needed using:
+
+padding-top: env(safe-area-inset-top);
+padding-bottom: env(safe-area-inset-bottom);
+
+Apply to:
+- main container
+- sticky bottom bar
+- top header if needed
+
+---
+
+4) REMOVE BROWSER-LIKE CLUTTER (MOBILE)
+
+When running in standalone mode:
+
+- reduce anything that looks like a browser page header
+- rely on your new app-style header instead
+- keep UI clean and minimal
+
+Detect standalone mode if needed via:
+
+window.navigator.standalone (iOS)
+or display-mode media query
+
+---
+
+5) KEEP STICKY UI WORKING
+
+Ensure these still behave correctly in PWA mode:
+
+- sticky top banner (Now / Next)
+- sticky bottom Run bar
+
+They must:
+- not overlap content incorrectly
+- respect safe-area spacing
+- remain tappable
+
+---
+
+6) OPTIONAL: SPLASH / LAUNCH FEEL
+
+If simple:
+
+- ensure background color matches header
+- avoid flash of unstyled content
+- keep initial render clean
+
+---
+
+7) DO NOT ADD COMPLEXITY
+
+- no service worker required unless easy
+- no offline mode needed
+- no caching logic required
+
+Keep this lightweight.
+
+---
+
+AFTER CHANGES EXPLAIN:
+
+- how manifest was added
+- how iOS meta tags enable standalone mode
+- how safe-area spacing was handled
+- how UI changes when opened from home screen
