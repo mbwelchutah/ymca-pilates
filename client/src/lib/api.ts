@@ -54,4 +54,12 @@ export const api = {
 
   forceRunJob: (id: number): Promise<{ success: boolean; message: string }> =>
     apiFetch(`/force-run-job?id=${id}`, { method: 'POST' }),
+
+  runSchedulerOnce: (): Promise<{ success: boolean; message: string }> =>
+    apiFetch('/run-scheduler-once', { method: 'POST' }),
+
+  getFailures: (): Promise<{
+    recent: Array<{ name: string; mtime: number; reason: string; meta: Record<string, unknown> }>
+    summary: Record<string, number>
+  }> => apiFetch('/api/failures'),
 }

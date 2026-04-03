@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
-import { PrimaryButton } from '../components/ui/PrimaryButton'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import { DetailRow } from '../components/ui/DetailRow'
 import type { AppState, Job, Phase } from '../types'
@@ -74,23 +73,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   const countdown = useCountdown(job?.bookingOpenMs ?? appState.bookingOpenMs ?? null)
   const stepIdx = PHASE_STEP[phase]
   const isBooked = job?.last_result === 'booked' || job?.last_result === 'dry_run'
-  const [forceLoading, setForceLoading] = useState(false)
-  const [forceMsg, setForceMsg] = useState<string | null>(null)
-
-  const handleForce = async () => {
-    if (!job) return
-    setForceLoading(true)
-    setForceMsg(null)
-    try {
-      const r = await api.forceRunJob(job.id)
-      setForceMsg(r.message)
-      refresh()
-    } catch (e) {
-      setForceMsg(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setForceLoading(false)
-    }
-  }
 
   const handlePauseResume = async () => {
     try {
@@ -214,28 +196,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         </Card>
 
         {/* Action row */}
-        <div className="flex gap-2">
-          <SecondaryButton
-            className="flex-1"
-            onClick={handlePauseResume}
-          >
-            {appState.schedulerPaused ? 'Resume' : 'Pause'}
-          </SecondaryButton>
-          <PrimaryButton
-            className="flex-1"
-            onClick={handleForce}
-            disabled={!job || forceLoading}
-          >
-            {forceLoading ? 'Running…' : 'Force Book'}
-          </PrimaryButton>
-        </div>
-
-        {/* Force run result */}
-        {forceMsg && (
-          <Card padding="sm">
-            <p className="text-[13px] text-text-secondary">{forceMsg}</p>
-          </Card>
-        )}
+        <SecondaryButton onClick={handlePauseResume} className="w-full">
+          {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
+        </SecondaryButton>
 
         {/* Detail card */}
         {job && (

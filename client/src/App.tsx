@@ -55,7 +55,7 @@ export default function App() {
           />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} refresh={refresh} />
+          <SettingsScreen appState={state} selectedJobId={effectiveSelectedJobId} refresh={refresh} />
         )}
       </main>
 
