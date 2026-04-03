@@ -595,12 +595,15 @@ function buildHtml(jobs, error, editError) {
 
     /* ---- success pulse (selected-job card) ---- */
     .sel-success-pulse {
-      display: inline-flex;
+      display: none;           /* takes no layout space when inactive */
       align-items: center;
       gap: 6px;
       opacity: 0;
       pointer-events: none;
       margin-top: 8px;
+    }
+    .sel-success-pulse.visible {
+      display: inline-flex;    /* shown only for the animation window */
     }
     .sel-success-pulse.active {
       animation: successPulse 1100ms ease-out forwards;
@@ -2279,9 +2282,12 @@ function buildHtml(jobs, error, editError) {
     function triggerSuccessPulse() {
       var el = document.getElementById('sel-success-pulse');
       if (!el) return;
-      el.classList.remove('active');
-      void el.offsetWidth;
-      el.classList.add('active');
+      el.classList.remove('active', 'visible');
+      void el.offsetWidth;                   /* force reflow so animation replays */
+      el.classList.add('visible', 'active');
+      setTimeout(function() {
+        el.classList.remove('active', 'visible'); /* restore display:none after animation */
+      }, 1150);
     }
 
     function triggerUnifiedSuccess() {
