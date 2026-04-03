@@ -3990,6 +3990,19 @@ const server = http.createServer((req, res) => {
     });
     return;
 
+  } else if (req.method === 'GET' && path === '/api/jobs') {
+    json(getAllJobs());
+
+  } else if (req.method === 'GET' && path === '/api/state') {
+    const jobs = getAllJobs();
+    const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
+    json({
+      schedulerPaused: isSchedulerPaused(),
+      dryRun: getDryRun(),
+      selectedJobId: firstActive ? firstActive.id : null,
+      jobs,
+    });
+
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Return last 5 verify-fail screenshots + grouped counts across all verify-fails.
     const fsM = require('fs'), pathM = require('path'), dir = 'screenshots';

@@ -1,0 +1,534 @@
+You are rebuilding my mobile-first YMCA class registration app in React + Tailwind.
+
+This is a product-guided rebuild, not just a visual refresh.
+
+Use:
+- React
+- TypeScript
+- Tailwind CSS
+
+Primary target:
+- iPhone-first web app
+- clean, modern, calm interface
+- subtle Strava-like fitness app discipline
+- but primarily a focused gym class registration utility
+
+CORE PRODUCT PURPOSE
+
+This app exists to:
+register for a gym class precisely when registration opens.
+
+It is not a generic bot dashboard.
+It is not an automation toy.
+It is not a developer control panel.
+
+Every screen, label, and component should reinforce this product purpose:
+- watch a class
+- wait for registration to open
+- register at the exact right time
+- let the user trust the process
+
+DESIGN DIRECTION
+
+The app should feel:
+- clean
+- modern
+- iPhone-oriented
+- calm
+- precise
+- trustworthy
+- fitness-adjacent
+- quietly premium
+
+It should NOT feel:
+- retro
+- gimmicky
+- overloaded with icons
+- dev-oriented
+- like a monitoring dashboard
+- like a page full of controls
+
+VISUAL RULES
+
+Do not use:
+- rockets
+- oversized gears
+- “Live Mode Active”
+- bright red primary actions
+- raw backend labels
+- repeated status chips
+- repeated duplicate cards
+- heavy dashboard segmentation
+
+Use:
+- soft white / warm neutral backgrounds
+- dark text
+- restrained accent color
+- rounded iPhone-style cards
+- strong typography hierarchy
+- calm spacing
+- minimal but useful iconography
+- clean touch-friendly controls
+
+APP STRUCTURE
+
+Use exactly 3 primary tabs:
+1. Now
+2. Plan
+3. Settings
+
+Do not use “Tools” as a primary navigation label.
+
+Do not collapse all content into one screen.
+
+Each tab must keep a clear responsibility.
+
+TAB RESPONSIBILITIES
+
+NOW
+Purpose:
+Show the active class currently being watched and the exact booking readiness state.
+
+PLAN
+Purpose:
+Show active and future class bookings, and allow add/edit/delete.
+
+SETTINGS
+Purpose:
+Hold detailed development controls, app behavior, dry run, debugging, and future scraping-related settings.
+
+Do not mix those responsibilities.
+
+TECHNICAL DIRECTION
+
+Build this as a React app with:
+- reusable components
+- clear screen boundaries
+- typed props
+- clean state handling
+- mobile-first layout
+- Tailwind utility styling
+- a lightweight design system
+
+If needed, create a src/features structure or similar organization.
+
+Recommended architecture:
+- src/components
+- src/screens
+- src/features
+- src/types
+- src/lib
+- src/data or src/state
+
+The rebuild should preserve the underlying business logic as much as possible, but the UI architecture should become much cleaner.
+
+STAGED IMPLEMENTATION PLAN
+
+IMPORTANT:
+Work in stages.
+At the end of each stage, summarize what changed and keep the app runnable.
+Do not jump ahead.
+Do not pull future stages into the current one.
+
+================================
+STAGE 1 — FOUNDATION + DESIGN SYSTEM
+================================
+
+Goal:
+Set up the React + Tailwind app shell and core design system.
+
+Tasks:
+1. Set up or verify React + TypeScript + Tailwind.
+2. Create a clean mobile-first app shell.
+3. Create a simple bottom tab navigation with:
+   - Now
+   - Plan
+   - Settings
+4. Remove old “Tools” terminology from the UI shell.
+5. Create base tokens / utility patterns for:
+   - spacing
+   - card radii
+   - typography hierarchy
+   - muted status colors
+   - shadows
+   - button styles
+6. Create reusable primitives:
+   - ScreenContainer
+   - AppHeader
+   - Card
+   - SectionHeader
+   - PrimaryButton
+   - SecondaryButton
+   - DetailRow
+   - StatusDot
+7. Ensure the app looks good on iPhone viewport widths.
+
+Design constraints:
+- no rockets
+- no large gear icons
+- no dashboard feel
+- no repeated banners
+- no over-styled status pills
+
+Deliverable:
+A clean shell with tabs and a coherent visual system, even before real screen content is complete.
+
+After Stage 1:
+Stop and summarize:
+- what files/components were created
+- how the design system is structured
+- how navigation is implemented
+
+================================
+STAGE 2 — NOW SCREEN REBUILD
+================================
+
+Goal:
+Build the Now screen as the primary product experience.
+
+Purpose:
+The user should instantly understand:
+- what class is being watched
+- when booking opens
+- what the app will do
+- that the app is ready
+
+Now screen should contain only:
+- compact header
+- active booking hero card
+- lightweight progress
+- pause/resume/cancel controls
+- quiet details section
+
+Do NOT include:
+- create/edit forms
+- dry run toggle
+- failure summary
+- recent failures
+- advanced controls
+- run now / run selected
+- force run
+- debug tools
+- settings panels
+
+Build these components:
+1. NowScreen
+2. BookingHeroCard
+3. BookingProgress
+4. BookingActions
+5. BookingDetails
+
+Required hero content:
+- class name
+- day/time
+- optional instructor
+- large “Opens in” countdown
+- calm supporting line such as:
+  “Will automatically register when booking opens”
+
+Required progress pattern:
+- Class found
+- Waiting for registration
+- Booking attempt
+
+Required actions:
+- Pause
+- Resume when paused
+- Cancel
+
+Cancel styling:
+- subtle tint only
+- not harsh red on the main screen
+- destructive confirmation can happen later if needed
+
+Copy rules:
+Use:
+- Monitoring
+- Opens in
+- Waiting for registration
+- Registration not open yet
+- Automatic retry
+
+Avoid:
+- Live Mode Active
+- Scheduler running
+- FOUND_NOT_OPEN_YET
+- force-run language
+- backend phrasing
+
+Deliverable:
+A polished, calm, focused Now screen in React + Tailwind.
+
+After Stage 2:
+Stop and summarize:
+- final Now screen structure
+- key components and props
+- what old UI elements were intentionally removed
+
+================================
+STAGE 3 — PLAN SCREEN REBUILD
+================================
+
+Goal:
+Build the Plan screen as a clean class booking manager.
+
+Purpose:
+Make it easy to:
+- see active bookings
+- see upcoming bookings
+- add a class
+- edit a class
+- delete a class
+
+Plan is NOT a settings or debug screen.
+
+Plan should include:
+1. Header
+2. Section for Active bookings
+3. Section for Upcoming bookings
+4. Add Class entry point
+5. Edit flow
+6. Delete flow
+
+Recommended structure:
+- Active
+- Upcoming
+- Optional Paused / Inactive later
+
+Booking cards should show:
+- title
+- day/time
+- instructor
+- date if present
+- active/paused status
+
+Interactions:
+- tap card to edit
+- swipe or action menu for delete if practical
+- keep interactions simple and iPhone-friendly
+
+Build these components:
+1. PlanScreen
+2. BookingListSection
+3. BookingCard
+4. EmptyState
+5. AddEditBookingSheet or AddEditBookingScreen
+6. ConfirmDeleteDialog
+
+Add/Edit fields:
+- Class title
+- Instructor
+- Day
+- Time
+- Target date (optional)
+
+Important:
+This screen should feel like a queue manager, not a raw admin form dump.
+
+No:
+- failure panels
+- dry run toggles
+- run all controls
+- scheduler dev controls
+- generic tools content
+
+Deliverable:
+A clean, understandable booking queue and edit/add experience.
+
+After Stage 3:
+Stop and summarize:
+- Plan screen information architecture
+- add/edit/delete flow
+- which old controls were moved out of Plan
+
+================================
+STAGE 4 — SETTINGS SCREEN REBUILD
+================================
+
+Goal:
+Build Settings as the detailed control area.
+
+Purpose:
+Hold app behavior and development controls without contaminating Now or Plan.
+
+Settings can still be detailed because the product is in development.
+
+Organize Settings into groups:
+1. App Mode
+   - Dry Run
+   - Haptics
+2. Automation
+   - Scheduler enabled / paused
+   - Retry behavior if relevant
+3. Debug / Development
+   - logs
+   - diagnostics
+   - reset tools if needed
+4. Future Tools
+   - placeholder for website scraping / class assist
+
+Build these components:
+1. SettingsScreen
+2. SettingsGroup
+3. SettingsToggleRow
+4. SettingsLinkRow
+5. SettingsInfoRow
+
+Design constraints:
+- smaller grouped cards
+- iOS settings-like rhythm
+- clear grouping
+- no giant gear visual
+- no random action sheet dumping ground
+
+Important:
+If a header settings icon exists, it must lead to this same Settings screen or be removed.
+Avoid duplicate navigation patterns.
+
+Deliverable:
+A structured Settings screen that holds development detail without weakening the main product experience.
+
+After Stage 4:
+Stop and summarize:
+- sections created
+- what is intentionally in Settings
+- what is intentionally excluded from Now and Plan
+
+================================
+STAGE 5 — APP LANGUAGE + UX CLEANUP
+================================
+
+Goal:
+Normalize the language and product identity across the app.
+
+Tasks:
+1. Replace generic bot/dashboard language with gym-registration language.
+2. Audit all visible copy.
+3. Remove:
+   - Live Mode Active
+   - Scheduler running
+   - FOUND_NOT_OPEN_YET
+   - force-run language in primary UI
+   - generic automation jargon
+4. Prefer:
+   - Watching next class opening
+   - Monitoring
+   - Opens in
+   - Ready to register
+   - Waiting for registration
+   - Automatic retry enabled
+
+Decide product naming:
+Prefer:
+- YMCA Booker
+- subtitle like “Class registration assistant” if needed
+
+Reduce emphasis on the word “bot” in the user-facing UI unless absolutely necessary.
+
+Deliverable:
+Consistent, calm, user-facing language across all screens.
+
+After Stage 5:
+Stop and summarize:
+- old labels removed
+- new labeling system
+- remaining areas needing copy cleanup
+
+================================
+STAGE 6 — FUTURE-READY CLASS ASSIST ARCHITECTURE
+================================
+
+Goal:
+Prepare for future YMCA site scraping / class assist without putting it on the Now screen.
+
+Do NOT fully implement scraping unless already available.
+Instead, architect for it cleanly.
+
+Plan for future add flow:
+Add Class
+-> Search or import from YMCA schedule
+-> choose class
+-> confirm instructor/day/time
+-> save booking
+
+Tasks:
+1. Create a placeholder architecture for future “Class Assist” or “Import from Schedule.”
+2. Put this in the correct place:
+   - Plan add flow
+   - or Settings as a dev-only feature flag / future placeholder
+3. Add clear TODO boundaries so this feature does not leak into Now.
+
+Deliverable:
+A future-ready extension point for schedule scraping/import.
+
+After Stage 6:
+Stop and summarize:
+- where future scraping belongs
+- what placeholder structure exists
+- what remains intentionally unimplemented
+
+================================
+STAGE 7 — POLISH PASS
+================================
+
+Goal:
+Make the whole app feel coherent and premium.
+
+Tasks:
+1. Unify spacing across screens.
+2. Unify card radius/shadow treatment.
+3. Tighten typography hierarchy.
+4. Ensure all screens feel iPhone-first.
+5. Remove any remaining duplicated content.
+6. Ensure each tab has a single clear purpose.
+7. Check that Now communicates the key info in the top half of the screen.
+8. Check accessibility basics:
+   - contrast
+   - tap target size
+   - readable font sizes
+
+Deliverable:
+A calm, consistent, polished app.
+
+FINAL UX RULES
+
+NOW should answer:
+- What class is next?
+- When does it open?
+- Will the app register automatically?
+
+PLAN should answer:
+- What bookings do I have?
+- What is active?
+- What is upcoming?
+- How do I add/edit/delete?
+
+SETTINGS should answer:
+- How does the app behave?
+- What dev features are enabled?
+- Where do detailed controls live?
+
+STRICT DO-NOTs
+
+Do not:
+- merge screens into one
+- place Plan forms on Now
+- place Settings toggles on Now
+- bring back old refresh-heavy dashboard UI
+- use rockets
+- use oversized gears
+- use generic “bot dashboard” language
+- reintroduce bottom run bars on the Now screen
+- use raw backend labels as primary UI
+
+REQUESTED OUTPUT STYLE FROM YOU
+
+At each stage:
+1. Make the changes
+2. Keep the app runnable
+3. Summarize exactly what changed
+4. Explain any important file/component structure
+5. Wait before making the next stage unless asked to continue
+
+Start with STAGE 1 only.
+Do not jump ahead.

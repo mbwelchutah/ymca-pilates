@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-surface: #f9f9fb;
+  --color-card: #ffffff;
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #8e8e93;
+  --color-text-muted: #c7c7cc;
+  --color-accent-blue: #007aff;
+  --color-accent-green: #34c759;
+  --color-accent-amber: #ff9f0a;
+  --color-accent-red: #ff3b30;
+  --color-accent-gray: #aeaeb2;
+  --color-divider: #f2f2f7;
+
+  /* Border radius */
+  --radius-card: 1.125rem;
+  --radius-pill: 9999px;
+  --radius-btn: 0.875rem;
+
+  /* Shadows */
+  --shadow-card: 0 2px 16px rgba(0,0,0,0.06);
+  --shadow-card-sm: 0 1px 8px rgba(0,0,0,0.05);
+
+  /* Font family */
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    font-family: var(--font-family-sans);
+    background-color: var(--color-surface);
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .safe-top {
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+  .safe-bottom {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .pb-tab {
+    padding-bottom: calc(64px + max(16px, env(safe-area-inset-bottom)));
+  }
+}
