@@ -882,41 +882,68 @@ function buildHtml(jobs, error, editError) {
 
     /* ---- More Actions bottom sheet ---- */
     .moa-backdrop {
-      display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.45);
+      background: rgba(0,0,0,0.42);
       z-index: 1100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.24s ease;
     }
-    .moa-backdrop.open { display: block; }
+    .moa-backdrop.open { opacity: 1; pointer-events: auto; }
     .moa-panel {
       position: fixed;
       bottom: 0; left: 0; right: 0;
       background: #fff;
-      border-radius: 18px 18px 0 0;
-      padding: 12px 16px max(24px, calc(16px + env(safe-area-inset-bottom)));
+      border-radius: 20px 20px 0 0;
+      padding: 0 0 max(20px, env(safe-area-inset-bottom));
       z-index: 1200;
+      box-shadow: 0 -4px 32px rgba(0,0,0,0.14);
       transform: translateY(100%);
-      transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+      transition: transform 0.30s cubic-bezier(0.32, 0.72, 0, 1);
+      max-height: 86vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .moa-panel.open { transform: translateY(0); }
     .moa-handle {
-      width: 36px; height: 4px;
+      width: 36px; height: 5px;
       background: #e0e0e0;
-      border-radius: 2px;
-      margin: 0 auto 16px;
+      border-radius: 3px;
+      margin: 10px auto 4px;
     }
     .moa-title {
       font-size: 13px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #aaa;
+      color: #bbb;
       text-align: center;
-      margin-bottom: 14px;
+      padding: 8px 16px 12px;
     }
-    .moa-items { display: flex; flex-direction: column; gap: 10px; }
-    .moa-items .btn { font-size: 15px; padding: 14px 20px; }
+    .moa-items {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding: 0 14px;
+      padding-bottom: 4px;
+    }
+    .moa-items .btn { font-size: 15px; padding: 14px 16px; }
+    /* Section group labels */
+    .moa-group-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #bbb;
+      padding: 14px 4px 6px;
+    }
+    /* Thin divider between groups */
+    .moa-sep {
+      height: 1px;
+      background: #ebebeb;
+      margin: 2px 0;
+    }
 
     /* ================================================================
        MOBILE MODE SYSTEM  (Normal / Focus / StandBy)
@@ -996,31 +1023,33 @@ function buildHtml(jobs, error, editError) {
       }
       #sticky-run-bar .srb-primary {
         flex: 1;
-        background: #457b9d;
+        background: #0071e3;
         color: white;
         border: none;
-        border-radius: 12px;
+        border-radius: 13px;
         font-size: 15px;
         font-weight: 600;
-        min-height: 50px;
+        min-height: 52px;
         cursor: pointer;
-        padding: 0 16px;
+        padding: 0 18px;
+        letter-spacing: -0.01em;
       }
-      #sticky-run-bar .srb-primary:active { background: #2d6080; }
+      #sticky-run-bar .srb-primary:active { background: #005bb5; }
       #sticky-run-bar .srb-secondary {
         flex-shrink: 0;
-        background: #f0f0f0;
-        color: #555;
+        background: #f2f2f7;
+        color: #444;
         border: none;
-        border-radius: 12px;
+        border-radius: 13px;
         font-size: 13px;
         font-weight: 600;
-        min-height: 50px;
-        min-width: 120px;
+        min-height: 52px;
+        min-width: 110px;
         cursor: pointer;
         padding: 0 12px;
+        letter-spacing: -0.01em;
       }
-      #sticky-run-bar .srb-secondary:active { background: #e0e0e0; }
+      #sticky-run-bar .srb-secondary:active { background: #e1e1e8; }
 
       /* Hide duplicate run buttons in Actions card — they live in the sticky bar.
          Note: .mobile-hidden only fires at ≤640px (existing breakpoint), so we
@@ -1046,13 +1075,27 @@ function buildHtml(jobs, error, editError) {
     <div class="moa-handle"></div>
     <p class="moa-title">More Actions</p>
     <div class="moa-items">
-      <button class="btn btn-danger"  onclick="forceRunSelected(); closeMoreActions()">&#9888; Force Run (Ignore Rules)</button>
+
+      <!-- Section 1: Scheduler -->
+      <div class="moa-group-label">Scheduler</div>
+      <button class="btn btn-muted" id="ma-pause"  onclick="pauseScheduler();  closeMoreActions()">&#9646;&#9646; Pause Scheduler</button>
+      <button class="btn btn-muted" id="ma-resume" onclick="resumeScheduler(); closeMoreActions()" style="display:none">&#9654; Resume Scheduler</button>
       <button class="btn btn-secondary" onclick="runRegister(); closeMoreActions()">Run Default Job</button>
-      <button class="btn btn-muted" id="ma-pause"   onclick="pauseScheduler();  closeMoreActions()">&#9646;&#9646; Pause Scheduler</button>
-      <button class="btn btn-muted" id="ma-resume"  onclick="resumeScheduler(); closeMoreActions()" style="display:none">&#9654; Resume Scheduler</button>
+
+      <div class="moa-sep"></div>
+
+      <!-- Section 2: Job state -->
+      <div class="moa-group-label">Job</div>
       <button class="btn btn-toggle ${first && first.is_active ? 'is-active' : ''}" id="ma-toggle" onclick="toggleActive(); closeMoreActions()">${first ? (first.is_active ? 'Deactivate Job' : 'Activate Job') : 'Toggle Active'}</button>
-      <button class="btn btn-danger"  onclick="deleteSelectedJob(); closeMoreActions()">Delete Job</button>
-      <button class="btn btn-muted"   onclick="cleanTestJobs(); closeMoreActions()">Clean Old Test Jobs</button>
+      <button class="btn btn-muted" onclick="cleanTestJobs(); closeMoreActions()">Clean Old Test Jobs</button>
+
+      <div class="moa-sep"></div>
+
+      <!-- Section 3: Destructive -->
+      <div class="moa-group-label">Danger Zone</div>
+      <button class="btn btn-danger" onclick="forceRunSelected(); closeMoreActions()">&#9888; Force Run (Ignore Rules)</button>
+      <button class="btn btn-danger" onclick="deleteSelectedJob(); closeMoreActions()">Delete Job</button>
+
     </div>
   </div>
 

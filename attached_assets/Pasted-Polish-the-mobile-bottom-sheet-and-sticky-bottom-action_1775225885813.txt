@@ -1,0 +1,126 @@
+Polish the mobile bottom sheet and sticky bottom action bar so they feel more like a native iPhone interface.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI feel.
+
+GOAL:
+Make the bottom sheet + sticky bottom bar feel calmer, cleaner, and more Apple-like on iPhone.
+
+1) POLISH THE STICKY BOTTOM BAR
+
+Improve the mobile sticky bottom Run bar:
+
+- keep it fixed at the bottom
+- respect iPhone safe area using:
+  padding-bottom: env(safe-area-inset-bottom);
+- add subtle shadow
+- rounded top corners
+- slightly translucent or soft white background if it looks good
+- ensure buttons are easy to tap (around 44px tall or larger)
+
+Suggested style direction:
+- background: white
+- border-top: very light gray
+- box-shadow: subtle
+- border-radius on top only
+- not visually heavy
+
+2) MAKE THE PRIMARY BUTTON FEEL NATIVE
+
+For the main Run button:
+- use a strong but calm iOS-like blue
+- rounded corners (12–14px)
+- clear label
+- good padding
+- medium font weight
+- no harsh gradients
+
+For secondary button:
+- more neutral styling
+- visually subordinate to primary action
+
+3) POLISH THE “MORE ACTIONS” BOTTOM SHEET
+
+Improve the bottom sheet so it feels more native:
+
+- fixed to bottom
+- rounded top corners (16–20px)
+- white background
+- subtle shadow
+- dimmed dark backdrop
+- smooth open/close transition
+- tap outside closes it
+
+Add a small drag handle at the top:
+- centered
+- short rounded gray pill
+
+Example:
+- width about 36px
+- height about 5px
+- light gray
+- margin above content
+
+4) ORGANIZE ACTIONS INSIDE THE SHEET
+
+Group actions visually:
+
+Section 1 — Normal actions
+- Run All
+- Run Default
+- Pause Scheduler
+
+Section 2 — Job state / maintenance
+- Activate / Deactivate
+- Clean Old Jobs
+
+Section 3 — Destructive actions
+- Force Run
+- Delete Job
+
+Use spacing and maybe light dividers between sections.
+Do NOT use loud color everywhere.
+Only destructive actions should be red.
+
+5) MAKE TAP TARGETS COMFORTABLE
+
+For all buttons and interactive rows in the bottom sheet:
+- minimum comfortable height
+- enough vertical spacing
+- not crowded together
+- thumb-friendly
+
+6) KEEP SCROLLING STABLE
+
+Do NOT reintroduce nested-scroll problems.
+The bottom sheet can scroll internally only if needed, but the page should still feel stable.
+Avoid bounce/snap-back issues.
+
+7) OPTIONAL SMALL iOS TOUCHES
+
+If simple:
+- slightly blur or soften backdrop
+- subtle slide-up animation when opening
+- subtle fade on backdrop
+
+Do NOT overdo animation.
+
+8) PRESERVE DESKTOP
+
+Desktop layout should remain unchanged.
+This is mobile-only polish.
+
+AFTER CHANGES EXPLAIN:
+- how the sticky bottom bar was polished
+- how safe-area spacing is handled
+- how the bottom sheet was made more native-feeling
+- how actions were grouped
+- what was kept intentionally simple
