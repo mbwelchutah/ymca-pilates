@@ -2055,7 +2055,6 @@ function buildHtml(jobs, error, editError) {
         <div class="mah-title">YMCA Booker</div>
         <div class="mah-sub" id="mah-status">Monitoring</div>
       </div>
-      <button class="mah-gear" id="mah-settings-btn" onclick="openSettings()" aria-label="Open settings">&#x2699;</button>
     </div>
 
     <!-- Mobile refresh control: shown in Tools tab only -->
