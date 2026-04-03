@@ -62,17 +62,16 @@ function formatDayTime(job: Job) {
   return `${dayName} at ${job.class_time}${job.instructor ? ` with ${job.instructor}` : ''}`
 }
 
-const BOOKING_WINDOW_MS = new Date('2026-04-05T13:45:00.000Z').getTime()
-
 const STEPS = ['Waiting', 'Opening Soon', 'Booking', 'Done']
 const PHASE_STEP: Record<Phase, number> = { too_early: 0, warmup: 1, sniper: 2, late: 3, unknown: 0 }
 
 export function NowScreen({ appState, loading, error, refresh }: NowScreenProps) {
   const job = appState.jobs.find(j => j.id === appState.selectedJobId) ?? appState.jobs[0] ?? null
-  const phase: Phase = 'too_early'
+  const phase: Phase = appState.phase
   const cfg = PHASE_CONFIG[phase]
-  const countdown = useCountdown(BOOKING_WINDOW_MS)
+  const countdown = useCountdown(appState.bookingOpenMs)
   const stepIdx = PHASE_STEP[phase]
+  const isBooked = job?.last_result === 'booked' || job?.last_result === 'dry_run'
   const [forceLoading, setForceLoading] = useState(false)
   const [forceMsg, setForceMsg] = useState<string | null>(null)
 
@@ -162,13 +161,22 @@ export function NowScreen({ appState, loading, error, refresh }: NowScreenProps)
             <p className="text-[17px] text-text-secondary mb-3">No job selected</p>
           )}
 
-          {/* Countdown */}
-          <div className="bg-surface rounded-xl px-4 py-3 flex items-baseline gap-2">
-            <span className="text-[42px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
-              {countdown || '—'}
-            </span>
-            <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
-          </div>
+          {/* Booked success OR countdown */}
+          {isBooked ? (
+            <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              <StatusDot color="green" />
+              <span className="text-[17px] font-semibold text-accent-green">
+                {job?.last_result === 'dry_run' ? 'Booked (Dry Run)' : 'Booked'}
+              </span>
+            </div>
+          ) : (
+            <div className="bg-surface rounded-xl px-4 py-3 flex items-baseline gap-2">
+              <span className="text-[42px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
+                {countdown || '—'}
+              </span>
+              <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
+            </div>
+          )}
         </Card>
 
         {/* Progress steps */}
@@ -234,6 +242,10 @@ export function NowScreen({ appState, loading, error, refresh }: NowScreenProps)
             <Card padding="none">
               <DetailRow label="Job" value={`#${job.id}`} />
               <DetailRow label="Status" value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
+              <DetailRow label="Opens" value={appState.bookingOpenMs
+                ? new Date(appState.bookingOpenMs).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                : '—'
+              } />
               <DetailRow label="Last Run" value={job.last_run_at ? new Date(job.last_run_at).toLocaleString() : '—'} />
               <DetailRow label="Mode" value={appState.dryRun ? 'Dry Run' : 'Live'} last />
             </Card>

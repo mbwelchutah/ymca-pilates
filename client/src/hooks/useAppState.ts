@@ -6,6 +6,8 @@ const DEFAULT_STATE: AppState = {
   schedulerPaused: false,
   dryRun: true,
   selectedJobId: null,
+  phase: 'unknown',
+  bookingOpenMs: null,
   jobs: [],
 }
 

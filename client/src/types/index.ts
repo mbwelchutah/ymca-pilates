@@ -29,5 +29,7 @@ export interface AppState {
   schedulerPaused: boolean
   dryRun: boolean
   selectedJobId: number | null
+  phase: Phase
+  bookingOpenMs: number | null
   jobs: Job[]
 }

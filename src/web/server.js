@@ -3996,10 +3996,20 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'GET' && path === '/api/state') {
     const jobs = getAllJobs();
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
+    let phase = 'unknown', bookingOpenMs = null;
+    if (firstActive) {
+      try {
+        const r = getPhase(firstActive);
+        phase = r.phase;
+        bookingOpenMs = r.bookingOpen ? r.bookingOpen.getTime() : null;
+      } catch (_) {}
+    }
     json({
       schedulerPaused: isSchedulerPaused(),
       dryRun: getDryRun(),
       selectedJobId: firstActive ? firstActive.id : null,
+      phase,
+      bookingOpenMs,
       jobs,
     });
 
