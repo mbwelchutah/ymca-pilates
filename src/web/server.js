@@ -917,6 +917,59 @@ function buildHtml(jobs, error, editError) {
     }
     .moa-items { display: flex; flex-direction: column; gap: 10px; }
     .moa-items .btn { font-size: 15px; padding: 14px 20px; }
+
+    /* ---- Sticky bottom run bar ---- */
+    #sticky-run-bar {
+      display: none;               /* hidden on desktop */
+    }
+    @media (max-width: 640px) {
+      #sticky-run-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        z-index: 900;
+        background: rgba(255,255,255,0.96);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -2px 16px rgba(0,0,0,0.10);
+        padding: 12px 16px max(20px, calc(12px + env(safe-area-inset-bottom)));
+      }
+      #sticky-run-bar .srb-primary {
+        flex: 1;
+        background: #457b9d;
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        min-height: 50px;
+        cursor: pointer;
+        padding: 0 16px;
+      }
+      #sticky-run-bar .srb-primary:active { background: #2d6080; }
+      #sticky-run-bar .srb-secondary {
+        flex-shrink: 0;
+        background: #f0f0f0;
+        color: #555;
+        border: none;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        min-height: 50px;
+        min-width: 90px;
+        cursor: pointer;
+        padding: 0 12px;
+      }
+      #sticky-run-bar .srb-secondary:active { background: #e0e0e0; }
+
+      /* Extra bottom padding so content clears the sticky bar */
+      .main-container {
+        padding-bottom: max(110px, calc(100px + env(safe-area-inset-bottom)));
+      }
+    }
   </style>
 </head>
 <body>
@@ -1034,11 +1087,11 @@ function buildHtml(jobs, error, editError) {
           </label>
         </div>
 
-        <!-- Always visible primary actions -->
-        <button class="btn btn-primary" id="btn-run" onclick="runSelected()">
+        <!-- Primary run actions (hidden on mobile — moved to sticky bottom bar) -->
+        <button class="btn btn-primary mobile-hidden" id="btn-run" onclick="runSelected()">
           &#9654; Run Now (Direct)
         </button>
-        <button class="btn btn-secondary" id="btn-run-sched-sel" onclick="runSelectedScheduler()">
+        <button class="btn btn-secondary mobile-hidden" id="btn-run-sched-sel" onclick="runSelectedScheduler()">
           &#9654; Run Selected (Scheduler Mode)
         </button>
         <button class="btn btn-secondary" id="btn-run-tick" onclick="runSchedulerOnce()">
@@ -1189,6 +1242,12 @@ function buildHtml(jobs, error, editError) {
 
   </div><!-- /page -->
   </div><!-- /main-container -->
+
+  <!-- Sticky bottom run bar (mobile only — fixed position, outside scroll container) -->
+  <div id="sticky-run-bar">
+    <button class="srb-primary" onclick="runSelectedScheduler()">&#9654; Run Selected</button>
+    <button class="srb-secondary" onclick="runSelected()">Direct</button>
+  </div>
 
   <!-- Trace viewer modal — populated by openTrace() -->
   <div id="trace-viewer" class="trace-modal hidden">
