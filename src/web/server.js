@@ -14,6 +14,65 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
 // ---------------------------------------------------------------------------
+// PWA helpers — generate solid-colour PNG icons without external packages.
+// ---------------------------------------------------------------------------
+function makeSolidPng(width, height, r, g, b) {
+  const zlib = require('zlib');
+  const crcTable = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c;
+    }
+    return t;
+  })();
+  function crc32(buf) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) crc = crcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function chunk(type, data) {
+    const tb = Buffer.from(type, 'ascii');
+    const lb = Buffer.alloc(4); lb.writeUInt32BE(data.length, 0);
+    const cb = Buffer.alloc(4); cb.writeUInt32BE(crc32(Buffer.concat([tb, data])), 0);
+    return Buffer.concat([lb, tb, data, cb]);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 2; // 8-bit RGB
+  const row = Buffer.alloc(1 + width * 3);
+  row[0] = 0; // filter: None
+  for (let x = 0; x < width; x++) { row[1 + x * 3] = r; row[2 + x * 3] = g; row[3 + x * 3] = b; }
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+// Cache generated PNGs so they're only built once per process lifetime.
+const _pngCache = {};
+function getCachedPng(size) {
+  if (!_pngCache[size]) _pngCache[size] = makeSolidPng(size, size, 28, 35, 64); // #1c2340
+  return _pngCache[size];
+}
+
+const MANIFEST_JSON = JSON.stringify({
+  name: 'YMCA Booker',
+  short_name: 'YMCA',
+  start_url: '/',
+  display: 'standalone',
+  background_color: '#ffffff',
+  theme_color: '#ffffff',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // HTML builder — generates the full page with jobs injected server-side.
 // ---------------------------------------------------------------------------
 function buildHtml(jobs, error, editError) {
@@ -172,8 +231,16 @@ function buildHtml(jobs, error, editError) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>YMCA BOT \u2014 Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>YMCA Booker</title>
+  <!-- PWA / home-screen meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="YMCA Booker">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2623,6 +2690,20 @@ const server = http.createServer((req, res) => {
     const editError = parsed.searchParams.get('edit_error') || null;
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(buildHtml(jobs, error, editError));
+
+  } else if (req.method === 'GET' && path === '/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
+    res.end(MANIFEST_JSON);
+
+  } else if (req.method === 'GET' && (path === '/icon-192.png' || path === '/apple-touch-icon.png')) {
+    const png = getCachedPng(192);
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Content-Length': png.length });
+    res.end(png);
+
+  } else if (req.method === 'GET' && path === '/icon-512.png') {
+    const png = getCachedPng(512);
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Content-Length': png.length });
+    res.end(png);
 
   } else if (req.method === 'GET' && path === '/status') {
     json(jobState);
