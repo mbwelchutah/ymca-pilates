@@ -1,0 +1,134 @@
+Add a mobile “Focus Mode” layout that shows only the most important information and controls.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI.
+
+GOAL:
+Create a cleaner iPhone-friendly mode that reduces clutter and shows only:
+- the next/selected job
+- current countdown / next open time
+- status
+- one primary run action
+
+This should feel calm, focused, and very Apple-like.
+
+1) MOBILE ONLY
+
+Apply mainly under:
+@media (max-width: 768px)
+
+Desktop can remain unchanged.
+
+2) ADD A FOCUS MODE TOGGLE
+
+Add a simple mobile toggle or button near the top of the UI:
+- “Focus Mode”
+- or a small pill toggle/button
+
+When enabled:
+- switch the mobile screen into a simplified layout
+
+If easy:
+- remember the mode in localStorage
+- restore it on reload
+
+If not, default to OFF.
+
+3) WHAT FOCUS MODE SHOWS
+
+In Focus Mode, show only these sections:
+
+A. Top summary / selected job card
+Show:
+- job title
+- day / time
+- instructor
+- target date if present
+- phase
+- booked / waiting / error status
+
+B. Countdown / next opening card
+Show:
+- “Next class opens in…”
+- countdown
+- “Opening now” if appropriate
+
+C. One primary action
+Show one large sticky action button:
+- Run Selected (Scheduler Mode)
+
+Optional small secondary action:
+- Run Now (Direct)
+
+D. Small status area
+Show:
+- dry run / live mode
+- scheduler paused/running
+- last result
+
+4) WHAT FOCUS MODE HIDES
+
+When Focus Mode is ON, hide:
+- full job list/table/cards
+- create/edit forms
+- failure summary
+- recent failures
+- debug panels
+- extra action stacks
+- advanced controls
+
+These should still exist in normal mode.
+Focus Mode is just a cleaner view, not a removal of features.
+
+5) KEEP STICKY RUN BAR
+
+If you already have a sticky mobile Run bar:
+- keep it
+- simplify it in Focus Mode if needed
+- ensure it stays reachable and safe-area aware
+
+6) APPLE-LIKE FEEL
+
+Focus Mode should feel:
+- spacious
+- calm
+- easy to read one-handed
+- reduced visual noise
+- no harsh colors unless there is a true warning
+
+Use:
+- soft cards
+- rounded corners
+- clean spacing
+- larger typography for key information
+
+7) KEEP PRIMARY STATUS VISIBLE
+
+In Focus Mode, keep the most important status visible without needing to scroll:
+- selected job
+- countdown
+- current mode (Dry Run / Live)
+- booked / waiting / error
+- run button
+
+8) SIMPLE IMPLEMENTATION
+
+Use simple client-side show/hide logic:
+- add a class to body or main mobile container when focus mode is enabled
+- hide/show existing sections using CSS + JS
+- no new backend logic needed
+
+9) AFTER CHANGES EXPLAIN:
+- how Focus Mode is enabled
+- what sections remain visible
+- what gets hidden
+- whether the choice is remembered on reload
+- how this improves iPhone usability
