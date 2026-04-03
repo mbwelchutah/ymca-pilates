@@ -23,6 +23,9 @@ export interface Job {
   last_error_message: string | null
   last_success_at: string | null
   created_at: string
+  // Enriched by /api/state
+  phase?: Phase
+  bookingOpenMs?: number | null
 }
 
 export interface AppState {

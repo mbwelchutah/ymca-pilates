@@ -14,6 +14,20 @@ export default function App() {
 
   const { state, loading, error, refresh } = useAppState()
 
+  // Client-side job selection persisted in localStorage.
+  // Falls back to the backend's first-active job when not yet set.
+  const [clientSelectedJobId, setClientSelectedJobId] = useState<number | null>(() => {
+    const saved = localStorage.getItem('selectedJobId')
+    return saved ? parseInt(saved, 10) : null
+  })
+
+  const handleSelectJob = (id: number) => {
+    setClientSelectedJobId(id)
+    localStorage.setItem('selectedJobId', String(id))
+  }
+
+  const effectiveSelectedJobId = clientSelectedJobId ?? state.selectedJobId
+
   const handleTabChange = (t: Tab) => {
     setTab(t)
     localStorage.setItem('mobileTab', t)
@@ -21,20 +35,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
-      {/* Screen content */}
       <main className="flex-1 overflow-y-auto">
         {tab === 'now' && (
-          <NowScreen appState={state} loading={loading} error={error} refresh={refresh} />
+          <NowScreen
+            appState={state}
+            selectedJobId={effectiveSelectedJobId}
+            loading={loading}
+            error={error}
+            refresh={refresh}
+          />
         )}
         {tab === 'plan' && (
-          <PlanScreen appState={state} loading={loading} refresh={refresh} />
+          <PlanScreen
+            appState={state}
+            selectedJobId={effectiveSelectedJobId}
+            onSelectJob={handleSelectJob}
+            loading={loading}
+            refresh={refresh}
+          />
         )}
         {tab === 'settings' && (
           <SettingsScreen appState={state} refresh={refresh} />
         )}
       </main>
 
-      {/* Bottom tab bar */}
       <TabBar active={tab} onChange={handleTabChange} />
     </div>
   )

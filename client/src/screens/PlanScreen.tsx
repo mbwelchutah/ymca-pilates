@@ -5,11 +5,13 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
-import type { AppState, Job } from '../types'
+import type { AppState, Job, Phase } from '../types'
 import { api } from '../lib/api'
 
 interface PlanScreenProps {
   appState: AppState
+  selectedJobId: number | null
+  onSelectJob: (id: number) => void
   loading: boolean
   refresh: () => void
 }
@@ -19,32 +21,95 @@ const DAY_NAMES: Record<number, string> = {
   4: 'Thursday', 5: 'Friday', 6: 'Saturday',
 }
 
-function JobCard({ job, onToggle, onDelete }: { job: Job; onToggle: () => void; onDelete: () => void }) {
+const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
+  too_early: 'gray',
+  warmup:    'amber',
+  sniper:    'blue',
+  late:      'red',
+  unknown:   'gray',
+}
+
+const PHASE_LABEL: Record<Phase, string> = {
+  too_early: 'Monitoring',
+  warmup:    'Opening Soon',
+  sniper:    'Booking Now',
+  late:      'Window Closed',
+  unknown:   'Monitoring',
+}
+
+function formatOpens(ms: number): string {
+  const now = Date.now()
+  if (ms < now) return 'Window passed'
+  return `Opens ${new Date(ms).toLocaleString([], {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })}`
+}
+
+interface JobCardProps {
+  job: Job
+  isWatching: boolean
+  onToggle: (e: React.MouseEvent) => void
+  onDelete: () => void
+  onSelect: () => void
+}
+
+function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps) {
   const [confirming, setConfirming] = useState(false)
   const dayName = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
+  const phase = (job.phase ?? 'unknown') as Phase
 
   return (
-    <Card padding="none" className={!job.is_active ? 'opacity-50' : ''}>
-      <div className="px-4 py-3.5 flex items-start gap-3">
+    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-50' : ''}`}>
+      {/* Watching stripe */}
+      {isWatching && (
+        <div className="h-0.5 bg-accent-blue w-full" />
+      )}
+
+      {/* Main tappable body — selects the job */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={e => e.key === 'Enter' && onSelect()}
+        className="px-4 py-3.5 flex items-start gap-3 cursor-pointer active:bg-divider transition-colors"
+      >
         <div className="flex-1 min-w-0">
+          {/* Class name row */}
           <div className="flex items-center gap-2">
             <StatusDot color={job.is_active ? 'green' : 'gray'} size="sm" />
-            <span className="text-[16px] font-semibold text-text-primary tracking-tight">
+            <span className="text-[16px] font-semibold text-text-primary tracking-tight leading-tight">
               {job.class_title}
             </span>
+            {isWatching && (
+              <span className="ml-auto text-[11px] font-semibold text-accent-blue bg-accent-blue/10 px-2 py-0.5 rounded-pill flex-shrink-0">
+                Watching
+              </span>
+            )}
           </div>
+
+          {/* Day + time + instructor */}
           <p className="text-[13px] text-text-secondary mt-0.5">
             {dayName} at {job.class_time}
             {job.instructor ? ` · ${job.instructor}` : ''}
           </p>
-          {job.last_result && (
-            <p className="text-[11px] text-text-muted mt-1 uppercase tracking-wide font-medium">
-              Last: {job.last_result}
-            </p>
+
+          {/* Phase + booking window */}
+          {job.is_active && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <StatusDot color={PHASE_DOT[phase]} size="sm" />
+              <span className="text-[12px] text-text-secondary">
+                {PHASE_LABEL[phase]}
+                {job.bookingOpenMs != null
+                  ? ` · ${formatOpens(job.bookingOpenMs)}`
+                  : ''}
+              </span>
+            </div>
           )}
         </div>
+
+        {/* Active toggle — stop propagation so it doesn't also select the job */}
         <button
-          onClick={onToggle}
+          onClick={e => { e.stopPropagation(); onToggle(e) }}
           className={`
             mt-0.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold flex-shrink-0
             transition-colors active:opacity-70
@@ -59,19 +124,29 @@ function JobCard({ job, onToggle, onDelete }: { job: Job; onToggle: () => void; 
 
       <div className="h-px bg-divider mx-4" />
 
+      {/* Footer: delete */}
       <div className="px-4 py-2.5 flex items-center justify-end">
         {confirming ? (
           <div className="flex items-center gap-3">
             <span className="text-[13px] text-text-secondary">Delete this job?</span>
-            <button onClick={() => setConfirming(false)} className="text-[13px] font-semibold text-text-secondary">
+            <button
+              onClick={() => setConfirming(false)}
+              className="text-[13px] font-semibold text-text-secondary"
+            >
               Cancel
             </button>
-            <button onClick={onDelete} className="text-[13px] font-semibold text-accent-red">
+            <button
+              onClick={onDelete}
+              className="text-[13px] font-semibold text-accent-red"
+            >
               Delete
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirming(true)} className="text-[13px] text-text-muted active:opacity-70">
+          <button
+            onClick={() => setConfirming(true)}
+            className="text-[13px] text-text-muted active:opacity-70"
+          >
             Delete
           </button>
         )}
@@ -153,7 +228,7 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
   )
 }
 
-export function PlanScreen({ appState, loading, refresh }: PlanScreenProps) {
+export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh }: PlanScreenProps) {
   const [showAdd, setShowAdd] = useState(false)
 
   const handleToggle = async (job: Job) => {
@@ -206,11 +281,20 @@ export function PlanScreen({ appState, loading, refresh }: PlanScreenProps) {
               <JobCard
                 key={job.id}
                 job={job}
+                isWatching={job.id === selectedJobId}
                 onToggle={() => handleToggle(job)}
                 onDelete={() => handleDelete(job)}
+                onSelect={() => onSelectJob(job.id)}
               />
             ))}
           </div>
+        )}
+
+        {/* Hint when multiple jobs exist */}
+        {appState.jobs.length > 1 && (
+          <p className="text-center text-[12px] text-text-muted px-4">
+            Tap a job to watch it on the Now tab
+          </p>
         )}
       </ScreenContainer>
     </>

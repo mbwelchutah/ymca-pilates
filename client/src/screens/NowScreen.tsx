@@ -12,6 +12,7 @@ import { api } from '../lib/api'
 
 interface NowScreenProps {
   appState: AppState
+  selectedJobId: number | null
   loading: boolean
   error: string | null
   refresh: () => void
@@ -65,11 +66,12 @@ function formatDayTime(job: Job) {
 const STEPS = ['Waiting', 'Opening Soon', 'Booking', 'Done']
 const PHASE_STEP: Record<Phase, number> = { too_early: 0, warmup: 1, sniper: 2, late: 3, unknown: 0 }
 
-export function NowScreen({ appState, loading, error, refresh }: NowScreenProps) {
-  const job = appState.jobs.find(j => j.id === appState.selectedJobId) ?? appState.jobs[0] ?? null
-  const phase: Phase = appState.phase
+export function NowScreen({ appState, selectedJobId, loading, error, refresh }: NowScreenProps) {
+  const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
+  // Prefer the selected job's own enriched phase/window; fall back to appState top-level.
+  const phase: Phase = (job?.phase ?? appState.phase) as Phase
   const cfg = PHASE_CONFIG[phase]
-  const countdown = useCountdown(appState.bookingOpenMs)
+  const countdown = useCountdown(job?.bookingOpenMs ?? appState.bookingOpenMs ?? null)
   const stepIdx = PHASE_STEP[phase]
   const isBooked = job?.last_result === 'booked' || job?.last_result === 'dry_run'
   const [forceLoading, setForceLoading] = useState(false)
@@ -242,8 +244,8 @@ export function NowScreen({ appState, loading, error, refresh }: NowScreenProps)
             <Card padding="none">
               <DetailRow label="Job" value={`#${job.id}`} />
               <DetailRow label="Status" value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
-              <DetailRow label="Opens" value={appState.bookingOpenMs
-                ? new Date(appState.bookingOpenMs).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+              <DetailRow label="Opens" value={(job?.bookingOpenMs ?? appState.bookingOpenMs)
+                ? new Date((job?.bookingOpenMs ?? appState.bookingOpenMs)!).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
                 : '—'
               } />
               <DetailRow label="Last Run" value={job.last_run_at ? new Date(job.last_run_at).toLocaleString() : '—'} />

@@ -3994,16 +3994,20 @@ const server = http.createServer((req, res) => {
     json(getAllJobs());
 
   } else if (req.method === 'GET' && path === '/api/state') {
-    const jobs = getAllJobs();
-    const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
-    let phase = 'unknown', bookingOpenMs = null;
-    if (firstActive) {
+    const rawJobs = getAllJobs();
+    // Enrich every job with its own phase + bookingOpenMs (one getPhase call each).
+    const jobs = rawJobs.map(j => {
       try {
-        const r = getPhase(firstActive);
-        phase = r.phase;
-        bookingOpenMs = r.bookingOpen ? r.bookingOpen.getTime() : null;
-      } catch (_) {}
-    }
+        const r = getPhase(j);
+        return { ...j, phase: r.phase, bookingOpenMs: r.bookingOpen ? r.bookingOpen.getTime() : null };
+      } catch (_) {
+        return { ...j, phase: 'unknown', bookingOpenMs: null };
+      }
+    });
+    // Top-level phase + bookingOpenMs reuse the enriched first-active job's values.
+    const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
+    const phase       = firstActive ? firstActive.phase       : 'unknown';
+    const bookingOpenMs = firstActive ? firstActive.bookingOpenMs : null;
     json({
       schedulerPaused: isSchedulerPaused(),
       dryRun: getDryRun(),
