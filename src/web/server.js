@@ -2279,13 +2279,15 @@ function buildHtml(jobs, error, editError) {
       el.classList.add('checkmark-show');
     }
 
+    var _sspTimer = null;
     function triggerSuccessPulse() {
       var el = document.getElementById('sel-success-pulse');
       if (!el) return;
+      clearTimeout(_sspTimer);              /* cancel any in-flight cleanup */
       el.classList.remove('active', 'visible');
-      void el.offsetWidth;                   /* force reflow so animation replays */
+      void el.offsetWidth;                 /* force reflow so animation replays */
       el.classList.add('visible', 'active');
-      setTimeout(function() {
+      _sspTimer = setTimeout(function() {
         el.classList.remove('active', 'visible'); /* restore display:none after animation */
       }, 1150);
     }
