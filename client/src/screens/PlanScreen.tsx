@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
-import type { AppState, Job, Phase } from '../types'
+import type { AppState, Job, Phase, ScrapedClass } from '../types'
 import { api } from '../lib/api'
 
 interface PlanScreenProps {
@@ -19,6 +19,11 @@ interface PlanScreenProps {
 const DAY_NAMES: Record<number, string> = {
   0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday',
   4: 'Thursday', 5: 'Friday', 6: 'Saturday',
+}
+
+const DAY_NAME_TO_NUM: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
 }
 
 const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
@@ -155,13 +160,25 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
   )
 }
 
-function AddJobForm({ onDone }: { onDone: () => void }) {
-  const [classTitle, setClassTitle] = useState('')
-  const [dayOfWeek, setDayOfWeek] = useState(2)
-  const [classTime, setClassTime] = useState('')
-  const [instructor, setInstructor] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+interface Prefill {
+  classTitle: string
+  dayOfWeek: number
+  classTime: string
+  instructor: string
+}
+
+interface AddJobFormProps {
+  onDone: () => void
+  prefill?: Prefill | null
+}
+
+function AddJobForm({ onDone, prefill }: AddJobFormProps) {
+  const [classTitle, setClassTitle] = useState(prefill?.classTitle ?? '')
+  const [dayOfWeek, setDayOfWeek]   = useState(prefill?.dayOfWeek ?? 2)
+  const [classTime, setClassTime]   = useState(prefill?.classTime ?? '')
+  const [instructor, setInstructor] = useState(prefill?.instructor ?? '')
+  const [saving, setSaving]         = useState(false)
+  const [err, setErr]               = useState<string | null>(null)
 
   const handleSubmit = async () => {
     if (!classTitle.trim() || !classTime.trim()) {
@@ -228,8 +245,153 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
   )
 }
 
+interface BrowseSheetProps {
+  onClose: () => void
+  onTrack: (cls: ScrapedClass) => void
+}
+
+function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
+  const [classes, setClasses]     = useState<ScrapedClass[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [err, setErr]             = useState<string | null>(null)
+  const [refreshErr, setRefreshErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getScrapedClasses()
+      .then(r => setClasses(r.classes))
+      .catch(e => setErr(e instanceof Error ? e.message : 'Could not load schedule'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setRefreshErr(null)
+    try {
+      const r = await api.refreshSchedule()
+      const updated = await api.getScrapedClasses()
+      setClasses(updated.classes)
+      console.log(`[Browse] Refreshed: ${r.count} classes`)
+    } catch (e) {
+      setRefreshErr(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const DAY_ORDER: Record<string, number> = {
+    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+    Thursday: 4, Friday: 5, Saturday: 6,
+  }
+  const sorted = [...classes].sort((a, b) => {
+    const dA = DAY_ORDER[a.day_of_week] ?? 7
+    const dB = DAY_ORDER[b.day_of_week] ?? 7
+    if (dA !== dB) return dA - dB
+    return a.class_time.localeCompare(b.class_time)
+  })
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40 z-40"
+        onClick={onClose}
+      />
+
+      {/* Sheet */}
+      <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl flex flex-col"
+           style={{ maxHeight: '80vh' }}>
+        {/* Handle + header */}
+        <div className="px-4 pt-3 pb-2 flex-shrink-0">
+          <div className="w-10 h-1 bg-divider rounded-full mx-auto mb-3" />
+          <div className="flex items-center justify-between">
+            <h2 className="text-[18px] font-bold text-text-primary tracking-tight">Browse Schedule</h2>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="text-[13px] font-semibold text-text-secondary active:opacity-70 disabled:opacity-40"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
+              <button
+                onClick={onClose}
+                className="text-[13px] font-semibold text-accent-blue active:opacity-70"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+          {refreshErr && (
+            <p className="text-[12px] text-accent-red mt-1">{refreshErr}</p>
+          )}
+          <p className="text-[12px] text-text-muted mt-0.5">
+            Refreshing takes ~20–30 s and requires your YMCA login.
+          </p>
+        </div>
+
+        <div className="h-px bg-divider flex-shrink-0" />
+
+        {/* Content */}
+        <div className="overflow-y-auto flex-1 px-4 py-3 flex flex-col gap-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="text-[15px] text-text-secondary">Loading…</span>
+            </div>
+          ) : err ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="text-[14px] text-accent-red">{err}</span>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <p className="text-[16px] font-semibold text-text-primary">No classes yet</p>
+              <p className="text-[14px] text-text-secondary text-center px-4">
+                Tap Refresh to load classes from the YMCA schedule.
+              </p>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="mt-1 text-accent-blue text-[15px] font-semibold disabled:opacity-40"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh Schedule'}
+              </button>
+            </div>
+          ) : (
+            <>
+              {sorted.map(cls => (
+                <div
+                  key={cls.id}
+                  className="flex items-center justify-between py-3 border-b border-divider last:border-0"
+                >
+                  <div className="flex-1 min-w-0 mr-3">
+                    <p className="text-[15px] font-semibold text-text-primary leading-tight">
+                      {cls.class_title}
+                    </p>
+                    <p className="text-[13px] text-text-secondary mt-0.5">
+                      {cls.day_of_week} · {cls.class_time}
+                      {cls.instructor ? ` · ${cls.instructor}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onTrack(cls)}
+                    className="flex-shrink-0 text-[13px] font-semibold text-accent-blue bg-accent-blue/10 px-3 py-1.5 rounded-pill active:opacity-70"
+                  >
+                    Track
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh }: PlanScreenProps) {
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAdd, setShowAdd]       = useState(false)
+  const [showBrowse, setShowBrowse] = useState(false)
+  const [prefill, setPrefill]       = useState<Prefill | null>(null)
 
   const handleToggle = async (job: Job) => {
     try {
@@ -245,15 +407,35 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     } catch { /* ignored */ }
   }
 
+  const handleTrack = (cls: ScrapedClass) => {
+    setPrefill({
+      classTitle: cls.class_title,
+      dayOfWeek: DAY_NAME_TO_NUM[cls.day_of_week] ?? 2,
+      classTime: cls.class_time,
+      instructor: cls.instructor ?? '',
+    })
+    setShowBrowse(false)
+    setShowAdd(true)
+  }
+
+  const handleAddDone = () => {
+    setShowAdd(false)
+    setPrefill(null)
+    refresh()
+  }
+
+  const showingControls = !showAdd
+
   return (
     <>
       <AppHeader
         subtitle="Schedule"
-        action={showAdd ? undefined : { label: 'Add', onClick: () => setShowAdd(true) }}
+        action={showingControls ? { label: 'Add', onClick: () => setShowAdd(true) } : undefined}
+        secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
       />
       <ScreenContainer>
         {showAdd && (
-          <AddJobForm onDone={() => { setShowAdd(false); refresh() }} />
+          <AddJobForm prefill={prefill} onDone={handleAddDone} />
         )}
 
         <SectionHeader title={`${appState.jobs.length} Class${appState.jobs.length !== 1 ? 'es' : ''}`} />
@@ -297,6 +479,13 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </p>
         )}
       </ScreenContainer>
+
+      {showBrowse && (
+        <BrowseSheet
+          onClose={() => setShowBrowse(false)}
+          onTrack={handleTrack}
+        />
+      )}
     </>
   )
 }

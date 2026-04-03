@@ -3,8 +3,7 @@
 // Sanders, and registers (or joins the waitlist). Set DRY_RUN=1 to run
 // with a visible browser without clicking Register/Waitlist.
 const fs = require('fs');
-const { execSync } = require('child_process');
-const { chromium } = require('playwright');
+const { createSession } = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 
 const isHeadless = process.env.HEADLESS !== 'false';
@@ -48,16 +47,6 @@ async function highlightElement(page, locator) {
       document.body.appendChild(tag);
     }, el);
   } catch (e) { console.log('highlight skipped:', e.message); }
-}
-
-// Use the system Chromium (installed via Nix) so the required shared libraries
-// (libgbm, libglib, etc.) are available. Playwright's bundled chrome-headless-shell
-// cannot find them in this environment.
-let CHROMIUM_PATH;
-try {
-  CHROMIUM_PATH = execSync('which chromium', { encoding: 'utf8' }).trim();
-} catch {
-  CHROMIUM_PATH = null;
 }
 
 async function runBookingJob(job, opts = {}) {
@@ -116,71 +105,21 @@ async function runBookingJob(job, opts = {}) {
   }
 
   try {
-    browser = await chromium.launch({
-      headless: isHeadless,
-      ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
-    });
-    // Set timezone to Pacific so Bubble.io's JavaScript renders class times in
-    // PDT/PST — the Replit server runs UTC, which shifts all times +7 hours and
-    // causes the bot to see "2:45 PM" for a class that is actually at "7:45 AM".
-    const context = await browser.newContext({
-      timezoneId: 'America/Los_Angeles',
-      viewport:   { width: 1280, height: 800 },
-    });
-    const page = await context.newPage();
-
-    const snap = async (label = '') => {
-      try {
-        const dir = 'screenshots';
-        fs.mkdirSync(dir, { recursive: true });
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const suffix = label ? `-${label}` : '';
-        const p = `${dir}/${ts}${suffix}.png`;
-        await page.screenshot({ path: p, fullPage: true });
-        screenshotPath = p;
-        console.log('Screenshot saved:', p);
-        // Keep only the 20 most recent screenshots to prevent disk bloat.
-        const files = fs.readdirSync(dir)
-          .map(name => ({ name, mtime: fs.statSync(require('path').join(dir, name)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime);
-        files.slice(20).forEach(f => {
-          try { fs.unlinkSync(require('path').join(dir, f.name)); console.log('Deleted old screenshot:', f.name); }
-          catch (_) {}
-        });
-      } catch (e) {
-        console.log('Screenshot failed:', e.message);
-      }
-    };
-
-    // Step 1: Log in via Daxko
-    await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForSelector('input[type="text"]:visible, input[type="email"]:visible');
-    await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
-    await page.click('#submit_button');
-    await page.waitForSelector('input[type="password"]');
-    await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-    console.log('Submitting login...');
-    await Promise.all([
-      page.waitForURL(url => {
-        const s = url.toString();
-        return !s.includes('find_account') && !s.includes('/login');
-      }, { timeout: 30000 }),
-      page.click('#submit_button'),
-    ]);
-    console.log('Login submit complete. URL:', page.url());
-
-    // Auth check: confirm we are no longer on a login page
-    const postLoginUrl = page.url();
-    const passwordFieldGone = await page.locator('input[type="password"]').count() === 0;
-    const stillOnLogin = postLoginUrl.includes('/login') || postLoginUrl.includes('find_account');
-    console.log('Password field gone:', passwordFieldGone, '| Still on login page:', stillOnLogin);
-    if (stillOnLogin || !passwordFieldGone) {
-      console.log('Login appears to have failed.');
-      await snap();
-      return logRunSummary({ status: 'error', message: 'Login failed or session not established', screenshotPath });
+    // Use the shared session module: launches Chromium, logs in to Daxko,
+    // and verifies the auth cookie before returning.
+    let _session;
+    try {
+      _session = await createSession({ headless: isHeadless });
+    } catch (loginErr) {
+      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath });
     }
-    console.log('Auth looks valid — proceeding.');
+    browser = _session.browser;
+    const page = _session.page;
+    // Wrap session snap so screenshotPath in this closure stays current.
+    const snap = async (label = '') => {
+      const p = await _session.snap(label);
+      if (p) screenshotPath = p;
+    };
 
     // Step 2: Go to schedule and filter by the job's instructor
     console.log('Navigating to schedule...');

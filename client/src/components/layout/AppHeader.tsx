@@ -1,12 +1,15 @@
-interface AppHeaderProps {
-  subtitle?: string
-  action?: {
-    label: string
-    onClick: () => void
-  }
+interface Action {
+  label: string
+  onClick: () => void
 }
 
-export function AppHeader({ subtitle = 'Monitoring', action }: AppHeaderProps) {
+interface AppHeaderProps {
+  subtitle?: string
+  action?: Action
+  secondaryAction?: Action
+}
+
+export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction }: AppHeaderProps) {
   return (
     <div className="safe-top px-4 pb-2 flex items-center justify-between">
       <div>
@@ -15,13 +18,25 @@ export function AppHeader({ subtitle = 'Monitoring', action }: AppHeaderProps) {
         </h1>
         <p className="text-[13px] text-text-secondary font-medium mt-0.5">{subtitle}</p>
       </div>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="text-[13px] font-semibold text-accent-blue active:opacity-70 transition-opacity"
-        >
-          {action.label}
-        </button>
+      {(action || secondaryAction) && (
+        <div className="flex items-center gap-3">
+          {secondaryAction && (
+            <button
+              onClick={secondaryAction.onClick}
+              className="text-[13px] font-semibold text-text-secondary active:opacity-70 transition-opacity"
+            >
+              {secondaryAction.label}
+            </button>
+          )}
+          {action && (
+            <button
+              onClick={action.onClick}
+              className="text-[13px] font-semibold text-accent-blue active:opacity-70 transition-opacity"
+            >
+              {action.label}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

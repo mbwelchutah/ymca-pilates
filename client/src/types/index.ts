@@ -28,6 +28,15 @@ export interface Job {
   bookingOpenMs?: number | null
 }
 
+export interface ScrapedClass {
+  id: number
+  class_title: string
+  day_of_week: string
+  class_time: string
+  instructor: string | null
+  scraped_at: string
+}
+
 export interface AppState {
   schedulerPaused: boolean
   dryRun: boolean

@@ -23,6 +23,18 @@ function openDb() {
     )
   `);
 
+  // Cache table for scraped YMCA schedule data.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scraped_classes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_title TEXT    NOT NULL,
+      day_of_week TEXT    NOT NULL,
+      class_time  TEXT    NOT NULL,
+      instructor  TEXT,
+      scraped_at  TEXT    NOT NULL
+    )
+  `);
+
   // Safely add new columns to existing databases that predate them.
   // SQLite does not support "ADD COLUMN IF NOT EXISTS", so we try and ignore
   // the error that fires when the column is already there.

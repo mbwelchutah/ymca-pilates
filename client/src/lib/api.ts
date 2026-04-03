@@ -1,4 +1,4 @@
-import type { Job, AppState } from '../types'
+import type { Job, AppState, ScrapedClass } from '../types'
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options)
@@ -62,4 +62,10 @@ export const api = {
     recent: Array<{ name: string; mtime: number; reason: string; meta: Record<string, unknown> }>
     summary: Record<string, number>
   }> => apiFetch('/api/failures'),
+
+  getScrapedClasses: (): Promise<{ classes: ScrapedClass[] }> =>
+    apiFetch('/api/scraped-classes'),
+
+  refreshSchedule: (): Promise<{ count: number; scraped_at: string }> =>
+    apiFetch('/refresh-schedule', { method: 'POST' }),
 }

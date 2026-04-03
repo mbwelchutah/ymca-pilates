@@ -5,6 +5,7 @@ const { URL } = require('url');
 const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
+const { scrapeSchedule } = require('../bot/scrape-schedule');
 const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
@@ -3722,6 +3723,9 @@ function runInBackground(job) {
     });
 }
 
+// Guard flag — prevents concurrent scrape requests.
+let _scrapeRunning = false;
+
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
@@ -4036,6 +4040,46 @@ const server = http.createServer((req, res) => {
     const summary = {};
     for (const f of all) { summary[f.reason] = (summary[f.reason] || 0) + 1; }
     json({ recent: all.slice(0, 5), summary });
+
+  } else if (req.method === 'GET' && path === '/api/scraped-classes') {
+    const db   = openDb();
+    const rows = db.prepare('SELECT * FROM scraped_classes ORDER BY day_of_week, class_time').all();
+    db.close();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ classes: rows }));
+
+  } else if (req.method === 'POST' && path === '/refresh-schedule') {
+    if (_scrapeRunning) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Scrape already in progress' }));
+      return;
+    }
+    _scrapeRunning = true;
+    scrapeSchedule()
+      .then(classes => {
+        const db        = openDb();
+        const scraped_at = new Date().toISOString();
+        const replace   = db.transaction(rows => {
+          db.prepare('DELETE FROM scraped_classes').run();
+          const ins = db.prepare(
+            'INSERT INTO scraped_classes (class_title, day_of_week, class_time, instructor, scraped_at) VALUES (?, ?, ?, ?, ?)'
+          );
+          for (const r of rows) {
+            ins.run(r.class_title, r.day_of_week, r.class_time, r.instructor || null, scraped_at);
+          }
+        });
+        replace(classes);
+        db.close();
+        _scrapeRunning = false;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ count: classes.length, scraped_at }));
+      })
+      .catch(err => {
+        _scrapeRunning = false;
+        console.error('[refresh-schedule] error:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
 
   } else if (req.method === 'GET' && path.startsWith('/screenshots/')) {
     // Serve screenshot images statically.
