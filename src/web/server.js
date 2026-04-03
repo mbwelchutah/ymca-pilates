@@ -1365,6 +1365,8 @@ function buildHtml(jobs, error, editError) {
         gap: 14px;
         padding: max(18px, calc(12px + env(safe-area-inset-top))) 4px 14px;
       }
+      /* Remove emoji icon — clean iOS header */
+      .mah-icon { display: none !important; }
       /* Main container: header owns the top safe-area, so container needs no top pad */
       .main-container { padding-top: 0; }
       /* Hide the desktop-style page header entirely on mobile */
@@ -1530,15 +1532,7 @@ function buildHtml(jobs, error, editError) {
         text-transform: uppercase;
         color: #8e8e93;
       }
-      .nhc-mode-pill {
-        margin-left: auto;
-        font-size: 11px;
-        font-weight: 600;
-        background: #eff3ff;
-        color: #2c5de5;
-        border-radius: 10px;
-        padding: 3px 9px;
-      }
+      /* Mode pill removed from hero card — mode info lives in header subtitle */
       .nhc-class-name {
         font-size: 28px;
         font-weight: 700;
@@ -1577,22 +1571,21 @@ function buildHtml(jobs, error, editError) {
         line-height: 1.55;
       }
 
-      /* --- Progress steps card --- */
+      /* --- Progress steps (flat, not a card) --- */
       .now-progress-card {
-        border-radius: 16px !important;
+        border-radius: 0 !important;
         box-shadow: none !important;
-        background: #f8f8fa !important;
-        padding: 0 !important;
-        overflow: hidden;
-        margin-bottom: 10px;
+        background: transparent !important;
+        padding: 2px 0 !important;
+        margin-bottom: 14px;
       }
       .nps-step {
         display: flex;
         align-items: center;
         gap: 14px;
-        padding: 13px 18px;
+        padding: 9px 4px;
       }
-      .nps-step + .nps-step { border-top: 1px solid #efefef; }
+      .nps-step + .nps-step { border-top: none; }
       .nps-icon {
         font-size: 15px;
         width: 22px;
@@ -1628,8 +1621,8 @@ function buildHtml(jobs, error, editError) {
         letter-spacing: -0.01em;
       }
       .nar-btn:active { opacity: 0.7; }
-      .nar-pause, .nar-resume { background: #f2f2f7; color: #1a1a2e; }
-      .nar-cancel             { background: #fff2f1; color: #ff3b30; }
+      .nar-pause, .nar-resume, .nar-cancel { background: #f2f2f7; color: #3c3c43; }
+      .nar-cancel { font-weight: 500; }
 
       /* --- Secondary detail card --- */
       .now-detail-card {
@@ -2053,13 +2046,13 @@ function buildHtml(jobs, error, editError) {
       <div class="mah-icon">&#x1F9D8;</div>
       <div class="mah-text">
         <div class="mah-title">YMCA Booker</div>
-        <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
+        <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run' : 'Monitoring'}</div>
       </div>
       <button class="mah-gear" id="mah-settings-btn" onclick="openSettings()" aria-label="Open settings">&#x2699;</button>
     </div>
 
-    <!-- Mobile refresh control: hidden on desktop -->
-    <div id="mobile-refresh-row" class="mobile-only">
+    <!-- Mobile refresh control: hidden on desktop, lives in Tools tab on mobile -->
+    <div id="mobile-refresh-row" class="mobile-only" data-tab-section="tools">
       <button id="mobile-refresh-btn" onclick="mobileRefresh()" aria-label="Refresh dashboard">
         <span class="mrr-icon" aria-hidden="true">&#x21BB;</span>
         <span id="mrr-label">Refresh</span>
@@ -2095,7 +2088,8 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <div id="next-job-banner" class="banner hidden" data-tab-section="now"></div>
+    <!-- Banner removed from Now tab — countdown is shown in hero card -->
+    <div id="next-job-banner" class="banner hidden now-status-legacy"></div>
 
     <!-- Legacy status bar — hidden on mobile, kept for JS targets -->
     <div class="now-status-legacy" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
@@ -2114,7 +2108,6 @@ function buildHtml(jobs, error, editError) {
       <div class="nhc-state-row">
         <span class="nhc-state-dot dot-green" id="nhc-dot"></span>
         <span class="nhc-state-label" id="nhc-state">Monitoring</span>
-        <span class="nhc-mode-pill" id="nhc-mode-pill"${!dryRunEnabled ? ' style="display:none"' : ''}>Dry Run</span>
       </div>
       <div class="nhc-class-name" id="nhc-class-name">${first ? esc(first.class_title) : '—'}</div>
       <div class="nhc-class-meta" id="nhc-class-meta">${firstFormattedMeta}</div>
@@ -3366,10 +3359,6 @@ function buildHtml(jobs, error, editError) {
       nhcDot.className = 'nhc-state-dot ' + dotCls;
       if (nhcState) nhcState.textContent = stateStr;
 
-      // --- Mode pill
-      var nhcModePill = document.getElementById('nhc-mode-pill');
-      if (nhcModePill) nhcModePill.style.display = isLive ? 'none' : '';
-
       // --- Countdown block
       var cdEl     = document.getElementById('sel-countdown');
       var cdText   = cdEl ? cdEl.textContent.trim() : '';
@@ -3394,13 +3383,14 @@ function buildHtml(jobs, error, editError) {
           : 'Will automatically attempt booking when registration opens';
       }
 
-      // --- App header sub-text
+      // --- App header sub-text (calm, one word)
       var mahStatus = document.getElementById('mah-status');
       if (mahStatus) {
-        if (isPaused)    mahStatus.textContent = 'Booking paused';
-        else if (isBooked)  mahStatus.textContent = 'Booking confirmed';
+        if (isBooked)       mahStatus.textContent = 'Booked';
         else if (isSniper)  mahStatus.textContent = 'Booking now\u2026';
-        else mahStatus.textContent = isLive ? 'Active and monitoring' : 'Dry Run \u00b7 Active';
+        else if (isPaused)  mahStatus.textContent = 'Paused';
+        else if (!isLive)   mahStatus.textContent = 'Dry Run';
+        else                mahStatus.textContent = 'Monitoring';
       }
 
       // --- Progress steps
@@ -3453,7 +3443,11 @@ function buildHtml(jobs, error, editError) {
     }
 
     function deactivateSelectedJob() {
-      if (selectedJobIsActive) toggleActive();
+      if (!selectedJobIsActive) return;
+      var className = document.getElementById('nhc-class-name');
+      var name = className ? className.textContent.trim() : 'this class';
+      if (!confirm('Stop monitoring ' + name + '?\n\nYou can re-activate it later from the Plan tab.')) return;
+      toggleActive();
     }
 
     // ---- dry run toggle ----
@@ -3465,8 +3459,7 @@ function buildHtml(jobs, error, editError) {
       ind.className    = enabled ? 'mode-dry' : 'mode-live';
       document.body.classList.toggle('live-mode', !enabled);
       live.classList.toggle('visible', !enabled);
-      const mahStatus = document.getElementById('mah-status');
-      if (mahStatus) mahStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
+      /* mahStatus text is set by syncNowTab() below — no update here */
       const stgDry = document.getElementById('stg-dry-run');
       if (stgDry) stgDry.checked = enabled;
       const mainDryToggle = document.getElementById('dry-run-toggle');
@@ -3618,9 +3611,9 @@ function buildHtml(jobs, error, editError) {
       document.querySelectorAll('.tab-seg-btn').forEach(function(btn) {
         btn.classList.toggle('active', btn.dataset.tab === tab);
       });
-      // Sticky run bar: only visible in Now tab
+      // Sticky run bar: moved to Tools tab (removed from Now — automation is the UX)
       var srb = document.getElementById('sticky-run-bar');
-      if (srb) srb.classList.toggle('srb-hidden', tab !== 'now');
+      if (srb) srb.classList.toggle('srb-hidden', tab !== 'tools');
       // Sync Now tab hero content when switching to Now
       if (tab === 'now') syncNowTab();
     }

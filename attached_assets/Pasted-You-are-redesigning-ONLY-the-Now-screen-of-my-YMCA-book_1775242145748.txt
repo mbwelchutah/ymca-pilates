@@ -1,0 +1,309 @@
+You are redesigning ONLY the “Now” screen of my YMCA booking app.
+
+This is NOT just a UI tweak. This is a product-level refinement to shift the experience from a “debug/control panel” into a “calm, trustworthy assistant.”
+
+---
+
+🧠 PRIMARY GOAL
+
+Transform the Now screen into something that feels like:
+
+- Apple Fitness
+- Strava (clean, not loud)
+- A calm assistant handling an important task
+
+The user should feel:
+“I don’t need to think about this. It’s handled.”
+
+NOT:
+“I need to monitor this system.”
+
+---
+
+🎯 CORE UX PRINCIPLE
+
+Within 3 seconds, the user should understand:
+
+1. What class is being monitored  
+2. What the bot is doing right now  
+3. What happens next  
+4. When it will act  
+5. That it will happen automatically  
+
+👉 Commentary:
+Right now the UI fails because it *shows too much* instead of *communicating clearly*.
+
+---
+
+🚨 CURRENT PROBLEMS (DO NOT IGNORE)
+
+- Duplicate information (same class shown multiple times)
+- Too many status labels (“Live”, “Monitoring”, “Scheduler running”)
+- Rocket icon → feels hacky / playful / not trustworthy
+- Bright red actions → creates anxiety
+- “Run Selected / Run Now” → breaks trust in automation
+- Raw backend labels (FOUND_NOT_OPEN_YET)
+- Too many stacked cards with equal importance
+- Weak hierarchy → nothing clearly “primary”
+- Top of screen is cluttered and noisy
+
+👉 Commentary:
+The app currently feels like a tool you babysit.
+We want it to feel like something that works quietly in the background.
+
+---
+
+❌ REMOVE / REDUCE AGGRESSIVELY
+
+- 🚀 rocket icon (completely remove)
+- “Live Mode Active”
+- duplicate class cards
+- repeated countdown timers
+- raw system labels
+- refresh as a primary button
+- “Run Selected” / “Run Now” from main screen
+- loud warning colors unless truly necessary
+
+👉 Commentary:
+This redesign is about SUBTRACTION, not addition.
+
+---
+
+🧩 NEW STRUCTURE (STRICT)
+
+1. HEADER (quiet, premium)
+
+Display:
+YMCA Booker  
+Monitoring  
+
+Optional:
+- very subtle green dot
+
+Include:
+- settings icon (top right)
+
+Do NOT include:
+- banners
+- rockets
+- multiple status labels
+
+👉 Commentary:
+This should feel like Apple. Calm. No noise.
+
+---
+
+2. HERO CARD (THIS IS THE PRODUCT)
+
+This is the most important component on the entire screen.
+
+Display:
+
+Gentle Yoga  
+Monday · 4:15 PM  
+
+Next action in  
+4:29:08  
+
+Will automatically book when registration opens  
+
+Rules:
+- Large, beautiful typography
+- Clean spacing
+- No badges
+- No duplicate cards above it
+- No bright colors
+
+👉 Commentary:
+This replaces 60% of your current UI.
+If this is done well, everything else becomes secondary.
+
+---
+
+3. PROGRESS (LIGHT, NOT A PANEL)
+
+Display:
+
+✓ Class found  
+● Waiting for registration  
+○ Booking  
+
+Rules:
+- Minimal styling
+- No heavy borders
+- No debug tone
+- No loud colors
+
+👉 Commentary:
+This gives confidence WITHOUT overwhelming the user.
+
+---
+
+4. ACTIONS (CALM + SAFE)
+
+Display:
+
+[Pause Booking]   [Cancel Booking]
+
+Rules:
+- Both neutral styling
+- Cancel is NOT bright red here
+- Red only appears on confirmation step
+- If paused → show [Resume Booking]
+
+Do NOT include:
+- Run controls
+- Force actions
+
+👉 Commentary:
+If the user sees “Run Now”, they assume the system isn’t reliable.
+
+---
+
+5. DETAILS (QUIET, SECONDARY)
+
+Display:
+
+Last checked      9:47 AM  
+Status            Registration not open yet  
+Retry             Automatic  
+
+Rules:
+- Very low visual weight
+- No large panels
+- No system language
+
+👉 Commentary:
+This is for reassurance, not decision-making.
+
+---
+
+🎨 VISUAL SYSTEM
+
+- iOS-first design language
+- subtle Strava influence
+- off-white / soft background
+- rounded corners everywhere
+- soft shadows, not borders
+- strong typography hierarchy
+- lots of whitespace
+
+👉 Commentary:
+Spacing and restraint = perceived quality.
+
+---
+
+🎨 COLOR RULES
+
+- Neutral base
+- ONE accent color only
+- Soft green for active
+- Soft amber if needed
+- Red ONLY for destructive confirmation
+
+👉 Commentary:
+Your current reds create stress. Remove that feeling.
+
+---
+
+✍️ COPY RULES (VERY IMPORTANT)
+
+Use calm, human language:
+
+GOOD:
+- Monitoring
+- Waiting for registration to open
+- Will automatically book
+- Registration not open yet
+
+BAD:
+- FOUND_NOT_OPEN_YET
+- SCHEDULER_RUNNING
+- LIVE MODE ACTIVE
+
+👉 Commentary:
+Language defines trust more than visuals.
+
+---
+
+📱 MOBILE REQUIREMENTS
+
+- Must feel excellent on iPhone
+- Top half of screen should communicate everything important
+- Minimal scrolling required
+- Large, readable countdown
+- Clean touch targets
+
+👉 Commentary:
+If the top half is messy, the whole app feels broken.
+
+---
+
+⚙️ IMPLEMENTATION RULES
+
+- Keep all existing logic intact
+- Do not break scheduler behavior
+- Do not remove features — only reduce prominence
+- If advanced controls are needed → hide in secondary UI (sheet / tools tab)
+
+---
+
+🧪 SUCCESS CRITERIA
+
+The redesign is successful if:
+
+- user understands everything in 3 seconds
+- UI feels calm and premium
+- no duplicated information
+- no debug-style language
+- no anxiety-inducing visuals
+- user trusts automation without needing to intervene
+
+---
+
+🏁 FINAL TARGET (MENTAL MODEL)
+
+Header:
+YMCA Booker  
+Monitoring  
+
+Hero:
+Gentle Yoga  
+Monday · 4:15 PM  
+
+Next action in  
+4:29:08  
+
+Will automatically book when registration opens  
+
+Progress:
+✓ Class found  
+● Waiting for registration  
+○ Booking  
+
+Actions:
+[Pause Booking]   [Cancel Booking]
+
+Details:
+Last checked      9:47 AM  
+Status            Registration not open yet  
+Retry             Automatic  
+
+---
+
+FINAL INSTRUCTION
+
+Do a full Now screen refinement pass.
+
+Do not just tweak styles.
+Do not add more UI.
+
+👉 Simplify aggressively  
+👉 Remove duplication  
+👉 Elevate the hero  
+👉 Make it calm and trustworthy  
+
+The result should feel like:
+“this is handled”
+not
+“I need to manage this”
