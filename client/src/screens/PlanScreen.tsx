@@ -267,6 +267,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
   const handleRefresh = async () => {
     setRefreshing(true)
     setRefreshErr(null)
+    setErr(null)
     try {
       const r = await api.refreshSchedule()
       const updated = await api.getScrapedClasses()
