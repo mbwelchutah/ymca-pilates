@@ -1,0 +1,141 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "Arial",
+      "role": "body"
+    },
+    {
+      "family": "Roboto",
+      "role": "body"
+    }
+  ],
+  "colors": {
+    "primary": "#457B9D",
+    "secondary": "#1A1A2E",
+    "accent": "#E63946",
+    "background": "#FFF7F7",
+    "textPrimary": "#949494",
+    "link": "#E63946"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "Arial",
+      "heading": "Arial"
+    },
+    "fontStacks": {
+      "heading": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "sans-serif"
+      ],
+      "body": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "sans-serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "23px",
+      "h2": "11px",
+      "body": "13px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "8px"
+  },
+  "components": {
+    "input": {
+      "background": "#FAFAFA",
+      "textColor": "#1A1A2E",
+      "borderColor": "#E8E8E8",
+      "borderRadius": "8px",
+      "borderRadiusCorners": {
+        "topLeft": "8px",
+        "topRight": "8px",
+        "bottomRight": "8px",
+        "bottomLeft": "8px"
+      },
+      "shadow": "none"
+    },
+    "buttonPrimary": {
+      "background": "#457B9D",
+      "textColor": "#FFFFFF",
+      "borderRadius": "10px",
+      "borderRadiusCorners": {
+        "topLeft": "10px",
+        "topRight": "10px",
+        "bottomRight": "10px",
+        "bottomLeft": "10px"
+      },
+      "shadow": "none"
+    },
+    "buttonSecondary": {
+      "background": "#F0F0F0",
+      "textColor": "#555555",
+      "borderRadius": "10px",
+      "borderRadiusCorners": {
+        "topLeft": "10px",
+        "topRight": "10px",
+        "bottomRight": "10px",
+        "bottomLeft": "10px"
+      },
+      "shadow": "none"
+    }
+  },
+  "images": {
+    "logo": null,
+    "favicon": "https://ymca-pilates.replit.app/apple-touch-icon.png",
+    "ogImage": null
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": 2,
+      "text": "Run Default Job",
+      "reasoning": "Button #1 'Run Default Job' uses a vibrant blue color (#457B9D), which is a strong indicator of a primary CTA. The action-oriented text 'Run Default Job' suggests a primary function."
+    },
+    "secondary": {
+      "index": 0,
+      "text": "▮▮ Pause Scheduler",
+      "reasoning": "Button #11 '▮▮ Pause Scheduler' has a light background (#F0F0F0), making it suitable as a secondary button. It contrasts with the primary button's vibrant color, fulfilling the requirement for different color groups."
+    },
+    "confidence": 0.95
+  },
+  "personality": {
+    "tone": "professional",
+    "energy": "medium",
+    "targetAudience": "fitness enthusiasts and gym members"
+  },
+  "designSystem": {
+    "framework": "custom",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0.95,
+    "colors": 0.9,
+    "overall": 0.925
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": false,
+      "llmSucceeded": false,
+      "finalSource": "none"
+    },
+    "buttonClassification": {
+      "llmCalled": true,
+      "llmSucceeded": true
+    }
+  }
+}

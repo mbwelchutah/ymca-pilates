@@ -18,6 +18,7 @@ const backendPaths = [
   '/run-job',
   '/run-scheduler-once',
   '/run-selected-scheduler',
+  '/refresh-schedule',
   '/screenshots',
   '/manifest.json',
 ]
@@ -28,7 +29,7 @@ export default defineConfig({
   server: {
     port: 5000,
     host: '0.0.0.0',
-    allowedHosts: 'all',
+    allowedHosts: true,
     proxy: Object.fromEntries(
       backendPaths.map(p => [p, { target: BACKEND, changeOrigin: true }])
     ),
