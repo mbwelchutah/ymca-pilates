@@ -1362,7 +1362,7 @@ function buildHtml(jobs, error, editError) {
       #mobile-app-header {
         display: flex;
         align-items: center;
-        gap: 14px;
+        justify-content: space-between;
         padding: max(18px, calc(12px + env(safe-area-inset-top))) 4px 14px;
       }
       /* Main container: header owns the top safe-area, so container needs no top pad */
@@ -1629,7 +1629,7 @@ function buildHtml(jobs, error, editError) {
       }
       .nar-btn:active { opacity: 0.7; }
       .nar-pause, .nar-resume { background: #f2f2f7; color: #1a1a2e; }
-      .nar-cancel             { background: #fff2f1; color: #ff3b30; }
+      .nar-cancel             { background: #f2f2f7; color: #636366; }
 
       /* --- Secondary detail card --- */
       .now-detail-card {
@@ -2050,16 +2050,15 @@ function buildHtml(jobs, error, editError) {
 
     <!-- Mobile app-style header: hidden on desktop, shown on mobile -->
     <div id="mobile-app-header">
-      <div class="mah-icon">&#x1F9D8;</div>
       <div class="mah-text">
         <div class="mah-title">YMCA Booker</div>
-        <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
+        <div class="mah-sub" id="mah-status">Monitoring</div>
       </div>
       <button class="mah-gear" id="mah-settings-btn" onclick="openSettings()" aria-label="Open settings">&#x2699;</button>
     </div>
 
-    <!-- Mobile refresh control: hidden on desktop -->
-    <div id="mobile-refresh-row" class="mobile-only">
+    <!-- Mobile refresh control: shown in Tools tab only -->
+    <div id="mobile-refresh-row" class="mobile-only" data-tab-section="tools">
       <button id="mobile-refresh-btn" onclick="mobileRefresh()" aria-label="Refresh dashboard">
         <span class="mrr-icon" aria-hidden="true">&#x21BB;</span>
         <span id="mrr-label">Refresh</span>
@@ -2095,7 +2094,7 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <div id="next-job-banner" class="banner hidden" data-tab-section="now"></div>
+    <div id="next-job-banner" class="banner hidden" data-tab-section="plan"></div>
 
     <!-- Legacy status bar — hidden on mobile, kept for JS targets -->
     <div class="now-status-legacy" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
@@ -3618,9 +3617,9 @@ function buildHtml(jobs, error, editError) {
       document.querySelectorAll('.tab-seg-btn').forEach(function(btn) {
         btn.classList.toggle('active', btn.dataset.tab === tab);
       });
-      // Sticky run bar: only visible in Now tab
+      // Sticky run bar: only visible in Tools tab
       var srb = document.getElementById('sticky-run-bar');
-      if (srb) srb.classList.toggle('srb-hidden', tab !== 'now');
+      if (srb) srb.classList.toggle('srb-hidden', tab !== 'tools');
       // Sync Now tab hero content when switching to Now
       if (tab === 'now') syncNowTab();
     }

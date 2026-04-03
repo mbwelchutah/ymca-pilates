@@ -1,0 +1,289 @@
+You are doing a constrained UI refinement pass.
+
+IMPORTANT:
+The previous build went wrong because it moved too much onto one screen and drifted back toward the previous design. This time, do NOT redesign the app structure. Do NOT combine screens. Do NOT pull Plan or Tools content into Now. Do NOT revert to older UI patterns.
+
+Your task is ONLY to refine the existing Now screen within the current app architecture.
+
+NON-NEGOTIABLE GUARDRAILS
+
+1. Keep the 3-tab structure exactly as it is:
+- Now
+- Plan
+- Tools
+
+2. Keep Plan content in Plan.
+Do NOT move job editing, job creation, failure summary, recent failures, or scheduler controls onto Now.
+
+3. Keep Tools content in Tools.
+Do NOT move dry run mode, force run, advanced actions, settings panels, or debug tools onto Now.
+
+4. Do NOT collapse the app into a single long page.
+
+5. Do NOT reintroduce old duplicated cards, old badges, or old “dashboard” clutter.
+
+6. Do NOT make broad product decisions outside the Now screen.
+
+7. Preserve the current routing, logic, and tab behavior.
+
+GOAL
+
+Refine ONLY the visual design, hierarchy, copy, and component presentation of the Now screen so it feels:
+- calmer
+- more iOS-like
+- subtly Strava-inspired
+- more trustworthy
+- less retro
+- less like a debug dashboard
+
+The user should immediately understand:
+- what class is being monitored
+- what the bot is doing now
+- when it will act next
+- that it will book automatically
+
+THIS IS A SCREEN REFINEMENT, NOT AN INFORMATION ARCHITECTURE REWRITE.
+
+NOW SCREEN: WHAT SHOULD STAY
+
+The Now screen should remain a dedicated summary/status screen.
+It should contain only Now-relevant content such as:
+- app header
+- high-level monitoring state
+- the currently monitored class
+- next action timing
+- booking progress
+- calm primary controls like pause/cancel if relevant
+- quiet secondary details like last checked / retry mode
+
+NOW SCREEN: WHAT MUST NOT APPEAR
+
+Do NOT show any of the following on Now:
+- create job forms
+- edit selected job forms
+- failure summary panels
+- recent failures lists
+- dry run toggle
+- run all scheduler actions
+- force run controls
+- more actions sheets for advanced tools
+- job management utilities
+- cleanup tools
+- advanced settings panels
+- repeated run-now controls at the bottom
+- old yellow raw badges like FOUND_NOT_OPEN_YET
+- duplicated class cards stacked above hero card
+
+ROOT CAUSE OF PREVIOUS FAILURE
+
+The last attempt interpreted “show more confidence and status” as “put everything important from the app onto one screen.”
+That is incorrect.
+
+Correct interpretation:
+Make the Now screen clearer and calmer WITHOUT changing the overall app separation of concerns.
+
+DESIGN INTENT
+
+Think:
+- Now = status + confidence + next action
+- Plan = jobs and schedule management
+- Tools = advanced/manual/admin controls
+
+Do not blur those boundaries.
+
+REFINE THE NOW SCREEN USING THIS STRUCTURE
+
+1. HEADER
+Keep a compact top header with:
+- app name
+- subtle one-line status
+- settings icon if already part of shared shell
+
+Preferred copy:
+YMCA Booker
+Monitoring
+
+or
+YMCA Booker
+Active and monitoring
+
+Do NOT use:
+- rocket icon
+- Live Mode Active banner
+- repeated live/scheduler labels
+
+2. HERO CARD
+The main card on Now should be the clear focal point.
+
+Show:
+- class name
+- day/time
+- optional instructor if helpful
+- large next-action countdown or equivalent
+- one reassuring sentence
+
+Example:
+Gentle Yoga
+Monday · 4:15 PM
+Next action in
+4:29:08
+Will automatically book when registration opens
+
+Rules:
+- only one main hero card
+- no duplicate mini-summary card above it
+- no raw system chips
+- calm spacing
+- premium typography
+- this should be the source of truth for the user
+
+3. PROGRESS
+Include a lightweight progress section only for the current booking flow.
+
+Example:
+✓ Class found
+● Waiting for registration
+○ Booking attempt
+
+Rules:
+- simple and lightweight
+- no huge boxed dashboard panel
+- no harsh borders
+- no technical language
+- do not repeat the same information already shown in the hero card
+
+4. ACTIONS
+If there are actions on the Now screen, keep them limited to the current monitored booking only.
+
+Allowed:
+- Pause Booking
+- Cancel Booking
+- Resume Booking if paused
+
+Not allowed on Now:
+- Run Selected
+- Run Now (Direct)
+- Run All
+- Force Run
+- Dry Run
+- advanced scheduler actions
+
+Important:
+Cancel should not be hard red on the main screen.
+Use neutral or softly tinted styling.
+Destructive red belongs only in a confirmation flow.
+
+5. DETAILS
+Include only a quiet, secondary details section.
+
+Allowed detail rows:
+- Last checked
+- Status
+- Retry
+
+Example:
+Last checked      9:47 AM
+Status            Registration not open yet
+Retry             Automatic
+
+Rules:
+- low emphasis
+- no giant status box
+- no backend codes
+- no extra noise
+
+VISUAL CORRECTIONS TO MAKE
+
+- remove retro feel
+- remove rocket imagery
+- remove duplicate information
+- reduce all-caps labels
+- reduce unnecessary chips and pills
+- reduce strong reds and yellows
+- use softer neutral surfaces
+- improve spacing and rhythm
+- create one obvious visual hierarchy:
+  header -> hero -> progress -> actions -> details
+
+VERY IMPORTANT: DO NOT REVERT TO OLD DESIGN
+
+Do NOT fall back to:
+- refresh-heavy top bar
+- live mode banner
+- duplicated cards
+- yellow status pills
+- bottom run buttons
+- Plan/Tools content leaking onto Now
+- old dashboard card stack
+
+If something on the existing Now screen is coming from shared components, refine it in place rather than replacing the app structure.
+
+IMPLEMENTATION STRATEGY
+
+Please approach this in the following order:
+
+STEP 1
+Audit the current Now screen and identify which elements belong to:
+- shared app shell
+- Now-only content
+- leaked content from Plan/Tools
+
+STEP 2
+Remove leaked Plan/Tools content from Now without touching those tabs themselves.
+
+STEP 3
+Refine the Now-only content into a clean hierarchy:
+- compact header
+- single hero card
+- lightweight progress
+- limited actions
+- quiet details
+
+STEP 4
+Update copy so it reads like a calm assistant, not a backend monitor.
+
+STEP 5
+Polish spacing, typography, colors, radii, and shadows to feel more iOS / calm Strava.
+
+COPY RULES
+
+Use:
+- Monitoring
+- Waiting for registration to open
+- Will automatically book when registration opens
+- Registration not open yet
+- Automatic retry enabled
+
+Avoid:
+- FOUND_NOT_OPEN_YET
+- SCHEDULER_RUNNING
+- LIVE MODE ACTIVE
+- FORCE RUN
+- technical or backend language
+
+SUCCESS CRITERIA
+
+This pass is successful only if ALL of the following are true:
+
+- Now remains its own dedicated tab
+- Plan remains separate
+- Tools remains separate
+- No forms appear on Now
+- No failure panels appear on Now
+- No advanced/manual controls appear on Now
+- The screen feels calmer and more premium
+- The top half clearly communicates what is happening
+- There is only one main hero card
+- No duplicated status information
+- No retro rocket/dev dashboard vibe
+
+FINAL INSTRUCTION
+
+Do not redesign the whole app.
+Do not merge screens.
+Do not add more content to Now.
+
+Refine the existing Now screen only.
+Simplify aggressively.
+Preserve app structure.
+Make the screen feel like a calm status view, not a command center.
