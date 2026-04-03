@@ -169,7 +169,7 @@ function buildHtml(jobs, error, editError) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>YMCA Pilates \u2014 Control Panel</title>
+  <title>YMCA BOT \u2014 Control Panel</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1060,7 +1060,7 @@ function buildHtml(jobs, error, editError) {
   <div class="page">
 
     <div class="page-header">
-      <h1>&#x1F9D8; YMCA Pilates</h1>
+      <h1>&#x1F916; YMCA BOT</h1>
       <p>Booking control panel</p>
     </div>
     <div id="live-mode-indicator">&#x1F680; Live Mode Active</div>
