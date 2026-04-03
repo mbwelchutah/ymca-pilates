@@ -965,7 +965,11 @@ function buildHtml(jobs, error, editError) {
       }
       #sticky-run-bar .srb-secondary:active { background: #e0e0e0; }
 
-      /* Hide duplicate run buttons in Actions card — they live in the sticky bar */
+      /* Hide duplicate run buttons in Actions card — they live in the sticky bar.
+         Note: .mobile-hidden only fires at ≤640px (existing breakpoint), so we
+         suppress these two buttons directly here for the 641–768px range as well.
+         Expanding .mobile-hidden globally to 768px would hide unrelated elements
+         (Force Run, Delete, etc.) on tablets, which is not desired. */
       #btn-run, #btn-run-sched-sel { display: none !important; }
 
       /* Extra bottom padding so content clears the sticky bar */
