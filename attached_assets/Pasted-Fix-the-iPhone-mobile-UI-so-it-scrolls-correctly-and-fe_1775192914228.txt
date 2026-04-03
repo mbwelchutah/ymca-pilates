@@ -1,0 +1,148 @@
+Fix the iPhone/mobile UI so it scrolls correctly and feels like a simple iOS-style interface.
+
+Keep ALL backend logic exactly the same.
+
+DO NOT change:
+	•	scheduler logic
+	•	booking logic
+	•	database
+	•	routes
+	•	job behavior
+
+Only improve the mobile UI.
+
+⸻
+
+	1.	FIX SCROLL (MOST IMPORTANT)
+
+Problem:
+	•	page bounces / snaps back
+	•	cannot scroll past “Pause Scheduler”
+	•	likely caused by nested scroll containers
+
+Fix:
+	•	Use ONLY ONE main scroll container on mobile
+	•	Remove nested scrollable divs
+
+Apply:
+
+html, body {
+height: 100%;
+overflow: hidden;
+}
+
+.main-container {
+height: 100vh;
+overflow-y: auto;
+-webkit-overflow-scrolling: touch;
+}
+	•	Remove any unnecessary overflow: scroll
+	•	Add:
+
+	•	{
+overscroll-behavior: contain;
+}
+
+Result:
+User can smoothly scroll the full page without bounce or reset.
+
+⸻
+
+	2.	SIMPLIFY ACTION BUTTONS (MOBILE ONLY)
+
+Too many stacked buttons.
+
+On mobile, show ONLY:
+	•	Dry Run toggle
+	•	Run Now (Direct)
+	•	Run Selected (Scheduler Mode)
+
+Optional:
+	•	Run All
+
+Move everything else into “More Actions”
+
+⸻
+
+	3.	ADD “MORE ACTIONS” PANEL
+
+Add a button:
+“More Actions”
+
+When tapped:
+	•	show a panel from the bottom
+
+Panel contains:
+	•	Force Run
+	•	Run Default Job
+	•	Pause Scheduler
+	•	Deactivate Job
+	•	Delete Job
+	•	Clean Old Jobs
+
+Implementation:
+	•	fixed position bottom panel
+	•	rounded top corners
+	•	dark backdrop
+	•	tap outside to close
+
+Do NOT change action logic — just move UI.
+
+⸻
+
+	4.	MOBILE JOB CARDS (REPLACE TABLE)
+
+On mobile:
+	•	hide table
+	•	show jobs as stacked cards
+
+Each card shows:
+	•	title
+	•	day + time
+	•	instructor
+	•	active dot
+	•	status badge
+
+Tap card:
+	•	selects job (same behavior)
+
+⸻
+
+	5.	ADD TOP SUMMARY BAR
+
+Sticky at top.
+
+Show:
+	•	selected job
+	•	time
+	•	instructor
+	•	status
+	•	countdown (if available)
+	•	dry run / live mode
+
+Keep simple.
+
+⸻
+
+	6.	CLEAN iOS-STYLE LOOK
+
+	•	rounded corners (12–16px)
+	•	good spacing
+	•	reduce bright colors
+	•	destructive actions only inside “More Actions”
+
+⸻
+
+	7.	KEEP IT SIMPLE
+
+	•	no frameworks
+	•	no animations required
+	•	no logic changes
+
+⸻
+
+AFTER CHANGES EXPLAIN:
+	•	what caused the scroll bug
+	•	how it was fixed
+	•	what moved into “More Actions”
+	•	how mobile differs from desktop

@@ -128,6 +128,42 @@ function buildHtml(jobs, error, editError) {
   const { phase: firstPhase, bookingOpenMs: firstBookingOpenMs } =
     first ? jobInfo(first) : { phase: 'unknown', bookingOpenMs: null };
 
+  /* Mobile job cards — same data-attributes as table rows so selectJob() works */
+  const mobileJobCardsHtml = hasJobs
+    ? jobs.map(j => {
+        const { phase, bookingOpenMs } = jobInfo(j);
+        const jobBooked = isBookedSS(j);
+        const isFirst   = first && j.id === first.id;
+        return `<div class="mobile-job-card${isFirst ? ' selected' : ''}"
+            data-id="${j.id}"
+            data-title="${esc(j.class_title)}"
+            data-day="${esc(j.day_of_week || '')}"
+            data-time="${esc(j.class_time || '')}"
+            data-instructor="${esc(j.instructor || '')}"
+            data-phase="${esc(phase)}"
+            data-last-run-at="${esc(j.last_run_at || '')}"
+            data-last-result="${esc(j.last_result || '')}"
+            data-target-date="${esc(j.target_date || '')}"
+            data-is-active="${j.is_active ? '1' : '0'}"
+            data-last-success-at="${esc(j.last_success_at || '')}"
+            data-last-error-msg="${esc(j.last_error_message || '')}"
+            data-booking-open="${bookingOpenMs || ''}"
+            onclick="selectMobileCard(this)">
+          <div class="mjc-row">
+            <span class="dot ${j.is_active ? 'dot-on' : 'dot-off'}"></span>
+            <strong class="mjc-title">${esc(j.class_title)}</strong>
+            <span class="mjc-id">#${j.id}</span>
+          </div>
+          <div class="mjc-meta">${esc(j.day_of_week || '\u2014')} \u00b7 ${esc(j.class_time || '\u2014')} \u00b7 ${esc(j.instructor || '\u2014')}</div>
+          <div class="mjc-badges">
+            <span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>
+            ${jobBooked ? '<span class="badge-booked">\u2713\u00a0Booked</span>' : ''}
+            ${j.last_result ? `<span class="badge badge-result-${j.last_result}">${j.last_result}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="padding:20px;color:#aaa;font-size:14px;text-align:center;">No jobs found.</div>';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -137,13 +173,22 @@ function buildHtml(jobs, error, editError) {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ---- Single-scroll-container pattern (fixes iOS bounce/snap) ---- */
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #eef2f7;
-      min-height: 100vh;
-      padding: 28px 16px 56px;
-      padding-bottom: max(56px, calc(56px + env(safe-area-inset-bottom)));
       color: #1a1a2e;
+    }
+    .main-container {
+      height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      padding: 28px 16px max(56px, calc(56px + env(safe-area-inset-bottom)));
     }
 
     .page {
@@ -780,11 +825,121 @@ function buildHtml(jobs, error, editError) {
     .summary-reason-time            .summary-count { background: #fde8e8; color: #c0392b; }
     .summary-reason-instructor      .summary-count { background: #fff3e0; color: #b45309; }
     .summary-reason-time-instructor .summary-count { background: #fbe9e7; color: #922b21; }
+
+    /* ================================================================
+       MOBILE-ONLY STYLES  (≤ 640 px)
+       ================================================================ */
+
+    /* Responsive visibility helpers */
+    .mobile-only   { display: none; }          /* hidden on desktop, shown on mobile */
+
+    @media (max-width: 640px) {
+      .mobile-only   { display: block !important; }
+      .mobile-hidden { display: none  !important; }
+
+      .page { gap: 16px; }
+      .page-header h1 { font-size: 20px; }
+      .main-container { padding-left: 12px; padding-right: 12px; }
+      .card-body { padding: 16px 16px; }
+      .card-header { padding: 14px 16px 10px; }
+
+      /* ---- Mobile job cards (replace table) ---- */
+      .desktop-table-card { display: none !important; }
+      .mobile-jobs-card   { display: block !important; }
+
+      .mobile-job-card {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .mobile-job-card:last-child { border-bottom: none; }
+      .mobile-job-card:active     { background: #f5f8ff; }
+      .mobile-job-card.selected   {
+        background: #eef3ff;
+        box-shadow: inset 4px 0 0 #457b9d;
+      }
+      .mjc-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 4px;
+      }
+      .mjc-title { font-size: 15px; font-weight: 600; color: #1a1a2e; flex: 1; }
+      .mjc-id    { font-size: 11px; color: #bbb; font-weight: 400; }
+      .mjc-meta  { font-size: 13px; color: #666; margin-bottom: 7px; }
+      .mjc-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+
+      /* ---- More Actions button (mobile) ---- */
+      .mobile-more-btn { display: block !important; }
+    }
+
+    /* Desktop: hide mobile cards and More Actions button */
+    @media (min-width: 641px) {
+      .mobile-jobs-card  { display: none !important; }
+      .mobile-more-btn   { display: none !important; }
+    }
+
+    /* ---- More Actions bottom sheet ---- */
+    .moa-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1100;
+    }
+    .moa-backdrop.open { display: block; }
+    .moa-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #fff;
+      border-radius: 18px 18px 0 0;
+      padding: 12px 16px max(24px, calc(16px + env(safe-area-inset-bottom)));
+      z-index: 1200;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .moa-panel.open { transform: translateY(0); }
+    .moa-handle {
+      width: 36px; height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      margin: 0 auto 16px;
+    }
+    .moa-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #aaa;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+    .moa-items { display: flex; flex-direction: column; gap: 10px; }
+    .moa-items .btn { font-size: 15px; padding: 14px 20px; }
   </style>
 </head>
 <body>
   <div id="haptic-flash"></div>
   <div id="success-checkmark">&#x2713;</div>
+
+  <!-- More Actions bottom sheet (mobile) -->
+  <div id="moa-backdrop" class="moa-backdrop" onclick="closeMoreActions()"></div>
+  <div id="moa-panel" class="moa-panel">
+    <div class="moa-handle"></div>
+    <p class="moa-title">More Actions</p>
+    <div class="moa-items">
+      <button class="btn btn-danger"  onclick="forceRunSelected(); closeMoreActions()">&#9888; Force Run (Ignore Rules)</button>
+      <button class="btn btn-secondary" onclick="runRegister(); closeMoreActions()">Run Default Job</button>
+      <button class="btn btn-muted" id="ma-pause"   onclick="pauseScheduler();  closeMoreActions()">&#9646;&#9646; Pause Scheduler</button>
+      <button class="btn btn-muted" id="ma-resume"  onclick="resumeScheduler(); closeMoreActions()" style="display:none">&#9654; Resume Scheduler</button>
+      <button class="btn btn-toggle ${first && first.is_active ? 'is-active' : ''}" id="ma-toggle" onclick="toggleActive(); closeMoreActions()">${first ? (first.is_active ? 'Deactivate Job' : 'Activate Job') : 'Toggle Active'}</button>
+      <button class="btn btn-danger"  onclick="deleteSelectedJob(); closeMoreActions()">Delete Job</button>
+      <button class="btn btn-muted"   onclick="cleanTestJobs(); closeMoreActions()">Clean Old Test Jobs</button>
+    </div>
+  </div>
+
+  <div class="main-container">
   <div class="page">
 
     <div class="page-header">
@@ -832,8 +987,8 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <!-- Saved Jobs -->
-    <div class="card">
+    <!-- Saved Jobs — desktop table (hidden on mobile) -->
+    <div class="card desktop-table-card">
       <div class="card-header"><h2>Saved Jobs</h2></div>
       <div class="table-scroll">
         <table class="jobs-table">
@@ -858,6 +1013,12 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
+    <!-- Saved Jobs — mobile cards (hidden on desktop) -->
+    <div class="card mobile-jobs-card">
+      <div class="card-header"><h2>Jobs</h2></div>
+      <div id="mobile-jobs-list">${mobileJobCardsHtml}</div>
+    </div>
+
     <!-- Actions -->
     <div class="card">
       <div class="card-header"><h2>Actions</h2></div>
@@ -872,23 +1033,10 @@ function buildHtml(jobs, error, editError) {
             <span class="slider"></span>
           </label>
         </div>
+
+        <!-- Always visible primary actions -->
         <button class="btn btn-primary" id="btn-run" onclick="runSelected()">
           &#9654; Run Now (Direct)
-        </button>
-        <button class="btn btn-danger" id="btn-force-run" onclick="forceRunSelected()">
-          &#9888; Force Run (Ignore Rules)
-        </button>
-        <button class="btn btn-secondary" id="btn-register" onclick="runRegister()">
-          Run Default Job
-        </button>
-        <button class="btn btn-muted" id="btn-clean" onclick="cleanTestJobs()">
-          Clean Old Test Jobs
-        </button>
-        <button class="btn btn-toggle ${first && !first.is_active ? '' : 'is-active'}" id="btn-toggle" onclick="toggleActive()">
-          ${first ? (first.is_active ? 'Deactivate Job' : 'Activate Job') : 'Toggle Active'}
-        </button>
-        <button class="btn btn-danger" id="btn-delete" onclick="deleteSelectedJob()">
-          Delete Job
         </button>
         <button class="btn btn-secondary" id="btn-run-sched-sel" onclick="runSelectedScheduler()">
           &#9654; Run Selected (Scheduler Mode)
@@ -896,11 +1044,33 @@ function buildHtml(jobs, error, editError) {
         <button class="btn btn-secondary" id="btn-run-tick" onclick="runSchedulerOnce()">
           &#9654;&#9654; Run All (Scheduler Mode)
         </button>
-        <button class="btn btn-muted" id="btn-pause" onclick="pauseScheduler()">
+
+        <!-- Secondary actions: visible on desktop, moved into More Actions on mobile -->
+        <button class="btn btn-danger mobile-hidden" id="btn-force-run" onclick="forceRunSelected()">
+          &#9888; Force Run (Ignore Rules)
+        </button>
+        <button class="btn btn-secondary mobile-hidden" id="btn-register" onclick="runRegister()">
+          Run Default Job
+        </button>
+        <button class="btn btn-muted mobile-hidden" id="btn-clean" onclick="cleanTestJobs()">
+          Clean Old Test Jobs
+        </button>
+        <button class="btn btn-toggle mobile-hidden ${first && !first.is_active ? '' : 'is-active'}" id="btn-toggle" onclick="toggleActive()">
+          ${first ? (first.is_active ? 'Deactivate Job' : 'Activate Job') : 'Toggle Active'}
+        </button>
+        <button class="btn btn-danger mobile-hidden" id="btn-delete" onclick="deleteSelectedJob()">
+          Delete Job
+        </button>
+        <button class="btn btn-muted mobile-hidden" id="btn-pause" onclick="pauseScheduler()">
           &#9646;&#9646; Pause Scheduler
         </button>
-        <button class="btn btn-muted" id="btn-resume" onclick="resumeScheduler()" style="display:none">
+        <button class="btn btn-muted mobile-hidden" id="btn-resume" onclick="resumeScheduler()" style="display:none">
           &#9654; Resume Scheduler
+        </button>
+
+        <!-- More Actions button — mobile only -->
+        <button class="btn btn-muted mobile-more-btn" onclick="openMoreActions()">
+          &#183;&#183;&#183; More Actions
         </button>
       </div>
     </div>
@@ -1018,6 +1188,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
   </div><!-- /page -->
+  </div><!-- /main-container -->
 
   <!-- Trace viewer modal — populated by openTrace() -->
   <div id="trace-viewer" class="trace-modal hidden">
@@ -1336,6 +1507,9 @@ function buildHtml(jobs, error, editError) {
 
       document.querySelectorAll('.job-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
+      // Sync mobile card highlight
+      document.querySelectorAll('.mobile-job-card').forEach(c =>
+        c.classList.toggle('selected', c.dataset.id === String(row.dataset.id)));
       selectedJobId         = row.dataset.id;
       selectedJobPhase      = row.dataset.phase      || 'unknown';
       selectedJobLastRunAt  = row.dataset.lastRunAt  || '';
@@ -1413,11 +1587,17 @@ function buildHtml(jobs, error, editError) {
         daySelect.options[i].selected = daySelect.options[i].text === row.dataset.day;
       }
 
-      // Update Toggle Active button label + style
-      const toggleBtn = document.getElementById('btn-toggle');
+      // Update Toggle Active button label + style (main actions + More Actions panel)
+      const toggleBtn  = document.getElementById('btn-toggle');
+      const maToggle   = document.getElementById('ma-toggle');
+      const toggleText = selectedJobIsActive ? 'Deactivate Job' : 'Activate Job';
       if (toggleBtn) {
-        toggleBtn.textContent = selectedJobIsActive ? 'Deactivate Job' : 'Activate Job';
+        toggleBtn.textContent = toggleText;
         toggleBtn.classList.toggle('is-active', selectedJobIsActive);
+      }
+      if (maToggle) {
+        maToggle.textContent = toggleText;
+        maToggle.classList.toggle('is-active', selectedJobIsActive);
       }
     }
 
@@ -1696,13 +1876,42 @@ function buildHtml(jobs, error, editError) {
       const statusEl = document.getElementById('scheduler-status');
       const pauseBtn = document.getElementById('btn-pause');
       const resumeBtn = document.getElementById('btn-resume');
+      const maPause  = document.getElementById('ma-pause');
+      const maResume = document.getElementById('ma-resume');
       if (statusEl) {
         statusEl.textContent = paused ? '\u23F8 Scheduler paused' : '\u25BA Scheduler running';
         statusEl.className   = paused ? 'scheduler-status paused' : 'scheduler-status';
       }
       if (pauseBtn)  pauseBtn.style.display  = paused ? 'none' : '';
       if (resumeBtn) resumeBtn.style.display = paused ? ''     : 'none';
+      if (maPause)   maPause.style.display   = paused ? 'none' : '';
+      if (maResume)  maResume.style.display  = paused ? ''     : 'none';
       localStorage.setItem('schedulerPaused', paused ? 'true' : 'false');
+    }
+
+    /* ---- More Actions bottom sheet ---- */
+    function openMoreActions() {
+      document.getElementById('moa-backdrop').classList.add('open');
+      document.getElementById('moa-panel').classList.add('open');
+    }
+    function closeMoreActions() {
+      document.getElementById('moa-backdrop').classList.remove('open');
+      document.getElementById('moa-panel').classList.remove('open');
+    }
+
+    /* ---- Mobile job card selection ---- */
+    function selectMobileCard(card) {
+      // Route through the matching table row so all existing selectJob() logic runs
+      const row = document.querySelector('.job-row[data-id="' + card.dataset.id + '"]');
+      if (row) {
+        selectJob(row, true);
+      } else {
+        // No table row found (desktop table hidden) — call selectJob with the card directly
+        selectJob(card, true);
+      }
+      // Sync mobile card highlight
+      document.querySelectorAll('.mobile-job-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
     }
 
     async function pauseScheduler() {
