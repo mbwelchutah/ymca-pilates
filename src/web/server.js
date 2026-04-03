@@ -1167,8 +1167,6 @@ function buildHtml(jobs, error, editError) {
         box-shadow: 0 3px 20px rgba(0,0,0,0.10);
       }
 
-      /* Actions card: remove admin-style "Actions" label on mobile */
-      [data-mobile-section="actions"] .card-header { display: none; }
     }
 
     /* Desktop: hide mobile cards and More Actions button */
@@ -1360,8 +1358,6 @@ function buildHtml(jobs, error, editError) {
       .page-header { display: none; }
       /* Gear button visible on mobile */
       .mah-gear { display: block; }
-      /* Dry Run row moves to Settings on mobile */
-      [data-mobile-section="actions"] .dry-run-row { display: none; }
 
       /* ---- Mobile refresh row ---- */
       #mobile-refresh-row {
@@ -1442,33 +1438,43 @@ function buildHtml(jobs, error, editError) {
       #next-job-banner .bnr-sub   { font-size: 13px; }
       #next-job-banner:not(.hidden) { padding: 12px 16px; }
 
-      /* Mode switcher — segmented control */
-      .mode-seg {
+      /* ---- Tab switcher (Now / Plan / Tools) ---- */
+      .tab-switcher-bar {
+        padding: 0 0 4px;
+      }
+      .tab-seg {
         display: flex;
         background: #f0f4f8;
-        border-radius: 11px;
+        border-radius: 12px;
         padding: 3px;
         gap: 2px;
       }
-      .mode-seg-btn {
+      .tab-seg-btn {
         flex: 1;
         border: none;
         background: transparent;
-        border-radius: 9px;
-        padding: 10px 8px;
-        font-size: 13px;
+        border-radius: 10px;
+        padding: 11px 8px;
+        font-size: 14px;
         font-weight: 600;
         color: #aaa;
         cursor: pointer;
         transition: background 0.15s, color 0.15s, box-shadow 0.15s;
         letter-spacing: -0.01em;
       }
-      .mode-seg-btn.active {
+      .tab-seg-btn.active {
         background: white;
         color: #1a1a2e;
-        box-shadow: 0 1px 5px rgba(0,0,0,0.13);
+        box-shadow: 0 1px 6px rgba(0,0,0,0.14);
       }
-      .mode-seg-btn:active:not(.active) { background: rgba(0,0,0,0.04); }
+      .tab-seg-btn:active:not(.active) { background: rgba(0,0,0,0.04); }
+
+      /* ---- Tab section visibility ---- */
+      .tab-section-hidden { display: none !important; }
+      /* Sticky run bar hidden when not in Now tab */
+      #sticky-run-bar.srb-hidden { display: none !important; }
+      /* Today widget superseded by Now tab focused hero card */
+      #today-widget { display: none !important; }
 
       /* ================================================================
          FOCUS MODE — Apple-like spacious layout
@@ -1548,10 +1554,6 @@ function buildHtml(jobs, error, editError) {
         margin-top: 16px;
         border-radius: 10px;
       }
-
-      /* Status card: hide the "Status" header, compact body */
-      body.mode-focus [data-mobile-section="status"] .card-header { display: none; }
-      body.mode-focus [data-mobile-section="status"] .card-body   { padding: 14px 18px; font-size: 13px; color: #888; }
 
       /* Mode switcher: slimmer in focus mode */
       body.mode-focus #mode-switcher .card-body { padding: 8px 10px; }
@@ -1910,26 +1912,24 @@ function buildHtml(jobs, error, editError) {
     </div>
     <div id="live-mode-indicator">&#x1F680; Live Mode Active</div>
 
-    <!-- Mobile mode switcher: Normal / Focus / StandBy (hidden on desktop) -->
-    <div id="mode-switcher" class="card mobile-only">
-      <div class="card-body" style="padding:12px 14px">
-        <div class="mode-seg">
-          <button class="mode-seg-btn" data-mode="normal"  onclick="setMobileMode('normal')">Normal</button>
-          <button class="mode-seg-btn" data-mode="focus"   onclick="setMobileMode('focus')">Focus</button>
-          <button class="mode-seg-btn" data-mode="standby" onclick="setMobileMode('standby')">StandBy</button>
-        </div>
+    <!-- Mobile tab switcher: Now / Plan / Tools (hidden on desktop) -->
+    <div id="tab-switcher" class="mobile-only tab-switcher-bar">
+      <div class="tab-seg">
+        <button class="tab-seg-btn active" data-tab="now"   onclick="setTab('now')">Now</button>
+        <button class="tab-seg-btn"        data-tab="plan"  onclick="setTab('plan')">Plan</button>
+        <button class="tab-seg-btn"        data-tab="tools" onclick="setTab('tools')">Tools</button>
       </div>
     </div>
 
-    <div id="next-job-banner" class="banner hidden" data-mobile-section="banner"></div>
+    <div id="next-job-banner" class="banner hidden" data-tab-section="now"></div>
 
-    <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
+    <div data-tab-section="now" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
       <span id="dry-run-indicator" class="${dryRunEnabled ? 'mode-dry' : 'mode-live'}">${dryRunEnabled ? '&#x1F9EA; Dry Run' : '&#x1F680; Live'}</span>
       <div id="scheduler-status" class="scheduler-status" style="margin:0">&#9654; Scheduler running</div>
     </div>
 
     <!-- Selected Job -->
-    <div class="card selected-job-card">
+    <div class="card selected-job-card" data-tab-section="now">
       <div class="card-header"><h2>Selected Job</h2></div>
       <div class="card-body">
         <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
@@ -1990,13 +1990,13 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Saved Jobs — mobile cards (hidden on desktop) -->
-    <div class="card mobile-jobs-card" data-mobile-section="jobs">
+    <div class="card mobile-jobs-card" data-tab-section="plan">
       <div class="card-header"><h2>Jobs</h2></div>
       <div id="mobile-jobs-list">${mobileJobCardsHtml}</div>
     </div>
 
     <!-- Actions -->
-    <div class="card" data-mobile-section="actions">
+    <div class="card" data-tab-section="tools">
       <div class="card-header"><h2>Actions</h2></div>
       <div class="card-body actions">
         <div class="dry-run-row">
@@ -2052,7 +2052,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Create Job -->
-    <div class="card" data-mobile-section="forms">
+    <div class="card" data-tab-section="plan">
       <div class="card-header"><h2>Create Job</h2></div>
       <div class="card-body">
         ${error ? `<div class="form-error">&#9888; ${esc(error)}</div>` : ''}
@@ -2096,7 +2096,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Edit Job -->
-    <div class="card" data-mobile-section="forms">
+    <div class="card" data-tab-section="plan">
       <div class="card-header"><h2>Edit Selected Job</h2></div>
       <div class="card-body">
         ${editError ? `<div class="form-error">&#9888; ${esc(editError)}</div>` : ''}
@@ -2141,7 +2141,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Status -->
-    <div class="card" data-mobile-section="status">
+    <div class="card" data-tab-section="now">
       <div class="card-header"><h2>Status</h2></div>
       <div class="card-body status-body">
         <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
@@ -2149,14 +2149,14 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <div class="card" data-mobile-section="debug">
+    <div class="card" data-tab-section="tools">
       <div class="card-header"><h2>Failure Summary</h2></div>
       <div class="card-body">
         <div id="failure-summary"><span id="failure-summary-empty">No failures recorded.</span></div>
       </div>
     </div>
 
-    <div class="card" data-mobile-section="debug">
+    <div class="card" data-tab-section="tools">
       <div class="card-header"><h2>Recent Failures</h2></div>
       <div class="card-body">
         <div id="failure-list"><span id="failure-list-empty">No failures recorded.</span></div>
@@ -3076,6 +3076,8 @@ function buildHtml(jobs, error, editError) {
       if (mahStatus) mahStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
       const stgDry = document.getElementById('stg-dry-run');
       if (stgDry) stgDry.checked = enabled;
+      const mainDryToggle = document.getElementById('dry-run-toggle');
+      if (mainDryToggle) mainDryToggle.checked = enabled;
       const stgModeStatus = document.getElementById('stg-mode-status');
       if (stgModeStatus) stgModeStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
       syncTodayWidget();
@@ -3210,44 +3212,33 @@ function buildHtml(jobs, error, editError) {
     loadFailures();
     setInterval(loadFailures, 10000);
 
-    // ---- Mobile mode system (Normal / Focus / StandBy) ----
-    // Sections: banner, jobs, actions, forms, status, debug.
-    // 'selected' and 'header' sections are always visible on mobile.
-    var MOBILE_MODE_SECTIONS = {
-      normal:  { banner:true,  jobs:true,  actions:true,  forms:true,  status:true,  debug:true  },
-      focus:   { banner:true,  jobs:false, actions:false, forms:false, status:true,  debug:false },
-      standby: { banner:false, jobs:false, actions:false, forms:false, status:false, debug:false },
-    };
+    // ---- Mobile tab system (Now / Plan / Tools) ----
 
-    function applyMobileMode(mode) {
-      if (!mode || !MOBILE_MODE_SECTIONS[mode]) mode = 'normal';
-      document.body.classList.remove('mode-normal', 'mode-focus', 'mode-standby');
-      document.body.classList.add('mode-' + mode);
-      var vis = MOBILE_MODE_SECTIONS[mode];
-      document.querySelectorAll('[data-mobile-section]').forEach(function(el) {
-        var sec = el.dataset.mobileSection;
-        if (sec === 'selected' || sec === 'header') {
-          el.classList.remove('mobile-section-hidden');
-        } else {
-          var show = vis[sec] !== false;
-          el.classList.toggle('mobile-section-hidden', !show);
-        }
+    function applyTab(tab) {
+      if (!tab || !['now', 'plan', 'tools'].includes(tab)) tab = 'now';
+      // Show/hide tab sections
+      document.querySelectorAll('[data-tab-section]').forEach(function(el) {
+        el.classList.toggle('tab-section-hidden', el.dataset.tabSection !== tab);
       });
-      document.querySelectorAll('.mode-seg-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
+      // Update active tab button
+      document.querySelectorAll('.tab-seg-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
       });
+      // Sticky run bar: only visible in Now tab
+      var srb = document.getElementById('sticky-run-bar');
+      if (srb) srb.classList.toggle('srb-hidden', tab !== 'now');
     }
 
-    function setMobileMode(mode) {
-      try { localStorage.setItem('mobileMode', mode); } catch(e) {}
-      applyMobileMode(mode);
+    function setTab(tab) {
+      try { localStorage.setItem('mobileTab', tab); } catch(e) {}
+      applyTab(tab);
     }
 
-    // Restore mode on load
+    // Restore tab on load (default: Now)
     (function() {
-      var saved = 'normal';
-      try { saved = localStorage.getItem('mobileMode') || 'normal'; } catch(e) {}
-      applyMobileMode(saved);
+      var saved = 'now';
+      try { saved = localStorage.getItem('mobileTab') || 'now'; } catch(e) {}
+      applyTab(saved);
     })();
 
     // ---- Trace viewer ----

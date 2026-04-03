@@ -1,0 +1,238 @@
+Refactor the mobile iPhone UI to be more consistent, modern, and less redundant.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI structure and presentation.
+
+GOAL:
+Move away from the current “Normal / Focus / StandBy” feel and instead organize the mobile app around a clearer, more modern user flow:
+
+NOW → PLAN → TOOLS
+
+This should feel more like a modern Apple-style utility app:
+- cleaner
+- more consistent
+- less repetitive
+- less retro
+- easier to understand at a glance
+
+IMPORTANT:
+Do NOT remove any capabilities.
+Reorganize the UI so it feels coherent.
+
+--------------------------------------------------
+1) REPLACE THE CURRENT MODE SYSTEM ON MOBILE
+--------------------------------------------------
+
+On mobile only, replace the current primary segmented control:
+- Normal
+- Focus
+- StandBy
+
+with a new top-level segmented control:
+
+- Now
+- Plan
+- Tools
+
+This segmented control should become the main mobile navigation model.
+
+Keep desktop mostly unchanged.
+
+--------------------------------------------------
+2) NOW TAB = CURRENT ACTION / CURRENT STATE
+--------------------------------------------------
+
+The Now tab should show only the most important “what’s happening now” information:
+
+Show:
+- app header
+- selected or next class card
+- countdown / next opening time
+- current mode badge (Live / Dry Run)
+- scheduler running / paused status
+- last result / current result
+- sticky Run action bar
+
+Do NOT repeat the same information multiple times.
+For example:
+- next class should appear once as the main hero card
+- countdown should appear once as the main timing signal
+- avoid duplicate “ready to run” messaging if the hero already explains the state
+
+The Now tab should feel calm, focused, and modern.
+
+--------------------------------------------------
+3) PLAN TAB = JOBS + PLANNING
+--------------------------------------------------
+
+The Plan tab should show job management and upcoming schedule information.
+
+Show:
+- job cards / jobs list
+- selected job details
+- target date
+- active/inactive state
+- create/edit job section
+- planning information
+
+If helpful, use sections like:
+- Next
+- Upcoming
+
+This tab is where the user thinks about setup and planning, not immediate action.
+
+--------------------------------------------------
+4) TOOLS TAB = SETTINGS + DEBUG + MAINTENANCE
+--------------------------------------------------
+
+The Tools tab should contain secondary utilities and lower-frequency actions.
+
+Show:
+- Settings entry or integrated settings section
+- Dry Run toggle
+- Haptic Feedback toggle
+- Pause Scheduler
+- Failure summary
+- Recent failures
+- Maintenance actions
+- More Actions / dangerous actions
+
+Move debug and maintenance out of the primary flow.
+Do NOT keep them visible in the main “Now” area unless needed.
+
+This should reduce clutter and make the main app feel cleaner.
+
+--------------------------------------------------
+5) MAKE SETTINGS FEEL MORE MODERN
+--------------------------------------------------
+
+Settings currently works, but it does not feel modern enough.
+
+Improve the Settings presentation so it feels more like a modern iPhone sheet/settings surface:
+
+- grouped sections
+- clear section labels
+- cleaner spacing
+- softer dividers
+- more refined toggle rows
+- less “panel” feel
+- more “native settings sheet” feel
+
+Keep it simple and elegant.
+Do NOT over-style it.
+
+--------------------------------------------------
+6) REMOVE REDUNDANCY
+--------------------------------------------------
+
+Audit the mobile UI and remove repeated information.
+
+Examples of redundancy to avoid:
+- same class title in multiple stacked cards
+- same countdown shown in more than one place
+- same status repeated in banner + card + panel
+- “ready to run” repeated near the main action if the screen already makes that obvious
+
+Use one strong source of truth per screen section.
+
+--------------------------------------------------
+7) IMPROVE VISUAL CONSISTENCY
+--------------------------------------------------
+
+Make the whole mobile interface feel like one system.
+
+Unify:
+- corner radius
+- shadows
+- spacing
+- typography
+- badge styling
+- button heights
+- card padding
+
+Reduce the “retro / mixed prototype” feeling.
+
+Target feel:
+- modern Apple utility app
+- calm
+- crisp
+- soft
+- intentional
+
+--------------------------------------------------
+8) KEEP PRIMARY ACTIONS SIMPLE
+--------------------------------------------------
+
+In the Now tab:
+- keep one strong primary action:
+  Run Selected (Scheduler Mode)
+
+Optional:
+- keep one smaller secondary action:
+  Run Now (Direct)
+
+Do NOT crowd the primary area with too many equal-weight buttons.
+
+Dangerous or rare actions belong in Tools.
+
+--------------------------------------------------
+9) KEEP MOBILE SCROLLING STABLE
+--------------------------------------------------
+
+Do not reintroduce bounce/snap-back issues.
+
+Keep:
+- one main mobile scroll container
+- smooth vertical flow
+- sticky bottom run bar working correctly
+- top segmented control staying usable
+
+--------------------------------------------------
+10) KEEP THE APP HEADER, BUT MAKE IT CLEANER
+--------------------------------------------------
+
+Keep the app-style header, but make it work better with the new structure.
+
+Header should feel like:
+- app identity
+- current mode/status
+- entry point to settings/tools
+
+It should not compete with the Now hero card.
+
+--------------------------------------------------
+11) IMPLEMENT LIGHTWEIGHT SHOW/HIDE
+--------------------------------------------------
+
+Use simple client-side section switching for:
+- Now
+- Plan
+- Tools
+
+Do NOT add new backend logic.
+Do NOT create new APIs.
+
+Use the current data/state and reorganize presentation only.
+
+If easy:
+- remember the selected tab in localStorage
+- default to Now on mobile
+
+--------------------------------------------------
+12) AFTER CHANGES EXPLAIN
+--------------------------------------------------
+
+Explain:
+1. how the new Now / Plan / Tools structure works
+2. what content moved into each tab
+3. what redundancy was removed
+4. how Settings was modernized
+5. how the new structure improves the iPhone experience without changing logic
