@@ -1,0 +1,104 @@
+Split the mobile job list into “Today / Next / Upcoming” sections so the app feels more like a native iPhone app.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve mobile presentation.
+
+GOAL:
+On mobile, organize job cards into simple, human-friendly sections instead of one flat list.
+
+Use existing data only.
+
+1) MOBILE ONLY
+
+Apply under mobile breakpoint:
+@media (max-width: 768px)
+
+Desktop layout stays unchanged.
+
+2) CREATE THREE SECTIONS
+
+On mobile, group job cards into:
+
+- Next
+- Today
+- Upcoming
+
+Use these rules:
+
+NEXT:
+- the single most relevant job
+- usually the next one to open / next countdown target
+- if your existing logic already determines “next job,” reuse that
+
+TODAY:
+- jobs that are for today or currently relevant today
+- if exact “today” logic is not already available, use a practical approximation based on target date / current date / next scheduled occurrence
+
+UPCOMING:
+- everything else
+
+If exact “Today” is hard to compute with current data, it is acceptable to use:
+- Next
+- Upcoming
+
+But keep the structure ready for Today if possible.
+
+3) SECTION HEADERS
+
+Each section should have a simple iOS-style header:
+- small uppercase or semibold text
+- subtle spacing above/below
+- calm, not loud
+
+Examples:
+- NEXT
+- TODAY
+- UPCOMING
+
+4) KEEP JOB CARDS THE SAME
+
+Do NOT change selection logic.
+
+Each job card should still:
+- be tappable
+- update selected job
+- show title
+- day/time
+- instructor
+- status badges
+
+Just place the cards under the correct section header.
+
+5) HIGHLIGHT THE NEXT CARD
+
+In the NEXT section:
+- make the card feel slightly more important
+- subtle stronger border / shadow / badge is enough
+- do NOT overdo it
+
+6) EMPTY SECTION BEHAVIOR
+
+If a section has no jobs:
+- omit it entirely
+- do not show empty section headers
+
+7) KEEP IT LIGHTWEIGHT
+
+- no backend changes
+- no extra API calls
+- no complex scheduling rewrite
+- use existing client-side or rendered data as much as possible
+
+8) AFTER CHANGES EXPLAIN:
+- how jobs were grouped
+- how “Next” was chosen
+- how “Today” was handled (or omitted if not practical)
+- how this improves the mobile iPhone feel

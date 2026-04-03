@@ -1191,6 +1191,52 @@ function buildHtml(jobs, error, editError) {
       /* Hide the desktop-style page header entirely on mobile */
       .page-header { display: none; }
 
+      /* ---- Mobile refresh row ---- */
+      #mobile-refresh-row {
+        display: flex !important;        /* override mobile-only's display:block */
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 2px 6px;
+      }
+      #mobile-refresh-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(0,0,0,0.055);
+        border: none;
+        border-radius: 20px;
+        padding: 8px 16px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #444;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: background 0.14s ease, opacity 0.14s ease;
+        min-height: 36px;
+      }
+      #mobile-refresh-btn:active  { background: rgba(0,0,0,0.11); }
+      #mobile-refresh-btn:disabled { opacity: 0.45; pointer-events: none; }
+      .mrr-icon {
+        font-size: 15px;
+        display: inline-block;
+        line-height: 1;
+        transform-origin: center;
+      }
+      #mobile-refresh-btn.spinning .mrr-icon {
+        animation: mrr-spin 0.65s linear infinite;
+      }
+      @keyframes mrr-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      .mrr-updated {
+        font-size: 12px;
+        color: #c0c0c8;
+        white-space: nowrap;
+        padding-right: 2px;
+      }
+
       /* ---- Mobile top banner (sticky, iOS card style) ---- */
       #next-job-banner:not(.hidden) {
         display: flex;
@@ -1378,6 +1424,15 @@ function buildHtml(jobs, error, editError) {
         <div class="mah-title">YMCA Booker</div>
         <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
       </div>
+    </div>
+
+    <!-- Mobile refresh control: hidden on desktop -->
+    <div id="mobile-refresh-row" class="mobile-only">
+      <button id="mobile-refresh-btn" onclick="mobileRefresh()" aria-label="Refresh dashboard">
+        <span class="mrr-icon" aria-hidden="true">&#x21BB;</span>
+        <span id="mrr-label">Refresh</span>
+      </button>
+      <span id="mrr-updated" class="mrr-updated"></span>
     </div>
 
     <div class="page-header">
@@ -2636,6 +2691,28 @@ function buildHtml(jobs, error, editError) {
         }
       });
     })();
+
+    // ---- Mobile refresh control ----
+
+    // On page load: record the current time as "last updated" and display it.
+    (function() {
+      const el = document.getElementById('mrr-updated');
+      if (!el) return;
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      el.textContent = 'Updated ' + timeStr;
+    })();
+
+    function mobileRefresh() {
+      const btn   = document.getElementById('mobile-refresh-btn');
+      const label = document.getElementById('mrr-label');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.add('spinning');
+      if (label) label.textContent = 'Refreshing\u2026';
+      // Brief visual pause so the spinner is visible before the reload fires.
+      setTimeout(function() { location.reload(); }, 350);
+    }
   </script>
 </body>
 </html>`;

@@ -1,0 +1,97 @@
+Add a simple iPhone-friendly manual refresh control to the mobile UI.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only add a lightweight mobile refresh UI.
+
+GOAL:
+Give the user a simple, native-feeling way to refresh the dashboard on iPhone without relying on browser pull-to-refresh.
+
+IMPORTANT:
+Do NOT implement a complex custom gesture.
+Do NOT fight the browser scroll system.
+Use a simple tap-based refresh control that feels clean and iPhone-like.
+
+1) ADD A MOBILE REFRESH CONTROL
+
+On mobile only:
+- add a small refresh row or pill near the top of the screen
+- place it below the app-style header / top banner
+- label examples:
+  - Refresh
+  - Refresh Dashboard
+  - Last updated just now
+
+2) MAKE IT FEEL NATIVE
+
+Style it like a subtle iPhone control:
+- rounded pill or rounded button
+- soft neutral background
+- small refresh icon if easy
+- not visually loud
+- easy to tap
+
+3) WHAT REFRESH SHOULD DO
+
+When tapped:
+- refresh the visible dashboard data/state
+- simplest acceptable version:
+  - reload the page cleanly
+- better version if already easy in the app:
+  - re-run the existing client-side load/update functions without full reload
+
+Do NOT add new backend logic unless already needed for current UI refresh behavior.
+
+4) SHOW REFRESHING STATE
+
+When user taps refresh:
+- temporarily show:
+  - Refreshing…
+  - or a small spinner
+- disable repeated taps until refresh completes
+
+Keep it subtle and brief.
+
+5) SHOW LAST UPDATED
+
+If easy:
+- show small text near the refresh control:
+  - Last updated: 4:42 PM
+- update it after refresh completes
+
+This can be client-side only.
+
+6) MOBILE ONLY
+
+Apply mainly under:
+@media (max-width: 768px)
+
+Desktop can stay unchanged unless it is easy to reuse.
+
+7) DO NOT BREAK SCROLL
+
+Do NOT introduce drag/pull gesture logic.
+Do NOT add nested scrolling.
+Do NOT reintroduce the bounce/snap-back issue.
+
+This should be a simple manual refresh control, not a gesture system.
+
+8) ACCESSIBILITY
+
+Make sure the refresh control:
+- is easy to tap
+- has clear text
+- is keyboard/focus friendly if possible
+
+9) AFTER CHANGES EXPLAIN:
+- where the refresh control appears
+- whether it reloads the page or refreshes data in place
+- how refreshing state is shown
+- how last-updated text works
