@@ -1,0 +1,231 @@
+Redesign ONLY the “Now” screen of my YMCA booking app.
+
+Goal:
+Create a calm, modern, premium mobile interface that feels closer to native iPhone UI with a subtle Strava-style fitness app vibe. It should feel clean, confident, minimal, and reassuring — not like a technical dashboard. The user should instantly understand what the bot is doing, what happens next, and feel confident the booking will run automatically.
+
+Design direction:
+- Native iOS feel first
+- Subtle Strava influence second
+- Clean white / soft off-white background
+- Strong typography hierarchy
+- Rounded cards
+- Quiet fitness-app energy
+- Calm, trustworthy, uncluttered
+- Avoid “retro”, “developer tool”, or “debug panel” look
+- Avoid too many bright colors
+- Use restrained accent color, not rainbow status colors
+- Interface should feel like: Apple Fitness + Strava + a calm booking assistant
+
+Important UX goals:
+1. The most important thing on the Now screen is bot progress and confidence.
+2. The screen should clearly reassure the user that the bot is active and will run at the correct time.
+3. Important state and timing must be larger and easier to scan.
+4. Less important controls like Refresh should be de-emphasized or removed.
+5. Add Pause Booking and Cancel Booking controls.
+6. Keep the experience emotionally calm and simple.
+7. Reduce duplicate status language.
+
+Now screen content priorities in order:
+1. Current bot state
+2. Class being tracked
+3. Time until next action / booking window
+4. Booking progress
+5. Pause / cancel controls
+6. Secondary details tucked away visually
+
+Problems with current Now screen:
+- Too many repeated status labels like “Live”, “Live Mode Active”, “Scheduler Running”, “Status”
+- Important text is too small
+- Refresh is too visually prominent
+- The screen does not reassure enough
+- It feels more like a debug/admin screen than a polished iPhone app
+- Action buttons are too loud and not context-aware
+- Visual hierarchy is weak
+
+What to redesign:
+ONLY the Now screen.
+
+Recommended structure:
+
+1. Top app header
+- Clean compact header
+- App name and small live state under it
+- Settings icon on right
+- The status line should feel subtle and polished, not noisy
+- Example:
+  YMCA Booker
+  Active and monitoring
+
+2. Primary status hero card at top
+This should be the main focus of the screen.
+
+Purpose:
+Instant reassurance.
+
+Include:
+- Current state label, such as:
+  Active
+  Waiting for booking window
+- Class name prominently
+- Day and time
+- Large countdown or “Next action in …”
+- Reassuring support text such as:
+  Will automatically attempt booking when registration opens
+
+This card should feel like a premium iOS fitness summary card.
+It should be the clearest thing on screen.
+
+3. Progress section
+Below the hero card, show simple progress through the booking flow.
+
+Use a very clean step-based progress format, such as:
+- Class found
+- Waiting for registration window
+- Booking attempt pending
+
+This should be visual, easy to scan, and not feel technical.
+Use check / current / upcoming treatment.
+This is better than raw log labels.
+
+4. Action row
+Add calm secondary action buttons:
+- Pause Booking
+- Cancel Booking
+
+Design these in a modern iOS way:
+- Rounded
+- Balanced
+- Not overly saturated
+- Clear hierarchy
+Pause should feel safe.
+Cancel should be available but less dominant.
+
+5. Secondary details card
+Below main content, place lower-priority details in a lighter card.
+Include things like:
+- Last checked
+- Last result
+- Retry behavior
+- Optional pinned status
+
+This section should be clearly secondary.
+It should not visually compete with the primary card.
+
+6. Remove or reduce
+- Remove “Refresh” from primary emphasis
+- Remove duplicate status sections
+- Remove separate “Status” block if redundant
+- Remove noisy badges like FOUND_NOT_OPEN_YET as primary UI language
+- Convert technical results into human-readable language
+
+Tone of interface copy:
+Use calm assistant language.
+Avoid robotic or technical phrasing.
+Examples of preferred language:
+- Monitoring booking
+- Waiting for registration to open
+- Will attempt automatically
+- Last checked at 9:47 AM
+- Booking paused
+- Ready to book
+
+Avoid:
+- FOUND_NOT_OPEN_YET
+- SCHEDULER_RUNNING
+- LIVE MODE ACTIVE repeated in multiple places
+- raw debug language unless tucked away
+
+Visual style notes:
+- Rounded corners throughout
+- iOS-like spacing and padding
+- Fewer borders, more soft surfaces
+- Light shadows, subtle depth
+- Strong title text
+- Soft secondary text
+- Accent color can have a fitness-app feel, but restrained
+- Use cleaner icons; avoid playful rocket-heavy repetition
+- Prefer icons like:
+  status dot
+  pause
+  x
+  check
+  clock
+  calendar
+- Make it feel athletic, modern, and calm
+
+Strava-like inspiration:
+Use the old design as inspiration for tone and vibe:
+- cleaner header
+- stronger tab/app structure
+- fitness-app confidence
+- simpler layout
+But do NOT make it look exactly like Strava.
+Keep it more iOS-native and softer.
+
+State-specific guidance:
+When bot is active:
+- Show reassuring active state clearly
+- Emphasize next action timing
+- Make automatic behavior obvious
+
+When waiting:
+- Waiting should not feel like failure
+- Use calm amber / neutral treatment, not alarming yellow
+
+When paused:
+- Clearly show paused state
+- Offer Resume Booking
+
+When error occurs:
+- Present one clear message
+- Do not let error styling take over the whole screen
+
+Copy examples for active waiting state:
+- Active
+- Monitoring Gentle Yoga
+- Monday at 4:15 PM
+- Next action in 5h 01m
+- Will automatically attempt booking when registration opens
+
+Progress example:
+- ✓ Class found
+- • Waiting for registration window
+- ○ Booking attempt pending
+
+Action buttons example:
+- Pause Booking
+- Cancel Booking
+
+Secondary details example:
+- Last checked 9:47 AM
+- Registration not open yet
+- Automatic retry enabled
+
+Implementation requirements:
+- Redesign only the Now screen
+- Keep the underlying logic intact
+- Do not break current data flow
+- Focus on layout, visual hierarchy, wording, spacing, and component style
+- Prioritize mobile iPhone experience
+- Ensure screen feels excellent on iPhone without excessive scrolling
+- Make the top portion of the screen communicate almost everything essential
+
+Deliverables:
+1. Updated Now screen layout
+2. Better visual hierarchy
+3. Improved copy
+4. More iOS / Strava-like component styling
+5. Pause / Cancel actions
+6. Cleaner state presentation
+7. Reduced redundancy
+
+If helpful, create the screen using:
+- a main hero status card
+- a progress card
+- a small details card
+- a bottom action row
+
+Overall feeling:
+“calm assistant handling an important task for me”
+not
+“technical control panel I need to supervise”

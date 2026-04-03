@@ -184,6 +184,11 @@ function buildHtml(jobs, error, editError) {
   const sel = first
     ? `${esc(first.class_title)} \u00b7 ${esc(first.day_of_week || '')} \u00b7 ${esc(first.class_time || '')} \u00b7 ${esc(first.instructor || '')}`
     : 'None';
+  const firstFormattedMeta = first
+    ? [first.day_of_week || '', first.class_time || '', ((first.instructor || '').split(' ')[0]) || '']
+        .filter(Boolean)
+        .reduce((acc, p, i) => i === 0 ? p : i === 1 ? acc + ' at ' + p : acc + ' with ' + p, '')
+    : '';
   const { phase: firstPhase, bookingOpenMs: firstBookingOpenMs } =
     first ? jobInfo(first) : { phase: 'unknown', bookingOpenMs: null };
 
@@ -1175,6 +1180,14 @@ function buildHtml(jobs, error, editError) {
       .mobile-more-btn   { display: none !important; }
     }
 
+    /* Now-tab premium cards are mobile-only — hide above 768px (desktop uses legacy cards) */
+    @media (min-width: 769px) {
+      #now-hero-card,
+      #now-progress-card,
+      #now-action-row,
+      #now-detail-card  { display: none !important; }
+    }
+
     /* ---- More Actions bottom sheet ---- */
     .moa-backdrop {
       position: fixed;
@@ -1475,6 +1488,167 @@ function buildHtml(jobs, error, editError) {
       #sticky-run-bar.srb-hidden { display: none !important; }
       /* Today widget superseded by Now tab focused hero card */
       #today-widget { display: none !important; }
+
+      /* Hide legacy data-source cards on mobile (JS still reads their hidden elements) */
+      .sel-card-legacy   { display: none !important; }
+      .now-status-legacy { display: none !important; }
+
+      /* Hide Now tab premium cards in desktop (desktop shows selected-job-card instead) */
+      /* These rules are inside @media max-width:768px, so they apply on mobile only.   */
+      /* No desktop override needed — the desktop simply shows the non-now-tab cards.  */
+
+      /* ================================================================
+         NOW TAB — Premium iOS-style redesigned components
+         ================================================================ */
+
+      /* --- Hero card --- */
+      .now-hero-card {
+        border-radius: 22px !important;
+        box-shadow: 0 2px 18px rgba(0,0,0,0.07) !important;
+        padding: 26px 22px 28px !important;
+        margin-bottom: 10px;
+      }
+      .nhc-state-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .nhc-state-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .nhc-state-dot.dot-green { background:#34c759; box-shadow:0 0 0 3px rgba(52,199,89,.20); }
+      .nhc-state-dot.dot-amber { background:#ff9f0a; box-shadow:0 0 0 3px rgba(255,159,10,.20); }
+      .nhc-state-dot.dot-red   { background:#ff3b30; box-shadow:0 0 0 3px rgba(255,59,48,.20); }
+      .nhc-state-dot.dot-gray  { background:#aeaeb2; box-shadow:0 0 0 3px rgba(174,174,178,.20); }
+      .nhc-state-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: #8e8e93;
+      }
+      .nhc-mode-pill {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 600;
+        background: #eff3ff;
+        color: #2c5de5;
+        border-radius: 10px;
+        padding: 3px 9px;
+      }
+      .nhc-class-name {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        color: #1a1a2e;
+        line-height: 1.15;
+      }
+      .nhc-class-meta {
+        font-size: 15px;
+        color: #8e8e93;
+        margin-top: 5px;
+        line-height: 1.45;
+      }
+      .nhc-cd-block { margin-top: 26px; }
+      .nhc-countdown-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: #c7c7cc;
+        margin-bottom: 4px;
+      }
+      .nhc-countdown {
+        font-size: 50px;
+        font-weight: 700;
+        letter-spacing: -3px;
+        color: #1a1a2e;
+        line-height: 1;
+      }
+      .nhc-countdown.nhc-cd-booked { font-size: 22px; letter-spacing: 0; color: #34c759; }
+      .nhc-countdown.nhc-cd-now    { font-size: 38px; letter-spacing: -1px; color: #ff9f0a; }
+      .nhc-sub-text {
+        font-size: 13px;
+        color: #c7c7cc;
+        margin-top: 14px;
+        line-height: 1.55;
+      }
+
+      /* --- Progress steps card --- */
+      .now-progress-card {
+        border-radius: 16px !important;
+        box-shadow: none !important;
+        background: #f8f8fa !important;
+        padding: 0 !important;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+      .nps-step {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 13px 18px;
+      }
+      .nps-step + .nps-step { border-top: 1px solid #efefef; }
+      .nps-icon {
+        font-size: 15px;
+        width: 22px;
+        text-align: center;
+        flex-shrink: 0;
+        font-style: normal;
+      }
+      .nps-label { font-size: 14px; font-weight: 500; line-height: 1.3; }
+      .nps-done    .nps-icon  { color: #34c759; }
+      .nps-done    .nps-label { color: #3c3c43; }
+      .nps-current .nps-icon  { color: #007aff; }
+      .nps-current .nps-label { color: #1a1a2e; font-weight: 600; }
+      .nps-upcoming .nps-icon  { color: #c7c7cc; }
+      .nps-upcoming .nps-label { color: #c7c7cc; }
+      .nps-error   .nps-icon  { color: #ff3b30; }
+      .nps-error   .nps-label { color: #ff3b30; }
+
+      /* --- Action row --- */
+      .now-action-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .nar-btn {
+        flex: 1;
+        border: none;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        padding: 16px 8px;
+        cursor: pointer;
+        transition: opacity 0.15s;
+        letter-spacing: -0.01em;
+      }
+      .nar-btn:active { opacity: 0.7; }
+      .nar-pause, .nar-resume { background: #f2f2f7; color: #1a1a2e; }
+      .nar-cancel             { background: #fff2f1; color: #ff3b30; }
+
+      /* --- Secondary detail card --- */
+      .now-detail-card {
+        border-radius: 16px !important;
+        box-shadow: none !important;
+        background: #f8f8fa !important;
+        padding: 0 !important;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+      .ndc-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 18px;
+      }
+      .ndc-sep { height: 1px; background: #efefef; margin: 0 18px; }
+      .ndc-label { font-size: 14px; color: #8e8e93; }
+      .ndc-val   { font-size: 14px; color: #3c3c43; font-weight: 500; text-align: right; max-width: 58%; }
 
       /* ================================================================
          FOCUS MODE — Apple-like spacious layout
@@ -1923,13 +2097,77 @@ function buildHtml(jobs, error, editError) {
 
     <div id="next-job-banner" class="banner hidden" data-tab-section="now"></div>
 
-    <div data-tab-section="now" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
+    <!-- Legacy status bar — hidden on mobile, kept for JS targets -->
+    <div class="now-status-legacy" style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
       <span id="dry-run-indicator" class="${dryRunEnabled ? 'mode-dry' : 'mode-live'}">${dryRunEnabled ? '&#x1F9EA; Dry Run' : '&#x1F680; Live'}</span>
       <div id="scheduler-status" class="scheduler-status" style="margin:0">&#9654; Scheduler running</div>
     </div>
 
-    <!-- Selected Job -->
-    <div class="card selected-job-card" data-tab-section="now">
+    <!-- ====================================================
+         NOW TAB — Hero redesign
+         These cards are the primary Now tab UI on mobile.
+         The legacy selected-job-card below provides JS targets.
+         ==================================================== -->
+
+    <!-- Hero status card -->
+    <div id="now-hero-card" class="card now-hero-card" data-tab-section="now">
+      <div class="nhc-state-row">
+        <span class="nhc-state-dot dot-green" id="nhc-dot"></span>
+        <span class="nhc-state-label" id="nhc-state">Monitoring</span>
+        <span class="nhc-mode-pill" id="nhc-mode-pill"${!dryRunEnabled ? ' style="display:none"' : ''}>Dry Run</span>
+      </div>
+      <div class="nhc-class-name" id="nhc-class-name">${first ? esc(first.class_title) : '—'}</div>
+      <div class="nhc-class-meta" id="nhc-class-meta">${firstFormattedMeta}</div>
+      <div class="nhc-cd-block">
+        <div class="nhc-countdown-label" id="nhc-countdown-label">Next action in</div>
+        <div class="nhc-countdown" id="nhc-countdown">—</div>
+      </div>
+      <div class="nhc-sub-text" id="nhc-sub-text">Will automatically attempt booking when registration opens</div>
+    </div>
+
+    <!-- Progress steps -->
+    <div id="now-progress-card" class="card now-progress-card" data-tab-section="now">
+      <div class="nps-step nps-current" id="nps-0">
+        <span class="nps-icon">&#9679;</span>
+        <span class="nps-label">Class found</span>
+      </div>
+      <div class="nps-step nps-upcoming" id="nps-1">
+        <span class="nps-icon">&#9675;</span>
+        <span class="nps-label">Waiting for registration window</span>
+      </div>
+      <div class="nps-step nps-upcoming" id="nps-2">
+        <span class="nps-icon">&#9675;</span>
+        <span class="nps-label">Booking attempt</span>
+      </div>
+    </div>
+
+    <!-- Action row -->
+    <div id="now-action-row" class="now-action-row" data-tab-section="now">
+      <button class="nar-btn nar-pause"  id="nar-pause"  onclick="pauseScheduler()">Pause Booking</button>
+      <button class="nar-btn nar-resume" id="nar-resume" onclick="resumeScheduler()" style="display:none">Resume Booking</button>
+      <button class="nar-btn nar-cancel" id="nar-cancel" onclick="deactivateSelectedJob()">Cancel Booking</button>
+    </div>
+
+    <!-- Secondary detail card -->
+    <div id="now-detail-card" class="card now-detail-card" data-tab-section="now">
+      <div class="ndc-row">
+        <span class="ndc-label">Last checked</span>
+        <span class="ndc-val" id="ndc-last-checked">${first ? fmtRunAt(first.last_run_at) : '—'}</span>
+      </div>
+      <div class="ndc-sep"></div>
+      <div class="ndc-row">
+        <span class="ndc-label">Status</span>
+        <span class="ndc-val" id="ndc-status-val">—</span>
+      </div>
+      <div class="ndc-sep"></div>
+      <div class="ndc-row">
+        <span class="ndc-label">Automatic retry</span>
+        <span class="ndc-val">Enabled</span>
+      </div>
+    </div>
+
+    <!-- Legacy selected-job card — hidden on mobile, keeps JS data targets intact -->
+    <div class="card selected-job-card sel-card-legacy">
       <div class="card-header"><h2>Selected Job</h2></div>
       <div class="card-body">
         <div class="selected-id"      id="sel-id">${first ? 'Job #' + first.id : ''}</div>
@@ -2140,8 +2378,8 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <!-- Status -->
-    <div class="card" data-tab-section="now">
+    <!-- Status — legacy, hidden on mobile, kept for desktop and JS targets -->
+    <div class="card now-status-legacy">
       <div class="card-header"><h2>Status</h2></div>
       <div class="card-body status-body">
         <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
@@ -2452,6 +2690,7 @@ function buildHtml(jobs, error, editError) {
       if (cardCd) applyCountdown(cardCd, selectedJobBookingOpen);
       updateSniperIndicator(selectedJobBookingOpen, selectedJobPhase);
       syncTodayWidget();
+      syncNowTab();
     }
     tick(); // initialize display immediately on load
     (function scheduleTick() {
@@ -2591,6 +2830,7 @@ function buildHtml(jobs, error, editError) {
         maToggle.classList.toggle('is-active', selectedJobIsActive);
       }
       syncTodayWidget();
+      syncNowTab();
     }
 
     // ---- animated dots ----
@@ -2883,6 +3123,7 @@ function buildHtml(jobs, error, editError) {
       if (stgPause) stgPause.checked = paused;
       const stgSchedStatus = document.getElementById('stg-sched-status');
       if (stgSchedStatus) stgSchedStatus.textContent = paused ? '\u23F8 Scheduler paused' : '\u25BA Scheduler running';
+      syncNowTab();
     }
 
     /* ---- More Actions bottom sheet ---- */
@@ -3063,6 +3304,158 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
+    // ---- Now tab sync ----
+
+    function setNpsStep(el, state) {
+      if (!el) return;
+      el.className = 'nps-step nps-' + state;
+      var icon = el.querySelector('.nps-icon');
+      if (icon) {
+        icon.textContent = state === 'done' ? '\u2713' : state === 'current' ? '\u25cf' : state === 'error' ? '\u00d7' : '\u25cb';
+      }
+    }
+
+    function syncNowTab() {
+      var nhcDot    = document.getElementById('nhc-dot');
+      if (!nhcDot) return;
+
+      var phase      = selectedJobPhase;
+      var lastResult = selectedJobLastResult;
+      var isBooked   = (lastResult === 'booked');
+      var isSniper   = (phase === 'sniper');
+
+      var schedStatusEl = document.getElementById('scheduler-status');
+      var isPaused = schedStatusEl && schedStatusEl.classList.contains('paused');
+      var isLive   = document.body.classList.contains('live-mode');
+
+      // --- Class name
+      var selTitle = document.getElementById('sel-title');
+      var titleText = selTitle ? selTitle.textContent.trim() : '';
+      var nhcClassName = document.getElementById('nhc-class-name');
+      if (nhcClassName) nhcClassName.textContent = titleText || '\u2014';
+
+      // --- Class meta: "Tuesday \u00b7 4:20 PM \u00b7 Gretl" \u2192 "Tuesday at 4:20 PM with Gretl"
+      var selMeta = document.getElementById('sel-meta');
+      var metaText = selMeta ? selMeta.textContent.trim() : '';
+      if (titleText && metaText.startsWith(titleText)) {
+        metaText = metaText.slice(titleText.length).replace(/^\s*\u00b7\s*/, '');
+      }
+      var parts = metaText.split('\u00b7').map(function(s) { return s.trim(); }).filter(Boolean);
+      var formattedMeta = parts.length >= 2
+        ? parts[0] + ' at ' + parts[1] + (parts[2] ? ' with ' + parts[2] : '')
+        : metaText;
+      var nhcClassMeta = document.getElementById('nhc-class-meta');
+      if (nhcClassMeta) nhcClassMeta.textContent = formattedMeta;
+
+      // --- State label + dot
+      var nhcState   = document.getElementById('nhc-state');
+      var stateStr, dotCls;
+      if (isBooked) {
+        stateStr = 'Booked'; dotCls = 'dot-green';
+      } else if (isSniper) {
+        stateStr = 'Booking now'; dotCls = 'dot-amber';
+      } else if (isPaused) {
+        stateStr = 'Paused'; dotCls = 'dot-gray';
+      } else if (phase === 'warmup') {
+        stateStr = 'Opening soon'; dotCls = 'dot-amber';
+      } else if (phase === 'late' && lastResult !== 'booked') {
+        stateStr = 'Window passed'; dotCls = 'dot-gray';
+      } else {
+        stateStr = 'Monitoring'; dotCls = 'dot-green';
+      }
+      nhcDot.className = 'nhc-state-dot ' + dotCls;
+      if (nhcState) nhcState.textContent = stateStr;
+
+      // --- Mode pill
+      var nhcModePill = document.getElementById('nhc-mode-pill');
+      if (nhcModePill) nhcModePill.style.display = isLive ? 'none' : '';
+
+      // --- Countdown block
+      var cdEl     = document.getElementById('sel-countdown');
+      var cdText   = cdEl ? cdEl.textContent.trim() : '';
+      var nhcCdLabel = document.getElementById('nhc-countdown-label');
+      var nhcCd      = document.getElementById('nhc-countdown');
+      var nhcSub     = document.getElementById('nhc-sub-text');
+      var bookedTextEl = document.getElementById('sel-booked-text');
+
+      if (isBooked) {
+        if (nhcCdLabel) nhcCdLabel.style.display = 'none';
+        if (nhcCd) { nhcCd.textContent = bookedTextEl ? bookedTextEl.textContent.trim() : 'Booked'; nhcCd.className = 'nhc-countdown nhc-cd-booked'; }
+        if (nhcSub) nhcSub.textContent = 'Booking confirmed. See you there!';
+      } else if (isSniper) {
+        if (nhcCdLabel) { nhcCdLabel.style.display = ''; nhcCdLabel.textContent = 'Registration opening'; }
+        if (nhcCd) { nhcCd.textContent = 'Now'; nhcCd.className = 'nhc-countdown nhc-cd-now'; }
+        if (nhcSub) nhcSub.textContent = 'Attempting to book right now\u2026';
+      } else {
+        if (nhcCdLabel) { nhcCdLabel.style.display = ''; nhcCdLabel.textContent = 'Next action in'; }
+        if (nhcCd) { nhcCd.textContent = cdText || '\u2014'; nhcCd.className = 'nhc-countdown'; }
+        if (nhcSub) nhcSub.textContent = isPaused
+          ? 'Booking is paused. Tap Resume to re-enable automatic monitoring.'
+          : 'Will automatically attempt booking when registration opens';
+      }
+
+      // --- App header sub-text
+      var mahStatus = document.getElementById('mah-status');
+      if (mahStatus) {
+        if (isPaused)    mahStatus.textContent = 'Booking paused';
+        else if (isBooked)  mahStatus.textContent = 'Booking confirmed';
+        else if (isSniper)  mahStatus.textContent = 'Booking now\u2026';
+        else mahStatus.textContent = isLive ? 'Active and monitoring' : 'Dry Run \u00b7 Active';
+      }
+
+      // --- Progress steps
+      var s0 = document.getElementById('nps-0');
+      var s1 = document.getElementById('nps-1');
+      var s2 = document.getElementById('nps-2');
+      var s0St, s1St, s2St;
+      if (isBooked || lastResult === 'booked') {
+        s0St = 'done'; s1St = 'done'; s2St = 'done';
+      } else if (isSniper) {
+        s0St = 'done'; s1St = 'done'; s2St = 'current';
+      } else if (phase === 'warmup') {
+        s0St = 'done'; s1St = 'current'; s2St = 'upcoming';
+      } else if (lastResult === 'found_not_open_yet') {
+        s0St = 'done'; s1St = 'current'; s2St = 'upcoming';
+      } else if (lastResult === 'not_found') {
+        s0St = 'current'; s1St = 'upcoming'; s2St = 'upcoming';
+      } else if (lastResult === 'error') {
+        s0St = 'done'; s1St = 'error'; s2St = 'upcoming';
+      } else {
+        s0St = 'current'; s1St = 'upcoming'; s2St = 'upcoming';
+      }
+      setNpsStep(s0, s0St);
+      setNpsStep(s1, s1St);
+      setNpsStep(s2, s2St);
+
+      // --- Detail card
+      var lastRunEl = document.getElementById('sel-last-run');
+      var ndcLastChecked = document.getElementById('ndc-last-checked');
+      if (ndcLastChecked && lastRunEl) ndcLastChecked.textContent = lastRunEl.textContent.trim();
+
+      var ndcStatus = document.getElementById('ndc-status-val');
+      if (ndcStatus) {
+        var humanResult = {
+          'found_not_open_yet': 'Registration not open yet',
+          'booked':             'Booking confirmed',
+          'error':              'An error occurred',
+          'not_found':          'Class not on schedule',
+          'skipped':            'Skipped this cycle',
+          'dry_run':            'Dry run completed',
+        }[lastResult] || (lastResult ? lastResult.replace(/_/g, ' ') : '\u2014');
+        ndcStatus.textContent = humanResult;
+      }
+
+      // --- Action row: pause vs resume
+      var narPause  = document.getElementById('nar-pause');
+      var narResume = document.getElementById('nar-resume');
+      if (narPause)  narPause.style.display  = isPaused ? 'none' : '';
+      if (narResume) narResume.style.display = isPaused ? ''     : 'none';
+    }
+
+    function deactivateSelectedJob() {
+      if (selectedJobIsActive) toggleActive();
+    }
+
     // ---- dry run toggle ----
 
     function updateDryRunUI(enabled) {
@@ -3081,6 +3474,7 @@ function buildHtml(jobs, error, editError) {
       const stgModeStatus = document.getElementById('stg-mode-status');
       if (stgModeStatus) stgModeStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
       syncTodayWidget();
+      syncNowTab();
     }
 
     // Apply initial live-mode state from server-rendered flag (no flicker on load).
@@ -3227,6 +3621,8 @@ function buildHtml(jobs, error, editError) {
       // Sticky run bar: only visible in Now tab
       var srb = document.getElementById('sticky-run-bar');
       if (srb) srb.classList.toggle('srb-hidden', tab !== 'now');
+      // Sync Now tab hero content when switching to Now
+      if (tab === 'now') syncNowTab();
     }
 
     function setTab(tab) {
