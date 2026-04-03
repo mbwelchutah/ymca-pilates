@@ -213,6 +213,11 @@ function buildHtml(jobs, error, editError) {
     .banner.hidden  { display:none; }
     .banner.warning { background:#fff3cd; border-color:#ffeeba; }
     .banner.sniper  { background:#ffe5e5; border-color:#ffb3b3; color:#d62828; font-weight:600; }
+    /* Banner inner elements (desktop+mobile) */
+    .bnr-dot  { width:7px; height:7px; border-radius:50%; background:#bbb; flex-shrink:0; }
+    .bnr-body { display:flex; flex-direction:column; gap:2px; flex:1; }
+    .bnr-title { font-size:14px; font-weight:600; color:#1a1a2e; }
+    .bnr-sub   { font-size:12px; color:#888; }
 
     /* ---- scheduler status pill ---- */
     .scheduler-status          { font-size:12px; text-align:right; color:#4caf50; letter-spacing:.02em; }
@@ -1000,6 +1005,35 @@ function buildHtml(jobs, error, editError) {
       /* Mode switcher card — visible at full mobile width */
       #mode-switcher { display: block !important; }
 
+      /* ---- Mobile top banner (sticky, iOS card style) ---- */
+      #next-job-banner:not(.hidden) {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        position: sticky;
+        top: 8px;
+        z-index: 200;
+        background: rgba(255,255,255,0.97);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(0,0,0,0.07);
+        border-radius: 13px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        padding: 10px 14px;
+        color: #1a1a2e;
+        font-size: 14px;
+      }
+      /* State-specific dot colors */
+      #next-job-banner .bnr-dot                 { background: #bbb; }
+      #next-job-banner.warning .bnr-dot          { background: #f59e0b; }
+      #next-job-banner.sniper  .bnr-dot          { background: #16a34a; }
+      /* State-specific sub-text colors */
+      #next-job-banner.warning .bnr-sub          { color: #d97706; }
+      #next-job-banner.sniper  .bnr-sub          { color: #16a34a; font-weight: 600; }
+      /* Reset desktop color overrides that bleed in via .sniper class */
+      #next-job-banner.sniper  { color: #1a1a2e; font-weight: normal; }
+      #next-job-banner.warning { background: rgba(255,255,255,0.97); border-color: rgba(0,0,0,0.07); }
+
       /* Mode switcher — segmented control */
       .mode-seg {
         display: flex;
@@ -1651,16 +1685,24 @@ function buildHtml(jobs, error, editError) {
         } else {
           banner.classList.remove('hidden', 'warning', 'sniper');
           const bannerTitle = bannerRow.dataset.title || ('Job #' + bannerRow.dataset.id);
+          var bnrSub, bnrState;
           if (!nextRow) {
-            // openNowRow: booking window already open
-            banner.textContent = '\uD83D\uDD25 ' + bannerTitle + ' \u2014 booking open now';
-            banner.classList.add('sniper');
+            bnrSub   = 'Booking open now';
+            bnrState = 'sniper';
           } else if (nextDiff <= 60000) {
-            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextBoms);
-            banner.classList.add('warning');
+            bnrSub   = 'Opens in ' + formatCountdown(nextBoms);
+            bnrState = 'warning';
           } else {
-            banner.textContent = '\u23F3 ' + bannerTitle + ' opens in ' + formatCountdown(nextBoms);
+            bnrSub   = 'Opens in ' + formatCountdown(nextBoms);
+            bnrState = '';
           }
+          banner.innerHTML =
+            '<span class="bnr-dot"></span>' +
+            '<span class="bnr-body">' +
+              '<strong class="bnr-title">' + bannerTitle + '</strong>' +
+              '<span class="bnr-sub">' + bnrSub + '</span>' +
+            '</span>';
+          if (bnrState) banner.classList.add(bnrState);
         }
       }
 
