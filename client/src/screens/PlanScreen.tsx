@@ -30,16 +30,16 @@ const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
-  too_early: 'Monitoring',
+  too_early: 'Waiting',
   warmup:    'Opening Soon',
   sniper:    'Booking Now',
   late:      'Window Closed',
-  unknown:   'Monitoring',
+  unknown:   'Waiting',
 }
 
 function formatOpens(ms: number): string {
   const now = Date.now()
-  if (ms < now) return 'Window passed'
+  if (ms < now) return 'Opened'
   return `Opens ${new Date(ms).toLocaleString([], {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })}`
@@ -118,7 +118,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
               : 'bg-divider text-text-secondary'}
           `}
         >
-          {job.is_active ? 'Active' : 'Off'}
+          {job.is_active ? 'On' : 'Off'}
         </button>
       </div>
 
@@ -128,7 +128,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
       <div className="px-4 py-2.5 flex items-center justify-end">
         {confirming ? (
           <div className="flex items-center gap-3">
-            <span className="text-[13px] text-text-secondary">Delete this job?</span>
+            <span className="text-[13px] text-text-secondary">Remove this class?</span>
             <button
               onClick={() => setConfirming(false)}
               className="text-[13px] font-semibold text-text-secondary"
@@ -139,7 +139,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
               onClick={onDelete}
               className="text-[13px] font-semibold text-accent-red"
             >
-              Delete
+              Remove
             </button>
           </div>
         ) : (
@@ -147,7 +147,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
             onClick={() => setConfirming(true)}
             className="text-[13px] text-text-muted active:opacity-70"
           >
-            Delete
+            Remove
           </button>
         )}
       </div>
@@ -165,7 +165,7 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
 
   const handleSubmit = async () => {
     if (!classTitle.trim() || !classTime.trim()) {
-      setErr('Class title and time are required')
+      setErr('Class name and time are required')
       return
     }
     setSaving(true)
@@ -181,7 +181,7 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
       })
       onDone()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to add job')
+      setErr(e instanceof Error ? e.message : 'Couldn\'t add the class')
     } finally {
       setSaving(false)
     }
@@ -192,20 +192,20 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
 
   return (
     <Card padding="md">
-      <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">Add Booking Job</h3>
+      <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">Add a Class</h3>
       <div className="flex flex-col gap-3">
         <div>
-          <label className={labelClass}>Class Title</label>
+          <label className={labelClass}>Class Name</label>
           <input className={inputClass} placeholder="Core Pilates" value={classTitle} onChange={e => setClassTitle(e.target.value)} />
         </div>
         <div>
-          <label className={labelClass}>Day of Week</label>
+          <label className={labelClass}>Day</label>
           <select className={inputClass} value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))}>
             {Object.entries(DAY_NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
         <div>
-          <label className={labelClass}>Class Time</label>
+          <label className={labelClass}>Time</label>
           <input className={inputClass} placeholder="4:20 PM" value={classTime} onChange={e => setClassTime(e.target.value)} />
         </div>
         <div>
@@ -220,7 +220,7 @@ function AddJobForm({ onDone }: { onDone: () => void }) {
             disabled={saving}
             className="flex-1 bg-accent-blue text-white font-semibold text-[15px] rounded-btn px-5 py-4 active:opacity-70 disabled:opacity-40"
           >
-            {saving ? 'Saving…' : 'Add Job'}
+            {saving ? 'Saving…' : 'Add Class'}
           </button>
         </div>
       </div>
@@ -248,15 +248,15 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   return (
     <>
       <AppHeader
-        subtitle="Scheduled Bookings"
-        action={showAdd ? undefined : { label: '+ Add', onClick: () => setShowAdd(true) }}
+        subtitle="Schedule"
+        action={showAdd ? undefined : { label: 'Add', onClick: () => setShowAdd(true) }}
       />
       <ScreenContainer>
         {showAdd && (
           <AddJobForm onDone={() => { setShowAdd(false); refresh() }} />
         )}
 
-        <SectionHeader title={`${appState.jobs.length} Job${appState.jobs.length !== 1 ? 's' : ''}`} />
+        <SectionHeader title={`${appState.jobs.length} Class${appState.jobs.length !== 1 ? 'es' : ''}`} />
 
         {loading ? (
           <Card className="flex items-center justify-center h-24">
@@ -264,15 +264,15 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </Card>
         ) : appState.jobs.length === 0 ? (
           <Card className="flex flex-col items-center justify-center gap-2 py-10">
-            <p className="text-[17px] font-semibold text-text-primary">No jobs yet</p>
+            <p className="text-[17px] font-semibold text-text-primary">No classes yet</p>
             <p className="text-[14px] text-text-secondary text-center px-6">
-              Add a booking job to get started
+              Add a class to start automating your registrations
             </p>
             <button
               onClick={() => setShowAdd(true)}
               className="mt-2 text-accent-blue text-[15px] font-semibold"
             >
-              Add Job
+              Add Class
             </button>
           </Card>
         ) : (
@@ -290,10 +290,10 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </div>
         )}
 
-        {/* Hint when multiple jobs exist */}
+        {/* Hint when multiple classes exist */}
         {appState.jobs.length > 1 && (
           <p className="text-center text-[12px] text-text-muted px-4">
-            Tap a job to watch it on the Now tab
+            Tap a class to track it on the Now tab
           </p>
         )}
       </ScreenContainer>

@@ -40,16 +40,16 @@ function useCountdown(targetMs: number | null) {
 }
 
 const PHASE_CONFIG: Record<Phase, { label: string; dotColor: 'gray' | 'amber' | 'blue' | 'green' | 'red'; headerSubtitle: string }> = {
-  too_early:  { label: 'Monitoring',    dotColor: 'gray',  headerSubtitle: 'Monitoring' },
-  warmup:     { label: 'Opening Soon',  dotColor: 'amber', headerSubtitle: 'Warming Up' },
+  too_early:  { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting' },
+  warmup:     { label: 'Opening Soon',  dotColor: 'amber', headerSubtitle: 'Opening Soon' },
   sniper:     { label: 'Booking Now',   dotColor: 'blue',  headerSubtitle: 'Booking Now' },
   late:       { label: 'Window Closed', dotColor: 'red',   headerSubtitle: 'Window Closed' },
-  unknown:    { label: 'Monitoring',    dotColor: 'gray',  headerSubtitle: 'Monitoring' },
+  unknown:    { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting' },
 }
 
 const RESULT_CONFIG: Record<string, { label: string; dotColor: 'gray' | 'green' | 'amber' | 'red' | 'blue' }> = {
   booked:              { label: 'Booked',          dotColor: 'green' },
-  dry_run:             { label: 'Booked (Dry Run)', dotColor: 'blue'  },
+  dry_run:             { label: 'Simulated Booking', dotColor: 'blue'  },
   found_not_open_yet:  { label: 'Not Open Yet',    dotColor: 'amber' },
   not_found:           { label: 'Class Not Found', dotColor: 'red'   },
   error:               { label: 'Error',            dotColor: 'red'   },
@@ -112,7 +112,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   return (
     <>
       <AppHeader
-        subtitle={cfg.headerSubtitle + (appState.dryRun ? ' · Dry Run' : ' · Live')}
+        subtitle={cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : ' · Live')}
       />
 
       <ScreenContainer>
@@ -142,7 +142,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               </p>
             </>
           ) : (
-            <p className="text-[17px] text-text-secondary mb-3">No job selected</p>
+            <p className="text-[17px] text-text-secondary mb-3">No class selected</p>
           )}
 
           {/* Booked success OR countdown */}
@@ -150,7 +150,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
             <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="green" />
               <span className="text-[17px] font-semibold text-accent-green">
-                {job?.last_result === 'dry_run' ? 'Booked (Dry Run)' : 'Booked'}
+                {job?.last_result === 'dry_run' ? 'Simulated Booking' : 'Booked'}
               </span>
             </div>
           ) : (
@@ -212,16 +212,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
                 : '—'
               } />
               <DetailRow label="Last Run" value={job.last_run_at ? new Date(job.last_run_at).toLocaleString() : '—'} />
-              <DetailRow label="Mode" value={appState.dryRun ? 'Dry Run' : 'Live'} last />
+              <DetailRow label="Mode" value={appState.dryRun ? 'Simulation' : 'Live'} last />
             </Card>
           </>
         )}
 
-        {/* Dry run notice */}
+        {/* Simulation mode notice */}
         {appState.dryRun && (
           <Card padding="sm" className="border border-accent-amber/30 bg-accent-amber/5">
             <p className="text-[13px] text-accent-amber font-medium">
-              Dry Run mode — no real bookings will be made. Switch to Live in Settings.
+              Simulation mode is on — bookings won't actually register. Turn it off in Settings.
             </p>
           </Card>
         )}

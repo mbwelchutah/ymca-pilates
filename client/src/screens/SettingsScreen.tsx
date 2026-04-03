@@ -152,8 +152,8 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
           />
           <div className="h-px bg-divider mx-4" />
           <ToggleRow
-            label="Dry Run Mode"
-            detail="Simulate bookings without registering"
+            label="Simulation Mode"
+            detail="Rehearse without actually registering"
             value={appState.dryRun}
             onChange={handleDryRun}
           />
@@ -163,8 +163,8 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
         <SectionHeader title="Status" />
         <Card padding="none">
           <DetailRow label="Scheduler" value={appState.schedulerPaused ? 'Paused' : 'Active'} />
-          <DetailRow label="Mode" value={appState.dryRun ? 'Dry Run' : 'Live'} />
-          <DetailRow label="Jobs" value={`${appState.jobs.length} configured`} last />
+          <DetailRow label="Mode" value={appState.dryRun ? 'Simulation' : 'Live'} />
+          <DetailRow label="Classes" value={`${appState.jobs.length} configured`} last />
         </Card>
 
         {/* Booking Window — live from selected job */}
@@ -179,20 +179,20 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
           </>
         )}
 
-        {/* Developer Actions */}
-        <SectionHeader title="Developer Actions" />
+        {/* Tools */}
+        <SectionHeader title="Tools" />
         <Card padding="none">
           <ActionRow
-            label={selectedJob ? `Force Book — ${selectedJob.name}` : 'Force Book'}
-            detail={selectedJob ? `Job #${selectedJob.id} · bypasses cooldown` : 'Select a job in Plan first'}
+            label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
+            detail={selectedJob ? `Job #${selectedJob.id} · attempt to book immediately` : 'Select a class in Schedule first'}
             onClick={handleForce}
             loading={forceLoading}
             disabled={!selectedJob}
           />
           <div className="h-px bg-divider mx-4" />
           <ActionRow
-            label="Run Scheduler Once"
-            detail="Trigger a single scheduler tick now"
+            label="Check Now"
+            detail="Run one booking check across all classes"
             onClick={handleRunOnce}
             loading={runOnceLoading}
           />
@@ -206,11 +206,11 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
           </Card>
         )}
 
-        {/* Failure Log */}
-        <SectionHeader title="Failure Log" />
+        {/* Error Log */}
+        <SectionHeader title="Error Log" />
         <Card padding="none">
           {failureEntries.length === 0 ? (
-            <DetailRow label="Status" value="No failures recorded" last />
+            <DetailRow label="Status" value="None recorded" last />
           ) : (
             failureEntries.map(([reason, count], i) => (
               <DetailRow
