@@ -132,7 +132,7 @@ function buildHtml(jobs, error, editError) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>YMCA Pilates \u2014 Control Panel</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -142,6 +142,7 @@ function buildHtml(jobs, error, editError) {
       background: #eef2f7;
       min-height: 100vh;
       padding: 28px 16px 56px;
+      padding-bottom: max(56px, calc(56px + env(safe-area-inset-bottom)));
       color: #1a1a2e;
     }
 
@@ -173,7 +174,8 @@ function buildHtml(jobs, error, editError) {
       background: white;
       border-radius: 14px;
       box-shadow: 0 2px 14px rgba(0,0,0,0.07);
-      overflow: hidden;
+      overflow: hidden;   /* fallback for older Safari */
+      overflow: clip;     /* clip without creating a scroll container — fixes iOS scroll trap */
     }
     .card-header {
       padding: 16px 24px 12px;
