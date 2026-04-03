@@ -353,6 +353,7 @@ function buildHtml(jobs, error, editError) {
       margin-top: 1px;
     }
     .mah-gear { display: none; }
+    .today-widget { display: none; }
 
     /* ---- next-job global banner ---- */
     .banner         { background:#f1faee; border:1px solid #d8e2dc; padding:10px 14px; border-radius:8px; font-size:14px; }
@@ -1573,6 +1574,80 @@ function buildHtml(jobs, error, editError) {
       body.mode-standby .selected-job-card .selected-run-info { font-size: 12px; margin-top: 14px; }
       /* StandBy: sticky run bar collapses to single full-width button */
       body.mode-standby #sticky-run-bar .srb-secondary { display: none !important; }
+
+      /* ================================================================
+         TODAY WIDGET
+         ================================================================ */
+      .today-widget {
+        display: block;
+        background: #fff;
+        border-radius: 18px;
+        padding: 16px 18px 18px;
+        box-shadow: 0 3px 20px rgba(0,0,0,0.08);
+        margin-bottom: 8px;
+      }
+      .tw-top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .tw-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: #8e8e93;
+      }
+      .tw-mode-badge {
+        font-size: 11px;
+        font-weight: 600;
+        color: #888;
+        background: #f5f5f7;
+        border-radius: 10px;
+        padding: 2px 8px;
+      }
+      body.live-mode .tw-mode-badge { display: none; }
+      .tw-title {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #1a1a2e;
+        margin-top: 7px;
+        line-height: 1.2;
+      }
+      .tw-meta {
+        font-size: 14px;
+        color: #666;
+        margin-top: 5px;
+        line-height: 1.5;
+      }
+      .tw-bottom-row {
+        display: flex;
+        align-items: center;
+        margin-top: 14px;
+      }
+      .tw-pill {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        background: #f0f4ff;
+        color: #2f5bde;
+        border-radius: 20px;
+        padding: 4px 10px;
+        letter-spacing: 0.01em;
+      }
+      .tw-pill.booked  { background: #e6f9ee; color: #16a34a; }
+      .tw-pill.opening { background: #fff3e0; color: #c04a00; }
+
+      /* Focus mode: widget is primary card */
+      body.mode-focus .today-widget { padding: 20px 20px 24px; }
+      body.mode-focus .tw-title     { font-size: 26px; }
+      body.mode-focus .tw-pill      { font-size: 13px; padding: 5px 12px; }
+      /* Hide the separate selected-job-card in Focus — widget covers it */
+      body.mode-focus .selected-job-card { display: none !important; }
+
+      /* StandBy mode: hide widget (StandBy is a pure clock face) */
+      body.mode-standby .today-widget { display: none !important; }
     }
 
     /* ---- Sticky bottom run bar ---- */
@@ -1738,6 +1813,19 @@ function buildHtml(jobs, error, editError) {
         <span id="mrr-label">Refresh</span>
       </button>
       <span id="mrr-updated" class="mrr-updated"></span>
+    </div>
+
+    <!-- Today widget: glanceable top card (mobile only, hidden on desktop) -->
+    <div id="today-widget" class="today-widget">
+      <div class="tw-top-row">
+        <span class="tw-label" id="tw-label">NEXT CLASS</span>
+        <span class="tw-mode-badge" id="tw-mode-badge">${dryRunEnabled ? 'Dry Run' : ''}</span>
+      </div>
+      <div class="tw-title" id="tw-title">${first ? esc(first.class_title) : '\u2014'}</div>
+      <div class="tw-meta"  id="tw-meta"></div>
+      <div class="tw-bottom-row">
+        <span class="tw-pill" id="tw-pill">\u2014</span>
+      </div>
     </div>
 
     <div class="page-header">
@@ -2287,6 +2375,7 @@ function buildHtml(jobs, error, editError) {
       const cardCd = document.getElementById('sel-countdown');
       if (cardCd) applyCountdown(cardCd, selectedJobBookingOpen);
       updateSniperIndicator(selectedJobBookingOpen, selectedJobPhase);
+      syncTodayWidget();
     }
     tick(); // initialize display immediately on load
     (function scheduleTick() {
@@ -2425,6 +2514,7 @@ function buildHtml(jobs, error, editError) {
         maToggle.textContent = toggleText;
         maToggle.classList.toggle('is-active', selectedJobIsActive);
       }
+      syncTodayWidget();
     }
 
     // ---- animated dots ----
@@ -2844,6 +2934,53 @@ function buildHtml(jobs, error, editError) {
       });
     }
 
+    // ---- Today widget sync ----
+
+    function syncTodayWidget() {
+      var twLabel = document.getElementById('tw-label');
+      var twTitle = document.getElementById('tw-title');
+      var twMeta  = document.getElementById('tw-meta');
+      var twPill  = document.getElementById('tw-pill');
+      if (!twTitle) return;
+
+      // Title
+      var selTitle = document.getElementById('sel-title');
+      var titleText = selTitle ? selTitle.textContent.trim() : '';
+      twTitle.textContent = titleText || '\u2014';
+
+      // Meta: sel-meta starts with "Title · Day · Time · Instructor"
+      // Strip the leading "Title · " so we show "Day · Time · Instructor"
+      var selMeta = document.getElementById('sel-meta');
+      var metaText = selMeta ? selMeta.textContent.trim() : '';
+      if (titleText && metaText.startsWith(titleText)) {
+        metaText = metaText.slice(titleText.length).replace(/^\s*\u00b7\s*/, '');
+      }
+      twMeta.textContent = metaText;
+
+      // Pill + label: booked > sniper > countdown
+      var bookedBox  = document.getElementById('sel-booked-box');
+      var sniperEl   = document.getElementById('sel-sniper');
+      var cdEl       = document.getElementById('sel-countdown');
+      var isBooked   = bookedBox && bookedBox.style.display !== 'none';
+      var isSniper   = sniperEl  && sniperEl.style.display  !== 'none';
+      var cdText     = cdEl ? cdEl.textContent.trim() : '';
+
+      if (isBooked) {
+        var bookedTextEl = document.getElementById('sel-booked-text');
+        twPill.textContent = bookedTextEl ? bookedTextEl.textContent.trim() : 'Booked';
+        twPill.className   = 'tw-pill booked';
+        if (twLabel) twLabel.textContent = 'BOOKED';
+      } else if (isSniper) {
+        twPill.textContent = 'Opening now';
+        twPill.className   = 'tw-pill opening';
+        if (twLabel) twLabel.textContent = 'OPENING NOW';
+      } else {
+        twPill.textContent = cdText || '\u2014';
+        twPill.className   = 'tw-pill';
+        if (twLabel) twLabel.textContent = 'NEXT CLASS';
+      }
+    }
+
     // ---- dry run toggle ----
 
     function updateDryRunUI(enabled) {
@@ -2859,6 +2996,7 @@ function buildHtml(jobs, error, editError) {
       if (stgDry) stgDry.checked = enabled;
       const stgModeStatus = document.getElementById('stg-mode-status');
       if (stgModeStatus) stgModeStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
+      syncTodayWidget();
     }
 
     // Apply initial live-mode state from server-rendered flag (no flicker on load).
