@@ -187,45 +187,96 @@ function buildHtml(jobs, error, editError) {
   const { phase: firstPhase, bookingOpenMs: firstBookingOpenMs } =
     first ? jobInfo(first) : { phase: 'unknown', bookingOpenMs: null };
 
-  /* Mobile job cards — same data-attributes as table rows so selectJob() works */
-  const mobileJobCardsHtml = hasJobs
-    ? jobs.map(j => {
-        const { phase, bookingOpenMs } = jobInfo(j);
-        const jobBooked = isBookedSS(j);
-        const isFirst   = first && j.id === first.id;
-        return `<div class="mobile-job-card${isFirst ? ' selected' : ''}"
-            data-id="${j.id}"
-            data-title="${esc(j.class_title)}"
-            data-day="${esc(j.day_of_week || '')}"
-            data-time="${esc(j.class_time || '')}"
-            data-instructor="${esc(j.instructor || '')}"
-            data-phase="${esc(phase)}"
-            data-last-run-at="${esc(j.last_run_at || '')}"
-            data-last-result="${esc(j.last_result || '')}"
-            data-target-date="${esc(j.target_date || '')}"
-            data-is-active="${j.is_active ? '1' : '0'}"
-            data-last-success-at="${esc(j.last_success_at || '')}"
-            data-last-error-msg="${esc(j.last_error_message || '')}"
-            data-booking-open="${bookingOpenMs || ''}"
-            onclick="selectMobileCard(this)">
-          <div class="mjc-top">
-            <div class="mjc-title-group">
-              <strong class="mjc-title">${esc(j.class_title)}</strong>
-              <span class="mjc-id">#${j.id}</span>
-            </div>
-            <span class="mjc-status-badge ${j.is_active ? 'mjc-status-active' : 'mjc-status-inactive'}">${j.is_active ? 'Active' : 'Off'}</span>
-          </div>
-          <div class="mjc-detail">${esc(j.day_of_week || '\u2014')} \u00b7 ${esc(j.class_time || '\u2014')}</div>
-          ${j.instructor ? `<div class="mjc-detail">${esc(j.instructor)}</div>` : ''}
-          ${j.target_date ? `<div class="mjc-detail mjc-date-line">\uD83D\uDCC5\u00a0${esc(j.target_date)}</div>` : ''}
-          <div class="mjc-badges">
-            <span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>
-            ${jobBooked ? '<span class="badge-booked">\u2713\u00a0Booked</span>' : ''}
-            ${j.last_result ? `<span class="badge badge-result-${j.last_result}">${j.last_result}</span>` : ''}
-          </div>
-        </div>`;
-      }).join('')
-    : '<div style="padding:20px;color:#aaa;font-size:14px;text-align:center;">No jobs found.</div>';
+  /* Mobile job cards — grouped into Next / Today / Upcoming sections */
+  function renderMjcCard(j, phase, bookingOpenMs, booked, isFirst, isNext) {
+    const cls = 'mobile-job-card' + (isFirst ? ' selected' : '') + (isNext ? ' mjc-next' : '');
+    return `<div class="${cls}"
+        data-id="${j.id}"
+        data-title="${esc(j.class_title)}"
+        data-day="${esc(j.day_of_week || '')}"
+        data-time="${esc(j.class_time || '')}"
+        data-instructor="${esc(j.instructor || '')}"
+        data-phase="${esc(phase)}"
+        data-last-run-at="${esc(j.last_run_at || '')}"
+        data-last-result="${esc(j.last_result || '')}"
+        data-target-date="${esc(j.target_date || '')}"
+        data-is-active="${j.is_active ? '1' : '0'}"
+        data-last-success-at="${esc(j.last_success_at || '')}"
+        data-last-error-msg="${esc(j.last_error_message || '')}"
+        data-booking-open="${bookingOpenMs || ''}"
+        onclick="selectMobileCard(this)">
+      <div class="mjc-top">
+        <div class="mjc-title-group">
+          <strong class="mjc-title">${esc(j.class_title)}</strong>
+          <span class="mjc-id">#${j.id}</span>
+        </div>
+        <span class="mjc-status-badge ${j.is_active ? 'mjc-status-active' : 'mjc-status-inactive'}">${j.is_active ? 'Active' : 'Off'}</span>
+      </div>
+      <div class="mjc-detail">${esc(j.day_of_week || '\u2014')} \u00b7 ${esc(j.class_time || '\u2014')}</div>
+      ${j.instructor ? `<div class="mjc-detail">${esc(j.instructor)}</div>` : ''}
+      ${j.target_date ? `<div class="mjc-detail mjc-date-line">\uD83D\uDCC5\u00a0${esc(j.target_date)}</div>` : ''}
+      <div class="mjc-badges">
+        <span class="badge badge-phase-${phase}">${PHASE_LABEL[phase] || phase}</span>
+        ${booked ? '<span class="badge-booked">\u2713\u00a0Booked</span>' : ''}
+        ${j.last_result ? `<span class="badge badge-result-${j.last_result}">${j.last_result}</span>` : ''}
+      </div>
+    </div>`;
+  }
+
+  const mobileJobCardsHtml = (() => {
+    if (!hasJobs) return '<div style="padding:20px;color:#aaa;font-size:14px;text-align:center;">No jobs found.</div>';
+
+    // Today's date in the Pacific timezone (same tz used elsewhere in this file).
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    const nowMs    = Date.now();
+
+    // Enrich each job with phase + bookingOpenMs + booked flag (one call each).
+    const enriched = jobs.map(j => {
+      const { phase, bookingOpenMs } = jobInfo(j);
+      return { j, phase, bookingOpenMs, booked: isBookedSS(j) };
+    });
+
+    // NEXT: active, unbooked job with the smallest positive time-to-open.
+    // Fallback: first active+unbooked job (already-open or phase-based).
+    let nextEntry = null;
+    let nextDiff  = Infinity;
+    enriched.forEach(e => {
+      if (!e.j.is_active || e.booked) return;
+      if (e.bookingOpenMs) {
+        const diff = e.bookingOpenMs - nowMs;
+        if (diff > 0 && diff < nextDiff) { nextDiff = diff; nextEntry = e; }
+      }
+    });
+    if (!nextEntry) nextEntry = enriched.find(e => e.j.is_active && !e.booked) || null;
+    const nextId = nextEntry ? nextEntry.j.id : null;
+
+    // TODAY: active jobs whose target_date matches today, excluding the "next" job.
+    const todayEntries    = enriched.filter(e => e.j.is_active && e.j.target_date === todayStr && e.j.id !== nextId);
+
+    // UPCOMING: everything not in Next or Today.
+    const upcomingEntries = enriched.filter(e => {
+      if (nextId && e.j.id === nextId) return false;
+      if (e.j.is_active && e.j.target_date === todayStr) return false;
+      return true;
+    });
+
+    function sectionHtml(label, entries) {
+      if (!entries.length) return '';
+      const isNextSection = label === 'Next';
+      const cards = entries.map(e => {
+        const isFirst = first && e.j.id === first.id;
+        const isNext  = isNextSection && e.j.id === nextId;
+        return renderMjcCard(e.j, e.phase, e.bookingOpenMs, e.booked, isFirst, isNext);
+      }).join('');
+      return `<div class="mjc-section-header">${label}</div>${cards}`;
+    }
+
+    const nextSection     = nextEntry ? sectionHtml('Next',     [nextEntry])    : '';
+    const todaySection    =             sectionHtml('Today',    todayEntries);
+    const upcomingSection =             sectionHtml('Upcoming', upcomingEntries);
+
+    return nextSection + todaySection + upcomingSection || '<div style="padding:20px;color:#aaa;font-size:14px;text-align:center;">No jobs found.</div>';
+  })();
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1048,6 +1099,26 @@ function buildHtml(jobs, error, editError) {
       }
       .mjc-date-line { color: #888; }
       .mjc-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+
+      /* ---- Mobile job section headers ---- */
+      .mjc-section-header {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: #b0b0bb;
+        padding: 18px 4px 8px;
+      }
+      .mjc-section-header:first-child { padding-top: 4px; }
+
+      /* "Next" card: subtle blue accent — slightly stronger than a regular card */
+      .mobile-job-card.mjc-next {
+        box-shadow: 0 0 0 1.5px rgba(0,113,227,0.28), 0 3px 16px rgba(0,113,227,0.09);
+      }
+      /* Keep selected + next combined state clean */
+      .mobile-job-card.mjc-next.selected {
+        box-shadow: 0 0 0 2px #0071e3, 0 3px 16px rgba(0,113,227,0.14);
+      }
 
       /* ---- More Actions button (mobile) ---- */
       .mobile-more-btn { display: block !important; }

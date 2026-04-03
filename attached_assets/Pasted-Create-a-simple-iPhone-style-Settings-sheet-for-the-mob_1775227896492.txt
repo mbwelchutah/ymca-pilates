@@ -1,0 +1,121 @@
+Create a simple iPhone-style Settings sheet for the mobile UI.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve how settings and app controls are presented on mobile.
+
+GOAL:
+Move app-level controls into a clean iOS-style Settings sheet so the main screen feels calmer and more native.
+
+This sheet should contain controls like:
+- Dry Run
+- Haptic Feedback
+- Pause Scheduler
+- optional small app/status info
+
+Use the existing logic and handlers.
+Do NOT create new backend behavior unless already needed for current toggles.
+
+1) MOBILE ONLY
+
+Apply mainly under:
+@media (max-width: 768px)
+
+Desktop can remain mostly unchanged.
+
+2) ADD A SETTINGS ENTRY POINT
+
+On mobile, add a small Settings button near the app header or top summary area.
+
+Examples:
+- gear icon + “Settings”
+- simple text button “Settings”
+
+Keep it subtle and native-feeling.
+
+3) OPEN A BOTTOM SHEET OR MODAL SHEET
+
+When tapped, open a sheet from the bottom.
+
+The sheet should:
+- have rounded top corners
+- have a dimmed backdrop
+- close when tapping outside
+- optionally include a small drag handle at the top
+- feel calm and native, not like a developer panel
+
+4) GROUP SETTINGS LIKE iOS
+
+Inside the sheet, group items into sections.
+
+Suggested sections:
+
+App Mode
+- Dry Run toggle
+- Haptic Feedback toggle
+
+Automation
+- Pause Scheduler toggle or control
+- optional small status line like:
+  - Scheduler running
+  - Scheduler paused
+
+About / Status
+- Live Mode / Dry Run indicator
+- optional current version / small info line if already available
+- optional “Last updated” if already available in UI
+
+5) USE iOS-LIKE ROWS
+
+Make each setting row feel like a native iPhone settings row:
+- label on left
+- toggle or value on right
+- comfortable row height
+- subtle divider between rows
+- clean typography
+- generous padding
+
+6) TOGGLES SHOULD LOOK NATIVE
+
+Use your existing switch/toggle styling if already added.
+If not, style toggles to feel like iOS switches:
+- rounded track
+- white thumb
+- green when on
+- clear on/off state
+
+7) KEEP DANGEROUS ACTIONS OUT OF SETTINGS
+
+Do NOT put destructive actions like Delete Job or Force Run inside this Settings sheet.
+Those should remain in More Actions or elsewhere.
+
+This sheet is for app-level configuration, not dangerous actions.
+
+8) SAFE AREA + SCROLLING
+
+Make sure the Settings sheet:
+- respects bottom safe area on iPhone
+- scrolls internally if content grows
+- does NOT reintroduce the page bounce / snap-back problem
+
+9) KEEP MAIN SCREEN CLEANER
+
+Once Settings exists, remove duplicate toggles from the main mobile screen if they are cluttering the interface.
+
+The goal is:
+- cleaner main screen
+- app controls inside Settings
+- logic unchanged
+
+10) AFTER CHANGES EXPLAIN:
+- how the Settings sheet opens/closes
+- which controls were moved into it
+- how the toggles reuse existing logic
+- how this improves the iPhone / Apple feel
