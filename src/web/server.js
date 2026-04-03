@@ -918,6 +918,63 @@ function buildHtml(jobs, error, editError) {
     .moa-items { display: flex; flex-direction: column; gap: 10px; }
     .moa-items .btn { font-size: 15px; padding: 14px 20px; }
 
+    /* ================================================================
+       MOBILE MODE SYSTEM  (Normal / Focus / StandBy)
+       ================================================================ */
+    @media (max-width: 768px) {
+      /* Sections hidden by the JS mode controller */
+      .mobile-section-hidden { display: none !important; }
+
+      /* Mode switcher card — visible at full mobile width */
+      #mode-switcher { display: block !important; }
+
+      /* Mode switcher — segmented control */
+      .mode-seg {
+        display: flex;
+        background: #f0f4f8;
+        border-radius: 11px;
+        padding: 3px;
+        gap: 2px;
+      }
+      .mode-seg-btn {
+        flex: 1;
+        border: none;
+        background: transparent;
+        border-radius: 9px;
+        padding: 10px 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #aaa;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+        letter-spacing: -0.01em;
+      }
+      .mode-seg-btn.active {
+        background: white;
+        color: #1a1a2e;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.13);
+      }
+      .mode-seg-btn:active:not(.active) { background: rgba(0,0,0,0.04); }
+
+      /* Focus mode: slightly larger countdown */
+      body.mode-focus .selected-job-card .sel-countdown { font-size: 18px; color: #555; }
+
+      /* StandBy mode: hero card gets bigger type + generous spacing */
+      body.mode-standby .selected-job-card .selected-summary { font-size: 22px; }
+      body.mode-standby .selected-job-card .selected-id      { font-size: 13px; }
+      body.mode-standby .selected-job-card .sel-countdown {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-top: 18px;
+        letter-spacing: -1px;
+      }
+      body.mode-standby .selected-job-card .card-body         { padding: 28px 20px 32px; }
+      body.mode-standby .selected-job-card .selected-run-info { font-size: 12px; margin-top: 14px; }
+      /* StandBy: sticky run bar collapses to single full-width button */
+      body.mode-standby #sticky-run-bar .srb-secondary { display: none !important; }
+    }
+
     /* ---- Sticky bottom run bar ---- */
     #sticky-run-bar {
       display: none;               /* hidden on desktop */
@@ -1008,7 +1065,18 @@ function buildHtml(jobs, error, editError) {
     </div>
     <div id="live-mode-indicator">&#x1F680; Live Mode Active</div>
 
-    <div id="next-job-banner" class="banner hidden"></div>
+    <!-- Mobile mode switcher: Normal / Focus / StandBy (hidden on desktop) -->
+    <div id="mode-switcher" class="card mobile-only">
+      <div class="card-body" style="padding:12px 14px">
+        <div class="mode-seg">
+          <button class="mode-seg-btn" data-mode="normal"  onclick="setMobileMode('normal')">Normal</button>
+          <button class="mode-seg-btn" data-mode="focus"   onclick="setMobileMode('focus')">Focus</button>
+          <button class="mode-seg-btn" data-mode="standby" onclick="setMobileMode('standby')">StandBy</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="next-job-banner" class="banner hidden" data-mobile-section="banner"></div>
 
     <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;">
       <span id="dry-run-indicator" class="${dryRunEnabled ? 'mode-dry' : 'mode-live'}">${dryRunEnabled ? '&#x1F9EA; Dry Run' : '&#x1F680; Live'}</span>
@@ -1074,13 +1142,13 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Saved Jobs — mobile cards (hidden on desktop) -->
-    <div class="card mobile-jobs-card">
+    <div class="card mobile-jobs-card" data-mobile-section="jobs">
       <div class="card-header"><h2>Jobs</h2></div>
       <div id="mobile-jobs-list">${mobileJobCardsHtml}</div>
     </div>
 
     <!-- Actions -->
-    <div class="card">
+    <div class="card" data-mobile-section="actions">
       <div class="card-header"><h2>Actions</h2></div>
       <div class="card-body actions">
         <div class="dry-run-row">
@@ -1136,7 +1204,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Create Job -->
-    <div class="card">
+    <div class="card" data-mobile-section="forms">
       <div class="card-header"><h2>Create Job</h2></div>
       <div class="card-body">
         ${error ? `<div class="form-error">&#9888; ${esc(error)}</div>` : ''}
@@ -1180,7 +1248,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Edit Job -->
-    <div class="card">
+    <div class="card" data-mobile-section="forms">
       <div class="card-header"><h2>Edit Selected Job</h2></div>
       <div class="card-body">
         ${editError ? `<div class="form-error">&#9888; ${esc(editError)}</div>` : ''}
@@ -1225,7 +1293,7 @@ function buildHtml(jobs, error, editError) {
     </div>
 
     <!-- Status -->
-    <div class="card">
+    <div class="card" data-mobile-section="status">
       <div class="card-header"><h2>Status</h2></div>
       <div class="card-body status-body">
         <div id="status">Ready to run ${first ? 'Job #' + first.id : 'a job'}.</div>
@@ -1233,14 +1301,14 @@ function buildHtml(jobs, error, editError) {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-mobile-section="debug">
       <div class="card-header"><h2>Failure Summary</h2></div>
       <div class="card-body">
         <div id="failure-summary"><span id="failure-summary-empty">No failures recorded.</span></div>
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-mobile-section="debug">
       <div class="card-header"><h2>Recent Failures</h2></div>
       <div class="card-body">
         <div id="failure-list"><span id="failure-list-empty">No failures recorded.</span></div>
@@ -1252,8 +1320,8 @@ function buildHtml(jobs, error, editError) {
 
   <!-- Sticky bottom run bar (mobile only — fixed position, outside scroll container) -->
   <div id="sticky-run-bar">
-    <button class="srb-primary" onclick="runSelectedScheduler()">&#9654; Run Selected (Scheduler Mode)</button>
-    <button class="srb-secondary" onclick="runSelected()">Run Now (Direct)</button>
+    <button class="srb-primary" onclick="runSelectedScheduler(this)">&#9654; Run Selected (Scheduler Mode)</button>
+    <button class="srb-secondary" onclick="runSelected(this)">Run Now (Direct)</button>
   </div>
 
   <!-- Trace viewer modal — populated by openTrace() -->
@@ -1771,7 +1839,7 @@ function buildHtml(jobs, error, editError) {
       }
     }
 
-    function runSelected() {
+    function runSelected(overrideBtn) {
       if (!selectedJobId) {
         const statusEl = document.getElementById('status');
         statusEl.className   = 'error';
@@ -1780,7 +1848,7 @@ function buildHtml(jobs, error, editError) {
       }
       startJob(
         '/run-job?id=' + selectedJobId,
-        document.getElementById('btn-run'),
+        overrideBtn || document.getElementById('btn-run'),
         '\u2705 Done!',
         selectedJobLabel
       );
@@ -1887,9 +1955,9 @@ function buildHtml(jobs, error, editError) {
 
     // ---- manual scheduler tick (selected job only) ----
 
-    async function runSelectedScheduler() {
+    async function runSelectedScheduler(overrideBtn) {
       if (!selectedJobId) return;
-      const btn      = document.getElementById('btn-run-sched-sel');
+      const btn      = overrideBtn || document.getElementById('btn-run-sched-sel');
       const statusEl = document.getElementById('status');
       btn.disabled    = true;
       btn.textContent = 'Running\u2026';
@@ -2150,6 +2218,46 @@ function buildHtml(jobs, error, editError) {
     }
     loadFailures();
     setInterval(loadFailures, 10000);
+
+    // ---- Mobile mode system (Normal / Focus / StandBy) ----
+    // Sections: banner, jobs, actions, forms, status, debug.
+    // 'selected' and 'header' sections are always visible on mobile.
+    var MOBILE_MODE_SECTIONS = {
+      normal:  { banner:true,  jobs:true,  actions:true,  forms:true,  status:true,  debug:true  },
+      focus:   { banner:true,  jobs:false, actions:true,  forms:false, status:true,  debug:false },
+      standby: { banner:false, jobs:false, actions:false, forms:false, status:false, debug:false },
+    };
+
+    function applyMobileMode(mode) {
+      if (!mode || !MOBILE_MODE_SECTIONS[mode]) mode = 'normal';
+      document.body.classList.remove('mode-normal', 'mode-focus', 'mode-standby');
+      document.body.classList.add('mode-' + mode);
+      var vis = MOBILE_MODE_SECTIONS[mode];
+      document.querySelectorAll('[data-mobile-section]').forEach(function(el) {
+        var sec = el.dataset.mobileSection;
+        if (sec === 'selected' || sec === 'header') {
+          el.classList.remove('mobile-section-hidden');
+        } else {
+          var show = vis[sec] !== false;
+          el.classList.toggle('mobile-section-hidden', !show);
+        }
+      });
+      document.querySelectorAll('.mode-seg-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+    }
+
+    function setMobileMode(mode) {
+      try { localStorage.setItem('mobileMode', mode); } catch(e) {}
+      applyMobileMode(mode);
+    }
+
+    // Restore mode on load
+    (function() {
+      var saved = 'normal';
+      try { saved = localStorage.getItem('mobileMode') || 'normal'; } catch(e) {}
+      applyMobileMode(saved);
+    })();
 
     // ---- Trace viewer ----
     function openTrace(f) {
