@@ -1272,6 +1272,7 @@ function buildHtml(jobs, error, editError) {
       background: #c7c7cc;
       border-radius: 3px;
       margin: 10px auto 4px;
+      cursor: pointer;
     }
     .stg-title {
       font-size: 13px;
@@ -1587,7 +1588,7 @@ function buildHtml(jobs, error, editError) {
   <!-- Settings bottom sheet (mobile) -->
   <div id="stg-backdrop" class="stg-backdrop" onclick="closeSettings()"></div>
   <div id="stg-panel" class="stg-panel">
-    <div class="stg-handle"></div>
+    <div class="stg-handle" onclick="closeSettings()"></div>
     <p class="stg-title">Settings</p>
 
     <!-- App Mode -->
