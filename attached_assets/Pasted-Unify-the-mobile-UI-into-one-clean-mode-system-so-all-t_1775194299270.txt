@@ -1,0 +1,237 @@
+Unify the mobile UI into one clean mode system so all the iPhone-friendly layouts work together instead of competing.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only reorganize the mobile UI shell and mode logic.
+
+GOAL:
+Create one clear mobile UI system with these modes:
+
+1. Normal Mode
+2. Focus Mode
+3. StandBy / Minimal Mode
+
+And make these pieces work together cleanly:
+- app-style mobile header
+- Today / Next widget card
+- segmented control if present
+- Settings sheet
+- More Actions bottom sheet
+- sticky bottom Run bar
+- job cards
+- Now / Next banner
+- status / debug sections
+
+The result should feel like one coherent iPhone app, not many overlapping UI experiments.
+
+--------------------------------------------------
+MODE SYSTEM
+--------------------------------------------------
+
+Create a single source of truth for the current mobile mode.
+
+Use one value like:
+- "normal"
+- "focus"
+- "standby"
+
+Store it in localStorage if easy.
+Restore it on reload if easy.
+Default to "normal".
+
+Do NOT create multiple independent toggles that can conflict with each other.
+
+Examples:
+- If StandBy mode is active, Focus mode should not also separately try to hide/show elements.
+- One mode system should control all visibility.
+
+--------------------------------------------------
+MODE RULES
+--------------------------------------------------
+
+NORMAL MODE
+- shows the full mobile app layout
+- top app-style header
+- today / next widget
+- job cards
+- main actions
+- settings access
+- debug/status sections as already designed
+
+FOCUS MODE
+- simplified version of normal mode
+- show:
+  - top header
+  - today / next widget
+  - selected job summary
+  - countdown
+  - key status
+  - sticky Run action
+- hide:
+  - full job list if too cluttered
+  - most forms
+  - most debug sections
+  - low-priority actions
+
+STANDBY / MINIMAL MODE
+- ultra-clean glanceable mode
+- show only:
+  - hero selected/next class card
+  - large countdown
+  - current status
+  - one primary run action
+- hide almost everything else
+
+--------------------------------------------------
+TOP-LEVEL MOBILE STRUCTURE
+--------------------------------------------------
+
+On mobile only:
+@media (max-width: 768px)
+
+Use a single clean page structure in this order:
+
+1. App-style header
+2. Mode switcher
+3. Today / Next widget card
+4. Main content area (depends on mode)
+5. Sticky bottom Run bar
+6. Sheets / overlays (Settings, More Actions)
+
+Keep desktop mostly unchanged.
+
+--------------------------------------------------
+MODE SWITCHER
+--------------------------------------------------
+
+Add one simple control for switching modes.
+
+This can be:
+- a segmented control
+- or a small mode switcher row
+
+Suggested labels:
+- Normal
+- Focus
+- StandBy
+
+This control should:
+- update the current mobile mode
+- store the selection if possible
+- instantly show/hide the correct sections
+
+Do NOT use multiple separate mode toggles that overlap.
+
+--------------------------------------------------
+SECTION VISIBILITY MAP
+--------------------------------------------------
+
+Use clear CSS classes or JS visibility rules.
+
+For example:
+- elements marked data-mobile-section="jobs"
+- data-mobile-section="status"
+- data-mobile-section="debug"
+- data-mobile-section="forms"
+- data-mobile-section="widget"
+- data-mobile-section="header"
+
+Then control visibility by mode.
+
+Suggested behavior:
+
+NORMAL
+- show: header, widget, jobs, status, debug, forms, sticky run bar
+- hide: nothing major except desktop-only pieces
+
+FOCUS
+- show: header, widget, selected job summary, countdown, status, sticky run bar
+- hide: most jobs list, forms, most debug
+
+STANDBY
+- show: header, hero/selected job, big countdown, small status, sticky run bar
+- hide: jobs, forms, debug, extra controls, banners that duplicate the hero card
+
+--------------------------------------------------
+KEEP SHEETS / ACTIONS CONSISTENT
+--------------------------------------------------
+
+Settings sheet:
+- available in all modes
+- but entry point should stay subtle in Focus / StandBy
+
+More Actions bottom sheet:
+- available in Normal and Focus
+- optional in StandBy if it stays simple
+- destructive actions remain inside More Actions, not in the main screen
+
+Sticky bottom Run bar:
+- always available on mobile
+- in StandBy mode, simplify it to just the main action
+- keep safe-area aware
+
+--------------------------------------------------
+SCROLLING
+--------------------------------------------------
+
+Preserve the mobile scroll fix:
+- one main scroll container
+- no nested-scroll bounce issues
+- no snapping back to top
+
+Focus and StandBy modes should reduce content enough that scrolling is minimal, but do not break scrolling in Normal mode.
+
+--------------------------------------------------
+VISUAL HIERARCHY
+--------------------------------------------------
+
+Keep the visual style calm and Apple-like:
+- rounded cards
+- generous spacing
+- larger typography in Focus and StandBy
+- avoid lots of simultaneous bright colors
+- avoid showing too many controls at once
+
+StandBy should feel the calmest.
+Normal can be the most feature-rich.
+Focus should sit in between.
+
+--------------------------------------------------
+DO NOT DUPLICATE INFORMATION
+--------------------------------------------------
+
+Avoid showing the same thing in too many places.
+
+Examples:
+- if the Today / Next widget already shows the countdown, do not repeat the same countdown in three separate cards in StandBy mode
+- if sticky Run bar exists, do not also show duplicate giant run buttons nearby unless truly helpful
+
+The goal is clarity, not redundancy.
+
+--------------------------------------------------
+IMPLEMENTATION STYLE
+--------------------------------------------------
+
+Keep this lightweight:
+- no framework
+- no backend changes
+- no new API requirements
+- simple CSS classes + JS mode switch logic is enough
+
+--------------------------------------------------
+AFTER CHANGES EXPLAIN
+--------------------------------------------------
+
+Explain:
+1. what the final mobile modes are
+2. how the mode switcher works
+3. which sections appear in Normal / Focus / StandBy
+4. how conflicting toggles were avoided
+5. how the redesign keeps all existing logic intact
