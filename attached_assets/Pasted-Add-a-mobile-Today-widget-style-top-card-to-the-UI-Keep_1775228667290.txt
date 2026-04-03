@@ -1,0 +1,129 @@
+Add a mobile “Today widget” style top card to the UI.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI.
+
+GOAL:
+Create a top card that feels like an Apple home-screen widget:
+- calm
+- glanceable
+- simple
+- focused on the most important current information
+
+This should appear at the top of the mobile UI and make the app feel more like a real iPhone utility.
+
+1) MOBILE ONLY
+
+Apply mainly under:
+@media (max-width: 768px)
+
+Desktop can remain unchanged.
+
+2) ADD A “TODAY WIDGET” STYLE TOP CARD
+
+At the top of the mobile screen, create a prominent widget-like card.
+
+It should show the most important current information in a glanceable way.
+
+Suggested content:
+- selected or next job title
+- day / time
+- instructor
+- countdown / next open time
+- current state:
+  - waiting
+  - booked
+  - opening now
+  - dry run / live mode if useful
+
+Keep the card compact but visually stronger than a normal card.
+
+3) VISUAL STYLE
+
+Make it feel like an iPhone widget:
+- rounded corners (16–20px)
+- soft shadow or very light border
+- slightly larger padding than normal cards
+- stronger title hierarchy
+- calm spacing
+- clean typography
+- subtle background tint if helpful
+
+Do NOT make it flashy.
+Do NOT use heavy gradients unless very subtle.
+
+4) CONTENT HIERARCHY
+
+Inside the card:
+
+Top:
+- small label like:
+  - TODAY
+  - NEXT CLASS
+  - NOW
+
+Main:
+- class title
+
+Secondary:
+- day / time / instructor
+
+Bottom:
+- countdown or status pill
+- optional small mode badge (Dry Run / Live)
+
+Keep this easy to scan in one glance.
+
+5) STATUS PILL
+
+Add a small pill inside the widget for state:
+
+Examples:
+- Opens in 2h 14m
+- Opening now
+- Booked
+- Waiting
+- Error
+
+Style:
+- rounded pill
+- soft color
+- subtle, not loud
+
+6) REUSE EXISTING DATA
+
+Do NOT compute new logic if existing data already provides:
+- selected job
+- next job
+- countdown
+- current mode
+- last result / booked state
+
+Reuse what is already available in the UI or current rendered state.
+
+7) OPTIONAL “FOCUS MODE” COMPATIBILITY
+
+If Focus Mode already exists:
+- this Today widget should become the primary top card in Focus Mode
+- it should work well whether Focus Mode is on or off
+
+8) KEEP IT LIGHTWEIGHT
+
+- no new backend APIs
+- no frameworks
+- no complex animation required
+- just a clean top card using existing state/data
+
+9) AFTER CHANGES EXPLAIN:
+- what the Today widget card shows
+- how it uses existing data
+- how it differs from a normal card
+- how it improves the iPhone / Apple feel

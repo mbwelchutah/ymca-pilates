@@ -1469,8 +1469,95 @@ function buildHtml(jobs, error, editError) {
       }
       .mode-seg-btn:active:not(.active) { background: rgba(0,0,0,0.04); }
 
-      /* Focus mode: slightly larger countdown */
-      body.mode-focus .selected-job-card .sel-countdown { font-size: 18px; color: #555; }
+      /* ================================================================
+         FOCUS MODE — Apple-like spacious layout
+         Sections shown: banner + selected-job card + status + sticky bar
+         ================================================================ */
+
+      /* Hero card: generous padding, stronger shadow */
+      body.mode-focus .selected-job-card {
+        box-shadow: 0 4px 30px rgba(0,0,0,0.11);
+        border-radius: 18px;
+      }
+      body.mode-focus .selected-job-card .card-body {
+        padding: 28px 24px 32px;
+      }
+
+      /* Job ID eyebrow */
+      body.mode-focus .selected-job-card .selected-id {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        margin-bottom: 10px;
+      }
+
+      /* Class title — hero size */
+      body.mode-focus .selected-job-card .selected-summary {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+      }
+
+      /* Day · time · instructor */
+      body.mode-focus .selected-job-card .selected-meta {
+        font-size: 16px;
+        margin-top: 10px;
+        line-height: 1.65;
+        color: #666;
+      }
+
+      /* Target date */
+      body.mode-focus .selected-job-card .selected-date {
+        font-size: 14px !important;
+        margin-top: 6px !important;
+      }
+
+      /* Phase badge row */
+      body.mode-focus .selected-job-card .selected-phase {
+        margin-top: 14px;
+      }
+
+      /* Countdown — big, readable */
+      body.mode-focus .selected-job-card .sel-countdown {
+        font-size: 22px;
+        font-weight: 600;
+        color: #1a1a2e;
+        margin-top: 22px;
+        letter-spacing: -0.02em;
+        line-height: 1.35;
+      }
+
+      /* Booked box */
+      body.mode-focus .selected-job-card .sel-booked-box {
+        font-size: 16px;
+        padding: 12px 16px;
+        margin-top: 16px;
+        border-radius: 12px;
+      }
+
+      /* Last run info */
+      body.mode-focus .selected-job-card .selected-run-info {
+        margin-top: 18px;
+        font-size: 13px;
+        color: #999;
+      }
+
+      /* Error / info box */
+      body.mode-focus .selected-job-card .sel-error-box {
+        margin-top: 16px;
+        border-radius: 10px;
+      }
+
+      /* Status card: hide the "Status" header, compact body */
+      body.mode-focus [data-mobile-section="status"] .card-header { display: none; }
+      body.mode-focus [data-mobile-section="status"] .card-body   { padding: 14px 18px; font-size: 13px; color: #888; }
+
+      /* Mode switcher: slimmer in focus mode */
+      body.mode-focus #mode-switcher .card-body { padding: 8px 10px; }
+
+      /* Sticky bar primary button: full-width in focus (hide secondary) */
+      body.mode-focus #sticky-run-bar .srb-secondary { display: none !important; }
+      body.mode-focus #sticky-run-bar .srb-primary   { font-size: 17px; min-height: 56px; border-radius: 16px; }
 
       /* StandBy mode: hero card gets bigger type + generous spacing */
       body.mode-standby .selected-job-card .selected-summary { font-size: 22px; }
@@ -2908,7 +2995,7 @@ function buildHtml(jobs, error, editError) {
     // 'selected' and 'header' sections are always visible on mobile.
     var MOBILE_MODE_SECTIONS = {
       normal:  { banner:true,  jobs:true,  actions:true,  forms:true,  status:true,  debug:true  },
-      focus:   { banner:true,  jobs:false, actions:true,  forms:false, status:true,  debug:false },
+      focus:   { banner:true,  jobs:false, actions:false, forms:false, status:true,  debug:false },
       standby: { banner:false, jobs:false, actions:false, forms:false, status:false, debug:false },
     };
 
