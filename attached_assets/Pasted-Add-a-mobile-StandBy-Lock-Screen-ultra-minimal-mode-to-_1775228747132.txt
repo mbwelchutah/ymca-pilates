@@ -1,0 +1,149 @@
+Add a mobile “StandBy / Lock Screen” ultra-minimal mode to the UI.
+
+Keep ALL backend logic exactly the same.
+
+Do NOT change:
+- scheduler logic
+- booking logic
+- database
+- routes
+- job behavior
+
+Only improve the mobile UI.
+
+GOAL:
+Create an ultra-minimal iPhone-friendly mode that feels like a Lock Screen / StandBy view:
+- very glanceable
+- very calm
+- very large key information
+- almost no clutter
+- ideal for quickly checking the next class and running the bot
+
+This mode should show only:
+- next or selected class
+- countdown / next open time
+- current status
+- one large primary action
+
+1) MOBILE ONLY
+
+Apply mainly under:
+@media (max-width: 768px)
+
+Desktop remains unchanged.
+
+2) ADD A “MINIMAL MODE” / “STANDBY MODE” TOGGLE
+
+Add a simple control near the top of the mobile UI:
+- “StandBy Mode”
+- or “Minimal Mode”
+
+When enabled:
+- switch the mobile layout into an ultra-minimal view
+
+If easy:
+- remember this choice in localStorage
+- restore it on reload
+
+If not, default to OFF.
+
+3) WHAT STANDBY MODE SHOWS
+
+In this mode, show only:
+
+A. Large top card / hero area
+- class title
+- day / time
+- instructor
+- target date if present
+
+B. Very large countdown
+- “Opens in 02:14:09”
+- or “Opening now”
+- make this the most visually important element
+
+C. Simple status line
+- Waiting
+- Booked
+- Error
+- Dry Run / Live
+- Scheduler Paused / Running
+
+D. One large primary button
+- Run Selected (Scheduler Mode)
+
+Optional:
+- one small secondary button:
+  - Run Now (Direct)
+
+4) HIDE EVERYTHING ELSE
+
+When StandBy / Minimal Mode is ON, hide:
+- job list/cards/table
+- create/edit forms
+- failure summary
+- recent failures
+- debug sections
+- extra action stacks
+- settings sheet entry points if too cluttered
+- anything not essential to the immediate task
+
+The full app should still exist in normal mode.
+
+5) VISUAL STYLE
+
+Make it feel very Apple-like:
+- lots of breathing room
+- large, bold countdown
+- clean top-to-bottom hierarchy
+- soft rounded cards
+- very little visual noise
+- calm neutral background
+- subtle status pills
+
+No clutter.
+No dashboard feel.
+No extra chrome.
+
+6) TYPOGRAPHY
+
+Use larger mobile typography in this mode:
+- big countdown
+- stronger title
+- simple subtitle
+- small but readable status line
+
+The countdown should be the hero.
+
+7) STICKY ACTION
+
+Keep the large primary Run button easy to reach:
+- either in the main card
+- or in the sticky bottom action bar
+
+If using sticky bottom bar:
+- keep only the primary action visible
+- keep it safe-area aware
+
+8) OPTIONAL STANDBY FEEL
+
+If simple:
+- center content more vertically
+- reduce the number of visible cards
+- make the layout feel more like a focused utility screen than an app dashboard
+
+9) KEEP IT SIMPLE
+
+- no backend changes
+- no new APIs
+- no framework
+- no complex animations required
+
+Use existing data only.
+
+10) AFTER CHANGES EXPLAIN:
+- how StandBy / Minimal Mode is enabled
+- what remains visible
+- what gets hidden
+- whether it is remembered on reload
+- how it improves the iPhone feel
