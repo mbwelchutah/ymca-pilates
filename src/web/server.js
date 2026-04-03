@@ -1560,20 +1560,95 @@ function buildHtml(jobs, error, editError) {
       body.mode-focus #sticky-run-bar .srb-secondary { display: none !important; }
       body.mode-focus #sticky-run-bar .srb-primary   { font-size: 17px; min-height: 56px; border-radius: 16px; }
 
-      /* StandBy mode: hero card gets bigger type + generous spacing */
-      body.mode-standby .selected-job-card .selected-summary { font-size: 22px; }
-      body.mode-standby .selected-job-card .selected-id      { font-size: 13px; }
+      /* ================================================================
+         STANDBY MODE — Apple lock-screen / glanceable feel
+         ================================================================ */
+
+      /* Card shell: no shadow noise, big rounded corners */
+      body.mode-standby .selected-job-card {
+        box-shadow: none;
+        border-radius: 24px;
+        background: #ffffff;
+      }
+      /* Hide the card's "SELECTED JOB" header bar in StandBy */
+      body.mode-standby .selected-job-card .card-header { display: none !important; }
+      /* Center everything inside the card */
+      body.mode-standby .selected-job-card .card-body {
+        padding: 40px 24px 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      /* Job # badge — hide (too noisy in StandBy) */
+      body.mode-standby .selected-job-card .selected-id { display: none !important; }
+      /* Class title — large & bold */
+      body.mode-standby .selected-job-card .selected-summary {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #1a1a2e;
+        line-height: 1.2;
+      }
+      /* Day · time · instructor — softer secondary */
+      body.mode-standby .selected-job-card .selected-meta {
+        font-size: 15px;
+        color: #8e8e93;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+      /* Target date */
+      body.mode-standby .selected-job-card .selected-date {
+        font-size: 13px;
+        color: #bbb;
+        margin-top: 4px;
+      }
+      /* Phase badge row */
+      body.mode-standby .selected-job-card .selected-phase { margin-top: 18px; }
+      /* Sniper indicator */
+      body.mode-standby .selected-job-card .sniper-indicator { margin-top: 14px; font-size: 15px; }
+      /* === COUNTDOWN: the hero element === */
       body.mode-standby .selected-job-card .sel-countdown {
-        font-size: 32px;
+        font-size: 54px;
         font-weight: 700;
         color: #1a1a2e;
-        margin-top: 18px;
-        letter-spacing: -1px;
+        margin-top: 32px;
+        letter-spacing: -3px;
+        line-height: 1;
       }
-      body.mode-standby .selected-job-card .card-body         { padding: 28px 20px 32px; }
-      body.mode-standby .selected-job-card .selected-run-info { font-size: 12px; margin-top: 14px; }
-      /* StandBy: sticky run bar collapses to single full-width button */
+      /* Booked confirmation block */
+      body.mode-standby .selected-job-card .sel-booked-box {
+        font-size: 17px;
+        margin-top: 28px;
+        border-radius: 16px;
+        padding: 16px 22px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      /* Last-run info line — very dim */
+      body.mode-standby .selected-job-card .selected-run-info {
+        font-size: 11px;
+        color: #c0c0c5;
+        margin-top: 20px;
+      }
+      /* Error box */
+      body.mode-standby .selected-job-card .sel-error-box {
+        font-size: 13px;
+        margin-top: 18px;
+        border-radius: 12px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      /* Mode switcher: slimmer strip in StandBy */
+      body.mode-standby #mode-switcher .card-body { padding: 8px 10px; }
+      /* Sticky run bar — full-width primary, larger tap target */
       body.mode-standby #sticky-run-bar .srb-secondary { display: none !important; }
+      body.mode-standby #sticky-run-bar .srb-primary {
+        font-size: 18px;
+        font-weight: 700;
+        min-height: 58px;
+        border-radius: 18px;
+      }
 
       /* ================================================================
          TODAY WIDGET
