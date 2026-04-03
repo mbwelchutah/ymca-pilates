@@ -97,10 +97,14 @@ async function runBookingJob(job, opts = {}) {
       headless: isHeadless,
       ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
     });
-    const page = await browser.newPage();
-    // Explicit viewport so Bubble.io renders the desktop filter-pill layout,
-    // not a collapsed mobile layout that behaves differently.
-    await page.setViewportSize({ width: 1280, height: 800 });
+    // Set timezone to Pacific so Bubble.io's JavaScript renders class times in
+    // PDT/PST — the Replit server runs UTC, which shifts all times +7 hours and
+    // causes the bot to see "2:45 PM" for a class that is actually at "7:45 AM".
+    const context = await browser.newContext({
+      timezoneId: 'America/Los_Angeles',
+      viewport:   { width: 1280, height: 800 },
+    });
+    const page = await context.newPage();
 
     const snap = async (label = '') => {
       try {
@@ -339,11 +343,12 @@ async function runBookingJob(job, opts = {}) {
         // Matching rules:
         //   - time: "7:45" followed by optional space then "a" or "A" (am indicator).
         //     Matches "7:45 a", "7:45a", "7:45 AM", "7:45am", "07:45 a", "07:45 AM"
-        //     but NOT "7:45 p" / "7:45pm" or end-times like "6:45 - 7:45 p".
-        //     \b0? handles both plain "7:45" and zero-padded "07:45" formats.
+        //     and also "Eugene Y7:45 a" (Y and 7 are both word chars → \b fails there).
+        //     We do NOT use \b or ^/$ anchors — the trailing "a" is the sole AM guard;
+        //     "7:45 p" / "7:45pm" never end with "a" so they are safely excluded.
         //   - title: "Core Pilates" (case-insensitive, any whitespace)
         //   - instr: first name only ("stephanie" matches "Stephanie S.")
-        const timeAmRe = /\b0?7:45\s*a/i;
+        const timeAmRe = /7:45\s*a/i;
         const titleRe  = /core[\s\u00A0]+pilates/i;
         const instrRe  = new RegExp(instrFirst, 'i');
 
