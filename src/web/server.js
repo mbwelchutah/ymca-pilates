@@ -352,6 +352,7 @@ function buildHtml(jobs, error, editError) {
       letter-spacing: 0;
       margin-top: 1px;
     }
+    .mah-gear { display: none; }
 
     /* ---- next-job global banner ---- */
     .banner         { background:#f1faee; border:1px solid #d8e2dc; padding:10px 14px; border-radius:8px; font-size:14px; }
@@ -1240,6 +1241,100 @@ function buildHtml(jobs, error, editError) {
       margin: 2px 0;
     }
 
+    /* ---- Settings bottom sheet ---- */
+    .stg-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.42);
+      z-index: 1100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.24s ease;
+    }
+    .stg-backdrop.open { opacity: 1; pointer-events: auto; }
+    .stg-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #f2f2f7;
+      border-radius: 20px 20px 0 0;
+      padding: 0 0 max(20px, env(safe-area-inset-bottom));
+      z-index: 1200;
+      box-shadow: 0 -4px 32px rgba(0,0,0,0.14);
+      transform: translateY(100%);
+      transition: transform 0.30s cubic-bezier(0.32, 0.72, 0, 1);
+      max-height: 86vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .stg-panel.open { transform: translateY(0); }
+    .stg-handle {
+      width: 36px; height: 5px;
+      background: #c7c7cc;
+      border-radius: 3px;
+      margin: 10px auto 4px;
+    }
+    .stg-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #8e8e93;
+      text-align: center;
+      padding: 8px 16px 12px;
+    }
+    .stg-group-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8e8e93;
+      padding: 16px 20px 6px;
+    }
+    .stg-group {
+      background: #fff;
+      border-radius: 12px;
+      margin: 0 16px 4px;
+      overflow: hidden;
+    }
+    .stg-row {
+      display: flex;
+      align-items: center;
+      padding: 13px 16px;
+      gap: 12px;
+    }
+    .stg-row-label {
+      flex: 1;
+      font-size: 16px;
+      color: #1c1c1e;
+      font-weight: 400;
+    }
+    .stg-divider {
+      height: 1px;
+      background: #e5e5ea;
+      margin-left: 16px;
+    }
+    .stg-row-sub {
+      font-size: 12px;
+      color: #8e8e93;
+      padding: 0 16px 12px;
+    }
+    .stg-row-readonly {
+      font-size: 15px;
+      color: #3c3c43;
+      padding: 13px 16px;
+    }
+    .mah-gear {
+      margin-left: auto;
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      font-size: 22px;
+      color: #8e8e93;
+      padding: 6px 2px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
     /* ================================================================
        MOBILE MODE SYSTEM  (Normal / Focus / StandBy)
        ================================================================ */
@@ -1261,6 +1356,10 @@ function buildHtml(jobs, error, editError) {
       .main-container { padding-top: 0; }
       /* Hide the desktop-style page header entirely on mobile */
       .page-header { display: none; }
+      /* Gear button visible on mobile */
+      .mah-gear { display: block; }
+      /* Dry Run row moves to Settings on mobile */
+      [data-mobile-section="actions"] .dry-run-row { display: none; }
 
       /* ---- Mobile refresh row ---- */
       #mobile-refresh-row {
@@ -1485,6 +1584,52 @@ function buildHtml(jobs, error, editError) {
     </div>
   </div>
 
+  <!-- Settings bottom sheet (mobile) -->
+  <div id="stg-backdrop" class="stg-backdrop" onclick="closeSettings()"></div>
+  <div id="stg-panel" class="stg-panel">
+    <div class="stg-handle"></div>
+    <p class="stg-title">Settings</p>
+
+    <!-- App Mode -->
+    <div class="stg-group-label">App Mode</div>
+    <div class="stg-group">
+      <div class="stg-row">
+        <div class="stg-row-label">Dry Run</div>
+        <label class="switch">
+          <input type="checkbox" id="stg-dry-run" ${dryRunEnabled ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="stg-divider"></div>
+      <div class="stg-row">
+        <div class="stg-row-label">Haptic Feedback</div>
+        <label class="switch">
+          <input type="checkbox" id="stg-haptic" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Automation -->
+    <div class="stg-group-label">Automation</div>
+    <div class="stg-group">
+      <div class="stg-row">
+        <div class="stg-row-label">Pause Scheduler</div>
+        <label class="switch">
+          <input type="checkbox" id="stg-pause">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="stg-row-sub" id="stg-sched-status">&#9654; Scheduler running</div>
+    </div>
+
+    <!-- Status -->
+    <div class="stg-group-label">Status</div>
+    <div class="stg-group">
+      <div class="stg-row-readonly" id="stg-mode-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
+    </div>
+  </div>
+
   <div class="main-container">
   <div class="page">
 
@@ -1495,6 +1640,7 @@ function buildHtml(jobs, error, editError) {
         <div class="mah-title">YMCA Booker</div>
         <div class="mah-sub" id="mah-status">${dryRunEnabled ? 'Dry Run Mode' : 'Live Mode'}</div>
       </div>
+      <button class="mah-gear" id="mah-settings-btn" onclick="openSettings()" aria-label="Open settings">&#x2699;</button>
     </div>
 
     <!-- Mobile refresh control: hidden on desktop -->
@@ -2479,6 +2625,10 @@ function buildHtml(jobs, error, editError) {
       if (maPause)   maPause.style.display   = paused ? 'none' : '';
       if (maResume)  maResume.style.display  = paused ? ''     : 'none';
       localStorage.setItem('schedulerPaused', paused ? 'true' : 'false');
+      const stgPause = document.getElementById('stg-pause');
+      if (stgPause) stgPause.checked = paused;
+      const stgSchedStatus = document.getElementById('stg-sched-status');
+      if (stgSchedStatus) stgSchedStatus.textContent = paused ? '\u23F8 Scheduler paused' : '\u25BA Scheduler running';
     }
 
     /* ---- More Actions bottom sheet ---- */
@@ -2489,6 +2639,16 @@ function buildHtml(jobs, error, editError) {
     function closeMoreActions() {
       document.getElementById('moa-backdrop').classList.remove('open');
       document.getElementById('moa-panel').classList.remove('open');
+    }
+
+    /* ---- Settings bottom sheet ---- */
+    function openSettings() {
+      document.getElementById('stg-backdrop').classList.add('open');
+      document.getElementById('stg-panel').classList.add('open');
+    }
+    function closeSettings() {
+      document.getElementById('stg-backdrop').classList.remove('open');
+      document.getElementById('stg-panel').classList.remove('open');
     }
 
     /* ---- Mobile job card selection ---- */
@@ -2582,12 +2742,16 @@ function buildHtml(jobs, error, editError) {
       }, 1150);
     }
 
+    var hapticEnabled = true;
+
     function triggerUnifiedSuccess() {
-      if (navigator.vibrate) navigator.vibrate(10);
+      if (hapticEnabled && navigator.vibrate) navigator.vibrate(10);
       requestAnimationFrame(function() {
-        triggerFlash();
-        triggerBounce();
-        triggerCheckmark();
+        if (hapticEnabled) {
+          triggerFlash();
+          triggerBounce();
+          triggerCheckmark();
+        }
         triggerSuccessPulse();
       });
     }
@@ -2603,6 +2767,10 @@ function buildHtml(jobs, error, editError) {
       live.classList.toggle('visible', !enabled);
       const mahStatus = document.getElementById('mah-status');
       if (mahStatus) mahStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
+      const stgDry = document.getElementById('stg-dry-run');
+      if (stgDry) stgDry.checked = enabled;
+      const stgModeStatus = document.getElementById('stg-mode-status');
+      if (stgModeStatus) stgModeStatus.textContent = enabled ? 'Dry Run Mode' : 'Live Mode';
     }
 
     // Apply initial live-mode state from server-rendered flag (no flicker on load).
@@ -2637,6 +2805,47 @@ function buildHtml(jobs, error, editError) {
         }).catch(function() {});
       }
     })();
+
+    // ---- Settings: stg-dry-run toggle ----
+    document.getElementById('stg-dry-run').addEventListener('change', async function() {
+      const enabled = this.checked;
+      localStorage.setItem('dryRun', enabled ? 'true' : 'false');
+      document.getElementById('dry-run-toggle').checked = enabled;
+      updateDryRunUI(enabled);
+      try {
+        await fetch('/set-dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled }),
+        });
+      } catch (e) {
+        console.error('Failed to update dry-run state:', e.message);
+      }
+    });
+
+    // ---- Settings: stg-haptic toggle ----
+    (function() {
+      const stored = localStorage.getItem('hapticEnabled');
+      if (stored !== null) {
+        hapticEnabled = stored !== 'false';
+        const stgHaptic = document.getElementById('stg-haptic');
+        if (stgHaptic) stgHaptic.checked = hapticEnabled;
+      }
+    })();
+
+    document.getElementById('stg-haptic').addEventListener('change', function() {
+      hapticEnabled = this.checked;
+      localStorage.setItem('hapticEnabled', hapticEnabled ? 'true' : 'false');
+    });
+
+    // ---- Settings: stg-pause toggle ----
+    document.getElementById('stg-pause').addEventListener('change', function() {
+      if (this.checked) {
+        pauseScheduler();
+      } else {
+        resumeScheduler();
+      }
+    });
 
     // ---- Recent Failures panel ----
     var REASON_LABELS = {
