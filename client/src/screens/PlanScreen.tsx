@@ -165,6 +165,7 @@ interface Prefill {
   dayOfWeek: number
   classTime: string
   instructor: string
+  targetDate?: string
 }
 
 interface AddJobFormProps {
@@ -185,6 +186,7 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
   const [dayOfWeek, setDayOfWeek]   = useState(prefill?.dayOfWeek ?? 2)
   const [classTime, setClassTime]   = useState(prefill?.classTime ?? '')
   const [instructor, setInstructor] = useState(prefill?.instructor ?? '')
+  const [targetDate, setTargetDate] = useState(prefill?.targetDate ?? '')
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
 
@@ -199,21 +201,24 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
       return
     }
     const normalized = normalizeTime(classTime)
+    console.log('[AddClass] raw time:', JSON.stringify(classTime), '| normalized:', normalized)
     if (!normalized) {
       setErr('Enter time like 10:45 AM')
       return
     }
+    const payload = {
+      class_title: classTitle.trim(),
+      day_of_week: dayOfWeek as unknown as string,
+      class_time: normalized,
+      instructor: instructor.trim() || null,
+      target_date: targetDate.trim() || null,
+      is_active: true,
+    }
+    console.log('[AddClass] payload:', JSON.stringify(payload))
     setSaving(true)
     setErr(null)
     try {
-      await api.addJob({
-        class_title: classTitle.trim(),
-        day_of_week: dayOfWeek as unknown as string,
-        class_time: normalized,
-        instructor: instructor.trim() || null,
-        target_date: null,
-        is_active: true,
-      })
+      await api.addJob(payload)
       onDone()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Couldn\'t add the class')
@@ -246,6 +251,10 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
         <div>
           <label className={labelClass}>Instructor (optional)</label>
           <input className={inputClass} placeholder="Gretl" value={instructor} onChange={e => setInstructor(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelClass}>Date (optional)</label>
+          <input type="date" className={inputClass} value={targetDate} onChange={e => setTargetDate(e.target.value)} />
         </div>
         {err && <p className="text-[13px] text-accent-red">{err}</p>}
         <div className="flex gap-2 mt-1">

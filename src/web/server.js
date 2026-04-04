@@ -3891,41 +3891,68 @@ const server = http.createServer((req, res) => {
     });
 
   } else if (req.method === 'POST' && path === '/add-job') {
-    // Collect the POST body (URL-encoded form data).
+    const isJson = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', () => {
-      // Parse "key=value&key=value" without external libraries.
-      const fields = {};
-      body.split('&').forEach(pair => {
-        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
-        if (k) fields[k] = (v || '').trim();
-      });
+      let classTitle, dayOfWeek, classTime, instructor, targetDate;
 
-      const classTitle = fields.title      || '';
-      const dayOfWeek  = fields.day        || '';
-      const classTime  = fields.time       || '';
-      const instructor = fields.instructor || '';
-      const targetDate = fields.target_date || null;
+      if (isJson) {
+        // React app sends JSON with snake_case field names.
+        let parsed;
+        try { parsed = JSON.parse(body); } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Invalid JSON' }));
+          return;
+        }
+        classTitle = (parsed.class_title  || '').trim();
+        dayOfWeek  = (parsed.day_of_week  != null ? String(parsed.day_of_week) : '').trim();
+        classTime  = (parsed.class_time   || '').trim();
+        instructor = (parsed.instructor   || '').trim();
+        targetDate = parsed.target_date   || null;
 
-      // Validate required fields — same rules as the CLI script.
-      const missing = [];
-      if (!classTitle) missing.push('title');
-      if (!dayOfWeek)  missing.push('day');
-      if (!classTime)  missing.push('time');
-      if (!instructor) missing.push('instructor');
+        const missing = [];
+        if (!classTitle) missing.push('class name');
+        if (!dayOfWeek)  missing.push('day');
+        if (!classTime)  missing.push('time');
+        if (missing.length > 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Missing required fields: ' + missing.join(', ') }));
+          return;
+        }
+        const id = createJob({ classTitle, dayOfWeek, classTime, instructor: instructor || null, targetDate: targetDate || null });
+        console.log(`Created job #${id} via React UI: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, id }));
+      } else {
+        // Old HTML form sends URL-encoded data.
+        const fields = {};
+        body.split('&').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+          if (k) fields[k] = (v || '').trim();
+        });
+        classTitle = fields.title      || '';
+        dayOfWeek  = fields.day        || '';
+        classTime  = fields.time       || '';
+        instructor = fields.instructor || '';
+        targetDate = fields.target_date || null;
 
-      if (missing.length > 0) {
-        const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
-        res.writeHead(302, { Location: '/?error=' + msg });
+        const missing = [];
+        if (!classTitle) missing.push('title');
+        if (!dayOfWeek)  missing.push('day');
+        if (!classTime)  missing.push('time');
+        if (!instructor) missing.push('instructor');
+        if (missing.length > 0) {
+          const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
+          res.writeHead(302, { Location: '/?error=' + msg });
+          res.end();
+          return;
+        }
+        const id = createJob({ classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
+        console.log(`Created job #${id} via web form: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        res.writeHead(302, { Location: '/' });
         res.end();
-        return;
       }
-
-      const id = createJob({ classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
-      console.log(`Created job #${id} via web form: ${classTitle} / ${dayOfWeek} / ${classTime}`);
-      res.writeHead(302, { Location: '/' });
-      res.end();
     });
 
   } else if (req.method === 'POST' && path === '/run-scheduler-once') {

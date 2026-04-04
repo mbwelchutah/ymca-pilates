@@ -1,0 +1,145 @@
+There are two issues in the Add Class form that need to be fixed.
+
+ISSUE 1
+The time field still throws:
+"The string did not match the expected pattern."
+even when the visible value is formatted like:
+"10:45 AM"
+
+ISSUE 2
+The date input field was removed from the Add Class form.
+Add the date field back.
+
+IMPORTANT
+This is a targeted bug fix.
+Do NOT redesign the screen.
+Do NOT change layout, spacing, styling, navigation, or other screens.
+Only fix the Add Class form behavior and restore the missing date field.
+
+--------------------------------
+PART A — RESTORE DATE FIELD
+--------------------------------
+
+Add the date field back into the Add Class form.
+
+Requirements:
+- Restore the date field in the same general place it existed before
+- Label it clearly, such as:
+  Date (optional)
+- Keep it optional
+- Preserve current visual style of the form
+- Make sure the value is included correctly in form state and submit payload
+- If the app already uses a canonical date format, keep it consistent
+- If editing a class, the date should also remain supported there
+
+Do NOT:
+- invent a new layout
+- move the whole form around
+- remove any other fields
+
+--------------------------------
+PART B — FIX THE REAL TIME VALIDATION BUG
+--------------------------------
+
+Current behavior:
+- The time field may display "10:45 AM"
+- But submit still fails with:
+  "The string did not match the expected pattern."
+
+This means the bug is in the real validation/submission/parsing chain, not just display formatting.
+
+Your task:
+Trace the Add Class flow end-to-end and fix the actual failing layer.
+
+Check all of these:
+
+1. Raw time input state
+2. Normalized time value
+3. Any HTML `pattern` attribute
+4. Any native input type mismatch
+5. Any schema validator (zod/yup/custom)
+6. Any helper that parses time
+7. Any Date constructor / Date.parse usage
+8. Any API/server validation
+9. Final payload sent on submit
+
+LIKELY ROOT CAUSE
+One of these is still rejecting the value:
+- old `pattern` attribute
+- parser expecting another format
+- Date parsing on a non-ISO string
+- backend/schema still expects old format
+- hidden stale value still being submitted
+
+REQUIRED BEHAVIOR
+The form should accept common user input like:
+- 10:45AM
+- 10:45 AM
+- 4:20PM
+- 4:20 PM
+
+Normalize internally before validation/submission to:
+- h:mm AM/PM
+
+Examples:
+- 10:45 AM
+- 4:20 PM
+
+If the backend or storage layer requires another format, explicitly convert it there in one predictable place.
+Do NOT rely on browser Date parsing for free-form time strings.
+
+--------------------------------
+PART C — FRIENDLY VALIDATION
+--------------------------------
+
+Do NOT show raw browser/system errors like:
+"The string did not match the expected pattern."
+
+If time is invalid, show only:
+"Enter time like 10:45 AM"
+
+--------------------------------
+PART D — DEBUGGING INSTRUCTIONS
+--------------------------------
+
+Add temporary console logs around the Add Class submit path to inspect:
+- raw time input
+- normalized time
+- selected date value
+- final payload
+- exact error source / failing line
+
+Then fix the root cause.
+
+I want the actual failing validator/parser corrected, not another cosmetic patch.
+
+--------------------------------
+PART E — IMPLEMENTATION PREFERENCE
+--------------------------------
+
+Create one shared helper for time normalization and validation, and use it consistently in the Add Class flow.
+
+Suggested regex:
+^(1[0-2]|[1-9]):[0-5][0-9]\s?(AM|PM)$
+
+Suggested helper behavior:
+- trim whitespace
+- uppercase am/pm
+- insert missing space before AM/PM
+- validate
+- normalize to "h:mm AM/PM"
+
+Example outputs:
+- "10:45AM" -> "10:45 AM"
+- "4:20pm" -> "4:20 PM"
+
+--------------------------------
+PART F — DONE REPORT
+--------------------------------
+
+When complete, report back with:
+1. where the time validation error actually came from
+2. what code path was fixed
+3. what format is now stored/submitted for time
+4. where the date field was restored
+5. whether the date is now included in the submit payload
