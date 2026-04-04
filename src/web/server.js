@@ -15,6 +15,42 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
 // ---------------------------------------------------------------------------
+// Static file serving — used in production when the React app is pre-built.
+// In development, Vite runs its own server (port 5001 for this backend).
+// ---------------------------------------------------------------------------
+const fsStatic   = require('fs');
+const pathStatic = require('path');
+const DIST_DIR   = pathStatic.join(__dirname, '../../dist');
+const DIST_INDEX = pathStatic.join(DIST_DIR, 'index.html');
+const SERVE_REACT = fsStatic.existsSync(DIST_INDEX);
+
+const STATIC_MIME = {
+  '.html':  'text/html; charset=utf-8',
+  '.js':    'application/javascript',
+  '.mjs':   'application/javascript',
+  '.css':   'text/css',
+  '.json':  'application/json',
+  '.png':   'image/png',
+  '.svg':   'image/svg+xml',
+  '.ico':   'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff':  'font/woff',
+  '.ttf':   'font/ttf',
+};
+
+function serveStatic(res, filePath) {
+  if (!fsStatic.existsSync(filePath)) return false;
+  const ext = pathStatic.extname(filePath).toLowerCase();
+  const mime  = STATIC_MIME[ext] || 'application/octet-stream';
+  const cache = ext === '.html'
+    ? 'no-cache, no-store, must-revalidate'
+    : 'public, max-age=31536000, immutable';
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cache });
+  fsStatic.createReadStream(filePath).pipe(res);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // PWA helpers — generate solid-colour PNG icons without external packages.
 // ---------------------------------------------------------------------------
 function makeSolidPng(width, height, r, g, b) {
@@ -3739,11 +3775,15 @@ const server = http.createServer((req, res) => {
   const path   = parsed.pathname;
 
   if (req.method === 'GET' && path === '/') {
-    const jobs      = getAllJobs();
-    const error     = parsed.searchParams.get('error')      || null;
-    const editError = parsed.searchParams.get('edit_error') || null;
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(buildHtml(jobs, error, editError));
+    if (SERVE_REACT) {
+      serveStatic(res, DIST_INDEX);
+    } else {
+      const jobs      = getAllJobs();
+      const error     = parsed.searchParams.get('error')      || null;
+      const editError = parsed.searchParams.get('edit_error') || null;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(buildHtml(jobs, error, editError));
+    }
 
   } else if (req.method === 'GET' && path === '/manifest.json') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
@@ -4114,6 +4154,14 @@ const server = http.createServer((req, res) => {
     if (!fsM.existsSync(file)) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'image/png' });
     fsM.createReadStream(file).pipe(res);
+
+  } else if (SERVE_REACT && req.method === 'GET') {
+    // Serve built React assets (JS, CSS, etc.) or fall back to index.html for SPA routing.
+    const safePath = pathStatic.normalize(path).replace(/^(\.\.[/\\])+/, '');
+    const assetFile = pathStatic.join(DIST_DIR, safePath);
+    if (!serveStatic(res, assetFile)) {
+      serveStatic(res, DIST_INDEX);
+    }
 
   } else {
     res.writeHead(404);
