@@ -8,7 +8,6 @@ import { api } from '../lib/api'
 
 interface SettingsScreenProps {
   appState: AppState
-  selectedJobId: number | null
   refresh: () => void
 }
 

@@ -59,7 +59,7 @@ export default function App() {
           <ToolsScreen appState={state} selectedJobId={effectiveSelectedJobId} refresh={refresh} />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} selectedJobId={effectiveSelectedJobId} refresh={refresh} />
+          <SettingsScreen appState={state} refresh={refresh} />
         )}
       </main>
     </div>
