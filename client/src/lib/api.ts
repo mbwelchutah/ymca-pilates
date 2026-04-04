@@ -62,8 +62,24 @@ export const api = {
     apiFetch('/status'),
 
   getFailures: (): Promise<{
-    recent: Array<{ name: string; mtime: number; reason: string; meta: Record<string, unknown> }>
-    summary: Record<string, number>
+    recent: Array<{
+      id:          number | null
+      job_id:      number | null
+      occurred_at: string
+      phase:       string
+      reason:      string
+      message:     string | null
+      class_title: string | null
+      screenshot:  string | null
+      category:    string | null
+      label:       string | null
+      expected:    string | null
+      actual:      string | null
+      url:         string | null
+      context_json: string | null
+    }>
+    summary:  Record<string, number>
+    by_phase: Record<string, number>
   }> => apiFetch('/api/failures'),
 
   getScrapedClasses: (): Promise<{ classes: ScrapedClass[] }> =>

@@ -8,14 +8,20 @@ import type { AppState } from '../types'
 import { api } from '../lib/api'
 
 interface FailureEntry {
-  id:          number | null
-  job_id:      number | null
-  occurred_at: string
-  phase:       string
-  reason:      string
-  message:     string | null
-  class_title: string | null
-  screenshot:  string | null
+  id:           number | null
+  job_id:       number | null
+  occurred_at:  string
+  phase:        string
+  reason:       string
+  message:      string | null
+  class_title:  string | null
+  screenshot:   string | null
+  category:     string | null
+  label:        string | null
+  expected:     string | null
+  actual:       string | null
+  url:          string | null
+  context_json: string | null
 }
 
 interface FailureData {
@@ -54,7 +60,6 @@ const REASON_LABELS: Record<string, string> = {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  // Current taxonomy
   'system':      'System',
   'auth':        'Auth / Session',
   'navigate':    'Navigation',
@@ -65,7 +70,6 @@ const PHASE_LABELS: Record<string, string> = {
   'action':      'Booking action',
   'post_click':  'Post-click check',
   'recovery':    'Stale recovery',
-  // Legacy taxonomy (kept for any pre-migration rows)
   'login':          'Login',
   'schedule_scan':  'Schedule scan',
   'card_click':     'Card click',
@@ -86,6 +90,16 @@ const RESULT_LABELS: Record<string, string> = {
 const fmtStr = (s: string) =>
   new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
+function trimUrl(raw: string): string {
+  try {
+    const u = new URL(raw)
+    const p = u.pathname.length > 40 ? u.pathname.slice(0, 40) + '…' : u.pathname
+    return u.hostname + p
+  } catch {
+    return raw.length > 50 ? raw.slice(0, 50) + '…' : raw
+  }
+}
+
 function ChevronIcon({ rotated }: { rotated: boolean }) {
   return (
     <svg
@@ -93,6 +107,17 @@ function ChevronIcon({ rotated }: { rotated: boolean }) {
       className={`text-text-muted flex-shrink-0 transition-transform ${rotated ? 'rotate-90' : ''}`}
     >
       <path d="M1 1l6 5.5L1 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function CameraIcon() {
+  return (
+    <svg width="11" height="10" viewBox="0 0 11 10" fill="none" className="inline-block ml-1.5 text-text-muted flex-shrink-0">
+      <path
+        d="M3.5 1L2.5 2.5H1C0.448 2.5 0 2.948 0 3.5V8.5C0 9.052 0.448 9.5 1 9.5H10C10.552 9.5 11 9.052 11 8.5V3.5C11 2.948 10.552 2.5 10 2.5H8.5L7.5 1H3.5ZM5.5 8C4.119 8 3 6.881 3 5.5C3 4.119 4.119 3 5.5 3C6.881 3 8 4.119 8 5.5C8 6.881 6.881 8 5.5 8Z"
+        fill="currentColor"
+      />
     </svg>
   )
 }
@@ -128,7 +153,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
 
   const [failures, setFailures] = useState<FailureData | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
-  const [expandedShot, setExpandedShot] = useState<string | null>(null)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [forceLoading, setForceLoading] = useState(false)
   const [forceMsg, setForceMsg] = useState<string | null>(null)
   const [runOnceLoading, setRunOnceLoading] = useState(false)
@@ -173,6 +198,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
   }
 
   const failureEntries = Object.entries(failures?.summary ?? {})
+    .sort((a, b) => b[1] - a[1])
+  const phaseEntries = Object.entries(failures?.by_phase ?? {})
     .sort((a, b) => b[1] - a[1])
   const recentFailures = failures?.recent ?? []
 
@@ -227,7 +254,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           </Card>
         )}
 
-        {/* ── 2. Failure Summary ─────────────────────────────── */}
+        {/* ── 2a. Failure Summary — By Reason ────────────────── */}
         <SectionHeader title="Failure Summary" />
         <Card padding="none">
           {failureEntries.length === 0 ? (
@@ -244,6 +271,23 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           )}
         </Card>
 
+        {/* ── 2b. Failure Summary — By Phase ─────────────────── */}
+        <SectionHeader title="By Phase" />
+        <Card padding="none">
+          {phaseEntries.length === 0 ? (
+            <DetailRow label="Status" value="No phase data" last />
+          ) : (
+            phaseEntries.map(([phase, count], i) => (
+              <DetailRow
+                key={phase}
+                label={PHASE_LABELS[phase] ?? phase}
+                value={`${count}×`}
+                last={i === phaseEntries.length - 1}
+              />
+            ))
+          )}
+        </Card>
+
         {/* ── 3. Recent Failures ─────────────────────────────── */}
         {recentFailures.length > 0 && (
           <>
@@ -251,41 +295,84 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
             <Card padding="none">
               {recentFailures.map((f, i) => {
                 const entryKey = f.id != null ? String(f.id) : f.occurred_at
+                const isOpen   = expandedKey === entryKey
+                const primary  = f.label ?? REASON_LABELS[f.reason] ?? f.reason
+                const msgSnip  = f.message
+                  ? (f.message.length > 60 ? f.message.slice(0, 60) + '…' : f.message)
+                  : null
+
                 return (
                   <div key={entryKey}>
+                    {/* ── Collapsed row ────────────────────── */}
                     <button
-                      onClick={() => setExpandedShot(expandedShot === entryKey ? null : entryKey)}
+                      onClick={() => setExpandedKey(isOpen ? null : entryKey)}
                       className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
                     >
-                      <div className="flex-1 mr-3">
-                        <p className="text-[14px] font-medium text-text-primary">
-                          {REASON_LABELS[f.reason] ?? f.reason}
+                      <div className="flex-1 mr-3 min-w-0">
+                        <p className="text-[14px] font-medium text-text-primary flex items-center">
+                          <span className="truncate">{primary}</span>
+                          {f.screenshot && <CameraIcon />}
                         </p>
                         <p className="text-[12px] text-text-secondary mt-0.5">
                           {PHASE_LABELS[f.phase] ?? f.phase} · {fmtStr(f.occurred_at)}
                         </p>
-                        {f.message && (
+                        {msgSnip && (
                           <p className="text-[11px] text-text-muted mt-0.5 break-words">
-                            {f.message.length > 80 ? f.message.slice(0, 80) + '…' : f.message}
+                            {msgSnip}
                           </p>
                         )}
                       </div>
-                      <ChevronIcon rotated={expandedShot === entryKey} />
+                      <ChevronIcon rotated={isOpen} />
                     </button>
 
-                    {expandedShot === entryKey && f.screenshot && (
-                      <div className="px-4 pb-4">
-                        <img
-                          src={`/screenshots/${f.screenshot}`}
-                          alt={f.reason}
-                          className="w-full rounded-xl border border-divider"
-                          loading="lazy"
-                        />
-                      </div>
-                    )}
-                    {expandedShot === entryKey && !f.screenshot && (
-                      <div className="px-4 pb-4">
-                        <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
+                    {/* ── Expanded detail ──────────────────── */}
+                    {isOpen && (
+                      <div className="px-4 pb-4 space-y-3">
+
+                        {/* Full message */}
+                        {f.message && (
+                          <div className="bg-surface rounded-lg p-3 border border-divider">
+                            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Message</p>
+                            <p className="text-[12px] text-text-secondary leading-relaxed break-words font-mono">
+                              {f.message}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Expected / Actual */}
+                        {f.expected != null && f.actual != null && (
+                          <div className="bg-surface rounded-lg p-3 border border-divider space-y-1.5">
+                            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Mismatch</p>
+                            <div className="flex gap-2">
+                              <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Expected</span>
+                              <span className="text-[12px] text-text-secondary font-mono break-all">{f.expected}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Actual</span>
+                              <span className="text-[12px] text-text-secondary font-mono break-all">{f.actual}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* URL */}
+                        {f.url && (
+                          <div className="flex gap-2 items-start">
+                            <span className="text-[10px] font-semibold text-text-muted w-8 flex-shrink-0 pt-px">URL</span>
+                            <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
+                          </div>
+                        )}
+
+                        {/* Screenshot */}
+                        {f.screenshot ? (
+                          <img
+                            src={`/screenshots/${f.screenshot}`}
+                            alt={f.reason}
+                            className="w-full rounded-xl border border-divider"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
+                        )}
                       </div>
                     )}
 
