@@ -11,7 +11,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction }: AppHeaderProps) {
   return (
-    <div className="safe-top px-4 pb-2 flex items-center justify-between">
+    <div className="pt-4 px-4 pb-2 flex items-center justify-between">
       <div>
         <h1 className="text-[22px] font-bold tracking-tight text-text-primary leading-tight">
           YMCA Booker

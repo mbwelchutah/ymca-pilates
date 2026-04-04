@@ -1,0 +1,392 @@
+You are making a phased product refinement to my YMCA class registration app built in React + Tailwind.
+
+This app is still in active development.
+The UI should stay clean and iPhone-oriented, but I now want to reintroduce some advanced debugging and operational tools that existed in earlier versions.
+
+IMPORTANT PRODUCT DIRECTION
+
+Keep the app clean and modern.
+Do NOT revert to a cluttered dashboard.
+Do NOT bring advanced debug controls back into the main booking flow.
+
+Instead, organize the app more intentionally:
+
+- NOW = current booking status and upcoming booking window
+- PLAN = class bookings, queue, add/edit/delete
+- TOOLS / ADVANCED = development and debugging utilities
+- SETTINGS = app-level behavior and toggles
+
+If needed, Settings and Tools can coexist, or Tools can be a section within Settings, but advanced debug items must be clearly grouped and not pollute Now or Plan.
+
+HIGH-LEVEL CHANGES I WANT
+
+1. Bring back some advanced debug features from earlier releases, especially:
+   - Playwright-related diagnostics
+   - Tallies of booking failure reasons
+   - Failure screenshots
+   - Error messages / logs
+   - More operational detail useful during development
+
+2. Move some items that do NOT belong in Settings out of Settings.
+   Specifically:
+   - Booking window info should likely move to the Now tab
+
+3. Move app tabs/navigation to the TOP instead of the bottom
+
+4. Keep changes staged and controlled.
+   Do not redesign everything at once.
+
+STRICT RULES
+
+- Keep the app runnable after every stage
+- Do not collapse screens together
+- Do not put advanced debug content on Now
+- Do not turn the app back into a giant dashboard
+- Do not use rockets or oversized gear icons
+- Keep the visual style modern, calm, iPhone-oriented
+- Make changes in phases only
+- Stop after each stage and summarize what changed
+
+DESIGN PRINCIPLES
+
+The user-facing app should still feel:
+- clean
+- modern
+- focused
+- gym-registration-first
+- calm and trustworthy
+
+But because this is still a work in progress, it is acceptable for Tools / Advanced sections to be more detailed.
+
+Use visual hierarchy so that:
+- main flows remain polished
+- development utilities are available but contained
+
+NAVIGATION DIRECTION
+
+I want to move tabs to the TOP.
+
+Please implement a top tab navigation pattern for the main app views.
+
+Preferred top-level tabs:
+- Now
+- Plan
+- Tools
+- Settings
+
+Alternative acceptable structure:
+- Now
+- Plan
+- Settings
+with Tools as an Advanced section inside Settings
+
+Before implementing, evaluate which option fits the existing structure best with the least disruption.
+
+Recommendation:
+- If Tools already exists conceptually and has distinct development/debug purpose, keep it as its own top tab.
+- If not, place Advanced Tools inside Settings as a strong grouped section.
+
+In either case:
+- tabs should move to the top
+- bottom nav should be removed once top tabs are in place
+- keep the result clean and iPhone-friendly
+
+PHASED IMPLEMENTATION PLAN
+
+================================
+STAGE 1 — MOVE PRIMARY TABS TO TOP
+================================
+
+Goal:
+Move app navigation from bottom tabs to top tabs without changing screen responsibilities yet.
+
+Tasks:
+1. Replace bottom tab navigation with a top tab bar.
+2. Keep current screen identities intact.
+3. Use clean, modern, segmented-control / tab-bar styling that fits the app.
+4. Remove the bottom navigation once top tabs are working.
+5. Keep spacing and layout clean on iPhone screens.
+
+Important:
+- Do NOT redesign all screen contents yet
+- Do NOT move sections between screens yet
+- Only move navigation location and keep app stable
+
+Deliverable:
+App uses top navigation tabs and no longer depends on bottom tabs.
+
+After Stage 1:
+Stop and summarize:
+- how top tabs were implemented
+- what was removed from bottom nav
+- whether Tools remains a separate tab or is planned to merge later
+
+================================
+STAGE 2 — MOVE BOOKING WINDOW OUT OF SETTINGS
+================================
+
+Goal:
+Move booking-window information to the Now screen where it belongs.
+
+Reason:
+Booking window is operational, not just configuration.
+It belongs with the current active booking mission.
+
+Tasks:
+1. Remove Booking Window section from Settings.
+2. Add booking-window information to Now in a clean, secondary way.
+3. Keep it subordinate to the Now hero card.
+4. Show:
+   - next active job
+   - opens time
+   - optional warmup/check time if useful
+5. Avoid making this section noisy or overly technical.
+
+Important:
+- Do NOT make Now into a dashboard
+- Keep the existing hero/status structure dominant
+- Booking window should be a supporting section
+
+Deliverable:
+Booking window info appears on Now instead of Settings.
+
+After Stage 2:
+Stop and summarize:
+- what Booking Window data was moved
+- how it now appears on Now
+- what was removed from Settings
+
+================================
+STAGE 3 — BRING BACK ADVANCED DEBUG FEATURES UNDER TOOLS / ADVANCED
+================================
+
+Goal:
+Reintroduce advanced development/debugging features in a contained area.
+
+This app is still a work in progress, so I want deeper debugging back, especially around:
+- Playwright
+- failure reasons
+- screenshot capture
+- error messages
+- tallies of failure causes
+
+Tasks:
+Create or restore an Advanced / Tools area that can contain:
+
+1. Playwright Diagnostics
+   - status of Playwright/browser session if available
+   - last run metadata if available
+   - key automation context useful during debugging
+
+2. Failure Summary
+   - grouped/tallied reasons for booking failures
+   - examples:
+     - instructor mismatch
+     - booking window closed
+     - schedule not rendered
+     - modal mismatch
+     - login/session issue
+   - counts by reason
+
+3. Recent Failures
+   - recent failure events
+   - timestamp
+   - class name if available
+   - brief reason
+
+4. Failure Screenshots
+   - preview/list of screenshots captured on failure
+   - associated timestamp and label
+   - keep these clearly in advanced/dev tooling
+
+5. Error Log / Error Messages
+   - recent structured errors
+   - readable reason
+   - avoid raw stack traces as primary display unless inside an expandable detail view
+
+6. Optional operational actions
+   If appropriate, include development actions like:
+   - check now
+   - run one booking check
+   - manual debug trigger
+   But these must stay in Tools/Advanced, not Now.
+
+Important:
+- Keep this screen structured and grouped
+- Do not dump everything into one undifferentiated list
+- Prefer grouped sections/cards
+- Keep visual polish, even though this area can be more detailed
+
+Deliverable:
+A Tools / Advanced screen (or Advanced section inside Settings) containing richer debug visibility.
+
+After Stage 3:
+Stop and summarize:
+- which advanced features were restored
+- how failure reasons are tallied
+- where screenshots and logs now live
+
+================================
+STAGE 4 — ORGANIZE SETTINGS VS TOOLS CLEANLY
+================================
+
+Goal:
+Clarify what belongs in Settings vs Tools.
+
+Tasks:
+Audit all content currently under Settings and split it appropriately.
+
+SETTINGS should contain:
+- app behavior toggles
+- scheduler pause
+- simulation / dry run mode
+- haptics if present
+- general preferences
+- app-level configuration
+
+TOOLS / ADVANCED should contain:
+- Playwright diagnostics
+- failure reasons
+- screenshots
+- error log
+- debug actions
+- development-only operations
+
+Do NOT keep mixed operational/debug and settings content in the same random groups.
+
+If Tools remains a separate top tab:
+- keep Settings leaner
+- move advanced sections fully into Tools
+
+If Tools becomes a Settings subsection:
+- make it clearly labeled as Advanced / Development
+- visually separate it from normal settings
+
+Deliverable:
+Cleaner separation between Settings and Tools.
+
+After Stage 4:
+Stop and summarize:
+- what is in Settings
+- what is in Tools / Advanced
+- what was moved
+
+================================
+STAGE 5 — IMPROVE DEBUG DATA PRESENTATION
+================================
+
+Goal:
+Make advanced debug data genuinely useful.
+
+Tasks:
+Improve the structure and readability of restored debug data.
+
+Specific improvements:
+1. Failure tally cards
+   - count by failure reason
+   - easy scanning
+
+2. Recent failure list
+   - newest first
+   - timestamp
+   - reason
+   - class if known
+
+3. Screenshot handling
+   - compact preview list
+   - tap/click for full view if possible
+   - associated failure label
+
+4. Error messages
+   - human-readable title
+   - optional expandable technical details
+   - avoid overwhelming the screen with raw text
+
+5. Playwright section
+   - show only useful diagnostics
+   - avoid giant logs by default
+   - allow expansion if needed
+
+Visual rules:
+- keep advanced screen legible
+- grouped cards
+- clean headings
+- use progressive disclosure where possible
+
+Deliverable:
+A useful debug/advanced experience, not just a data dump.
+
+After Stage 5:
+Stop and summarize:
+- how debug info is presented
+- what is collapsed vs expanded
+- where screenshots and errors are surfaced
+
+================================
+STAGE 6 — POLISH / CLEANUP PASS
+================================
+
+Goal:
+Make the app coherent after these changes.
+
+Tasks:
+1. Ensure top navigation works cleanly across all screens
+2. Remove any remaining bottom-nav remnants
+3. Make sure Now stays focused and not overloaded
+4. Make sure Plan remains a booking manager
+5. Make sure Settings stays configuration-focused
+6. Make sure Tools/Advanced contains dev/debug items
+7. Clean any duplicated labels, sections, or visual clutter
+8. Preserve the modern iPhone-oriented design language
+
+Deliverable:
+A clean but more powerful app, with advanced debugging brought back in the right place.
+
+FINAL SCREEN RESPONSIBILITIES
+
+NOW
+- current active booking
+- countdown / readiness
+- booking progress
+- booking window info
+- operational confidence
+
+PLAN
+- active and future classes
+- add/edit/delete classes
+- booking queue management
+
+TOOLS / ADVANCED
+- Playwright diagnostics
+- failure summaries
+- screenshot capture/review
+- error messages/logs
+- development/debug operations
+
+SETTINGS
+- scheduler toggle/pause
+- simulation mode
+- app preferences
+- configuration
+
+DO NOTS
+
+Do not:
+- put failure screenshots on Now
+- put debug tallies on Plan
+- keep booking window in Settings
+- reintroduce rockets or oversized settings iconography
+- turn the app into a giant dashboard again
+- make all stages at once
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Make only that stage’s changes
+2. Keep the app runnable
+3. Summarize exactly what changed
+4. Explain what remains for the next stage
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
