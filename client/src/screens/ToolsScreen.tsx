@@ -155,9 +155,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [forceLoading, setForceLoading] = useState(false)
-  const [forceMsg, setForceMsg] = useState<string | null>(null)
+  const [forceMsg, setForceMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [runOnceLoading, setRunOnceLoading] = useState(false)
-  const [runOnceMsg, setRunOnceMsg] = useState<string | null>(null)
+  const [runOnceMsg, setRunOnceMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
@@ -174,10 +174,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
     setForceMsg(null)
     try {
       const r = await api.forceRunJob(selectedJob.id)
-      setForceMsg(r.message)
+      setForceMsg({ ok: r.success !== false, text: r.message })
       refresh()
     } catch (e) {
-      setForceMsg(e instanceof Error ? e.message : 'Unknown error')
+      setForceMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
     } finally {
       setForceLoading(false)
     }
@@ -188,10 +188,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
     setRunOnceMsg(null)
     try {
       const r = await api.runSchedulerOnce()
-      setRunOnceMsg(r.message)
+      setRunOnceMsg({ ok: r.success !== false, text: r.message })
       refresh()
     } catch (e) {
-      setRunOnceMsg(e instanceof Error ? e.message : 'Unknown error')
+      setRunOnceMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
     } finally {
       setRunOnceLoading(false)
     }
@@ -208,8 +208,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
       <AppHeader subtitle="Diagnostics" />
       <ScreenContainer>
 
-        {/* ── 1. Playwright ──────────────────────────────────── */}
-        <SectionHeader title="Playwright" />
+        {/* ── 1. Last Run ────────────────────────────────────── */}
+        <SectionHeader title="Last Run" />
         <Card padding="none">
           <DetailRow
             label="Session"
@@ -272,21 +272,21 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
         </Card>
 
         {/* ── 2b. Failure Summary — By Phase ─────────────────── */}
-        <SectionHeader title="By Phase" />
-        <Card padding="none">
-          {phaseEntries.length === 0 ? (
-            <DetailRow label="Status" value="No phase data" last />
-          ) : (
-            phaseEntries.map(([phase, count], i) => (
-              <DetailRow
-                key={phase}
-                label={PHASE_LABELS[phase] ?? phase}
-                value={`${count}×`}
-                last={i === phaseEntries.length - 1}
-              />
-            ))
-          )}
-        </Card>
+        {phaseEntries.length > 0 && (
+          <>
+            <SectionHeader title="By Phase" />
+            <Card padding="none">
+              {phaseEntries.map(([phase, count], i) => (
+                <DetailRow
+                  key={phase}
+                  label={PHASE_LABELS[phase] ?? phase}
+                  value={`${count}×`}
+                  last={i === phaseEntries.length - 1}
+                />
+              ))}
+            </Card>
+          </>
+        )}
 
         {/* ── 3. Recent Failures ─────────────────────────────── */}
         {recentFailures.length > 0 && (
@@ -412,8 +412,16 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
 
         {(forceMsg || runOnceMsg) && (
           <Card padding="sm">
-            {forceMsg   && <p className="text-[13px] text-text-secondary">{forceMsg}</p>}
-            {runOnceMsg && <p className={`text-[13px] text-text-secondary ${forceMsg ? 'mt-2' : ''}`}>{runOnceMsg}</p>}
+            {forceMsg && (
+              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+                {forceMsg.text}
+              </p>
+            )}
+            {runOnceMsg && (
+              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${forceMsg ? 'mt-2' : ''}`}>
+                {runOnceMsg.text}
+              </p>
+            )}
           </Card>
         )}
 

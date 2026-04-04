@@ -201,7 +201,6 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
       return
     }
     const normalized = normalizeTime(classTime)
-    console.log('[AddClass] raw time:', JSON.stringify(classTime), '| normalized:', normalized)
     if (!normalized) {
       setErr('Enter time like 10:45 AM')
       return
@@ -214,7 +213,6 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
       target_date: targetDate.trim() || null,
       is_active: true,
     }
-    console.log('[AddClass] payload:', JSON.stringify(payload))
     setSaving(true)
     setErr(null)
     try {

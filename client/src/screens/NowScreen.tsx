@@ -121,7 +121,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
 
       <ScreenContainer>
         {/* Hero card */}
-        <Card id="now-hero-card" padding="md">
+        <Card padding="md">
           {/* State row */}
           <div className="flex items-center gap-2 mb-3">
             <StatusDot color={cfg.dotColor} />
@@ -185,9 +185,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         </Card>
 
         {/* Progress steps */}
-        <Card id="now-progress-card" padding="md">
-          <SectionHeader title="Progress" />
-          <div className="flex items-center mt-2 gap-1">
+        <Card padding="none">
+          <div className="px-5 pt-4 pb-5">
+          <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide mb-3">Progress</p>
+          <div className="flex items-center gap-1">
             {STEPS.map((step, i) => {
               // When booked, the current (Done) step is also highlighted green
               const done    = i < stepIdx || (isBooked && i === stepIdx)
@@ -215,6 +216,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               )
             })}
           </div>
+          </div>
         </Card>
 
         {/* Action row */}
@@ -238,7 +240,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           <>
             <SectionHeader title="Details" />
             <Card padding="none">
-              <DetailRow label="Class"    value={`#${job.id}`} />
+              <DetailRow label="Job"      value={`#${job.id}`} />
               <DetailRow label="Status"   value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
               <DetailRow label="Last Run" value={job.last_run_at
                 ? new Date(job.last_run_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
