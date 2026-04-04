@@ -1,28 +1,66 @@
 // Structured failure log — records booking failure events with phase + reason taxonomy.
-// Phase values:  'login' | 'schedule_scan' | 'card_click' | 'modal_verify' | 'booking' | 'unknown'
-// Reason values: 'login_failed' | 'session_expired' | 'class_not_found' |
-//                'modal_time_mismatch' | 'modal_instructor_mismatch' | 'modal_mismatch' |
-//                'booking_not_open' | 'unexpected_error'
+//
+// Phase taxonomy:
+//   system     — job validation / process-level errors
+//   auth       — login, session check, mid-flow auth guard
+//   navigate   — page navigation, filter application, schedule render check
+//   scan       — class row search / scoring
+//   verify     — modal identity verification (time, instructor)
+//   click      — card click attempt (normal + force fallback)
+//   gate       — booking button availability check
+//   action     — register / waitlist click
+//   post_click — post-click confirmation state check
+//   recovery   — stale-card / stale-row retry logic
+//   unknown    — unclassified catch-block errors
+//
+// Reason taxonomy:
+//   invalid_job_params          — job object missing required fields
+//   login_failed                — Daxko login rejected / timed out
+//   session_expired             — "Login to Register" prompt appeared
+//   filter_apply_failed         — category/instructor filter had no effect
+//   schedule_not_rendered       — 0 class rows visible after filter application
+//   class_not_found             — no card passed confidence threshold
+//   modal_time_mismatch         — modal showed wrong class time
+//   modal_instructor_mismatch   — modal showed wrong instructor
+//   modal_mismatch              — modal showed wrong time AND instructor
+//   click_fallback              — normal click failed, force-click used
+//   booking_not_open            — Register/Waitlist button absent
+//   registration_unclear        — Register clicked, no confirmation text
+//   stale_card_recovery_failed  — card could not be re-located after reload
+//   unexpected_error            — unclassified exception
 
 const { openDb } = require('./init');
 
 /**
  * Insert one failure event.
+ *
  * @param {{
  *   jobId:      number|null,
  *   phase:      string,
  *   reason:     string,
  *   message:    string|null,
  *   classTitle: string|null,
- *   screenshot: string|null   -- filename only, e.g. "2026-04-04T05-57-24Z-verify-time.png"
+ *   screenshot: string|null   -- filename only, e.g. "2026-04-05T06-45-00Z-verify-time.png"
+ *   category:   string|null   -- broad grouping matching phase (e.g. 'auth', 'scan')
+ *   label:      string|null   -- human-readable one-liner
+ *   expected:   string|null   -- expected value (JSON string or plain text)
+ *   actual:     string|null   -- actual value observed
+ *   url:        string|null   -- page URL at time of failure
+ *   context:    object|null   -- limited debug key/value pairs (stored as JSON)
  * }} failure
  */
-function recordFailure({ jobId, phase, reason, message, classTitle, screenshot }) {
+function recordFailure({
+  jobId, phase, reason, message, classTitle, screenshot,
+  category = null, label = null, expected = null, actual = null,
+  url = null, context = null,
+}) {
   try {
     const db = openDb();
     db.prepare(`
-      INSERT INTO failures (job_id, occurred_at, phase, reason, message, class_title, screenshot)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO failures
+        (job_id, occurred_at, phase, reason, message, class_title, screenshot,
+         category, label, expected, actual, url, context_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       jobId      ?? null,
       new Date().toISOString(),
@@ -31,6 +69,12 @@ function recordFailure({ jobId, phase, reason, message, classTitle, screenshot }
       message    ?? null,
       classTitle ?? null,
       screenshot ?? null,
+      category   ?? null,
+      label      ?? null,
+      expected   ?? null,
+      actual     ?? null,
+      url        ?? null,
+      context != null ? JSON.stringify(context) : null,
     );
     db.close();
   } catch (e) {

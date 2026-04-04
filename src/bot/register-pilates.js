@@ -109,20 +109,28 @@ async function runBookingJob(job, opts = {}) {
       matchedRowPreview: _lastBestText     ? _lastBestText.slice(0, 100)     : '(no match)',
       modalTimePreview:  _lastModalPreview || '(no modal opened)',
       finalStatus:       result.status,
-      phase:             result.phase  || '(untagged)',
-      reason:            result.reason || '(untagged)',
+      phase:             result.phase    || '(untagged)',
+      reason:            result.reason   || '(untagged)',
+      category:          result.category || '(untagged)',
     }, null, 2));
     console.log('-------------------\n');
 
-    // Persist structured failure record to SQLite for the Tools screen.
-    if (['error', 'not_found'].includes(result.status) && result.phase && result.reason) {
+    // Persist structured failure to SQLite — but skip if the failure was already
+    // recorded inline (result.recorded === true) to avoid duplicate rows.
+    if (['error', 'not_found'].includes(result.status) && result.phase && result.reason && !result.recorded) {
       recordFailure({
         jobId:      job.id || job.jobId || null,
         phase:      result.phase,
         reason:     result.reason,
-        message:    result.message || null,
-        classTitle: classTitle     || null,
+        category:   result.category  || null,
+        label:      result.label     || null,
+        message:    result.message   || null,
+        classTitle: classTitle       || null,
         screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        expected:   result.expected  || null,
+        actual:     result.actual    || null,
+        url:        result.url       || null,
+        context:    result.context   || null,
       });
     }
 
@@ -130,13 +138,24 @@ async function runBookingJob(job, opts = {}) {
   }
 
   try {
+    // ── POINT 1: System validation ───────────────────────────────────────────
+    if (!classTitle) {
+      return logRunSummary({
+        status: 'error', message: 'Job is missing required classTitle field',
+        screenshotPath, phase: 'system', reason: 'invalid_job_params',
+        category: 'system', label: 'Invalid job parameters',
+        context: { receivedKeys: Object.keys(job) },
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Use the shared session module: launches Chromium, logs in to Daxko,
     // and verifies the auth cookie before returning.
     let _session;
     try {
       _session = await createSession({ headless: isHeadless });
     } catch (loginErr) {
-      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'login', reason: 'login_failed' });
+      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
     browser = _session.browser;
     const page = _session.page;
@@ -158,7 +177,7 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
-      return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'schedule_scan', reason: 'session_expired' });
+      return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired on schedule page', url: page.url() });
     }
     console.log('Auth valid on schedule page — continuing.');
 
@@ -293,7 +312,54 @@ async function runBookingJob(job, opts = {}) {
     if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
     if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
 
+    // ── POINT 2: navigate — filter application failure ────────────────────────
+    if (!categoryApplied && !instructorApplied) {
+      console.log('⚠️ Both filters failed — schedule unfiltered; scan may be noisy.');
+      await snap('filter-miss');
+      recordFailure({
+        jobId:    job.id || job.jobId || null,
+        phase:    'navigate', reason: 'filter_apply_failed',
+        category: 'navigate', label: 'Both schedule filters failed to apply',
+        message:  'Category and Instructor filters both had no effect — schedule is unfiltered',
+        classTitle,
+        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        url:      page.url(),
+        context:  { categoryApplied, instructorApplied },
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     await page.waitForTimeout(1500); // let schedule re-render with both filters active
+
+    // ── POINT 3: navigate — schedule not rendered ─────────────────────────────
+    // A rendered schedule should have at least one element with a time string and
+    // card-sized bounding box. Zero results usually means Bubble.io stalled.
+    const scheduleHasRows = await page.evaluate(() => {
+      const timeRe = /\d{1,2}:\d{2}/;
+      return [...document.querySelectorAll('*')].some(el => {
+        if (el.children.length === 0) return false;
+        if (!timeRe.test(el.textContent)) return false;
+        const r = el.getBoundingClientRect();
+        return r.width >= 100 && r.height >= 30;
+      });
+    }).catch(() => true); // default true — don't false-positive on eval error
+
+    if (!scheduleHasRows) {
+      console.log('⚠️ Schedule appears empty (0 time-bearing card-sized rows) — possible render failure.');
+      await snap('schedule-empty');
+      recordFailure({
+        jobId:    job.id || job.jobId || null,
+        phase:    'navigate', reason: 'schedule_not_rendered',
+        category: 'navigate', label: 'Schedule rendered 0 rows after filter',
+        message:  'No time-containing card-sized elements visible after filter application',
+        classTitle,
+        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        url:      page.url(),
+        context:  { categoryApplied, instructorApplied },
+      });
+      // Non-terminal — continue; tab click may trigger re-render.
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
@@ -828,7 +894,7 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await snap('not-found');
-      return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
+      return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'No matching class card found', url: page.url() });
     }
 
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
@@ -899,6 +965,18 @@ async function runBookingJob(job, opts = {}) {
           await clickTarget.click({ timeout: 5000 });
         } catch (clickErr) {
           console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
+          // ── POINT 5: click — fallback to force click ──────────────────────
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'click', reason: 'click_fallback',
+            category: 'click', label: 'Normal click failed — using force click',
+            message:  clickErr.message.split('\n')[0],
+            classTitle,
+            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            url:      page.url(),
+            context:  { candidateLabel, clickDesc },
+          });
+          // ─────────────────────────────────────────────────────────────────
           await card.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
           await card.click({ force: true });
         }
@@ -943,7 +1021,21 @@ async function runBookingJob(job, opts = {}) {
             } catch (e) { console.log('Meta write failed:', e.message); }
           }
           const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
-          return { ok: false, failMsg, reasonTag };
+          // ── POINT 3: verify — identity mismatch (inline, rich context) ────
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'verify', reason: REASONTAG_TO_REASON[reasonTag] || 'unexpected_error',
+            category: 'verify', label: reasonLabel,
+            message:  failMsg,
+            classTitle,
+            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            url:      page.url(),
+            expected: JSON.stringify({ time: classTimeNorm, instructor: instructorFirstName }),
+            actual:   modalText.slice(0, 300),
+            context:  { candidateLabel, verifyTime, verifyInst, reasonTag, modalPreview: _lastModalPreview },
+          });
+          // ─────────────────────────────────────────────────────────────────
+          return { ok: false, failMsg, reasonTag, recorded: true };
         }
 
         console.log(`✅ Modal verified (${candidateLabel}) — proceeding to booking.`);
@@ -952,7 +1044,19 @@ async function runBookingJob(job, opts = {}) {
       } catch (err) {
         const failMsg = `Unexpected error during click/verify (${candidateLabel}): ${err.message}`;
         console.log('❌', failMsg);
-        return { ok: false, failMsg, reasonTag: 'error' };
+        // ── POINT 5/3: click — unexpected error ───────────────────────────
+        recordFailure({
+          jobId:    job.id || job.jobId || null,
+          phase:    'click', reason: 'unexpected_error',
+          category: 'click', label: 'Unexpected error during card click/verify',
+          message:  err.message,
+          classTitle,
+          screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+          url:      (() => { try { return page.url(); } catch { return null; } })(),
+          context:  { candidateLabel },
+        });
+        // ─────────────────────────────────────────────────────────────────
+        return { ok: false, failMsg, reasonTag: 'error', recorded: true };
       }
     }
     // ────────────────────────────────────────────────────────────────────────────
@@ -991,9 +1095,10 @@ async function runBookingJob(job, opts = {}) {
             const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await snap('not-found-time-mismatch');
-            return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
+            return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'All candidates showed wrong time', url: page.url() });
           }
-          return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath, phase: 'modal_verify', reason: REASONTAG_TO_REASON[secondResult.reasonTag] || 'unexpected_error' });
+          // Verify failure already recorded inline in attemptClickAndVerify
+          return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath, phase: 'verify', reason: REASONTAG_TO_REASON[secondResult.reasonTag] || 'unexpected_error', recorded: secondResult.recorded });
         }
         // Second-best passed verification — fall through to the booking step
       } else {
@@ -1007,9 +1112,10 @@ async function runBookingJob(job, opts = {}) {
           const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await snap('not-found-time-mismatch');
-          return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
+          return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Best candidate showed wrong time', url: page.url() });
         }
-        return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath, phase: 'modal_verify', reason: REASONTAG_TO_REASON[firstResult.reasonTag] || 'unexpected_error' });
+        // Verify failure already recorded inline in attemptClickAndVerify
+        return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath, phase: 'verify', reason: REASONTAG_TO_REASON[firstResult.reasonTag] || 'unexpected_error', recorded: firstResult.recorded });
       }
     }
 
@@ -1032,7 +1138,7 @@ async function runBookingJob(job, opts = {}) {
       if (hasLoginButton) {
         console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
         await snap();
-        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'booking', reason: 'session_expired' });
+        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
       }
 
       if (hasRegister) {
@@ -1043,6 +1149,25 @@ async function runBookingJob(job, opts = {}) {
         }
         await registerBtn.first().click();
         console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'}`);
+        // ── POINT 6: post_click — confirm registration took effect ─────────
+        await page.waitForTimeout(1500);
+        const postRegBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const hasRegConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to/i.test(postRegBody);
+        if (!hasRegConfirm) {
+          console.log('⚠️ Post-register: no obvious confirmation text — state may be unclear.');
+          await snap('post-click-unclear');
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'post_click', reason: 'registration_unclear',
+            category: 'post_click', label: 'No confirmation text after Register click',
+            message:  'Register button was clicked but no confirmation text was detected in page body',
+            classTitle,
+            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            url:      page.url(),
+            context:  { attempt, preview: postRegBody.slice(0, 200) },
+          });
+        }
+        // ─────────────────────────────────────────────────────────────────
         registered = true;
         break;
       } else if (hasWaitlist) {
@@ -1053,6 +1178,25 @@ async function runBookingJob(job, opts = {}) {
         }
         await waitlistBtn.first().click();
         console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
+        // ── POINT 6: post_click — confirm waitlist enrollment took effect ──
+        await page.waitForTimeout(1500);
+        const postWlBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const hasWlConfirm = /waitlist|confirmed|success|you.?re on|enrolled|added to/i.test(postWlBody);
+        if (!hasWlConfirm) {
+          console.log('⚠️ Post-waitlist: no obvious confirmation text — state may be unclear.');
+          await snap('post-click-unclear');
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'post_click', reason: 'registration_unclear',
+            category: 'post_click', label: 'No confirmation text after Waitlist click',
+            message:  'Waitlist button was clicked but no confirmation text was detected in page body',
+            classTitle,
+            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            url:      page.url(),
+            context:  { attempt, preview: postWlBody.slice(0, 200) },
+          });
+        }
+        // ─────────────────────────────────────────────────────────────────
         registered = true;
         break;
       } else {
@@ -1079,6 +1223,17 @@ async function runBookingJob(job, opts = {}) {
             const msg = `Class found on schedule (${classDesc}). Registration is not open yet. Bot will retry during booking window.`;
             console.log('ℹ️  ' + msg);
             await snap('found-not-open');
+            // ── POINT 4: gate — early exit (booking window far off) ────────
+            recordFailure({
+              jobId:    job.id || job.jobId || null,
+              phase:    'gate', reason: 'booking_not_open',
+              category: 'gate', label: 'Registration not open — exiting early for scheduler retry',
+              message:  msg, classTitle,
+              screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+              url:      page.url(),
+              context:  { msUntilBwOpen: Math.round(msUntilBwOpen / 1000) + 's', attempt },
+            });
+            // ─────────────────────────────────────────────────────────────
             return logRunSummary({ status: 'found_not_open_yet', message: msg, screenshotPath });
           }
           // Within 15-min sniper window — keep polling quickly.
@@ -1113,6 +1268,23 @@ async function runBookingJob(job, opts = {}) {
             if (targetCard) break;
           }
         }
+
+        // ── POINT 8: recovery — stale card after reload ───────────────────
+        if (!targetCard) {
+          console.log(`⚠️ [attempt ${attempt}] Card not found after reload — cannot re-open modal.`);
+          await snap('recovery-no-card');
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'recovery', reason: 'stale_card_recovery_failed',
+            category: 'recovery', label: 'Class card missing after page reload',
+            message:  `Attempt ${attempt}: could not re-locate class card after page reload`,
+            classTitle,
+            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            url:      page.url(),
+            context:  { attempt, dayShort, targetDayNum, pollTabText, dayTabCountRetry },
+          });
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         if (targetCard) {
           try {
@@ -1162,6 +1334,17 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Class found on schedule (${classDesc}). Registration did not open within the retry window.`;
       console.log('ℹ️  ' + msg);
       await snap('found-not-open');
+      // ── POINT 4: gate — exhausted retry window ─────────────────────────
+      recordFailure({
+        jobId:    job.id || job.jobId || null,
+        phase:    'gate', reason: 'booking_not_open',
+        category: 'gate', label: 'Registration did not open within retry window',
+        message:  msg, classTitle,
+        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        url:      page.url(),
+        context:  { maxAttempts },
+      });
+      // ─────────────────────────────────────────────────────────────────
       return logRunSummary({ status: 'found_not_open_yet', message: msg, screenshotPath });
     }
 
@@ -1173,7 +1356,7 @@ async function runBookingJob(job, opts = {}) {
 
   } catch (err) {
     console.error('❌ Error:', err.message);
-    return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'unknown', reason: 'unexpected_error' });
+    return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
     if (browser) await browser.close();
   }

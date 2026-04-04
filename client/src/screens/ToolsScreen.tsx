@@ -37,17 +37,35 @@ interface ToolsScreenProps {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  'login_failed':               'Login failed',
-  'session_expired':            'Session expired',
-  'class_not_found':            'Class not on schedule',
-  'modal_time_mismatch':        'Modal — wrong time',
-  'modal_instructor_mismatch':  'Modal — wrong instructor',
-  'modal_mismatch':             'Modal — wrong time & instructor',
-  'booking_not_open':           'Booking not open yet',
-  'unexpected_error':           'Unexpected error',
+  'invalid_job_params':          'Invalid job parameters',
+  'login_failed':                'Login failed',
+  'session_expired':             'Session expired',
+  'filter_apply_failed':         'Filters failed to apply',
+  'schedule_not_rendered':       'Schedule rendered empty',
+  'class_not_found':             'Class not on schedule',
+  'modal_time_mismatch':         'Modal — wrong time',
+  'modal_instructor_mismatch':   'Modal — wrong instructor',
+  'modal_mismatch':              'Modal — wrong time & instructor',
+  'click_fallback':              'Click failed — force used',
+  'booking_not_open':            'Booking not open yet',
+  'registration_unclear':        'No confirmation after click',
+  'stale_card_recovery_failed':  'Card lost after reload',
+  'unexpected_error':            'Unexpected error',
 }
 
 const PHASE_LABELS: Record<string, string> = {
+  // Current taxonomy
+  'system':      'System',
+  'auth':        'Auth / Session',
+  'navigate':    'Navigation',
+  'scan':        'Schedule scan',
+  'verify':      'Identity verify',
+  'click':       'Card click',
+  'gate':        'Booking gate',
+  'action':      'Booking action',
+  'post_click':  'Post-click check',
+  'recovery':    'Stale recovery',
+  // Legacy taxonomy (kept for any pre-migration rows)
   'login':          'Login',
   'schedule_scan':  'Schedule scan',
   'card_click':     'Card click',

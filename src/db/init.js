@@ -58,6 +58,13 @@ function openDb() {
     'ALTER TABLE jobs ADD COLUMN last_success_at TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN target_date TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN last_error_message TEXT NULL',
+    // Structured failure enrichment columns (added in Stage 3.5+)
+    'ALTER TABLE failures ADD COLUMN category TEXT NULL',
+    'ALTER TABLE failures ADD COLUMN label TEXT NULL',
+    'ALTER TABLE failures ADD COLUMN expected TEXT NULL',
+    'ALTER TABLE failures ADD COLUMN actual TEXT NULL',
+    'ALTER TABLE failures ADD COLUMN url TEXT NULL',
+    'ALTER TABLE failures ADD COLUMN context_json TEXT NULL',
   ];
   for (const sql of addColumns) {
     try {
