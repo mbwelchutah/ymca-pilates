@@ -297,8 +297,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           </>
         )}
 
-        {/* ── 4. Debug Actions ───────────────────────────────── */}
-        <SectionHeader title="Debug Actions" />
+        {/* ── 4. Actions ─────────────────────────────────────── */}
+        <SectionHeader title="Actions" />
         <Card padding="none">
           <ActionRow
             label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
