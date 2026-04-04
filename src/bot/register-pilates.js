@@ -30,7 +30,7 @@ const DEBUG_PAUSE = false;
 
 async function highlightElement(page, locator) {
   try {
-    const el = await locator.elementHandle();
+    const el = await locator.elementHandle({ timeout: 2000 });
     if (!el) return;
     await page.evaluate((node) => {
       node.style.outline = '3px solid red';
@@ -167,7 +167,7 @@ async function runBookingJob(job, opts = {}) {
 
     // Step 2: Go to schedule and filter by the job's instructor
     console.log('Navigating to schedule...');
-    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes');
+    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(4000);
     console.log('Schedule loaded. URL:', page.url());
@@ -250,7 +250,7 @@ async function runBookingJob(job, opts = {}) {
           }
           return null;
         });
-        await page.locator('select').nth(selectIndex).selectOption(targetValue, { timeout: 3000 });
+        await page.locator('select').nth(selectIndex).selectOption(targetValue, { timeout: 3000, force: true });
         await page.waitForTimeout(2500);
         const newCount = await page.evaluate(() => {
           for (const el of document.querySelectorAll('*')) {
@@ -429,7 +429,8 @@ async function runBookingJob(job, opts = {}) {
         } else {
           timeAmRe = /(?!)/; // no time specified — never score on time alone
         }
-        const titleRe  = /core[\s\u00A0]+pilates/i;
+        const titleParts = classTitleLower.split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const titleRe  = new RegExp(titleParts.join('[\\s\\u00A0]+'), 'i');
         const instrRe  = new RegExp(instrFirst, 'i');
 
         const allRows  = [];   // every node with ≥1 signal
@@ -940,9 +941,8 @@ async function runBookingJob(job, opts = {}) {
           if (markedPointer) {
             clickTarget = page.locator('[data-click-target="yes"]').first();
             clickDesc   = 'cursor:pointer child';
-            page.evaluate(() =>
-              document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
-            ).catch(() => {});
+            // Do NOT remove the attribute here — the locator depends on it.
+            // Cleanup happens below after the click attempt.
           } else {
             // Step 3: force-click the card itself as last resort
             clickTarget = card;
@@ -980,6 +980,10 @@ async function runBookingJob(job, opts = {}) {
           await card.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
           await card.click({ force: true });
         }
+        // Clean up the data-click-target attribute now that the click is done.
+        await page.evaluate(() =>
+          document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
+        ).catch(() => {});
         await page.waitForTimeout(2000);
 
         // Verify the modal matches expected time + instructor.
@@ -1125,7 +1129,7 @@ async function runBookingJob(job, opts = {}) {
     let registered = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const registerBtn = page.locator('button:has-text("Register")');
+      const registerBtn = page.locator('button:has-text("Register"), button:has-text("Reserve")');
       const waitlistBtn = page.locator('button:has-text("aitlist")');
       const hasRegister = await registerBtn.count() > 0;
       const hasWaitlist = await waitlistBtn.count() > 0;

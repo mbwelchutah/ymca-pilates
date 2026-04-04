@@ -74,7 +74,7 @@ async function createSession(opts = {}) {
   };
 
   // ---- Step 1: Log in via Daxko ----
-  await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account');
+  await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account', { timeout: 60000 });
   await page.waitForLoadState('domcontentloaded');
   await page.waitForSelector('input[type="text"]:visible, input[type="email"]:visible');
   await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
