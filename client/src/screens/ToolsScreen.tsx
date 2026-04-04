@@ -313,8 +313,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
                           <span className="truncate">{primary}</span>
                           {f.screenshot && <CameraIcon />}
                         </p>
-                        <p className="text-[12px] text-text-secondary mt-0.5">
-                          {PHASE_LABELS[f.phase] ?? f.phase} · {fmtStr(f.occurred_at)}
+                        <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-[11px] font-medium text-text-secondary bg-divider rounded px-1.5 py-0.5 leading-tight">
+                            {PHASE_LABELS[f.phase] ?? f.phase}
+                          </span>
+                          <span className="text-[12px] text-text-muted">{fmtStr(f.occurred_at)}</span>
                         </p>
                         {msgSnip && (
                           <p className="text-[11px] text-text-muted mt-0.5 break-words">
