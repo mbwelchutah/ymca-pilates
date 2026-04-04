@@ -172,6 +172,14 @@ interface AddJobFormProps {
   prefill?: Prefill | null
 }
 
+function normalizeTime(raw: string): string | null {
+  const s = raw.trim().toUpperCase().replace(/\s+/g, ' ')
+  const spaced = s.replace(/(AM|PM)$/, ' $1').replace(/\s{2,}/g, ' ').trim()
+  const match = spaced.match(/^(1[0-2]|[1-9]):([0-5][0-9])\s?(AM|PM)$/)
+  if (!match) return null
+  return `${match[1]}:${match[2]} ${match[3]}`
+}
+
 function AddJobForm({ onDone, prefill }: AddJobFormProps) {
   const [classTitle, setClassTitle] = useState(prefill?.classTitle ?? '')
   const [dayOfWeek, setDayOfWeek]   = useState(prefill?.dayOfWeek ?? 2)
@@ -180,9 +188,19 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
 
+  const handleTimeBlur = () => {
+    const normalized = normalizeTime(classTime)
+    if (normalized) setClassTime(normalized)
+  }
+
   const handleSubmit = async () => {
     if (!classTitle.trim() || !classTime.trim()) {
       setErr('Class name and time are required')
+      return
+    }
+    const normalized = normalizeTime(classTime)
+    if (!normalized) {
+      setErr('Enter time like 10:45 AM')
       return
     }
     setSaving(true)
@@ -191,7 +209,7 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
       await api.addJob({
         class_title: classTitle.trim(),
         day_of_week: dayOfWeek as unknown as string,
-        class_time: classTime.trim(),
+        class_time: normalized,
         instructor: instructor.trim() || null,
         target_date: null,
         is_active: true,
@@ -223,7 +241,7 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
         </div>
         <div>
           <label className={labelClass}>Time</label>
-          <input className={inputClass} placeholder="4:20 PM" value={classTime} onChange={e => setClassTime(e.target.value)} />
+          <input className={inputClass} placeholder="4:20 PM" value={classTime} onChange={e => setClassTime(e.target.value)} onBlur={handleTimeBlur} />
         </div>
         <div>
           <label className={labelClass}>Instructor (optional)</label>
