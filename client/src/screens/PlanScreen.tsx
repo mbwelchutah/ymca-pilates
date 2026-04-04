@@ -208,7 +208,7 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
     }
     const payload = {
       class_title: classTitle.trim(),
-      day_of_week: dayOfWeek as unknown as string,
+      day_of_week: DAY_NAMES[dayOfWeek] ?? String(dayOfWeek),
       class_time: normalized,
       instructor: instructor.trim() || null,
       target_date: targetDate.trim() || null,

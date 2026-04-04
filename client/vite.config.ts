@@ -30,6 +30,9 @@ export default defineConfig({
     port: 5000,
     host: '0.0.0.0',
     allowedHosts: true,
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    },
     proxy: Object.fromEntries(
       backendPaths.map(p => [p, { target: BACKEND, changeOrigin: true }])
     ),
