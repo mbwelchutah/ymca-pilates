@@ -75,9 +75,6 @@ function ActionRow({ label, detail, onClick, loading, disabled }: {
   )
 }
 
-const fmt = (ms: number) =>
-  new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-
 export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
 
@@ -132,8 +129,6 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
     }
   }
 
-  const bookingOpenMs = selectedJob?.bookingOpenMs ?? appState.bookingOpenMs
-  const warmupMs = bookingOpenMs ? bookingOpenMs - 10 * 60 * 1000 : null
   const failureEntries = Object.entries(failures)
 
   return (
@@ -166,18 +161,6 @@ export function SettingsScreen({ appState, selectedJobId, refresh }: SettingsScr
           <DetailRow label="Mode" value={appState.dryRun ? 'Simulation' : 'Live'} />
           <DetailRow label="Classes" value={`${appState.jobs.length} configured`} last />
         </Card>
-
-        {/* Booking Window — live from selected job */}
-        {bookingOpenMs && (
-          <>
-            <SectionHeader title="Booking Window" />
-            <Card padding="none">
-              <DetailRow label="Job" value={selectedJob ? `#${selectedJob.id} — ${selectedJob.class_title}` : '—'} />
-              <DetailRow label="Opens" value={fmt(bookingOpenMs)} />
-              <DetailRow label="Warmup" value={warmupMs ? fmt(warmupMs) : '—'} last />
-            </Card>
-          </>
-        )}
 
         {/* Tools */}
         <SectionHeader title="Tools" />

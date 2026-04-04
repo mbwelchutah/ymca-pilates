@@ -39,6 +39,9 @@ function useCountdown(targetMs: number | null) {
   return display
 }
 
+const fmt = (ms: number) =>
+  new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
 const PHASE_CONFIG: Record<Phase, { label: string; dotColor: 'gray' | 'amber' | 'blue' | 'green' | 'red'; headerSubtitle: string }> = {
   too_early:  { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting'      },
   warmup:     { label: 'Opening Soon',  dotColor: 'amber', headerSubtitle: 'Opening Soon' },
@@ -69,7 +72,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
   const phase: Phase = (job?.phase ?? appState.phase) as Phase
   const cfg = PHASE_CONFIG[phase]
-  const countdown = useCountdown(job?.bookingOpenMs ?? appState.bookingOpenMs ?? null)
+  const bookingOpenMs = job?.bookingOpenMs ?? appState.bookingOpenMs ?? null
+  const warmupMs = bookingOpenMs ? bookingOpenMs - 10 * 60 * 1000 : null
+  const countdown = useCountdown(bookingOpenMs)
   const stepIdx = PHASE_STEP[phase]
   const isBooked = job?.last_result === 'booked' || job?.last_result === 'dry_run'
 
@@ -217,17 +222,24 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
         </SecondaryButton>
 
+        {/* Booking Window */}
+        {bookingOpenMs && (
+          <>
+            <SectionHeader title="Booking Window" />
+            <Card padding="none">
+              <DetailRow label="Opens"  value={fmt(bookingOpenMs)} />
+              <DetailRow label="Warmup" value={warmupMs ? fmt(warmupMs) : '—'} last />
+            </Card>
+          </>
+        )}
+
         {/* Detail card */}
         {job && (
           <>
             <SectionHeader title="Details" />
             <Card padding="none">
-              <DetailRow label="Class" value={`#${job.id}`} />
-              <DetailRow label="Status" value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
-              <DetailRow label="Window Opens" value={(job?.bookingOpenMs ?? appState.bookingOpenMs)
-                ? new Date((job?.bookingOpenMs ?? appState.bookingOpenMs)!).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                : '—'
-              } />
+              <DetailRow label="Class"    value={`#${job.id}`} />
+              <DetailRow label="Status"   value={job.last_result ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result) : 'No runs yet'} />
               <DetailRow label="Last Run" value={job.last_run_at
                 ? new Date(job.last_run_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
                 : '—'
