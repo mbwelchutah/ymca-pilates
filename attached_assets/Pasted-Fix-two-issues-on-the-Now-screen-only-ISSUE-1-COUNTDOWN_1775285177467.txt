@@ -1,0 +1,70 @@
+Fix two issues on the Now screen only.
+
+ISSUE 1 — COUNTDOWN / TIME CALCULATION IS WRONG
+The displayed countdown and booking-window timing are not matching the actual current time.
+
+Requirements:
+- Recalculate all Now-screen time values from the real current local time at render/update time
+- Ensure these are correct and internally consistent:
+  - main countdown
+  - "Opens" time
+  - "Warmup" time
+  - status like "Waiting"
+- The countdown must be derived from:
+  current local time -> target booking open datetime
+- Do not hardcode or reuse stale cached values
+- Verify timezone handling carefully
+- If target date + time is stored separately, combine them correctly into one local datetime before calculating the countdown
+- If the booking window has already opened, do not continue showing a pre-open countdown
+
+Please inspect for likely causes:
+- stale memoized countdown state
+- wrong timezone assumption
+- incorrect date/time combination
+- mismatch between target class date and booking open date
+- using server time instead of browser local time
+- failure to update countdown every second/minute
+- incorrect AM/PM parsing
+
+Implementation guidance:
+- use a single source of truth for "now"
+- use a single helper for building the booking open datetime
+- use a single helper for formatting countdown text
+- keep all time math in one consistent layer
+- make countdown update on an interval and clean up interval correctly
+
+Add a brief internal verification using the values currently shown:
+- current displayed time
+- target open time
+- computed difference
+and fix the root cause, not just the display.
+
+ISSUE 2 — MOVE TABS BELOW TITLE BLOCK
+The top navigation tabs should appear BELOW the page title/subtitle, not above it.
+
+Desired order:
+1. page title ("YMCA Booker")
+2. subtitle/status ("Waiting")
+3. top tabs (Now / Plan / Tools / Settings)
+4. rest of screen content
+
+Requirements:
+- move tabs below the title block
+- keep tabs as top navigation
+- do not move them back to bottom nav
+- do not redesign other screen content
+- preserve current tab styling unless needed for spacing cleanup
+
+STRICT RULES
+- Fix only these two issues
+- Do not redesign the rest of the Now screen
+- Do not change navigation labels
+- Do not move Booking Window again
+- Do not alter Plan / Tools / Settings layouts unless required by shared tab placement
+- Keep app runnable
+
+When done, report:
+1. what caused the time mismatch
+2. what code path was fixed
+3. how countdown is now calculated
+4. where the tabs were moved in the layout

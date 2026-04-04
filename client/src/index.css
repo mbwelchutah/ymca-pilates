@@ -55,6 +55,10 @@
   .pt-tab-top {
     padding-top: calc(env(safe-area-inset-top) + 44px);
   }
+  /* AppHeader (73px) + TabBar (44px) below safe area */
+  .pt-content-top {
+    padding-top: calc(env(safe-area-inset-top) + 117px);
+  }
   .pb-tab {
     padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
   }

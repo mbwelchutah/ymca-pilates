@@ -15,8 +15,8 @@ const tabs: { id: Tab; label: string }[] = [
 export function TabBar({ active, onChange }: TabBarProps) {
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-divider"
-      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      className="fixed left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-divider"
+      style={{ top: 'calc(env(safe-area-inset-top) + 73px)' }}
     >
       <div className="flex h-11">
         {tabs.map(tab => {

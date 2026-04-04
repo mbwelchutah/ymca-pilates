@@ -36,7 +36,7 @@ export default function App() {
     <div className="min-h-screen bg-surface flex flex-col">
       <TabBar active={tab} onChange={handleTabChange} />
 
-      <main className="flex-1 overflow-y-auto pt-tab-top">
+      <main className="flex-1 overflow-y-auto pt-content-top">
         {tab === 'now' && (
           <NowScreen
             appState={state}
