@@ -63,8 +63,12 @@ function pacificOffset(date) {
  * with the Pacific offset applied, so the system timezone is never involved.
  */
 function nextOccurrence(dayOfWeek, hours, minutes, now) {
-  const targetDay = DAYS.indexOf(dayOfWeek);
-  if (targetDay === -1) throw new Error('Unknown day_of_week: ' + dayOfWeek);
+  let targetDay = DAYS.indexOf(dayOfWeek);
+  if (targetDay === -1) {
+    const n = parseInt(dayOfWeek, 10);
+    if (!isNaN(n) && n >= 0 && n <= 6) targetDay = n;
+    else throw new Error('Unknown day_of_week: ' + dayOfWeek);
+  }
 
   // Read the current date/time components in Pacific timezone
   const fmt = new Intl.DateTimeFormat('en-US', {

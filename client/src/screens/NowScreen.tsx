@@ -22,6 +22,7 @@ interface NowScreenProps {
 const DAY_IDX: Record<string, number> = {
   'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
   'Thursday': 4, 'Friday': 5, 'Saturday': 6,
+  '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
 }
 
 /** Parse "4:20 PM" or "7:45 AM" → { hours: 0–23, minutes: 0–59 }. */
