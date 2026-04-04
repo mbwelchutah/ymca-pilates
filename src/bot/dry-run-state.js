@@ -1,4 +1,4 @@
-let dryRunEnabled = true;
+let dryRunEnabled = false;
 
 module.exports = {
   getDryRun: () => dryRunEnabled,
