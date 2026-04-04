@@ -1,54 +1,290 @@
+import { useEffect, useState } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
+import { DetailRow } from '../components/ui/DetailRow'
 import type { AppState } from '../types'
+import { api } from '../lib/api'
+
+interface FailureEntry {
+  name: string
+  mtime: number
+  reason: string
+  meta: Record<string, unknown>
+}
+
+interface FailureData {
+  recent: FailureEntry[]
+  summary: Record<string, number>
+}
+
+interface SessionStatus {
+  active: boolean
+  log: string
+  success: boolean | null
+}
 
 interface ToolsScreenProps {
   appState: AppState
+  selectedJobId: number | null
   refresh: () => void
 }
 
-export function ToolsScreen({ appState: _appState, refresh: _refresh }: ToolsScreenProps) {
+const REASON_LABELS: Record<string, string> = {
+  'instructor-mismatch':    'Instructor mismatch',
+  'not-open-yet':           'Booking not open yet',
+  'schedule-not-rendered':  'Schedule not rendered',
+  'modal-mismatch':         'Modal mismatch',
+  'login-failed':           'Login / session issue',
+  'class-not-found':        'Class not found',
+  'timeout':                'Timeout',
+  'unknown':                'Unknown',
+}
+
+const RESULT_LABELS: Record<string, string> = {
+  booked:             'Booked',
+  dry_run:            'Simulated Booking',
+  found_not_open_yet: 'Not Open Yet',
+  not_found:          'Class Not Found',
+  error:              'Error',
+  skipped:            'Skipped',
+}
+
+const fmtTs = (ms: number) =>
+  new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+const fmtStr = (s: string) =>
+  new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+function ChevronIcon({ rotated }: { rotated: boolean }) {
+  return (
+    <svg
+      width="8" height="13" viewBox="0 0 8 13" fill="none"
+      className={`text-text-muted flex-shrink-0 transition-transform ${rotated ? 'rotate-90' : ''}`}
+    >
+      <path d="M1 1l6 5.5L1 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ActionRow({
+  label, detail, onClick, loading, disabled,
+}: {
+  label: string
+  detail?: string
+  onClick: () => void
+  loading?: boolean
+  disabled?: boolean
+}) {
+  return (
+    <button
+      disabled={loading || disabled}
+      onClick={onClick}
+      className={`flex items-center justify-between w-full px-4 py-3.5 text-left transition-opacity ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
+    >
+      <div className="flex-1 mr-4">
+        <p className={`text-[15px] font-medium ${disabled ? 'text-text-secondary' : 'text-accent-blue'}`}>
+          {loading ? 'Running…' : label}
+        </p>
+        {detail && <p className="text-[12px] text-text-secondary mt-0.5">{detail}</p>}
+      </div>
+      <ChevronIcon rotated={false} />
+    </button>
+  )
+}
+
+export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenProps) {
+  const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
+
+  const [failures, setFailures] = useState<FailureData | null>(null)
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
+  const [expandedShot, setExpandedShot] = useState<string | null>(null)
+  const [forceLoading, setForceLoading] = useState(false)
+  const [forceMsg, setForceMsg] = useState<string | null>(null)
+  const [runOnceLoading, setRunOnceLoading] = useState(false)
+  const [runOnceMsg, setRunOnceMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getFailures().then(setFailures).catch(() => {})
+    api.getStatus().then(setSessionStatus).catch(() => {})
+  }, [])
+
+  const lastRunJob = [...appState.jobs]
+    .filter(j => j.last_run_at)
+    .sort((a, b) => new Date(b.last_run_at!).getTime() - new Date(a.last_run_at!).getTime())[0] ?? null
+
+  const handleForce = async () => {
+    if (!selectedJob) return
+    setForceLoading(true)
+    setForceMsg(null)
+    try {
+      const r = await api.forceRunJob(selectedJob.id)
+      setForceMsg(r.message)
+      refresh()
+    } catch (e) {
+      setForceMsg(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setForceLoading(false)
+    }
+  }
+
+  const handleRunOnce = async () => {
+    setRunOnceLoading(true)
+    setRunOnceMsg(null)
+    try {
+      const r = await api.runSchedulerOnce()
+      setRunOnceMsg(r.message)
+      refresh()
+    } catch (e) {
+      setRunOnceMsg(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setRunOnceLoading(false)
+    }
+  }
+
+  const failureEntries = Object.entries(failures?.summary ?? {})
+    .sort((a, b) => b[1] - a[1])
+  const recentFailures = failures?.recent ?? []
+
   return (
     <>
       <AppHeader subtitle="Diagnostics" />
       <ScreenContainer>
+
+        {/* ── 1. Playwright ──────────────────────────────────── */}
         <SectionHeader title="Playwright" />
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-[13px] text-text-secondary">
-              Playwright diagnostics coming soon — session health, last run metadata, browser context status.
-            </p>
-          </div>
+        <Card padding="none">
+          <DetailRow
+            label="Session"
+            value={sessionStatus == null ? 'Loading…' : sessionStatus.active ? 'Running' : 'Idle'}
+          />
+          {lastRunJob ? (
+            <>
+              <DetailRow
+                label="Last Run"
+                value={lastRunJob.last_run_at ? fmtStr(lastRunJob.last_run_at) : '—'}
+              />
+              <DetailRow
+                label="Job"
+                value={`#${lastRunJob.id} — ${lastRunJob.class_title}`}
+              />
+              <DetailRow
+                label="Result"
+                value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
+                last={!lastRunJob.last_error_message}
+              />
+              {lastRunJob.last_error_message && (
+                <DetailRow
+                  label="Error"
+                  value={
+                    lastRunJob.last_error_message.length > 60
+                      ? lastRunJob.last_error_message.slice(0, 60) + '…'
+                      : lastRunJob.last_error_message
+                  }
+                  last
+                />
+              )}
+            </>
+          ) : (
+            <DetailRow label="Last Run" value="No runs yet" last />
+          )}
         </Card>
+        {sessionStatus?.log && (
+          <Card padding="sm" className="bg-surface border border-divider shadow-none">
+            <p className="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
+              {sessionStatus.log}
+            </p>
+          </Card>
+        )}
 
+        {/* ── 2. Failure Summary ─────────────────────────────── */}
         <SectionHeader title="Failure Summary" />
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-[13px] text-text-secondary">
-              Booking failure tallies and recent failure log coming soon.
-            </p>
-          </div>
+        <Card padding="none">
+          {failureEntries.length === 0 ? (
+            <DetailRow label="Status" value="No failures recorded" last />
+          ) : (
+            failureEntries.map(([reason, count], i) => (
+              <DetailRow
+                key={reason}
+                label={REASON_LABELS[reason] ?? reason}
+                value={`${count}×`}
+                last={i === failureEntries.length - 1}
+              />
+            ))
+          )}
         </Card>
 
-        <SectionHeader title="Screenshots" />
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-[13px] text-text-secondary">
-              Failure screenshots coming soon.
-            </p>
-          </div>
-        </Card>
+        {/* ── 3. Recent Failures ─────────────────────────────── */}
+        {recentFailures.length > 0 && (
+          <>
+            <SectionHeader title="Recent Failures" />
+            <Card padding="none">
+              {recentFailures.map((f, i) => (
+                <div key={f.name}>
+                  <button
+                    onClick={() => setExpandedShot(expandedShot === f.name ? null : f.name)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
+                  >
+                    <div className="flex-1 mr-3">
+                      <p className="text-[14px] font-medium text-text-primary">
+                        {REASON_LABELS[f.reason] ?? f.reason}
+                      </p>
+                      <p className="text-[12px] text-text-secondary mt-0.5">
+                        {fmtTs(f.mtime)}
+                      </p>
+                    </div>
+                    <ChevronIcon rotated={expandedShot === f.name} />
+                  </button>
 
+                  {expandedShot === f.name && (
+                    <div className="px-4 pb-4">
+                      <img
+                        src={`/screenshots/${f.name}`}
+                        alt={f.reason}
+                        className="w-full rounded-xl border border-divider"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+
+                  {i < recentFailures.length - 1 && <div className="h-px bg-divider mx-4" />}
+                </div>
+              ))}
+            </Card>
+          </>
+        )}
+
+        {/* ── 4. Debug Actions ───────────────────────────────── */}
         <SectionHeader title="Debug Actions" />
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-[13px] text-text-secondary">
-              Manual run triggers and debug utilities coming soon.
-            </p>
-          </div>
+        <Card padding="none">
+          <ActionRow
+            label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
+            detail={
+              selectedJob
+                ? `Job #${selectedJob.id} · force-attempt booking immediately`
+                : 'Select a class in Plan first'
+            }
+            onClick={handleForce}
+            loading={forceLoading}
+            disabled={!selectedJob}
+          />
+          <div className="h-px bg-divider mx-4" />
+          <ActionRow
+            label="Check Now"
+            detail="Run one booking check across all active classes"
+            onClick={handleRunOnce}
+            loading={runOnceLoading}
+          />
         </Card>
+
+        {(forceMsg || runOnceMsg) && (
+          <Card padding="sm">
+            {forceMsg   && <p className="text-[13px] text-text-secondary">{forceMsg}</p>}
+            {runOnceMsg && <p className={`text-[13px] text-text-secondary ${forceMsg ? 'mt-2' : ''}`}>{runOnceMsg}</p>}
+          </Card>
+        )}
+
       </ScreenContainer>
     </>
   )

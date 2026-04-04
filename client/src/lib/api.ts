@@ -58,6 +58,9 @@ export const api = {
   runSchedulerOnce: (): Promise<{ success: boolean; message: string }> =>
     apiFetch('/run-scheduler-once', { method: 'POST' }),
 
+  getStatus: (): Promise<{ active: boolean; log: string; success: boolean | null }> =>
+    apiFetch('/status'),
+
   getFailures: (): Promise<{
     recent: Array<{ name: string; mtime: number; reason: string; meta: Record<string, unknown> }>
     summary: Record<string, number>
