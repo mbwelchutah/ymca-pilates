@@ -2,9 +2,19 @@
 // Logs into Daxko, finds the Wednesday Core Pilates class with Stephanie
 // Sanders, and registers (or joins the waitlist). Set DRY_RUN=1 to run
 // with a visible browser without clicking Register/Waitlist.
-const fs = require('fs');
-const { createSession } = require('./daxko-session');
+const fs   = require('fs');
+const path = require('path');
+const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
+const { recordFailure }  = require('../db/failures');
+
+// Maps modal-verification reasonTag → structured failure reason code.
+const REASONTAG_TO_REASON = {
+  'time':            'modal_time_mismatch',
+  'instructor':      'modal_instructor_mismatch',
+  'time-instructor': 'modal_mismatch',
+  'error':           'unexpected_error',
+};
 
 const isHeadless = process.env.HEADLESS !== 'false';
 
@@ -99,8 +109,23 @@ async function runBookingJob(job, opts = {}) {
       matchedRowPreview: _lastBestText     ? _lastBestText.slice(0, 100)     : '(no match)',
       modalTimePreview:  _lastModalPreview || '(no modal opened)',
       finalStatus:       result.status,
+      phase:             result.phase  || '(untagged)',
+      reason:            result.reason || '(untagged)',
     }, null, 2));
     console.log('-------------------\n');
+
+    // Persist structured failure record to SQLite for the Tools screen.
+    if (['error', 'not_found'].includes(result.status) && result.phase && result.reason) {
+      recordFailure({
+        jobId:      job.id || job.jobId || null,
+        phase:      result.phase,
+        reason:     result.reason,
+        message:    result.message || null,
+        classTitle: classTitle     || null,
+        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+      });
+    }
+
     return result;
   }
 
@@ -111,7 +136,7 @@ async function runBookingJob(job, opts = {}) {
     try {
       _session = await createSession({ headless: isHeadless });
     } catch (loginErr) {
-      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath });
+      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'login', reason: 'login_failed' });
     }
     browser = _session.browser;
     const page = _session.page;
@@ -133,7 +158,7 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
-      return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath });
+      return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'schedule_scan', reason: 'session_expired' });
     }
     console.log('Auth valid on schedule page — continuing.');
 
@@ -803,7 +828,7 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await snap('not-found');
-      return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
+      return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
     }
 
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
@@ -966,9 +991,9 @@ async function runBookingJob(job, opts = {}) {
             const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await snap('not-found-time-mismatch');
-            return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
+            return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
           }
-          return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath });
+          return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath, phase: 'modal_verify', reason: REASONTAG_TO_REASON[secondResult.reasonTag] || 'unexpected_error' });
         }
         // Second-best passed verification — fall through to the booking step
       } else {
@@ -982,9 +1007,9 @@ async function runBookingJob(job, opts = {}) {
           const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await snap('not-found-time-mismatch');
-          return logRunSummary({ status: 'not_found', message: msg, screenshotPath });
+          return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'schedule_scan', reason: 'class_not_found' });
         }
-        return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath });
+        return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath, phase: 'modal_verify', reason: REASONTAG_TO_REASON[firstResult.reasonTag] || 'unexpected_error' });
       }
     }
 
@@ -1007,7 +1032,7 @@ async function runBookingJob(job, opts = {}) {
       if (hasLoginButton) {
         console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
         await snap();
-        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath });
+        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'booking', reason: 'session_expired' });
       }
 
       if (hasRegister) {
@@ -1148,7 +1173,7 @@ async function runBookingJob(job, opts = {}) {
 
   } catch (err) {
     console.error('❌ Error:', err.message);
-    return logRunSummary({ status: 'error', message: err.message, screenshotPath });
+    return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'unknown', reason: 'unexpected_error' });
   } finally {
     if (browser) await browser.close();
   }

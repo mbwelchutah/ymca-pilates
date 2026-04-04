@@ -35,6 +35,20 @@ function openDb() {
     )
   `);
 
+  // Structured failure log — one row per booking failure event.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS failures (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       INTEGER,
+      occurred_at  TEXT NOT NULL,
+      phase        TEXT NOT NULL,
+      reason       TEXT NOT NULL,
+      message      TEXT,
+      class_title  TEXT,
+      screenshot   TEXT
+    )
+  `);
+
   // Safely add new columns to existing databases that predate them.
   // SQLite does not support "ADD COLUMN IF NOT EXISTS", so we try and ignore
   // the error that fires when the column is already there.

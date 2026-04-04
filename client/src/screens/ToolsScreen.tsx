@@ -8,15 +8,20 @@ import type { AppState } from '../types'
 import { api } from '../lib/api'
 
 interface FailureEntry {
-  name: string
-  mtime: number
-  reason: string
-  meta: Record<string, unknown>
+  id:          number | null
+  job_id:      number | null
+  occurred_at: string
+  phase:       string
+  reason:      string
+  message:     string | null
+  class_title: string | null
+  screenshot:  string | null
 }
 
 interface FailureData {
-  recent: FailureEntry[]
-  summary: Record<string, number>
+  recent:   FailureEntry[]
+  summary:  Record<string, number>
+  by_phase: Record<string, number>
 }
 
 interface SessionStatus {
@@ -32,14 +37,23 @@ interface ToolsScreenProps {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  'instructor-mismatch':    'Instructor mismatch',
-  'not-open-yet':           'Booking not open yet',
-  'schedule-not-rendered':  'Schedule not rendered',
-  'modal-mismatch':         'Modal mismatch',
-  'login-failed':           'Login / session issue',
-  'class-not-found':        'Class not found',
-  'timeout':                'Timeout',
-  'unknown':                'Unknown',
+  'login_failed':               'Login failed',
+  'session_expired':            'Session expired',
+  'class_not_found':            'Class not on schedule',
+  'modal_time_mismatch':        'Modal — wrong time',
+  'modal_instructor_mismatch':  'Modal — wrong instructor',
+  'modal_mismatch':             'Modal — wrong time & instructor',
+  'booking_not_open':           'Booking not open yet',
+  'unexpected_error':           'Unexpected error',
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  'login':          'Login',
+  'schedule_scan':  'Schedule scan',
+  'card_click':     'Card click',
+  'modal_verify':   'Modal verify',
+  'booking':        'Booking',
+  'unknown':        'Unknown',
 }
 
 const RESULT_LABELS: Record<string, string> = {
@@ -50,9 +64,6 @@ const RESULT_LABELS: Record<string, string> = {
   error:              'Error',
   skipped:            'Skipped',
 }
-
-const fmtTs = (ms: number) =>
-  new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 const fmtStr = (s: string) =>
   new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -220,37 +231,50 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           <>
             <SectionHeader title="Recent Failures" />
             <Card padding="none">
-              {recentFailures.map((f, i) => (
-                <div key={f.name}>
-                  <button
-                    onClick={() => setExpandedShot(expandedShot === f.name ? null : f.name)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
-                  >
-                    <div className="flex-1 mr-3">
-                      <p className="text-[14px] font-medium text-text-primary">
-                        {REASON_LABELS[f.reason] ?? f.reason}
-                      </p>
-                      <p className="text-[12px] text-text-secondary mt-0.5">
-                        {fmtTs(f.mtime)}
-                      </p>
-                    </div>
-                    <ChevronIcon rotated={expandedShot === f.name} />
-                  </button>
+              {recentFailures.map((f, i) => {
+                const entryKey = f.id != null ? String(f.id) : f.occurred_at
+                return (
+                  <div key={entryKey}>
+                    <button
+                      onClick={() => setExpandedShot(expandedShot === entryKey ? null : entryKey)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
+                    >
+                      <div className="flex-1 mr-3">
+                        <p className="text-[14px] font-medium text-text-primary">
+                          {REASON_LABELS[f.reason] ?? f.reason}
+                        </p>
+                        <p className="text-[12px] text-text-secondary mt-0.5">
+                          {PHASE_LABELS[f.phase] ?? f.phase} · {fmtStr(f.occurred_at)}
+                        </p>
+                        {f.message && (
+                          <p className="text-[11px] text-text-muted mt-0.5 break-words">
+                            {f.message.length > 80 ? f.message.slice(0, 80) + '…' : f.message}
+                          </p>
+                        )}
+                      </div>
+                      <ChevronIcon rotated={expandedShot === entryKey} />
+                    </button>
 
-                  {expandedShot === f.name && (
-                    <div className="px-4 pb-4">
-                      <img
-                        src={`/screenshots/${f.name}`}
-                        alt={f.reason}
-                        className="w-full rounded-xl border border-divider"
-                        loading="lazy"
-                      />
-                    </div>
-                  )}
+                    {expandedShot === entryKey && f.screenshot && (
+                      <div className="px-4 pb-4">
+                        <img
+                          src={`/screenshots/${f.screenshot}`}
+                          alt={f.reason}
+                          className="w-full rounded-xl border border-divider"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+                    {expandedShot === entryKey && !f.screenshot && (
+                      <div className="px-4 pb-4">
+                        <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
+                      </div>
+                    )}
 
-                  {i < recentFailures.length - 1 && <div className="h-px bg-divider mx-4" />}
-                </div>
-              ))}
+                    {i < recentFailures.length - 1 && <div className="h-px bg-divider mx-4" />}
+                  </div>
+                )
+              })}
             </Card>
           </>
         )}

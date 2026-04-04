@@ -3817,6 +3817,7 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const result = await runBookingJob({
+          id:          dbJob.id,
           classTitle:  dbJob.class_title,
           classTime:   dbJob.class_time,
           instructor:  dbJob.instructor  || null,
@@ -4088,24 +4089,52 @@ const server = http.createServer((req, res) => {
     });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
-    // Return last 5 verify-fail screenshots + grouped counts across all verify-fails.
-    const fsM = require('fs'), pathM = require('path'), dir = 'screenshots';
-    if (!fsM.existsSync(dir)) { json({ recent: [], summary: {} }); return; }
-    const all = fsM.readdirSync(dir)
-      .filter(n => n.endsWith('.png') && n.includes('verify-'))
-      .map(name => {
-        const mtime = fsM.statSync(pathM.join(dir, name)).mtimeMs;
-        const m = name.match(/verify-([^.]+)\.png$/);
-        const metaPath = pathM.join(dir, name.replace('.png', '.json'));
-        let meta = {};
-        try { if (fsM.existsSync(metaPath)) meta = JSON.parse(fsM.readFileSync(metaPath, 'utf8')); } catch (_) {}
-        return { name, mtime, reason: m ? m[1] : 'unknown', meta };
-      })
-      .sort((a, b) => b.mtime - a.mtime);
-    // Grouped counts over all verify-fail files (not just top 5).
-    const summary = {};
-    for (const f of all) { summary[f.reason] = (summary[f.reason] || 0) + 1; }
-    json({ recent: all.slice(0, 5), summary });
+    // Primary: query the structured failures table in SQLite.
+    // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.
+    const { getRecentFailures, getFailureSummary } = require('../db/failures');
+    const fsM = require('fs'), pathM = require('path');
+
+    const dbRecent  = getRecentFailures(20);
+    const dbSummary = getFailureSummary();
+
+    // Build summary maps from DB data.
+    const summaryByReason = {};
+    const summaryByPhase  = {};
+    for (const row of dbSummary.byReason) summaryByReason[row.reason] = row.count;
+    for (const row of dbSummary.byPhase)  summaryByPhase[row.phase]   = row.count;
+
+    // If the DB is empty, fall back to legacy filesystem scan so old screenshots still appear.
+    let recent = dbRecent;
+    if (dbRecent.length === 0) {
+      const dir = 'screenshots';
+      if (fsM.existsSync(dir)) {
+        const legacyFiles = fsM.readdirSync(dir)
+          .filter(n => n.endsWith('.png') && n.includes('verify-'))
+          .map(name => {
+            const mtime = fsM.statSync(pathM.join(dir, name)).mtimeMs;
+            const m = name.match(/verify-([^.]+)\.png$/);
+            const reasonTag = m ? m[1] : 'unknown';
+            return {
+              id:          null,
+              job_id:      null,
+              occurred_at: new Date(mtime).toISOString(),
+              phase:       'modal_verify',
+              reason:      reasonTag === 'time'            ? 'modal_time_mismatch'
+                         : reasonTag === 'instructor'      ? 'modal_instructor_mismatch'
+                         : reasonTag === 'time-instructor' ? 'modal_mismatch'
+                         : 'unexpected_error',
+              message:     null,
+              class_title: null,
+              screenshot:  name,
+            };
+          })
+          .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+        recent = legacyFiles.slice(0, 5);
+        for (const f of legacyFiles) summaryByReason[f.reason] = (summaryByReason[f.reason] || 0) + 1;
+      }
+    }
+
+    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase });
 
   } else if (req.method === 'GET' && path === '/api/scraped-classes') {
     const db   = openDb();
