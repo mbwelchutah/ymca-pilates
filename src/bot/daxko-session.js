@@ -73,30 +73,151 @@ async function createSession(opts = {}) {
     try { await browser.close(); } catch (_) {}
   };
 
-  // ---- Step 1: Log in via Daxko ----
-  await page.goto('https://operations.daxko.com/online/3100/Security/login.mvc/find_account', { timeout: 60000 });
-  await page.waitForLoadState('domcontentloaded');
-  await page.waitForSelector('input[type="text"]:visible, input[type="email"]:visible');
-  await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
-  await page.click('#submit_button');
-  await page.waitForSelector('input[type="password"]');
-  await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-  console.log('Submitting login...');
-  await Promise.all([
-    page.waitForURL(url => {
-      const s = url.toString();
-      return !s.includes('find_account') && !s.includes('/login');
-    }, { timeout: 30000 }),
-    page.click('#submit_button'),
-  ]);
-  console.log('Login submit complete. URL:', page.url());
+  // ---- Step 1: Establish FamilyWorks + Daxko sessions via FW-first OAuth ----
+  //
+  // The correct auth flow (confirmed by user):
+  //   1. Navigate to the FW schedule embed (publicly accessible without login)
+  //   2. Open a class card → modal shows "Login to Register" (no FW session)
+  //   3. Click "Login to Register" → FW redirects to Daxko's find_account page
+  //      (this works because we have NO Daxko session yet — if we pre-login to
+  //      Daxko first, we land on MyAccountV2.mvc instead and the OAuth callback
+  //      never completes)
+  //   4. Fill credentials at Daxko → submit
+  //   5. Daxko redirects back to FamilyWorks → FW session cookie set ✓
+  //      (Daxko session is also established in this same browser context)
+  //
+  // Doing Daxko login FIRST (old approach) breaks step 3 — already-authenticated
+  // Daxko sends the user to MyAccountV2.mvc instead of completing the OAuth
+  // redirect back to FamilyWorks.
 
-  // ---- Auth check: confirm we are no longer on a login page ----
+  const SCHEDULE_URL = 'https://my.familyworks.app/schedulesembed/eugeneymca?search=yes';
+
+  console.log('[session] Starting FW-first OAuth auth flow...');
+  await page.goto(SCHEDULE_URL, { timeout: 30000 });
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(4000); // Bubble.io needs time to render class cards
+
+  console.log('[session] Schedule embed loaded. URL:', page.url());
+
+  // Look for class cards (any element with a time range)
+  const cardLocator = page.locator('*').filter({ hasText: /\d:\d+ [ap] - \d+:\d+ [ap]/i });
+  const cardCount = await cardLocator.count();
+  console.log(`[session] Class cards visible: ${cardCount}`);
+
+  let sessionAlreadyValid = false;
+
+  if (cardCount > 0) {
+    // Click the first visible, reasonably-sized card
+    let clicked = false;
+    for (let i = 0; i < Math.min(cardCount, 10); i++) {
+      const el = cardLocator.nth(i);
+      try {
+        const box = await el.boundingBox();
+        if (!box || box.width < 80 || box.height < 30) continue;
+        await el.click({ timeout: 3000 });
+        clicked = true;
+        console.log(`[session] Clicked class card ${i} (${Math.round(box.width)}x${Math.round(box.height)})`);
+        break;
+      } catch (_) {}
+    }
+
+    if (clicked) {
+      await page.waitForTimeout(2500);
+
+      // Check what button appears in the modal
+      const allBtnTexts = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
+      const cleanBtns   = allBtnTexts.map(t => t.trim()).filter(Boolean);
+      console.log('[session] Modal buttons:', JSON.stringify(cleanBtns));
+
+      const hasSessionReady = cleanBtns.some(t => /^(Register|Reserve|Waitlist|Join Waitlist|Add to Waitlist)$/i.test(t));
+      const hasLoginRequired = cleanBtns.some(t => /log\s*in\s+to\s+register|sign\s*in\s+to\s+register|login\s+to\s+register/i.test(t));
+
+      if (hasSessionReady) {
+        console.log('[session] FW session already valid — Register/Waitlist button visible.');
+        sessionAlreadyValid = true;
+        // Close the modal before continuing
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(500);
+      } else if (hasLoginRequired) {
+        console.log('[session] Modal shows "Login to Register" — initiating FW OAuth via Daxko...');
+
+        // Click "Login to Register" — because we have NO Daxko session yet,
+        // this should redirect to Daxko's find_account login page.
+        const loginBtn = page.locator(
+          'button:has-text("Login to Register"), [role="button"]:has-text("Login to Register"), a:has-text("Login to Register")'
+        ).first();
+
+        if ((await loginBtn.count()) > 0) {
+          await loginBtn.click();
+          // Wait for navigation to Daxko
+          await page.waitForURL(url => url.toString().includes('daxko.com'), { timeout: 10000 }).catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(1000);
+
+          const afterClickUrl = page.url();
+          console.log('[session] After "Login to Register" click, URL:', afterClickUrl);
+
+          const isLoginPage  = afterClickUrl.includes('daxko.com') &&
+                               (afterClickUrl.includes('find_account') || afterClickUrl.includes('/login'));
+          const isAccountPg  = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('MyAccount');
+
+          if (isLoginPage) {
+            // Full Daxko login — fill credentials
+            console.log('[session] On Daxko login page — filling credentials...');
+            await page.waitForSelector('input[type="text"], input[type="email"], input[type="tel"]', { timeout: 10000 });
+            await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
+            await page.click('#submit_button');
+            await page.waitForTimeout(1500);
+            if ((await page.locator('input[type="password"]').count()) > 0) {
+              await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+              console.log('Submitting login...');
+              await Promise.all([
+                page.waitForURL(url => !url.toString().includes('find_account') && !url.toString().includes('/login'), { timeout: 30000 }),
+                page.click('#submit_button'),
+              ]);
+            }
+            console.log('Login submit complete. URL:', page.url());
+
+            // Wait for FamilyWorks redirect to complete
+            if (!page.url().includes('familyworks')) {
+              await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 15000 }).catch(() => {});
+            }
+            await page.waitForLoadState('networkidle').catch(() => {});
+            await page.waitForTimeout(2000);
+            console.log('[session] After Daxko login + FW redirect, URL:', page.url());
+
+          } else if (isAccountPg) {
+            // Already authenticated somehow — wait for OAuth redirect to FW
+            console.log('[session] On Daxko account page — waiting for OAuth redirect to FW...');
+            await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 10000 }).catch(() => {
+              console.log('[session] No OAuth redirect received.');
+            });
+            console.log('[session] URL after account-page wait:', page.url());
+
+          } else {
+            console.log('[session] Unexpected URL after Login to Register click — may need manual check.');
+          }
+        } else {
+          console.log('[session] "Login to Register" button not found in modal.');
+        }
+      } else {
+        console.log('[session] No recognized buttons in modal. Buttons seen:', JSON.stringify(cleanBtns));
+      }
+    } else {
+      console.log('[session] Could not click any class card — schedule may still be loading.');
+    }
+  } else {
+    console.log('[session] No class cards found on schedule embed — skipping auth probe.');
+  }
+
+  // ---- Auth check: confirm session is established ----
   const postLoginUrl = page.url();
   const passwordFieldGone = await page.locator('input[type="password"]').count() === 0;
-  const stillOnLogin = postLoginUrl.includes('/login') || postLoginUrl.includes('find_account');
-  console.log('Password field gone:', passwordFieldGone, '| Still on login page:', stillOnLogin);
-  if (stillOnLogin || !passwordFieldGone) {
+  const stillOnLogin = postLoginUrl.includes('/login') && postLoginUrl.includes('daxko.com') &&
+                       (postLoginUrl.includes('find_account') || !postLoginUrl.includes('MyAccount'));
+  console.log('Post-auth URL:', postLoginUrl, '| Password field gone:', passwordFieldGone, '| Still on login:', stillOnLogin);
+
+  if (!sessionAlreadyValid && stillOnLogin) {
     const screenshotPath = await snap('login-failed');
     await close();
     const loginErr = new Error('Login failed or session not established');
@@ -105,78 +226,17 @@ async function createSession(opts = {}) {
   }
   console.log('Auth looks valid — proceeding.');
 
-  // ---- Step 2: Establish Familyworks member session (non-fatal) ----
-  // The schedule embed (my.familyworks.app) requires its own session for
-  // booking. Familyworks uses Daxko SSO — navigating to their sign-in page
-  // while already authenticated with Daxko should complete the SSO handshake
-  // and set the Familyworks session cookie automatically.
-  try {
-    console.log('[session] Attempting Familyworks pre-auth (SSO)...');
-    await page.goto('https://my.familyworks.app/eugeneymca', { timeout: 30000 });
+  // ---- Step 2: Navigate back to FW schedule embed (ready for booking) ----
+  // After FW-first OAuth the page may be on any URL. Bring it back to the
+  // schedule embed so the caller (register-pilates.js) always starts from
+  // a known, loaded schedule page.
+  if (!page.url().includes('familyworks')) {
+    console.log('[session] Navigating to FW schedule embed post-auth...');
+    await page.goto(SCHEDULE_URL, { timeout: 30000 });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(2000);
-    const fwUrl = page.url();
-    console.log('[session] Familyworks landing URL:', fwUrl);
-
-    // Check if Familyworks already recognises us as signed in
-    const alreadySignedIn = (await page.locator('text=/my account|log out|sign out|my profile/i').count()) > 0;
-    if (alreadySignedIn) {
-      console.log('[session] Familyworks: already signed in — session established.');
-    } else {
-      // Look for a Sign-In / Log-In button or link
-      const signInBtn = page.locator(
-        'button:has-text("Sign In"), a:has-text("Sign In"), button:has-text("Log In"), a:has-text("Log In"), [href*="login"], [href*="signin"]'
-      ).first();
-      if ((await signInBtn.count()) > 0) {
-        console.log('[session] Familyworks: clicking Sign In...');
-        await signInBtn.click();
-        await page.waitForTimeout(3000);
-        const afterClickUrl = page.url();
-        console.log('[session] After Sign In click, URL:', afterClickUrl);
-
-        // If Daxko SSO redirected back and we're done, great.
-        // If a login form appeared (not Daxko-native), fill credentials.
-        const hasEmailField = (await page.locator('input[type="email"], input[type="text"]').count()) > 0;
-        const isOnDaxkoLogin = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('find_account');
-
-        if (isOnDaxkoLogin) {
-          // Daxko SSO redirect — we should already be authenticated; submit the
-          // email to trigger the SSO short-circuit.
-          console.log('[session] SSO redirected to Daxko — submitting email to complete SSO...');
-          await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
-          await page.click('#submit_button');
-          await page.waitForTimeout(1500);
-          // If password field appears, fill it too
-          if ((await page.locator('input[type="password"]').count()) > 0) {
-            await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-            await page.click('#submit_button');
-          }
-          await page.waitForTimeout(3000);
-          console.log('[session] SSO complete. Final URL:', page.url());
-        } else if (hasEmailField && !isOnDaxkoLogin) {
-          // Familyworks-native login form
-          console.log('[session] Familyworks native login form — filling credentials...');
-          await page.fill('input[type="email"], input[type="text"]', process.env.YMCA_EMAIL);
-          const passField = page.locator('input[type="password"]').first();
-          if ((await passField.count()) > 0) {
-            await passField.fill(process.env.YMCA_PASSWORD);
-          }
-          const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
-          if ((await submitBtn.count()) > 0) {
-            await submitBtn.click();
-            await page.waitForTimeout(3000);
-          }
-          console.log('[session] Familyworks login submitted. URL:', page.url());
-        } else {
-          console.log('[session] Familyworks: no login form detected after Sign In click.');
-        }
-      } else {
-        console.log('[session] Familyworks: no Sign In button found — page may be public or layout differs.');
-      }
-    }
-  } catch (fwErr) {
-    console.log('[session] Familyworks pre-auth step failed (non-fatal):', fwErr.message);
   }
+  console.log('[session] Ready. Final URL:', page.url());
 
   return { browser, page, snap, close };
 }

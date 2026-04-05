@@ -109,6 +109,8 @@ async function attemptInlineAuth(page) {
   try {
     console.log('[inline-auth] "Login to Register" detected — attempting inline auth...');
 
+    const SCHEDULE_URL = 'https://my.familyworks.app/schedulesembed/eugeneymca?search=yes';
+
     // Click the Login to Register button inside the modal
     const loginBtn = page.locator(
       'button:has-text("Login to Register"), [role="button"]:has-text("Login to Register"), a:has-text("Login to Register")'
@@ -122,11 +124,13 @@ async function attemptInlineAuth(page) {
     const afterClickUrl = page.url();
     console.log('[inline-auth] After click, URL:', afterClickUrl);
 
-    const isOnDaxkoLogin = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('find_account');
+    const isOnDaxkoLogin   = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('find_account');
+    const isOnDaxkoAccount = afterClickUrl.includes('daxko.com') &&
+                             (afterClickUrl.includes('MyAccount') || afterClickUrl.includes('myaccount'));
 
     if (isOnDaxkoLogin) {
-      // SSO redirected to Daxko — fill email to trigger the short-circuit
-      console.log('[inline-auth] SSO redirect to Daxko — completing SSO...');
+      // SSO redirected to Daxko login — fill credentials
+      console.log('[inline-auth] SSO redirect to Daxko login — completing SSO...');
       await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
       await page.click('#submit_button');
       await page.waitForTimeout(1500);
@@ -134,9 +138,57 @@ async function attemptInlineAuth(page) {
         await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
         await page.click('#submit_button');
       }
-      await page.waitForTimeout(4000);
+      // Wait for redirect back to FamilyWorks (y_login callback sets the session cookie)
+      await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 15000 }).catch(() => {});
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForTimeout(2000);
       console.log('[inline-auth] SSO complete. URL:', page.url());
-      return { authenticated: true, detail: 'Completed Daxko SSO redirect after Login to Register' };
+
+      // After the y_login callback, navigate back to the schedule embed.
+      // This ensures the retry loop's page.reload() reloads the schedule
+      // (not the y_login callback URL which would show an error/404).
+      if (!page.url().includes('schedulesembed')) {
+        console.log('[inline-auth] Navigating back to schedule embed after OAuth...');
+        await page.goto(SCHEDULE_URL, { timeout: 30000 });
+        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(3000);
+        console.log('[inline-auth] Back on schedule. URL:', page.url());
+      }
+
+      return {
+        authenticated: true,
+        renavigated:   true,
+        detail:        'Completed Daxko SSO redirect after Login to Register — back on schedule embed',
+      };
+    }
+
+    if (isOnDaxkoAccount) {
+      // Clicked "Login to Register" but we're already authenticated with Daxko.
+      // The booking modal's OAuth request redirected to the Daxko account page
+      // instead of back to FamilyWorks. Wait for an automatic redirect to FW.
+      console.log('[inline-auth] On Daxko account page (already authenticated) — waiting for OAuth redirect to FamilyWorks...');
+      try {
+        await page.waitForURL(url => url.toString().includes('familyworks.app'), { timeout: 8000 });
+        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(2000);
+        console.log('[inline-auth] OAuth redirect to FamilyWorks succeeded. URL:', page.url());
+        return { authenticated: true, detail: 'OAuth redirect from Daxko account page completed — back on FamilyWorks' };
+      } catch {
+        // No automatic redirect — navigate back to FamilyWorks schedule manually.
+        // The FamilyWorks session cookie may now be set after the Daxko handshake.
+        // The booking loop's existing retry logic will reload, re-find the card,
+        // and re-click it. On the next attempt the modal should show Register/Waitlist.
+        console.log('[inline-auth] No automatic OAuth redirect — navigating back to FamilyWorks schedule...');
+        await page.goto(SCHEDULE_URL, { timeout: 30000 });
+        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(3000);
+        console.log('[inline-auth] Back on FamilyWorks. URL:', page.url());
+        return {
+          authenticated: true,
+          renavigated: true,
+          detail: 'Navigated back to FamilyWorks after Daxko account page — retry loop will reopen modal',
+        };
+      }
     }
 
     // Look for a login form on the current page (Familyworks-native)

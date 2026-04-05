@@ -27,6 +27,7 @@ Node.js app that automates registration for the Wednesday 7:45 AM Core Pilates c
 
 - **Background job + polling**: clicking a button returns immediately with `{ started: true }`. The bot runs in the background. `/status` returns `{ active, log, success }` and the browser polls it every 2s.
 - **Single-attempt from web UI**: `maxAttempts: 1` is passed from the web server so a manual button press doesn't block for 10 minutes. The 20-attempt retry loop is preserved for cron/CLI use.
+- **FW-first OAuth auth**: `createSession()` does NOT pre-login to Daxko directly. Instead it navigates to the FW schedule embed first (publicly accessible). When the booking modal shows "Login to Register" and is clicked, Daxko sees no existing session and redirects to `find_account?oauth_state=...` for a proper OAuth flow. After credentials are filled, Daxko redirects back to FW `/y_login?code=...` and the FW session cookie is set. Pre-logging into Daxko first breaks this flow because Daxko then skips the OAuth redirect and goes to `MyAccountV2.mvc` instead.
 - **Fast-fail on "Login to Register"**: if the session expired and the page shows that button, the bot exits immediately with a clear error instead of retrying.
 - **Graceful SIGTERM shutdown**: the server handles SIGTERM (sent by Replit on restart) by calling `server.close()` to release port 5000, with a 4-second hard-exit fallback. The start script also kills any stale `node src/web/server.js` processes before launching.
 
