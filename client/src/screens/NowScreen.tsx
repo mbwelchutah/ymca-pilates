@@ -164,6 +164,131 @@ function fmtWithRelative(ms: number): string {
   return `${abs} · in ${m}m`
 }
 
+// ── Primary result derivation (Stage 3) ────────────────────────────────────────
+// Single source of truth for the most important message on the Now screen.
+// Priority highest→lowest mirrors what a user actually cares about right now.
+
+type ResultSeverity = 'success' | 'warning' | 'error' | 'info' | 'muted'
+
+interface PrimaryResult {
+  label:    string
+  detail:   string
+  severity: ResultSeverity
+  ts?:      string  // ISO timestamp for concise "checked X" label
+}
+
+function derivePrimaryResult(opts: {
+  isBooked:         boolean
+  isInactive:       boolean
+  isStaleBooking:   boolean
+  job:              Job | null
+  phase:            Phase
+  sessionStatus:    SessionStatus | null
+  sniperRunState:   SniperRunState | null
+  composite:        CompositeReadiness
+  compositeDetail:  string
+  showComposite:    boolean
+  locked:           boolean
+  lastPreflightAt:  string | null
+}): PrimaryResult {
+  const {
+    isBooked, isInactive, isStaleBooking, job,
+    phase, sessionStatus, sniperRunState,
+    composite, compositeDetail, showComposite,
+    locked, lastPreflightAt,
+  } = opts
+
+  // 1. Actively booking right now
+  if (locked) {
+    return { label: 'Booking in progress', detail: 'The scheduler is actively attempting registration.', severity: 'info' }
+  }
+
+  // 2. Already booked this cycle
+  if (isBooked) {
+    const isDryRun = job?.last_result === 'dry_run'
+    return {
+      label:    isDryRun ? 'Test run complete' : 'Booked',
+      detail:   isDryRun
+        ? 'Test mode — the class was found and the action verified. Switch to Live to actually register.'
+        : 'Registration confirmed for this class.',
+      severity: 'success',
+    }
+  }
+
+  // 3. Job is turned off
+  if (isInactive) {
+    return {
+      label:  'Scheduling off',
+      detail: 'This class is disabled. Turn it on in the Plan tab to resume automatic booking.',
+      severity: 'muted',
+    }
+  }
+
+  // 4. Stale booking (booked previously, now outside window)
+  if (isStaleBooking) {
+    return {
+      label:  'Previous booking recorded',
+      detail: 'The booking was for a past class. Use "Book again" to reset for the next occurrence.',
+      severity: 'muted',
+    }
+  }
+
+  // 5. Auth / session problem (session status takes precedence over sniper signals)
+  if (
+    sessionStatus?.overall === 'AUTH_NEEDS_LOGIN' ||
+    sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING'
+  ) {
+    const isExpired = sessionStatus.overall === 'FAMILYWORKS_SESSION_MISSING'
+    return {
+      label:    isExpired ? 'Session expired' : 'Login required',
+      detail:   isExpired
+        ? 'Your schedule access has expired. Open Settings to log in again.'
+        : 'Credentials needed. Open Settings to log in.',
+      severity: 'warning',
+    }
+  }
+
+  // 6. Composite result from preflight/sniper — if we have one
+  if (showComposite) {
+    const severityMap: Record<CompositeReadiness['color'], ResultSeverity> = {
+      green: 'success', amber: 'warning', red: 'error', gray: 'muted',
+    }
+    // Only show timestamp when we have a real result (not just "not tested" from stale snapshot)
+    const showTs = composite.status !== 'COMPOSITE_NOT_TESTED'
+    return {
+      label:    composite.label,
+      detail:   compositeDetail,
+      severity: severityMap[composite.color],
+      ts:       showTs ? (lastPreflightAt ?? undefined) : undefined,
+    }
+  }
+
+  // 7. Warmup — opening very soon
+  if (phase === 'warmup') {
+    return {
+      label:  'Opening soon',
+      detail: 'The booking window opens in under 10 minutes. Run Check to verify readiness.',
+      severity: 'info',
+    }
+  }
+
+  // 8. Window closed, nothing booked
+  if (phase === 'late') {
+    return {
+      label:  'Window closed',
+      detail: 'The booking window for this class has passed.',
+      severity: 'muted',
+    }
+  }
+
+  // 9. Nothing checked yet — idle
+  return {
+    label:  'Not checked yet',
+    detail: job ? 'Run Check to verify session, class, and booking action.' : 'Select a class in the Plan tab.',
+    severity: 'muted',
+  }
+}
+
 // ── Static config ──────────────────────────────────────────────────────────────
 
 const PHASE_CONFIG: Record<Phase, {
@@ -966,233 +1091,69 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
               )}
 
-              {/* Lock indicator — shown when a booking is actively running */}
-              {(sessionStatus?.locked ?? false) && !preflightRunning && (
-                <div className="mt-2 flex items-center justify-center gap-2">
-                  <svg
-                    className="animate-spin h-3.5 w-3.5 text-accent-blue flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  <span className="text-[13px] font-medium text-accent-blue">Booking in progress</span>
-                </div>
-              )}
-
-              {/* Composite readiness badge — shown after Check Now or when live data exists */}
-              {showComposite && !preflightRunning && (
-                <div className={`mt-2 rounded-xl px-3.5 py-2.5
-                  ${composite.color === 'green' ? 'bg-accent-green/10' :
-                    composite.color === 'amber' ? 'bg-accent-amber/10' :
-                    composite.color === 'red'   ? 'bg-accent-red/10'   :
-                    'bg-surface'}
-                `}>
-                  <div className="flex items-center gap-2">
-                    <StatusDot color={composite.color} />
-                    <span className={`text-[15px] font-semibold
-                      ${composite.color === 'green' ? 'text-accent-green' :
-                        composite.color === 'amber' ? 'text-accent-amber' :
-                        composite.color === 'red'   ? 'text-accent-red'   :
-                        'text-text-secondary'}
-                    `}>
-                      {composite.label}
-                    </span>
-                    {lastPreflightAt && (
-                      <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
-                        {formatPreflightTime(lastPreflightAt)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{compositeDetail}</p>
-                </div>
-              )}
-
-              {/* Subtle link to full diagnostics in Tools */}
-              {showComposite && !preflightRunning && onGoToTools && (
-                <button
-                  onClick={onGoToTools}
-                  className="mt-1 w-full text-center text-[12px] text-text-muted active:opacity-60"
-                >
-                  View details in Tools →
-                </button>
-              )}
             </div>
           )}
         </Card>
 
-        {/* ── Progress steps — hidden when job is inactive (not meaningful) ──── */}
-        {/* Keep visible when isBooked, even if now inactive, so "Done" state shows. */}
-        {(!isInactive || isBooked) && <Card padding="none">
-          <div className="px-5 pt-4 pb-5">
-            {/* Progress label + confidence score on one line */}
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
-                Progress
+        {/* ── Primary result card (Stage 3) ──────────────────────── */}
+        {(() => {
+          const result = derivePrimaryResult({
+            isBooked,
+            isInactive,
+            isStaleBooking,
+            job,
+            phase,
+            sessionStatus,
+            sniperRunState,
+            composite,
+            compositeDetail,
+            showComposite,
+            locked: sessionStatus?.locked ?? false,
+            lastPreflightAt,
+          })
+
+          const bgClass =
+            result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
+            result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
+            result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
+            result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
+            'bg-surface border border-divider'
+
+          const labelClass =
+            result.severity === 'success' ? 'text-accent-green' :
+            result.severity === 'warning' ? 'text-accent-amber' :
+            result.severity === 'error'   ? 'text-accent-red'   :
+            result.severity === 'info'    ? 'text-accent-blue'  :
+            'text-text-secondary'
+
+          const dotColor: DotColor =
+            result.severity === 'success' ? 'green' :
+            result.severity === 'warning' ? 'amber' :
+            result.severity === 'error'   ? 'red'   :
+            result.severity === 'info'    ? 'blue'  :
+            'gray'
+
+          return (
+            <div className={`rounded-2xl px-4 py-4 ${bgClass}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <StatusDot color={dotColor} />
+                <span className={`text-[17px] font-semibold ${labelClass}`}>
+                  {result.label}
+                </span>
+                {result.ts && (
+                  <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
+                    {formatPreflightTime(result.ts)}
+                  </span>
+                )}
+              </div>
+              <p className="text-[13px] text-text-secondary leading-snug ml-5">
+                {result.detail}
               </p>
-              <span className={`text-[12px] font-semibold tabular-nums ${
-                confidence.score >= 80 ? 'text-accent-green' :
-                confidence.score >= 60 ? 'text-accent-amber' :
-                'text-text-muted'
-              }`}>
-                {confidence.score}%
-              </span>
             </div>
+          )
+        })()}
 
-            <div className="flex items-center gap-1">
-              {STEPS.map((step, i) => {
-                // If the phase is `late` and the user is booked, treat Done (index 3)
-                // as the effective step so the bar reaches "Done" green.
-                const effectiveStepIdx = (phase === 'late' && isBooked) ? 3 : stepIdx
-                const done    = i < effectiveStepIdx || (isBooked && i === effectiveStepIdx)
-                const current = i === effectiveStepIdx && !isBooked
-                // late + not booked: the window closed without a booking.
-                // Show the current step (Booking) muted, not blue, so it reads
-                // as "window passed" rather than "actively booking".
-                const windowMissed = current && phase === 'late'
-                const future  = !done && !current
-                return (
-                  <div key={step} className="flex-1 flex flex-col items-center gap-1.5">
-                    <div className={`
-                      h-1.5 w-full rounded-pill
-                      ${done         ? 'bg-accent-green' : ''}
-                      ${current && !windowMissed ? 'bg-accent-blue'  : ''}
-                      ${current &&  windowMissed ? 'bg-divider'      : ''}
-                      ${future       ? 'bg-divider'       : ''}
-                    `} />
-                    <span className={`
-                      text-[10px] font-medium text-center leading-tight
-                      ${done         ? 'text-accent-green' : ''}
-                      ${current && !windowMissed ? 'text-accent-blue' : ''}
-                      ${current &&  windowMissed ? 'text-text-muted'  : ''}
-                      ${future       ? 'text-text-muted'   : ''}
-                    `}>
-                      {step}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Confidence explanation — muted footnote below the bars */}
-            <p className="text-[11px] text-text-muted mt-2.5 leading-snug">
-              {confidence.explanation}
-            </p>
-          </div>
-        </Card>}
-
-        {/* ── Readiness ──────────────────────────────────────────── */}
-        {(bundle || sessionStatus) && (
-          <>
-            <SectionHeader title="Readiness" />
-            <Card padding="none">
-              {/* Account & Session block — Session + Schedule access rows + timestamp */}
-              <AccountSessionBlock
-                sessionStatus={sessionStatus}
-                bundleSession={bundle?.session ?? 'SESSION_UNKNOWN'}
-                verifying={sessionChecking}
-                authDetail={authDetail}
-              />
-              {/* Discovery + Modal + Action rows — only shown when sniper has data */}
-              {hasReadinessData ? (
-                <>
-                  <ReadinessRow
-                    label="Discovery"
-                    value={DISCOVERY_LABEL[bundle!.discovery] ?? bundle!.discovery}
-                    dotColor={readinessDotColor(bundle!.discovery)}
-                    detail={(() => {
-                      if (!discoveryDetail) return undefined
-                      if (discoveryDetail.found) {
-                        // "7:45 a – 8:45 a Core Pilates · title, time, instr (13)"
-                        const parts: string[] = []
-                        if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
-                        const meta: string[] = []
-                        if (discoveryDetail.signals) meta.push(discoveryDetail.signals)
-                        if (discoveryDetail.score)   meta.push(`score ${discoveryDetail.score}`)
-                        if (meta.length) parts.push(`(${meta.join(', ')})`)
-                        return parts.join(' · ')
-                      } else {
-                        // Not found — show near misses if any
-                        if (discoveryDetail.nearMisses) return `Near: ${discoveryDetail.nearMisses}`
-                        return 'Class not visible on this day\'s schedule'
-                      }
-                    })()}
-                  />
-                  {bundle!.modal !== undefined && bundle!.modal !== 'MODAL_NOT_TESTED' && (
-                    <ReadinessRow
-                      label="Modal"
-                      value={MODAL_LABEL[bundle!.modal] ?? bundle!.modal}
-                      dotColor={readinessDotColor(bundle!.modal)}
-                      detail={(() => {
-                        if (!modalDetail) return undefined
-                        if (modalDetail.verdict === 'reachable') {
-                          // Show what buttons were visible in the open modal
-                          const btns = Array.isArray(modalDetail.buttonsVisible)
-                            ? modalDetail.buttonsVisible.join(', ')
-                            : null
-                          return btns ? `Buttons: ${btns}` : 'Modal opened and verified'
-                        }
-                        if (modalDetail.verdict === 'login_required') {
-                          return 'Login to Register shown — schedule access required'
-                        }
-                        // blocked
-                        return modalDetail.detail
-                          ? `Could not open: ${modalDetail.detail}`
-                          : 'Modal did not open after card click'
-                      })()}
-                    />
-                  )}
-                  <ReadinessRow
-                    label="Action"
-                    value={ACTION_LABEL[bundle!.action] ?? bundle!.action}
-                    dotColor={readinessDotColor(bundle!.action)}
-                    last
-                    detail={(() => {
-                      if (!actionDetail) return undefined
-                      switch (actionDetail.verdict) {
-                        case 'ready': {
-                          // Show which specific button was detected (Register vs Reserve)
-                          const btnName = Array.isArray(actionDetail.buttonsVisible)
-                            ? actionDetail.buttonsVisible.find(b =>
-                                /register|reserve/i.test(b)) ?? 'Register'
-                            : 'Register'
-                          return `"${btnName}" button visible — ready to book`
-                        }
-                        case 'waitlist_only':
-                          return 'Waitlist available — class is full'
-                        case 'login_required':
-                          return 'Login to Register shown — use Settings → Log in now'
-                        case 'full':
-                          return actionDetail.actionState === 'CANCEL_ONLY'
-                            ? 'Only Cancel visible — you may already be registered'
-                            : 'No booking button found — class may be full'
-                        default:
-                          return 'Unable to determine available action'
-                      }
-                    })()}
-                  />
-                </>
-              ) : (
-                <div className="px-4 py-3 pb-3">
-                  <p className="text-[12px] text-text-muted">Use Check Now above to test discovery &amp; action</p>
-                </div>
-              )}
-            </Card>
-          </>
-        )}
-
-        {/* ── Suggestion hint (Stage 9.5) — high-priority only ── */}
-        {nowSuggestion && (
-          <div className="flex items-start gap-2 px-1 py-0.5">
-            <span className="text-[13px] flex-shrink-0 mt-0.5">💡</span>
-            <p className="text-[12px] text-text-secondary leading-snug">
-              {nowSuggestion.text}
-            </p>
-          </div>
-        )}
-
-        {/* ── Action row ─────────────────────────────────────────── */}
+        {/* ── Secondary actions ───────────────────────────────────── */}
         <SecondaryButton onClick={handlePauseResume} className="w-full">
           {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
         </SecondaryButton>
@@ -1207,53 +1168,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </SecondaryButton>
         )}
 
-        {/* ── Booking Window ─────────────────────────────────────── */}
-        {bookingOpenMs && (
-          <>
-            <SectionHeader title="Booking Window" />
-            <Card padding="none">
-              <DetailRow label="Opens"  value={fmtWithRelative(bookingOpenMs)} />
-              <DetailRow label="Warmup" value={warmupMs ? fmtWithRelative(warmupMs) : '—'} last />
-            </Card>
-          </>
-        )}
-
-        {/* ── Details ────────────────────────────────────────────── */}
-        {job && (
-          <>
-            <SectionHeader title="Details" />
-            <Card padding="none">
-              <DetailRow
-                label="Status"
-                value={job.last_result
-                  ? (RESULT_CONFIG[job.last_result]?.label ?? job.last_result)
-                  : 'No runs yet'}
-              />
-              <DetailRow
-                label="Last Run"
-                value={job.last_run_at
-                  ? new Date(job.last_run_at).toLocaleString([], {
-                      month: 'short', day: 'numeric',
-                      hour: 'numeric', minute: '2-digit',
-                    })
-                  : '—'}
-              />
-              <ToggleRow
-                label="Simulation Mode"
-                value={appState.dryRun}
-                onChange={handleDryRun}
-              />
-            </Card>
-          </>
-        )}
-
-        {/* ── Test mode notice ───────────────────────────────────── */}
-        {appState.dryRun && (
-          <Card padding="sm" className="border border-accent-amber/30 bg-accent-amber/5">
-            <p className="text-[13px] text-accent-amber font-medium">
-              Test mode — the scheduler won't actually register. Switch to Live when ready.
-            </p>
-          </Card>
+        {onGoToTools && showComposite && (
+          <button
+            onClick={onGoToTools}
+            className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-1"
+          >
+            View details in Tools →
+          </button>
         )}
       </ScreenContainer>
     </>
