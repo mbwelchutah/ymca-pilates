@@ -67,6 +67,16 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     setFeedback(null)
   }, [stopLockTimers])
 
+  // T003: separate timeout exit that shows a message instead of clearing to null
+  const timeoutExit = useCallback(() => {
+    stopLockTimers()
+    setLockWaiting(false)
+    setFeedback({
+      text: 'Previous booking finished or timed out — you can try again',
+      cls:  'text-accent-amber',
+    })
+  }, [stopLockTimers])
+
   const fetchSessionStatus = useCallback(() => {
     api.getSessionStatus()
       .then(s => setSessionStatus(s))
@@ -82,18 +92,29 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     setLoginState('idle')
     setRefreshState('idle')
     setClearState('idle')
+    // T003: updated message
     setFeedback({
-      text: 'A booking run is in progress — buttons will re-enable when it finishes.',
+      text: 'Booking in progress — settings will re-enable automatically',
       cls:  'text-accent-amber',
     })
     stopLockTimers()
-    lockTimerRef.current = setTimeout(exitLockWait, 90_000)
+    // T003: use timeoutExit so timeout shows a message
+    lockTimerRef.current = setTimeout(timeoutExit, 90_000)
+    // T001: only exit when server truly clears the lock
     pollTimerRef.current = setInterval(() => {
       api.getSessionStatus()
-        .then(s => { setSessionStatus(s); exitLockWait() })
+        .then(s => {
+          setSessionStatus(s)
+          if (!s.locked) exitLockWait()
+        })
         .catch(() => { /* keep waiting */ })
     }, 10_000)
-  }, [stopLockTimers, exitLockWait])
+  }, [stopLockTimers, exitLockWait, timeoutExit])
+
+  // T002: auto-enter lock-wait if page loads while a booking is running
+  useEffect(() => {
+    if (sessionStatus?.locked && !lockWaiting) enterLockWait()
+  }, [sessionStatus, lockWaiting, enterLockWait])
 
   const handleLogin = async () => {
     if (lockWaiting || loginState === 'running' || refreshState === 'running' || clearState === 'running') return
@@ -216,28 +237,50 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
         </Card>
 
         <Card padding="sm" className="flex flex-col gap-2">
+          {/* T005: show "Waiting…" on primary button while locked */}
           <button
             onClick={handleLogin}
             disabled={anyBusy}
-            className={`w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
+            className={`w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold transition-opacity duration-150 ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
-            {loginBusy ? 'Logging in…' : 'Log in now'}
+            {loginBusy ? 'Logging in…' : lockWaiting ? 'Waiting…' : 'Log in now'}
           </button>
+          {/* T006: duration-150 on all buttons */}
           <button
             onClick={handleRefresh}
             disabled={anyBusy}
-            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-[#1c1c1e] text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
+            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-[#1c1c1e] text-[14px] font-semibold transition-opacity duration-150 ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
             {refreshBusy ? 'Checking…' : 'Refresh session'}
           </button>
           <button
             onClick={handleClear}
             disabled={anyBusy}
-            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-accent-red text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
+            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-accent-red text-[14px] font-semibold transition-opacity duration-150 ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
             {clearBusy ? 'Clearing…' : 'Clear session'}
           </button>
-          {feedback ? (
+
+          {/* T004: inline spinner + message while lock-waiting; plain message otherwise */}
+          {lockWaiting && feedback ? (
+            <div className="flex items-center gap-1.5 px-1">
+              <svg
+                className="animate-spin h-3 w-3 text-accent-amber shrink-0"
+                viewBox="0 0 12 12"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="6" cy="6" r="4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeDasharray="12 6"
+                />
+              </svg>
+              <p className="text-[12px] text-accent-amber">{feedback.text}</p>
+            </div>
+          ) : feedback ? (
             <p className={`text-[12px] px-1 ${feedback.cls}`}>{feedback.text}</p>
           ) : null}
         </Card>
