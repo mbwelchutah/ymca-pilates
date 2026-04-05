@@ -15,6 +15,13 @@ const { getAllJobs }    = require('../db/jobs');
 const { getPhase }     = require('./booking-window');
 const { runBookingJob } = require('../bot/register-pilates');
 const { getDryRun }    = require('../bot/dry-run-state');
+const { loadState }    = require('../bot/sniper-readiness');
+const { loadStatus }   = require('../bot/session-check');
+const { isLocked }     = require('../bot/auth-lock');
+
+// If a real auth run produced a failure within this window, skip preflight
+// (same threshold as tick.js warmup gate).
+const AUTH_BLOCK_STALE_MS = 20 * 60 * 1000; // 20 minutes
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'auto-preflight-settings.json');
@@ -158,6 +165,44 @@ async function checkAutoPreflights({ isActive = false } = {}) {
 
       // ── Trigger fires ────────────────────────────────────────────────────
       firedThisCycle.add(cycleKey); // mark before await so parallel ticks skip
+
+      // ── Auth-block gate ─────────────────────────────────────────────────
+      // Skip preflight if a concurrent auth operation is in progress, or if
+      // there is fresh evidence that auth is broken (mirrors tick.js warmup gate).
+      // This prevents wasting a full browser launch when we know it will fail.
+      if (isLocked()) {
+        console.log(`[auto-preflight] ${trigger.name} skipped — auth lock held (concurrent login/preflight in progress).`);
+        appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: 'Auth lock held — concurrent session operation in progress' });
+        continue;
+      }
+
+      const sniperState   = loadState();
+      const sessionStatus = loadStatus();
+      let authBlockReason = null;
+
+      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH') {
+        const refTime = sniperState.authBlockedAt || sniperState.updatedAt;
+        if (refTime && (Date.now() - new Date(refTime).getTime()) < AUTH_BLOCK_STALE_MS) {
+          const minAgo = Math.round((Date.now() - new Date(refTime).getTime()) / 60000);
+          authBlockReason = `SNIPER_BLOCKED_AUTH from ${minAgo} min ago — session likely still expired`;
+        }
+      }
+
+      if (!authBlockReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
+        const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+        if (age < AUTH_BLOCK_STALE_MS) {
+          const minAgo = Math.round(age / 60000);
+          authBlockReason = `Session check failed ${minAgo} min ago — credentials likely invalid`;
+        }
+      }
+
+      if (authBlockReason) {
+        console.log(`[auto-preflight] ${trigger.name} skipped — auth blocked: ${authBlockReason}`);
+        appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: `Auth blocked: ${authBlockReason}` });
+        continue;
+      }
+      // ───────────────────────────────────────────────────────────────────
+
       running = true;
 
       const firedAt = new Date().toISOString();

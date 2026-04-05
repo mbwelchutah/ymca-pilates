@@ -74,4 +74,4 @@ async function runSessionCheck({ source = 'manual' } = {}) {
   }
 }
 
-module.exports = { runSessionCheck, loadStatus };
+module.exports = { runSessionCheck, loadStatus, saveStatus };

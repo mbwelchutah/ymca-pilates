@@ -22,6 +22,7 @@ const {
   saveSettings:      saveKeepaliveSettings,
   getKeepaliveConfig,
 } = require('../scheduler/session-keepalive');
+const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -3985,12 +3986,20 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'POST' && path === '/api/settings-login') {
     // Full login + FamilyWorks session establishment, triggered from Settings.
-    // Rejects if the booking bot is currently running to avoid browser conflicts.
+    // Rejects if the booking bot or another auth operation is currently running.
     if (jobState.active) {
       json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
       return;
     }
+    if (isAuthLocked()) {
+      json({ success: false, detail: `Another login operation is already in progress (${authLockOwner()}) — please wait and try again.` });
+      return;
+    }
     (async () => {
+      if (!acquireAuthLock('settings-login')) {
+        json({ success: false, detail: 'Another login operation started just now — please wait and try again.' });
+        return;
+      }
       try {
         const { runSettingsLogin } = require('../bot/settings-auth');
         const result = await runSettingsLogin({ source: 'settings' });
@@ -3998,6 +4007,8 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         console.error('[settings-auth] route error:', err.message);
         json({ success: false, detail: err.message || 'Login failed unexpectedly' });
+      } finally {
+        releaseAuthLock();
       }
     })();
 
@@ -4011,7 +4022,15 @@ const server = http.createServer((req, res) => {
       json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
       return;
     }
+    if (isAuthLocked()) {
+      json({ success: false, detail: `Another login operation is already in progress (${authLockOwner()}) — please wait and try again.` });
+      return;
+    }
     (async () => {
+      if (!acquireAuthLock('settings-refresh')) {
+        json({ success: false, detail: 'Another login operation started just now — please wait and try again.' });
+        return;
+      }
       try {
         // ── Daxko check ──────────────────────────────────────────────────────
         console.log('[settings-refresh] Starting session refresh...');
@@ -4091,6 +4110,8 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         console.error('[settings-refresh] route error:', err.message);
         json({ success: false, detail: err.message || 'Refresh failed unexpectedly' });
+      } finally {
+        releaseAuthLock();
       }
     })();
 

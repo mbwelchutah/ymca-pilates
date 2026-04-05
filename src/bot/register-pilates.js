@@ -10,6 +10,22 @@ const { recordFailure }  = require('../db/failures');
 const {
   createRunState, advance, recordTiming, emitEvent, emitSuccess, saveState,
 } = require('./sniper-readiness');
+const { saveStatus: saveSessionStatus } = require('./session-check');
+const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
+
+// ── Session-file helpers ──────────────────────────────────────────────────────
+// Write to familyworks-session.json from the booking/preflight pipeline so that
+// FamilyWorks readiness is always up-to-date after every run.
+const _DATA_DIR = path.resolve(__dirname, '../data');
+const _FW_FILE  = path.join(_DATA_DIR, 'familyworks-session.json');
+function _saveFwStatus(status) {
+  try {
+    if (!fs.existsSync(_DATA_DIR)) fs.mkdirSync(_DATA_DIR, { recursive: true });
+    fs.writeFileSync(_FW_FILE, JSON.stringify(status, null, 2));
+  } catch (e) {
+    console.warn('[register-pilates] saveFwStatus failed:', e.message);
+  }
+}
 
 // Maps modal-verification reasonTag → structured failure reason code.
 const REASONTAG_TO_REASON = {
@@ -245,7 +261,8 @@ async function runBookingJob(job, opts = {}) {
     ? instructor.trim().split(/\s+/)[0].toLowerCase()
     : 'stephanie';
   let browser;
-  let screenshotPath   = null;
+  let screenshotPath      = null;
+  let _authLockAcquired   = false;
   let _lastBestScore   = 0;
   let _lastBestText    = '';
   let _lastSecondCard  = null;
@@ -307,11 +324,37 @@ async function runBookingJob(job, opts = {}) {
 
     // Use the shared session module: launches Chromium, logs in to Daxko,
     // and verifies the auth cookie before returning.
+    const _runSource = PREFLIGHT_ONLY ? 'preflight' : 'booking';
+
+    // Guard: if another auth operation (Settings login, a concurrent preflight)
+    // is already running, skip this run rather than open a second browser.
+    if (isLocked()) {
+      console.log(`[auth-lock] ${_runSource} skipped — auth lock held. Another browser session is in progress.`);
+      return logRunSummary({ status: 'error', message: 'Auth lock held — concurrent login already in progress', screenshotPath, phase: 'auth', reason: 'concurrent_auth', category: 'system', label: 'Auth lock held by another process' });
+    }
+
     advance(_state, 'AUTH');
     let _session;
+    _authLockAcquired = acquireLock(_runSource);
     try {
       _session = await createSession({ headless: isHeadless });
+      // Auth succeeded — update session-status.json so the UI reflects the fresh result.
+      saveSessionStatus({
+        valid:     true,
+        checkedAt: new Date().toISOString(),
+        source:    _runSource,
+        detail:    'Daxko login succeeded',
+        screenshot: null,
+      });
     } catch (loginErr) {
+      // Auth failed — persist the failure immediately so the UI can reflect it.
+      saveSessionStatus({
+        valid:     false,
+        checkedAt: new Date().toISOString(),
+        source:    _runSource,
+        detail:    loginErr.message || 'Login failed',
+        screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
+      });
       emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message);
       return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
@@ -337,6 +380,7 @@ async function runBookingJob(job, opts = {}) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
       emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED', 'Session not established — schedule page requires login');
+      _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: _runSource, detail: 'Schedule page requires login — FamilyWorks session missing' });
       return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired on schedule page', url: page.url() });
     }
     console.log('Auth valid on schedule page — continuing.');
@@ -1332,29 +1376,34 @@ async function runBookingJob(job, opts = {}) {
               _state.bundle.action = 'ACTION_READY';
               _state.sniperState   = 'SNIPER_READY';
               emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible after inline auth');
+              _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Register button visible after inline auth' });
               await snap('preflight-pass-after-auth');
               return logRunSummary({ status: 'success', message: 'Preflight passed after inline auth — Register button available', screenshotPath });
             }
             if (recheck.hasWaitlist) {
               _state.bundle.action = 'ACTION_READY';
               emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: Waitlist only after inline auth');
+              _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible after inline auth' });
               await snap('preflight-waitlist-after-auth');
               return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
             }
           }
         }
         emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
+        _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
         await snap('preflight-auth-fail');
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
       } else if (hasRegister) {
         _state.bundle.action = 'ACTION_READY';
         _state.sniperState   = 'SNIPER_READY';
         emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible — action ready');
+        _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Register button visible' });
         await snap('preflight-pass');
         return logRunSummary({ status: 'success', message: 'Preflight passed — Register button available and ready', screenshotPath });
       } else if (hasWaitlist) {
         _state.bundle.action = 'ACTION_READY';
         emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: only Waitlist button visible — class is full');
+        _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible (class full)' });
         await snap('preflight-waitlist');
         return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
       } else {
@@ -1392,6 +1441,7 @@ async function runBookingJob(job, opts = {}) {
           console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
           await snap();
           emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
+          _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Login to Register shown in booking modal — FamilyWorks session missing' });
           return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
         }
       }
@@ -1610,6 +1660,7 @@ async function runBookingJob(job, opts = {}) {
       : `Registered for ${classTitle} with Stephanie`;
     await snap();
     emitSuccess(_state);
+    _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Booking completed successfully — FamilyWorks session confirmed active' });
     return logRunSummary({ status: 'success', message: successMsg, screenshotPath });
 
   } catch (err) {
@@ -1631,6 +1682,7 @@ async function runBookingJob(job, opts = {}) {
     // ─────────────────────────────────────────────────────────────────────────
     saveState(_state);
     if (browser) await browser.close();
+    if (_authLockAcquired) releaseLock();
   }
 }
 
