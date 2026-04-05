@@ -8,7 +8,11 @@ import { SecondaryButton } from '../components/ui/SecondaryButton'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
 import type { AppState, Job, Phase } from '../types'
+import type { SniperRunState } from '../lib/api'
 import { api } from '../lib/api'
+import {
+  SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL,
+} from '../lib/readinessResolver'
 
 interface NowScreenProps {
   appState: AppState
@@ -40,7 +44,6 @@ function parseClassTime(classTime: string): { hours: number; minutes: number } |
 /**
  * Compute the booking-open epoch ms entirely in browser local time.
  * Rules: booking opens 3 days before the class, 1 hour before class start.
- * Passes through `null` if the job is incomplete or unparseable.
  */
 function computeBookingOpenMs(job: Job): number | null {
   if (!job?.class_time || !job?.day_of_week) return null
@@ -52,21 +55,18 @@ function computeBookingOpenMs(job: Job): number | null {
   const now = new Date()
   let daysUntil = (targetDay - now.getDay() + 7) % 7
 
-  // If today IS the class day, check whether the class time has already passed.
   if (daysUntil === 0) {
     const classToday = new Date(now)
     classToday.setHours(time.hours, time.minutes, 0, 0)
     if (now >= classToday) daysUntil = 7
   }
 
-  // Build next-class local datetime.
   const nextClass = new Date(now)
   nextClass.setDate(nextClass.getDate() + daysUntil)
   nextClass.setHours(time.hours, time.minutes, 0, 0)
   nextClass.setSeconds(0, 0)
   nextClass.setMilliseconds(0)
 
-  // Booking opens 3 days before class, 1 hour before class time.
   const bookingOpen = new Date(nextClass)
   bookingOpen.setDate(bookingOpen.getDate() - 3)
   bookingOpen.setHours(bookingOpen.getHours() - 1)
@@ -110,7 +110,6 @@ function useCountdown(targetMs: number | null): string {
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
-/** Format an epoch-ms value in browser local time. */
 const fmt = (ms: number) =>
   new Date(ms).toLocaleString([], {
     month: 'short', day: 'numeric',
@@ -159,10 +158,6 @@ const PHASE_STEP: Record<Phase, number> = {
 
 // ── Cycle-aware booking helpers ────────────────────────────────────────────────
 
-/**
- * True if `isoStr` falls within the current Mon–Sun UTC week.
- * Mirrors tick.js `isThisWeek` exactly.
- */
 function isThisWeekUTC(isoStr: string | null | undefined): boolean {
   if (!isoStr) return false
   const successDate  = new Date(isoStr)
@@ -174,21 +169,61 @@ function isThisWeekUTC(isoStr: string | null | undefined): boolean {
   return successDate >= weekStart
 }
 
-/**
- * Returns true when the job has a valid booking that covers the *current* cycle.
- * Mirrors the scheduler's skip-check logic so the banner only shows when relevant.
- *
- * - `target_date` jobs: booked if target_date >= today (YYYY-MM-DD in local time).
- * - Recurring jobs: booked if last_success_at falls in the current Mon–Sun UTC week.
- */
 function isBookingCurrentCycle(job: Job | null): boolean {
   if (!job) return false
   if (job.last_result !== 'booked' && job.last_result !== 'dry_run') return false
   if (job.target_date) {
-    const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD local
+    const today = new Date().toLocaleDateString('en-CA')
     return job.target_date >= today
   }
   return isThisWeekUTC(job.last_success_at)
+}
+
+// ── Readiness helpers ──────────────────────────────────────────────────────────
+
+type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
+
+function readinessDotColor(value: string): DotColor {
+  if (value.endsWith('_READY'))    return 'green'
+  if (value === 'SESSION_EXPIRED') return 'amber'
+  if (
+    value.endsWith('_FAILED')   ||
+    value.endsWith('_BLOCKED')  ||
+    value.endsWith('_REQUIRED')
+  ) return 'red'
+  return 'gray'
+}
+
+// Derives a single concise string that describes the current blocker (if any).
+function blockedReason(s: SniperRunState | null): string | null {
+  if (!s) return null
+  switch (s.sniperState) {
+    case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
+    case 'SNIPER_BLOCKED_DISCOVERY': return 'Class not found on schedule'
+    case 'SNIPER_BLOCKED_ACTION':    return 'Booking action unavailable'
+    default: return null
+  }
+}
+
+// ── Readiness row sub-component ────────────────────────────────────────────────
+
+function ReadinessRow({
+  label, value, dotColor, last,
+}: {
+  label: string
+  value: string
+  dotColor: DotColor
+  last?: boolean
+}) {
+  return (
+    <div className={`flex items-center justify-between px-4 py-3 ${!last ? 'border-b border-divider' : ''}`}>
+      <span className="text-[14px] text-text-secondary">{label}</span>
+      <div className="flex items-center gap-2">
+        <StatusDot color={dotColor} />
+        <span className="text-[14px] font-medium text-text-primary">{value}</span>
+      </div>
+    </div>
+  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -196,7 +231,6 @@ function isBookingCurrentCycle(job: Job | null): boolean {
 export function NowScreen({ appState, selectedJobId, loading, error, refresh }: NowScreenProps) {
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
 
-  // All time values computed client-side from browser local time.
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
   const warmupMs      = bookingOpenMs ? bookingOpenMs - 10 * 60 * 1000 : null
   const phase: Phase  = computePhase(bookingOpenMs)
@@ -209,6 +243,27 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     (job?.last_result === 'booked' || job?.last_result === 'dry_run') && !isBooked
 
   const [resetting, setResetting] = useState(false)
+
+  // ── Sniper readiness state ─────────────────────────────────────────────────
+  const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
+
+  useEffect(() => {
+    api.getSniperState().then(setSniperRunState).catch(() => {})
+    const id = setInterval(() => {
+      api.getSniperState().then(setSniperRunState).catch(() => {})
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const bundle  = sniperRunState?.bundle
+  const blocked = blockedReason(sniperRunState)
+
+  // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
+  const hasReadinessData = bundle && (
+    bundle.session   !== 'SESSION_UNKNOWN'       ||
+    bundle.discovery !== 'DISCOVERY_NOT_TESTED'  ||
+    bundle.action    !== 'ACTION_NOT_TESTED'
+  )
 
   const handlePauseResume = async () => {
     try {
@@ -390,6 +445,44 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               <DetailRow label="Opens"  value={fmt(bookingOpenMs)} />
               <DetailRow label="Warmup" value={warmupMs ? fmt(warmupMs) : '—'} last />
             </Card>
+          </>
+        )}
+
+        {/* ── Readiness ──────────────────────────────────────────── */}
+        {bundle && (
+          <>
+            <SectionHeader title="Readiness" />
+            <Card padding="none">
+              {hasReadinessData ? (
+                <>
+                  <ReadinessRow
+                    label="Session"
+                    value={SESSION_LABEL[bundle.session] ?? bundle.session}
+                    dotColor={readinessDotColor(bundle.session)}
+                  />
+                  <ReadinessRow
+                    label="Discovery"
+                    value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
+                    dotColor={readinessDotColor(bundle.discovery)}
+                  />
+                  <ReadinessRow
+                    label="Action"
+                    value={ACTION_LABEL[bundle.action] ?? bundle.action}
+                    dotColor={readinessDotColor(bundle.action)}
+                    last
+                  />
+                </>
+              ) : (
+                <div className="px-4 py-3">
+                  <p className="text-[13px] text-text-muted">No readiness data yet — waiting for first run</p>
+                </div>
+              )}
+            </Card>
+            {blocked && (
+              <Card padding="sm" className="border border-accent-red/20 bg-accent-red/5">
+                <p className="text-[13px] text-accent-red font-medium">{blocked}</p>
+              </Card>
+            )}
           </>
         )}
 

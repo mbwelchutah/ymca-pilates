@@ -5,7 +5,9 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import type { AppState } from '../types'
+import type { SniperRunState } from '../lib/api'
 import { api } from '../lib/api'
+import { FAILURE_LABEL } from '../lib/failureMapper'
 
 interface FailureEntry {
   id:           number | null
@@ -76,6 +78,15 @@ const PHASE_LABELS: Record<string, string> = {
   'modal_verify':   'Modal verify',
   'booking':        'Booking',
   'unknown':        'Unknown',
+  // Taxonomy ExecutionPhase values
+  'AUTH':         'Auth',
+  'NAVIGATION':   'Navigation',
+  'DISCOVERY':    'Discovery',
+  'VERIFY':       'Verify',
+  'MODAL':        'Modal',
+  'ACTION':       'Action',
+  'CONFIRMATION': 'Confirmation',
+  'RECOVERY':     'Recovery',
 }
 
 const RESULT_LABELS: Record<string, string> = {
@@ -89,6 +100,9 @@ const RESULT_LABELS: Record<string, string> = {
 
 const fmtStr = (s: string) =>
   new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+const fmtTime = (s: string) =>
+  new Date(s).toLocaleString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
 function trimUrl(raw: string): string {
   try {
@@ -148,20 +162,101 @@ function ActionRow({
   )
 }
 
+// ── Event dot for phase events ─────────────────────────────────────────────────
+
+function EventDot({ hasFailure }: { hasFailure: boolean }) {
+  return (
+    <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${hasFailure ? 'bg-accent-red' : 'bg-accent-green'}`} />
+  )
+}
+
+// ── Last-run events section ────────────────────────────────────────────────────
+
+function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | null }) {
+  if (!sniperRunState || sniperRunState.events.length === 0) {
+    return (
+      <Card padding="none">
+        <div className="px-4 py-3">
+          <p className="text-[13px] text-text-muted">No run events recorded yet</p>
+        </div>
+      </Card>
+    )
+  }
+
+  const { runId, events, sniperState } = sniperRunState
+  const runLabel = runId ? fmtStr(runId) : '—'
+
+  // Sniper state badge color
+  const stateBadgeColor = (() => {
+    if (sniperState === 'SNIPER_READY' || sniperState === 'SNIPER_BOOKING' || sniperState === 'SNIPER_CONFIRMING') return 'text-accent-green bg-accent-green/10'
+    if (sniperState?.startsWith('SNIPER_BLOCKED')) return 'text-accent-red bg-accent-red/10'
+    if (sniperState === 'SNIPER_ARMED') return 'text-accent-blue bg-accent-blue/10'
+    return 'text-text-secondary bg-divider'
+  })()
+
+  return (
+    <Card padding="none">
+      {/* Header row */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+        <span className="text-[13px] text-text-muted">{runLabel}</span>
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-pill ${stateBadgeColor}`}>
+          {sniperState?.replace('SNIPER_', '').replace(/_/g, ' ')}
+        </span>
+      </div>
+
+      {/* Event rows */}
+      {events.map((ev, i) => {
+        const isLast = i === events.length - 1
+        const phaseLabel = PHASE_LABELS[ev.phase] ?? ev.phase
+        const failLabel = ev.failureType
+          ? (FAILURE_LABEL[ev.failureType as keyof typeof FAILURE_LABEL] ?? ev.failureType)
+          : null
+        const msgSnip = ev.message
+          ? (ev.message.length > 70 ? ev.message.slice(0, 70) + '…' : ev.message)
+          : null
+
+        return (
+          <div key={i} className={`flex gap-3 px-4 py-3 ${!isLast ? 'border-b border-divider' : ''}`}>
+            <EventDot hasFailure={!!ev.failureType} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-semibold text-text-muted bg-divider rounded px-1.5 py-0.5 leading-tight">
+                  {phaseLabel}
+                </span>
+                {failLabel && (
+                  <span className="text-[12px] font-medium text-accent-red truncate">{failLabel}</span>
+                )}
+                <span className="text-[11px] text-text-muted ml-auto flex-shrink-0">{fmtTime(ev.timestamp)}</span>
+              </div>
+              {msgSnip && (
+                <p className="text-[11px] text-text-muted mt-1 break-words leading-snug">{msgSnip}</p>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </Card>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
 
-  const [failures, setFailures] = useState<FailureData | null>(null)
+  const [failures, setFailures]           = useState<FailureData | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  const [forceLoading, setForceLoading] = useState(false)
-  const [forceMsg, setForceMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
+  const [expandedKey, setExpandedKey]     = useState<string | null>(null)
+  const [forceLoading, setForceLoading]   = useState(false)
+  const [forceMsg, setForceMsg]           = useState<{ ok: boolean; text: string } | null>(null)
   const [runOnceLoading, setRunOnceLoading] = useState(false)
-  const [runOnceMsg, setRunOnceMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [runOnceMsg, setRunOnceMsg]       = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setSessionStatus).catch(() => {})
+    api.getSniperState().then(setSniperRunState).catch(() => {})
   }, [])
 
   const lastRunJob = [...appState.jobs]
@@ -254,6 +349,12 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           </Card>
         )}
 
+        {/* ── 1b. Last Run Events ─────────────────────────────── */}
+        <SectionHeader
+          title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
+        />
+        <LastRunEvents sniperRunState={sniperRunState} />
+
         {/* ── 2a. Failure Summary — By Reason ────────────────── */}
         <SectionHeader title="Failure Summary" />
         <Card padding="none">
@@ -332,7 +433,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
                     {isOpen && (
                       <div className="px-4 pb-4 space-y-3">
 
-                        {/* Full message */}
                         {f.message && (
                           <div className="bg-surface rounded-lg p-3 border border-divider">
                             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Message</p>
@@ -342,7 +442,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
                           </div>
                         )}
 
-                        {/* Expected / Actual */}
                         {f.expected != null && f.actual != null && (
                           <div className="bg-surface rounded-lg p-3 border border-divider space-y-1.5">
                             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Mismatch</p>
@@ -357,7 +456,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
                           </div>
                         )}
 
-                        {/* URL */}
                         {f.url && (
                           <div className="flex gap-2 items-start">
                             <span className="text-[10px] font-semibold text-text-muted w-8 flex-shrink-0 pt-px">URL</span>
@@ -365,7 +463,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
                           </div>
                         )}
 
-                        {/* Screenshot */}
                         {f.screenshot ? (
                           <img
                             src={`/screenshots/${f.screenshot}`}
