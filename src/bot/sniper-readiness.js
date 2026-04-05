@@ -192,11 +192,50 @@ function loadState() {
   }
 }
 
+// ── Tick-skip event ───────────────────────────────────────────────────────────
+// Called by the scheduler tick when it decides to skip a warmup-phase run
+// based on the current readiness state.  Appends a SYSTEM event to the
+// existing sniper-state.json WITHOUT resetting the readiness bundle —
+// the prior run's analysis stays intact; the skip is just added as evidence.
+
+function emitTickSkip(jobId, reason, message) {
+  try {
+    const state = loadState();
+    if (!state) {
+      // No prior state file — nothing to annotate. Scheduler will create one
+      // on the next actual run.
+      console.log('[sniper-readiness] emitTickSkip: no state file yet, skip annotation skipped.');
+      return;
+    }
+    // Update jobId if known and not already set from a real run.
+    if (jobId && !state.jobId) state.jobId = jobId;
+
+    const ts = new Date().toISOString();
+    const event = {
+      phase:       'SYSTEM',
+      failureType: reason || null,
+      message:     message || `Tick skipped: ${reason}`,
+      timestamp:   ts,
+      screenshot:  null,
+      evidence:    null,
+    };
+    state.events = state.events || [];
+    state.events.push(event);
+    // Keep at most 20 events so the file stays small.
+    if (state.events.length > 20) state.events = state.events.slice(-20);
+    state.updatedAt = ts;
+    saveState(state);
+  } catch (e) {
+    console.warn('[sniper-readiness] emitTickSkip failed:', e.message);
+  }
+}
+
 module.exports = {
   createRunState,
   advance,
   emitEvent,
   emitSuccess,
+  emitTickSkip,
   saveState,
   loadState,
   resolveState,

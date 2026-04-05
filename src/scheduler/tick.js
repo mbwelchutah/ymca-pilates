@@ -8,6 +8,13 @@ const { getAllJobs, setLastRun } = require('../db/jobs');
 const { getPhase }               = require('./booking-window');
 const { runBookingJob }          = require('../bot/register-pilates');
 const { getDryRun }              = require('../bot/dry-run-state');
+const { loadState, emitTickSkip } = require('../bot/sniper-readiness');
+const { loadStatus }             = require('../bot/session-check');
+
+// Fresh auth-block skip threshold: if the last run or session check recorded
+// an auth failure within this window, skip warmup-phase attempts (they will
+// fail for the same reason and waste a full browser launch).
+const AUTH_BLOCK_STALE_MS = 20 * 60 * 1000; // 20 minutes
 
 const COOLDOWN_MS        = 30 * 60 * 1000;  // cooldown for warmup phase
 const COOLDOWN_HOT_MS    =  5 * 60 * 1000;  // shorter cooldown for sniper/late — must retry fast
@@ -59,6 +66,7 @@ async function runTick({ onlyJobId = null } = {}) {
 
   for (const dbJob of jobs) {
     const job = {
+      id:          dbJob.id,
       classTitle:  dbJob.class_title,
       classTime:   dbJob.class_time,
       instructor:  dbJob.instructor  || null,
@@ -115,6 +123,47 @@ async function runTick({ onlyJobId = null } = {}) {
         const prevResult = dbJob.last_result || 'unknown';
         console.log(`  => SKIPPING Job #${dbJob.id} — ran recently (${minAgo} min ago, last result: ${prevResult}, cooldown: ${cooldownFor/60000} min)`);
         results.push({ jobId: dbJob.id, phase, status: 'skipped', message: `cooldown (ran ${minAgo} min ago, last: ${prevResult})` });
+        continue;
+      }
+    }
+
+    // Readiness gate — warmup phase only.
+    // During warmup (30 min before the window), skip the run if we have
+    // fresh evidence that auth is blocked: either the most recent sniper run
+    // ended in SNIPER_BLOCKED_AUTH, or the last session check returned
+    // valid: false.  In both cases, launching Chrome will fail in the same
+    // place — skip and emit a SYSTEM event so the Run Events UI stays honest.
+    // Sniper and late phases ALWAYS run: the booking window is open and a
+    // missed retry may mean a lost booking.
+    if (phase === 'warmup') {
+      const sniperState    = loadState();
+      const sessionStatus  = loadStatus();
+
+      let skipReason  = null;
+      let skipMessage = null;
+
+      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH' && sniperState.updatedAt) {
+        const age = Date.now() - new Date(sniperState.updatedAt).getTime();
+        if (age < AUTH_BLOCK_STALE_MS) {
+          const minAgo = Math.round(age / 60000);
+          skipReason  = 'SNIPER_BLOCKED_AUTH';
+          skipMessage = `Skipped warmup: SNIPER_BLOCKED_AUTH from last run (${minAgo} min ago) — session still likely expired`;
+        }
+      }
+
+      if (!skipReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
+        const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+        if (age < AUTH_BLOCK_STALE_MS) {
+          const minAgo = Math.round(age / 60000);
+          skipReason  = 'SESSION_CHECK_FAILED';
+          skipMessage = `Skipped warmup: session check failed ${minAgo} min ago — credentials likely invalid`;
+        }
+      }
+
+      if (skipReason) {
+        console.log(`  => SKIPPING Job #${dbJob.id} (warmup gate) — ${skipMessage}`);
+        emitTickSkip(dbJob.id, skipReason, skipMessage);
+        results.push({ jobId: dbJob.id, phase, status: 'skipped', message: skipMessage });
         continue;
       }
     }
