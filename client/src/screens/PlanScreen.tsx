@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -277,6 +277,13 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
   // Only use this class becomes active when the explicit save action succeeds.
   const isFromBrowse = !isEditing && !!prefill
 
+  // Scroll the form into view when it mounts so the user always sees it,
+  // even if they were scrolled down to a card when they tapped Edit.
+  const formRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
   // When editing, initialize from the existing job; otherwise use prefill or blank defaults.
   const initDayOfWeek = () => {
     if (editJob) {
@@ -358,6 +365,7 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
                    :                'Add Class'
 
   return (
+    <div ref={formRef}>
     <Card padding="md">
       <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">
         {formTitle}
@@ -399,6 +407,7 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
         </div>
       </div>
     </Card>
+    </div>
   )
 }
 
