@@ -289,16 +289,12 @@ function derivePrimaryResult(opts: {
 
 // ── Static config ──────────────────────────────────────────────────────────────
 
-const PHASE_CONFIG: Record<Phase, {
-  label: string
-  dotColor: 'gray' | 'amber' | 'blue' | 'green' | 'red'
-  headerSubtitle: string
-}> = {
-  too_early: { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting'       },
-  warmup:    { label: 'Opening Soon',  dotColor: 'amber', headerSubtitle: 'Opening Soon'  },
-  sniper:    { label: 'Booking Now',   dotColor: 'blue',  headerSubtitle: 'Booking Now'   },
-  late:      { label: 'Window Closed', dotColor: 'red',   headerSubtitle: 'Window Closed' },
-  unknown:   { label: 'Waiting',       dotColor: 'gray',  headerSubtitle: 'Waiting'       },
+const PHASE_CONFIG: Record<Phase, { label: string }> = {
+  too_early: { label: 'Waiting'       },
+  warmup:    { label: 'Opening Soon'  },
+  sniper:    { label: 'Booking Now'   },
+  late:      { label: 'Window Closed' },
+  unknown:   { label: 'Waiting'       },
 }
 
 const RESULT_CONFIG: Record<string, {
@@ -893,29 +889,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   return (
     <>
       <AppHeader
-        subtitle={
-          isInactive
-            ? 'Off' + (appState.dryRun ? ' · Test mode' : '')
-            : cfg.headerSubtitle + (appState.dryRun ? ' · Test mode' : '')
-        }
+        subtitle={(() => {
+          const base = isInactive ? 'Off' : cfg.label
+          const flags = [
+            appState.schedulerPaused && 'Paused',
+            appState.dryRun          && 'Test mode',
+          ].filter(Boolean).join(' · ')
+          return flags ? `${base} · ${flags}` : base
+        })()}
       />
 
       <ScreenContainer>
         {/* ── Hero card ──────────────────────────────────────────── */}
         <Card padding="md">
-          {/* Status indicator row — dot only; Paused badge when scheduler is halted */}
-          <div className="flex items-center gap-2 mb-3">
-            <StatusDot color={isInactive ? 'gray' : cfg.dotColor} />
-            <span className="text-[13px] font-medium text-text-secondary">
-              {isInactive ? 'Off' : cfg.label}
-            </span>
-            {appState.schedulerPaused && !isInactive && (
-              <span className="ml-auto text-[12px] font-medium text-accent-amber bg-accent-amber/10 px-2 py-0.5 rounded-pill">
-                Paused
-              </span>
-            )}
-          </div>
-
           {/* Class name */}
           {job ? (
             <>
