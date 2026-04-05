@@ -14,6 +14,7 @@ import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL,
 } from '../lib/readinessResolver'
 import { computeConfidence } from '../lib/confidence'
+import { generateSuggestions } from '../lib/suggestions'
 
 interface NowScreenProps {
   appState: AppState
@@ -391,6 +392,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     sniperRunState?.updatedAt ?? null,
   )
 
+  // ── Suggestions (Stage 9.5) — high-priority only, max 1 on Now ─────────────
+  const nowSuggestion = generateSuggestions({
+    sessionValid:    sessionStatus?.valid ?? null,
+    sniperState:     sniperRunState?.sniperState ?? null,
+    confidenceScore: confidence.score,
+  }).filter(s => s.priority === 'high')[0] ?? null
+
   // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
   const hasReadinessData = bundle && (
     bundle.session   !== 'SESSION_UNKNOWN'       ||
@@ -623,6 +631,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               )}
             </Card>
           </>
+        )}
+
+        {/* ── Suggestion hint (Stage 9.5) — high-priority only ── */}
+        {nowSuggestion && (
+          <div className="flex items-start gap-2 px-1 py-0.5">
+            <span className="text-[13px] flex-shrink-0 mt-0.5">💡</span>
+            <p className="text-[12px] text-text-secondary leading-snug">
+              {nowSuggestion.text}
+            </p>
+          </div>
         )}
 
         {/* ── Action row ─────────────────────────────────────────── */}

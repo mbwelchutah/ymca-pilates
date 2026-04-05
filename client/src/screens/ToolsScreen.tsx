@@ -10,6 +10,7 @@ import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
 import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL } from '../lib/readinessResolver'
+import { generateSuggestions } from '../lib/suggestions'
 
 interface FailureEntry {
   id:           number | null
@@ -465,6 +466,12 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
 
   const recentFailures = failures?.recent ?? []
 
+  const suggestions = generateSuggestions({
+    trends7d:    failures?.trends?.d7 ?? null,
+    sessionValid: sessionStatus?.valid ?? null,
+    sniperState:  sniperRunState?.sniperState ?? null,
+  })
+
   return (
     <>
       <AppHeader subtitle="Diagnostics" />
@@ -676,6 +683,32 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
             )}
           </div>
         </Card>
+
+        {/* ── 1e. Suggestions ─────────────────────────────────── */}
+        {suggestions.length > 0 && (
+          <>
+            <SectionHeader title="Suggestions" />
+            <div className="space-y-2">
+              {suggestions.slice(0, 5).map(s => (
+                <Card key={s.id} padding="sm" className="border border-accent-amber/30 bg-accent-amber/5 shadow-none">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-[15px] flex-shrink-0 mt-px">💡</span>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-text-primary leading-snug">
+                        {s.text}
+                      </p>
+                      {s.detail && (
+                        <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">
+                          {s.detail}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* ── 2. Failure Trends ───────────────────────────────── */}
         {/* Segment control header row */}
