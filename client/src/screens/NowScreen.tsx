@@ -9,6 +9,7 @@ import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
 import type { AppState, Job, Phase, SessionStatus } from '../types'
 import type { SniperRunState } from '../lib/api'
+import type { SniperState } from '../lib/readinessTypes'
 import { api } from '../lib/api'
 import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL,
@@ -226,17 +227,6 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   }
 }
 
-// Returns a concise relative-time string for a UTC ISO timestamp.
-function relativeTime(iso: string | null): string {
-  if (!iso) return 'Never'
-  const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 5_000)         return 'just now'
-  if (diff < 60_000)        return `${Math.floor(diff / 1_000)}s ago`
-  if (diff < 3_600_000)     return `${Math.floor(diff / 60_000)} min ago`
-  if (diff < 86_400_000)    return `${Math.floor(diff / 3_600_000)} hr ago`
-  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-
 // ── Readiness row sub-component ────────────────────────────────────────────────
 
 function ReadinessRow({
@@ -258,7 +248,7 @@ function ReadinessRow({
   )
 }
 
-// ── Account & Session block — two rows + timestamp ─────────────────────────────
+// ── Account & Session block — Session + Schedule + Sniper + Last verified ───────
 
 function daxkoToLabel(s: SessionStatus['daxko'] | undefined): { label: string; dotColor: DotColor } {
   switch (s) {
@@ -276,36 +266,69 @@ function fwToLabel(s: SessionStatus['familyworks'] | undefined): { label: string
   }
 }
 
+function sniperToLabel(
+  sniperState: SniperState | null | undefined,
+  locked: boolean,
+): { label: string; dotColor: DotColor } {
+  if (locked) return { label: 'Booking', dotColor: 'blue' }
+  switch (sniperState) {
+    case 'SNIPER_READY':             return { label: 'Ready',      dotColor: 'green' }
+    case 'SNIPER_ARMED':             return { label: 'Armed',      dotColor: 'blue'  }
+    case 'SNIPER_BOOKING':
+    case 'SNIPER_CONFIRMING':        return { label: 'Booking',    dotColor: 'blue'  }
+    case 'SNIPER_BLOCKED_AUTH':
+    case 'SNIPER_BLOCKED_DISCOVERY':
+    case 'SNIPER_BLOCKED_ACTION':    return { label: 'Blocked',    dotColor: 'red'   }
+    case 'SNIPER_RECOVERY_ACTIVE':   return { label: 'Recovering', dotColor: 'amber' }
+    case 'SNIPER_WAITING':           return { label: 'Waiting',    dotColor: 'gray'  }
+    default:                         return { label: 'Unknown',    dotColor: 'gray'  }
+  }
+}
+
+function formatAbsoluteTime(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(d)
+  } catch { return '—' }
+}
+
 function AccountSessionBlock({
-  sessionStatus, bundleSession, verifying, onVerify,
+  sessionStatus, bundleSession, sniperState, verifying, onVerify,
 }: {
   sessionStatus: SessionStatus | null
   bundleSession: string
+  sniperState:   SniperState | null
   verifying:     boolean
   onVerify:      () => void
 }) {
   const locked = sessionStatus?.locked ?? false
 
-  // Session (daxko) — fall back to sniper bundle when no sessionStatus yet
-  const sessionLabel = locked
-    ? { label: '—', dotColor: 'gray' as DotColor }
-    : sessionStatus
+  // Session (daxko) — always show real auth state; fall back to sniper bundle
+  const sessionLabel = sessionStatus
     ? daxkoToLabel(sessionStatus.daxko)
     : { label: SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? '—', dotColor: readinessDotColor(bundleSession) as DotColor }
 
-  // Schedule access (familyworks)
-  const fwLabel = (locked || !sessionStatus)
-    ? { label: '—', dotColor: 'gray' as DotColor }
-    : fwToLabel(sessionStatus.familyworks)
+  // Schedule access (familyworks) — always show real state
+  const fwLabel = sessionStatus
+    ? fwToLabel(sessionStatus.familyworks)
+    : { label: '—', dotColor: 'gray' as DotColor }
 
-  // Footer timestamp
-  const when = relativeTime(sessionStatus?.lastVerified ?? null)
-  const isReady = sessionStatus?.overall === 'DAXKO_READY' || sessionStatus?.overall === 'FAMILYWORKS_READY'
-  const subtext = locked
-    ? 'Booking in progress'
-    : when === 'Never'
-    ? 'Not yet verified'
-    : `${isReady ? 'Verified' : 'Last checked'} ${when}`
+  // Sniper — locked state overrides to "Booking"
+  const snLabel = sniperToLabel(sniperState, locked)
+
+  // Last verified as absolute timestamp
+  const lastVerified = formatAbsoluteTime(sessionStatus?.lastVerified ?? null)
+
+  // Trust line — all three green and no active booking
+  const allGreen =
+    sessionStatus?.daxko        === 'DAXKO_READY'            &&
+    sessionStatus?.familyworks  === 'FAMILYWORKS_READY'       &&
+    snLabel.dotColor !== 'red'                                &&
+    !locked
 
   const verifyDisabled = verifying || locked
 
@@ -348,10 +371,29 @@ function AccountSessionBlock({
         </div>
       </div>
 
-      {/* Last verified footer */}
-      <div className="px-4 py-2">
-        <p className="text-[11px] text-text-muted text-right">{subtext}</p>
+      {/* Sniper row */}
+      <div className="border-b border-divider px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[14px] text-text-secondary">Sniper</span>
+          <div className="flex items-center gap-2">
+            <StatusDot color={snLabel.dotColor} />
+            <span className="text-[14px] font-medium text-text-primary">{snLabel.label}</span>
+          </div>
+        </div>
       </div>
+
+      {/* Last verified row */}
+      <div className={`px-4 py-3 flex items-center justify-between ${allGreen ? 'border-b border-divider' : ''}`}>
+        <span className="text-[14px] text-text-secondary">Last verified</span>
+        <span className="text-[14px] font-medium text-text-primary">{lastVerified}</span>
+      </div>
+
+      {/* Optional trust line — shown only when everything is green */}
+      {allGreen && (
+        <div className="px-4 py-2.5">
+          <p className="text-[12px] text-accent-green text-right">Ready for the next booking window</p>
+        </div>
+      )}
     </>
   )
 }
@@ -637,6 +679,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               <AccountSessionBlock
                 sessionStatus={sessionStatus}
                 bundleSession={bundle?.session ?? 'SESSION_UNKNOWN'}
+                sniperState={sniperRunState?.sniperState ?? null}
                 verifying={sessionChecking}
                 onVerify={handleVerifySession}
               />
