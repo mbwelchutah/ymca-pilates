@@ -7,7 +7,7 @@ import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
-import type { AppState, Job, Phase } from '../types'
+import type { AppState, Job, Phase, SessionStatus } from '../types'
 import type { SniperRunState } from '../lib/api'
 import { api } from '../lib/api'
 import {
@@ -194,15 +194,6 @@ function isBookingCurrentCycle(job: Job | null): boolean {
   return isThisWeekUTC(job.last_success_at)
 }
 
-// ── Session check result type ──────────────────────────────────────────────────
-
-interface SessionCheckResult {
-  valid:      boolean | null
-  checkedAt:  string  | null
-  detail:     string  | null
-  screenshot: string  | null
-}
-
 // ── Readiness helpers ──────────────────────────────────────────────────────────
 
 type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
@@ -219,9 +210,10 @@ function readinessDotColor(value: string): DotColor {
 }
 
 // Derives a single concise string that describes the current blocker (if any).
-function blockedReason(s: SniperRunState | null, sessionStatus: SessionCheckResult | null): string | null {
-  // Dedicated session check takes priority
-  if (sessionStatus?.valid === false) return sessionStatus.detail ?? 'Login failed — check credentials'
+function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
+  // Settings session state takes priority over sniper signals
+  if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — open Settings to log in'
+  if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'FamilyWorks session expired — tap Log in now in Settings'
   if (!s) return null
   switch (s.sniperState) {
     case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
@@ -265,35 +257,39 @@ function ReadinessRow({
 
 // ── Session readiness row — with verify button + timestamp ─────────────────────
 
+function overallToLabel(overall: SessionStatus['overall'] | undefined): { label: string; dotColor: DotColor } {
+  switch (overall) {
+    case 'DAXKO_READY':
+    case 'FAMILYWORKS_READY':          return { label: 'Ready',       dotColor: 'green' }
+    case 'AUTH_NEEDS_LOGIN':           return { label: 'Needs login', dotColor: 'red'   }
+    case 'FAMILYWORKS_SESSION_MISSING':return { label: 'Expired',     dotColor: 'amber' }
+    case 'AUTH_UNKNOWN':               return { label: 'Unknown',     dotColor: 'gray'  }
+    default:                           return { label: 'Unknown',     dotColor: 'gray'  }
+  }
+}
+
 function SessionReadinessRow({
   sessionStatus, bundleSession, verifying, onVerify,
 }: {
-  sessionStatus: SessionCheckResult | null
+  sessionStatus: SessionStatus | null
   bundleSession: string
   verifying:     boolean
   onVerify:      () => void
 }) {
-  // Derive status label + dot from dedicated check when available,
-  // otherwise fall back to the sniper-bundle's session dimension.
+  // Use Settings overall status when available; fall back to sniper bundle.
   let dotColor: DotColor
   let label: string
   let subtext: string
 
-  if (sessionStatus?.valid === true) {
-    dotColor = 'green'
-    label    = 'Active'
-    subtext  = `Verified ${relativeTime(sessionStatus.checkedAt)}`
-  } else if (sessionStatus?.valid === false) {
-    dotColor = 'red'
-    label    = 'Login failed'
-    subtext  = `Checked ${relativeTime(sessionStatus.checkedAt)}`
-  } else if (sessionStatus?.valid === null && sessionStatus?.checkedAt) {
-    // Should not normally happen but guard gracefully
-    dotColor = 'gray'
-    label    = 'Unknown'
-    subtext  = `Checked ${relativeTime(sessionStatus.checkedAt)}`
+  if (sessionStatus?.overall) {
+    const mapped = overallToLabel(sessionStatus.overall)
+    dotColor = mapped.dotColor
+    label    = mapped.label
+    const when = relativeTime(sessionStatus.lastVerified)
+    const isReady = sessionStatus.overall === 'DAXKO_READY' || sessionStatus.overall === 'FAMILYWORKS_READY'
+    subtext  = when === 'Never' ? 'Not yet verified' : `${isReady ? 'Verified' : 'Checked'} ${when}`
   } else {
-    // No dedicated check yet — fall back to sniper bundle
+    // No Settings data yet — fall back to sniper bundle
     dotColor = readinessDotColor(bundleSession)
     label    = SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? bundleSession
     subtext  = 'Not yet verified'
@@ -358,7 +354,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   }, [])
 
   // ── Dedicated session check state ──────────────────────────────────────────
-  const [sessionStatus,   setSessionStatus]   = useState<SessionCheckResult | null>(null)
+  const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
   const [sessionChecking, setSessionChecking] = useState(false)
 
   useEffect(() => {
@@ -369,8 +365,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     if (sessionChecking) return
     setSessionChecking(true)
     try {
-      const result = await api.checkSession()
-      setSessionStatus(result)
+      await api.checkSession()
+      // Re-fetch full status so overall/lastVerified fields are populated
+      const full = await api.getSessionStatus()
+      setSessionStatus(full)
     } catch { /* swallow — UI shows previous status */ }
     finally { setSessionChecking(false) }
   }
@@ -380,7 +378,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
 
   // Auth issues show amber; discovery/action blocks show red.
   const blockedIsAuthWarn =
-    sessionStatus?.valid === false ||
+    sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'            ||
+    sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
     sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH'
 
   // ── Confidence score (Stage 9.1) ───────────────────────────────────────────
