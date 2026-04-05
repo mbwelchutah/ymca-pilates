@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { TabBar } from './components/nav/TabBar'
 import type { Tab } from './components/nav/TabBar'
 import { NowScreen } from './screens/NowScreen'
@@ -15,19 +15,35 @@ export default function App() {
 
   const { state, loading, error, refresh } = useAppState()
 
-  const [clientSelectedJobId, setClientSelectedJobId] = useState<number | null>(() => {
+  // ── Single source of truth for the watched class ─────────────────────────
+  // Stored in localStorage so it survives page reload.
+  // Validated against the live job list on every refresh: if the stored ID no
+  // longer exists (e.g. the job was deleted), auto-selects the first active job.
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(() => {
     const saved = localStorage.getItem('selectedJobId')
     return saved ? parseInt(saved, 10) : null
   })
 
+  useEffect(() => {
+    if (state.jobs.length === 0) return
+    const isValid = selectedJobId !== null && state.jobs.some(j => j.id === selectedJobId)
+    if (!isValid) {
+      const fallback = state.jobs.find(j => j.is_active) ?? state.jobs[0]
+      const newId = fallback?.id ?? null
+      if (newId !== selectedJobId) {
+        setSelectedJobId(newId)
+        if (newId != null) localStorage.setItem('selectedJobId', String(newId))
+        else localStorage.removeItem('selectedJobId')
+      }
+    }
+  }, [state.jobs, selectedJobId])
+
   const handleSelectJob = (id: number) => {
-    setClientSelectedJobId(id)
+    setSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
     setTab('now')
     localStorage.setItem('mobileTab', 'now')
   }
-
-  const effectiveSelectedJobId = clientSelectedJobId ?? state.selectedJobId
 
   const handleTabChange = (t: Tab) => {
     setTab(t)
@@ -42,7 +58,7 @@ export default function App() {
         {tab === 'now' && (
           <NowScreen
             appState={state}
-            selectedJobId={effectiveSelectedJobId}
+            selectedJobId={selectedJobId}
             loading={loading}
             error={error}
             refresh={refresh}
@@ -51,14 +67,14 @@ export default function App() {
         {tab === 'plan' && (
           <PlanScreen
             appState={state}
-            selectedJobId={effectiveSelectedJobId}
+            selectedJobId={selectedJobId}
             onSelectJob={handleSelectJob}
             loading={loading}
             refresh={refresh}
           />
         )}
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={effectiveSelectedJobId} refresh={refresh} />
+          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} />
         )}
         {tab === 'settings' && (
           <SettingsScreen appState={state} refresh={refresh} />

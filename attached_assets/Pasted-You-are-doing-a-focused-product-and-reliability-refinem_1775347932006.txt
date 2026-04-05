@@ -1,0 +1,279 @@
+You are doing a focused product and reliability refinement pass for my YMCA Booker app.
+
+SCOPE OF THIS PASS
+Focus primarily on:
+1. the Plan screen
+2. how selected class data passes from Plan to Now
+3. add / edit / delete class management
+4. moving Dry Run access to the Now screen for easier testing
+
+Do NOT redesign the whole app.
+Do NOT change Tools/Diagnostics in this pass unless needed by shared data flow.
+Keep the app runnable after every stage.
+Stop after each stage and summarize exactly what changed.
+
+PRIMARY PROBLEMS TO FIX
+
+1. Plan -> Now data handoff is incorrect or stale
+- selected class information is not reliably passing to the Now screen
+- the Now screen may show stale or wrong job/class details
+
+2. Remove button does not work
+- classes cannot be reliably deleted from Plan
+
+3. Class management is incomplete
+- user needs to add, edit, and delete classes easily
+- current flow is too brittle
+
+4. Weekly repeat workflow is weak
+- user often takes the same class week to week
+- editing/updating an existing class should be easier than recreating it
+
+5. Dry Run is not easy enough to access when testing
+- user wants a quick way to toggle Dry Run from the Now screen before live use
+
+PRODUCT DIRECTION
+
+Keep the app clean and iPhone-oriented.
+
+NOW
+- current active watched class
+- booking state
+- countdown / status
+- quick operational controls
+- Dry Run quick access
+
+PLAN
+- class list
+- add / edit / delete
+- choose which class is tracked on Now
+- support easy weekly reuse/update
+
+SETTINGS
+- broader configuration
+
+TOOLS
+- debugging / diagnostics
+
+Do not collapse these responsibilities together.
+
+================================
+STAGE 1 — FIX PLAN -> NOW DATA FLOW
+================================
+
+Goal:
+Ensure the selected class in Plan reliably becomes the active class shown on Now.
+
+Tasks:
+1. Audit the current data flow between Plan selection and Now display
+2. Identify why stale or incorrect class/job data is appearing on Now
+3. Make a single clear source of truth for the currently tracked/active class
+4. Ensure when a class is selected in Plan:
+   - Now immediately reflects the correct class
+   - title, instructor, day/time, date, and job id are consistent
+5. Remove stale cached selection behavior if present
+6. If needed, normalize the active class selection into a shared state/store
+
+Important:
+- Do not redesign UI yet
+- Fix correctness first
+- Preserve current tab structure
+
+Deliverable:
+Selecting a class in Plan reliably updates Now with the correct live data.
+
+After Stage 1:
+Stop and summarize:
+- what caused stale/incorrect pass-through
+- what state/store/code path was fixed
+- how the active class is now determined
+
+================================
+STAGE 2 — MAKE DELETE / REMOVE ACTUALLY WORK
+================================
+
+Goal:
+Fix class deletion from the Plan screen.
+
+Tasks:
+1. Fix the non-working Remove button
+2. Ensure removing a class actually deletes it from the underlying data/store
+3. If the removed class is the active tracked class:
+   - safely clear active selection
+   OR
+   - fall back to the next valid tracked class
+   (choose the safest behavior and explain it)
+4. Add confirmation protection if needed, but keep it lightweight and mobile-friendly
+5. Ensure UI updates immediately after delete
+
+Important:
+- Do not leave “ghost” cards after deletion
+- Do not break Now if active class is removed
+
+Deliverable:
+Classes can be reliably removed from Plan.
+
+After Stage 2:
+Stop and summarize:
+- what was broken about Remove
+- what deletion path now works
+- what happens when the active class is deleted
+
+================================
+STAGE 3 — CLEAN ADD + EDIT FLOW
+================================
+
+Goal:
+Make class creation and editing reliable and simple.
+
+Tasks:
+1. Create or refine a clean Add Class flow
+2. Create or refine an Edit Class flow
+3. Ensure these fields are supported:
+   - class title
+   - instructor
+   - day
+   - time
+   - optional target date
+4. Editing must update the existing class, not accidentally create duplicates
+5. Validate data cleanly and avoid raw/system errors
+6. Ensure edited class data also updates correctly in Now if that class is active
+
+Important:
+- Do not make this a complicated admin form
+- Keep it mobile-friendly
+- Keep it iPhone-oriented
+
+Deliverable:
+Add and Edit flows work reliably.
+
+After Stage 3:
+Stop and summarize:
+- how Add works
+- how Edit works
+- how duplicates are prevented
+- how edits sync with Now
+
+================================
+STAGE 4 — WEEKLY REUSE / UPDATE WORKFLOW
+================================
+
+Goal:
+Make recurring weekly classes easier to manage.
+
+Reason:
+User often takes the same class week to week and should not need to recreate it from scratch.
+
+Tasks:
+1. Improve editing so an existing class can easily be updated for the next week
+2. Support a simple weekly workflow such as:
+   - update target date on existing class
+   - keep same class title/instructor/day/time
+3. If useful, add a lightweight “Reuse / Duplicate for next date” action
+   but only if it improves clarity without clutter
+4. Prefer editing/updating existing class over recreating new entries unnecessarily
+5. Avoid creating multiple redundant copies of the same weekly class unless explicitly chosen
+
+Important:
+- Keep the weekly workflow simple
+- Avoid overengineering recurrence rules unless they already exist
+- This app should feel practical, not enterprise
+
+Deliverable:
+A user can easily carry a class forward week to week.
+
+After Stage 4:
+Stop and summarize:
+- what weekly update workflow now exists
+- whether edit or duplicate is used
+- how redundant duplicates are reduced
+
+================================
+STAGE 5 — ADD DRY RUN QUICK ACCESS TO NOW
+================================
+
+Goal:
+Make Dry Run easy to toggle from the Now screen for testing before live use.
+
+Tasks:
+1. Add a clearly labeled but unobtrusive Dry Run / Simulation control to the Now screen
+2. This should be easy to access quickly before a booking window
+3. It should not dominate the Now screen
+4. It should reflect the real current app mode
+5. Toggling it on Now must update the actual global app behavior/state
+6. Settings can still contain Dry Run too, but Now should have quick access
+
+Preferred presentation:
+- a small secondary card
+- a compact toggle row
+- or a subtle “Mode: Live / Dry Run” control near the top of Now
+
+Important:
+- Do not clutter the hero card
+- Do not make Dry Run the primary focus
+- Keep Now centered on booking readiness
+
+Deliverable:
+Dry Run can be toggled quickly from Now.
+
+After Stage 5:
+Stop and summarize:
+- where Dry Run appears on Now
+- how it syncs with Settings/global state
+- whether the mode is reflected clearly
+
+================================
+STAGE 6 — PLAN SCREEN POLISH / UX CLEANUP
+================================
+
+Goal:
+Make Plan feel like a proper booking manager.
+
+Tasks:
+1. Improve visual clarity of class cards in Plan
+2. Make active/tracked class clearer
+3. Ensure edit/delete affordances are understandable
+4. Remove any stale labels or misleading states
+5. Keep the screen clean and iPhone-oriented
+6. Preserve current tab responsibilities
+
+Important:
+- Do not start a broad redesign
+- This is a polish pass after correctness is fixed
+
+Deliverable:
+Plan becomes a reliable class management screen.
+
+After Stage 6:
+Stop and summarize:
+- what Plan UX was improved
+- how active class is shown
+- what still remains for future refinement
+
+FINAL RULES
+
+Do not:
+- redesign the whole app
+- move diagnostics into Plan
+- move Tools content into Now
+- break shared state between screens
+- add overly complex recurrence systems in this pass
+
+Do:
+- fix correctness first
+- fix state synchronization
+- make add/edit/delete reliable
+- support simple weekly reuse
+- add quick Dry Run access on Now
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Make only that stage’s changes
+2. Keep the app runnable
+3. Summarize exactly what changed
+4. Explain what remains for the next stage
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
