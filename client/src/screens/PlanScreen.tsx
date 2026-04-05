@@ -237,9 +237,10 @@ interface Prefill {
 }
 
 interface AddJobFormProps {
-  onDone: (newJobId?: number) => void
-  prefill?: Prefill | null
-  editJob?: Job | null
+  onSaved:     (newJobId?: number) => void
+  onCancelled: () => void
+  prefill?:    Prefill | null
+  editJob?:    Job | null
 }
 
 function normalizeTime(raw: string): string | null {
@@ -250,7 +251,7 @@ function normalizeTime(raw: string): string | null {
   return `${match[1]}:${match[2]} ${match[3]}`
 }
 
-function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
+function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps) {
   const isEditing    = !!editJob
   // Distinct from a plain manual-add: user arrived here via Browse → Track.
   // Only use this class becomes active when the explicit save action succeeds.
@@ -279,7 +280,7 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
 
   const handleCancel = () => {
     console.log('[class-select] cancelled', { isEditing, isFromBrowse, classTitle })
-    onDone()
+    onCancelled()
   }
 
   const handleSubmit = async () => {
@@ -305,7 +306,7 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
           instructor:  instructor.trim() || null,
           target_date: targetDate.trim() || null,
         })
-        onDone()
+        onSaved()
       } else {
         const result = await api.addJob({
           class_title: classTitle.trim(),
@@ -315,7 +316,7 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
           target_date: targetDate.trim() || null,
           is_active:   true,
         })
-        onDone(result.id)
+        onSaved(result.id)
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : isEditing ? 'Couldn\'t save changes' : 'Couldn\'t add the class')
@@ -570,14 +571,14 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     setShowAdd(true)
   }
 
-  const handleFormDone = async (newJobId?: number) => {
+  // Called only when the form produces a real save (add or edit).
+  // Refresh is required here so appState.jobs is up to date before
+  // onSelectJob switches tabs — the Stage 1 race-condition fix.
+  const handleFormSaved = async (newJobId?: number) => {
     setShowAdd(false)
     setPrefill(null)
     setEditingJob(null)
     console.log('[class-select] commit started', { newJobId })
-    // Await the refresh so appState.jobs is up to date before switching tabs.
-    // Without await, onSelectJob fires before the new job appears in the list
-    // and NowScreen falls back to jobs[0], showing the wrong class.
     await refresh()
     console.log('[class-select] commit success — job list refreshed')
     if (newJobId != null) {
@@ -585,6 +586,15 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
       onSelectJob(newJobId)
       console.log('[class-select] now refreshed')
     }
+  }
+
+  // Called when the user dismisses the form without saving.
+  // No refresh needed — nothing changed on the server.
+  const handleFormCancelled = () => {
+    setShowAdd(false)
+    setPrefill(null)
+    setEditingJob(null)
+    console.log('[class-select] form dismissed — no save')
   }
 
   const showingControls = !showAdd
@@ -601,7 +611,8 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           <AddJobForm
             prefill={editingJob ? null : prefill}
             editJob={editingJob}
-            onDone={handleFormDone}
+            onSaved={handleFormSaved}
+            onCancelled={handleFormCancelled}
           />
         )}
 
