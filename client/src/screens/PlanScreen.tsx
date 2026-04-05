@@ -42,18 +42,41 @@ const PHASE_LABEL: Record<Phase, string> = {
   unknown:   'Waiting',
 }
 
+const RESULT_DOT: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = {
+  booked:   'green',
+  dry_run:  'blue',
+  error:    'red',
+  not_found:'red',
+}
+
+const RESULT_LABEL: Record<string, string> = {
+  booked:   'Booked',
+  dry_run:  'Simulated',
+  error:    'Error',
+  not_found:'Not found',
+}
+
+// Results worth surfacing on the card (transient/noise ones are excluded)
+const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
+
 function formatOpens(ms: number): string {
   const now = Date.now()
-  if (ms < now) return 'Opened'
+  if (ms < now) return `Opened ${new Date(ms).toLocaleString([], { month: 'short', day: 'numeric' })}`
   return `Opens ${new Date(ms).toLocaleString([], {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })}`
 }
 
+function formatShortDate(iso: string): string {
+  // Parse YYYY-MM-DD as local midnight to avoid UTC off-by-one
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 interface JobCardProps {
   job: Job
   isWatching: boolean
-  onToggle: (e: React.MouseEvent) => void
+  onToggle: () => void
   onDelete: () => Promise<void>
   onEdit: () => void
   onSelect: () => void
@@ -88,7 +111,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
     <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-50' : ''}`}>
       {/* Watching stripe */}
       {isWatching && (
-        <div className="h-0.5 bg-accent-blue w-full" />
+        <div className="h-1 bg-accent-blue w-full" />
       )}
 
       {/* Main tappable body — selects the job */}
@@ -113,10 +136,11 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
             )}
           </div>
 
-          {/* Day + time + instructor */}
+          {/* Day + time + instructor + target date */}
           <p className="text-[13px] text-text-secondary mt-0.5">
             {dayName} at {job.class_time}
             {job.instructor ? ` · ${job.instructor}` : ''}
+            {job.target_date ? ` · ${formatShortDate(job.target_date)}` : ''}
           </p>
 
           {/* Phase + booking window */}
@@ -131,11 +155,21 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
               </span>
             </div>
           )}
+
+          {/* Last booking result */}
+          {job.last_result && RESULT_SHOW.has(job.last_result) && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <StatusDot color={RESULT_DOT[job.last_result] ?? 'gray'} size="sm" />
+              <span className="text-[12px] text-text-muted">
+                Last: {RESULT_LABEL[job.last_result] ?? job.last_result}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Active toggle — stop propagation so it doesn't also select the job */}
         <button
-          onClick={e => { e.stopPropagation(); onToggle(e) }}
+          onClick={e => { e.stopPropagation(); onToggle() }}
           className={`
             mt-0.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold flex-shrink-0
             transition-colors active:opacity-70
@@ -309,8 +343,9 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
           <input className={inputClass} placeholder="Gretl" value={instructor} onChange={e => setInstructor(e.target.value)} />
         </div>
         <div>
-          <label className={labelClass}>Date (optional)</label>
+          <label className={labelClass}>Target date</label>
           <input type="date" className={inputClass} value={targetDate} onChange={e => setTargetDate(e.target.value)} />
+          <p className="text-[11px] text-text-muted mt-1">Leave blank to book weekly on the day above</p>
         </div>
         {err && <p className="text-[13px] text-accent-red">{err}</p>}
         <div className="flex gap-2 mt-1">
@@ -389,7 +424,12 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
         <div className="px-4 pt-3 pb-2 flex-shrink-0">
           <div className="w-10 h-1 bg-divider rounded-full mx-auto mb-3" />
           <div className="flex items-center justify-between">
-            <h2 className="text-[18px] font-bold text-text-primary tracking-tight">Browse Schedule</h2>
+            <div>
+              <h2 className="text-[18px] font-bold text-text-primary tracking-tight">Browse Schedule</h2>
+              {!loading && !err && sorted.length > 0 && (
+                <p className="text-[12px] text-text-muted">{sorted.length} class{sorted.length !== 1 ? 'es' : ''}</p>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={handleRefresh}
