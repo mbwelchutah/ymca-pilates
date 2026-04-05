@@ -522,9 +522,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     const disc = result.sniperState?.bundle?.discovery
     if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY') return { label: 'Class found', color: 'green' }
     if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
-    if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
     if (sessionBundle === 'SESSION_READY' && disc === 'DISCOVERY_NOT_TESTED')
                                            return { label: 'Session ready',                 color: 'green' }
+    if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
     // Fall back to status field
     if (result.status === 'success')            return { label: 'Preflight passed',         color: 'green' }
     if (result.status === 'found_not_open_yet') return { label: 'Not open yet',             color: 'gray'  }
