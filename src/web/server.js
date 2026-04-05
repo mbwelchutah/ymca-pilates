@@ -3864,34 +3864,71 @@ const server = http.createServer((req, res) => {
     json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
 
   } else if (req.method === 'POST' && path === '/update-job') {
+    const isJsonUp = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', () => {
-      const fields = {};
-      body.split('&').forEach(pair => {
-        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
-        if (k) fields[k] = (v || '').trim();
-      });
-      const id         = parseInt(fields.job_id, 10);
-      const classTitle = fields.title      || '';
-      const dayOfWeek  = fields.day        || '';
-      const classTime  = fields.time       || '';
-      const instructor = fields.instructor || '';
-      const targetDate = fields.target_date || null;
+      let id, classTitle, dayOfWeek, classTime, instructor, targetDate;
 
-      if (!id) { res.writeHead(302, { Location: '/?edit_error=Invalid+job+ID' }); res.end(); return; }
-      const missing = [];
-      if (!classTitle) missing.push('title');
-      if (!dayOfWeek)  missing.push('day');
-      if (!classTime)  missing.push('time');
-      if (!instructor) missing.push('instructor');
-      if (missing.length > 0) {
-        const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
-        res.writeHead(302, { Location: '/?edit_error=' + msg }); res.end(); return;
+      if (isJsonUp) {
+        let parsed;
+        try { parsed = JSON.parse(body); } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Invalid JSON' }));
+          return;
+        }
+        id         = parseInt(parsed.id, 10);
+        classTitle = (parsed.class_title  || '').trim();
+        dayOfWeek  = (parsed.day_of_week  != null ? String(parsed.day_of_week) : '').trim();
+        classTime  = (parsed.class_time   || '').trim();
+        instructor = (parsed.instructor   || '').trim();
+        targetDate = parsed.target_date   || null;
+
+        if (!id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Invalid job ID' }));
+          return;
+        }
+        const missing = [];
+        if (!classTitle) missing.push('class name');
+        if (!dayOfWeek)  missing.push('day');
+        if (!classTime)  missing.push('time');
+        if (missing.length > 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Missing required fields: ' + missing.join(', ') }));
+          return;
+        }
+        updateJob(id, { classTitle, dayOfWeek, classTime, instructor: instructor || null, targetDate: targetDate || null });
+        console.log(`Updated job #${id} via React UI: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        const fields = {};
+        body.split('&').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+          if (k) fields[k] = (v || '').trim();
+        });
+        id         = parseInt(fields.job_id, 10);
+        classTitle = fields.title      || '';
+        dayOfWeek  = fields.day        || '';
+        classTime  = fields.time       || '';
+        instructor = fields.instructor || '';
+        targetDate = fields.target_date || null;
+
+        if (!id) { res.writeHead(302, { Location: '/?edit_error=Invalid+job+ID' }); res.end(); return; }
+        const missing = [];
+        if (!classTitle) missing.push('title');
+        if (!dayOfWeek)  missing.push('day');
+        if (!classTime)  missing.push('time');
+        if (!instructor) missing.push('instructor');
+        if (missing.length > 0) {
+          const msg = encodeURIComponent('Missing required fields: ' + missing.join(', '));
+          res.writeHead(302, { Location: '/?edit_error=' + msg }); res.end(); return;
+        }
+        updateJob(id, { classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
+        console.log(`Updated job #${id} via web form`);
+        res.writeHead(302, { Location: '/' }); res.end();
       }
-      updateJob(id, { classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
-      console.log(`Updated job #${id} via web form`);
-      res.writeHead(302, { Location: '/' }); res.end();
     });
 
   } else if (req.method === 'POST' && path === '/toggle-active') {

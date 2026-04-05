@@ -55,10 +55,11 @@ interface JobCardProps {
   isWatching: boolean
   onToggle: (e: React.MouseEvent) => void
   onDelete: () => Promise<void>
+  onEdit: () => void
   onSelect: () => void
 }
 
-function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps) {
+function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobCardProps) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
@@ -149,37 +150,45 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
 
       <div className="h-px bg-divider mx-4" />
 
-      {/* Footer: delete */}
-      <div className="px-4 py-2.5 flex flex-col items-end gap-1.5">
+      {/* Footer: edit + delete */}
+      <div className="px-4 py-2.5 flex flex-col gap-1.5">
         {deleteErr && (
-          <p className="text-[12px] text-accent-red self-stretch">{deleteErr}</p>
+          <p className="text-[12px] text-accent-red">{deleteErr}</p>
         )}
-        {confirming ? (
-          <div className="flex items-center gap-3">
-            <span className="text-[13px] text-text-secondary">Remove this class?</span>
-            <button
-              onClick={handleCancel}
-              disabled={deleting}
-              className="text-[13px] font-semibold text-text-secondary disabled:opacity-40"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirmDelete}
-              disabled={deleting}
-              className="text-[13px] font-semibold text-accent-red disabled:opacity-40"
-            >
-              {deleting ? 'Removing…' : 'Remove'}
-            </button>
-          </div>
-        ) : (
+        <div className="flex items-center justify-between">
           <button
-            onClick={() => setConfirming(true)}
-            className="text-[13px] text-text-muted active:opacity-70"
+            onClick={onEdit}
+            className="text-[13px] text-accent-blue font-medium active:opacity-70"
           >
-            Remove
+            Edit
           </button>
-        )}
+          {confirming ? (
+            <div className="flex items-center gap-3">
+              <span className="text-[13px] text-text-secondary">Remove this class?</span>
+              <button
+                onClick={handleCancel}
+                disabled={deleting}
+                className="text-[13px] font-semibold text-text-secondary disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="text-[13px] font-semibold text-accent-red disabled:opacity-40"
+              >
+                {deleting ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="text-[13px] text-text-muted active:opacity-70"
+            >
+              Remove
+            </button>
+          )}
+        </div>
       </div>
     </Card>
   )
@@ -194,8 +203,9 @@ interface Prefill {
 }
 
 interface AddJobFormProps {
-  onDone: () => void
+  onDone: (newJobId?: number) => void
   prefill?: Prefill | null
+  editJob?: Job | null
 }
 
 function normalizeTime(raw: string): string | null {
@@ -206,12 +216,22 @@ function normalizeTime(raw: string): string | null {
   return `${match[1]}:${match[2]} ${match[3]}`
 }
 
-function AddJobForm({ onDone, prefill }: AddJobFormProps) {
-  const [classTitle, setClassTitle] = useState(prefill?.classTitle ?? '')
-  const [dayOfWeek, setDayOfWeek]   = useState(prefill?.dayOfWeek ?? 2)
-  const [classTime, setClassTime]   = useState(prefill?.classTime ?? '')
-  const [instructor, setInstructor] = useState(prefill?.instructor ?? '')
-  const [targetDate, setTargetDate] = useState(prefill?.targetDate ?? '')
+function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
+  const isEditing = !!editJob
+
+  // When editing, initialize from the existing job; otherwise use prefill or blank defaults.
+  const initDayOfWeek = () => {
+    if (editJob) {
+      return DAY_NAME_TO_NUM[editJob.day_of_week] ?? parseInt(editJob.day_of_week, 10) ?? 2
+    }
+    return prefill?.dayOfWeek ?? 2
+  }
+
+  const [classTitle, setClassTitle] = useState(editJob?.class_title  ?? prefill?.classTitle  ?? '')
+  const [dayOfWeek, setDayOfWeek]   = useState(initDayOfWeek)
+  const [classTime, setClassTime]   = useState(editJob?.class_time   ?? prefill?.classTime   ?? '')
+  const [instructor, setInstructor] = useState(editJob?.instructor   ?? prefill?.instructor  ?? '')
+  const [targetDate, setTargetDate] = useState(editJob?.target_date  ?? prefill?.targetDate  ?? '')
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
 
@@ -230,21 +250,32 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
       setErr('Enter time like 10:45 AM')
       return
     }
-    const payload = {
-      class_title: classTitle.trim(),
-      day_of_week: DAY_NAMES[dayOfWeek] ?? String(dayOfWeek),
-      class_time: normalized,
-      instructor: instructor.trim() || null,
-      target_date: targetDate.trim() || null,
-      is_active: true,
-    }
     setSaving(true)
     setErr(null)
     try {
-      await api.addJob(payload)
-      onDone()
+      if (isEditing && editJob) {
+        await api.updateJob({
+          id:          editJob.id,
+          class_title: classTitle.trim(),
+          day_of_week: DAY_NAMES[dayOfWeek] ?? String(dayOfWeek),
+          class_time:  normalized,
+          instructor:  instructor.trim() || null,
+          target_date: targetDate.trim() || null,
+        })
+        onDone()
+      } else {
+        const result = await api.addJob({
+          class_title: classTitle.trim(),
+          day_of_week: DAY_NAMES[dayOfWeek] ?? String(dayOfWeek),
+          class_time:  normalized,
+          instructor:  instructor.trim() || null,
+          target_date: targetDate.trim() || null,
+          is_active:   true,
+        })
+        onDone(result.id)
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Couldn\'t add the class')
+      setErr(e instanceof Error ? e.message : isEditing ? 'Couldn\'t save changes' : 'Couldn\'t add the class')
     } finally {
       setSaving(false)
     }
@@ -255,7 +286,9 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
 
   return (
     <Card padding="md">
-      <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">Add a Class</h3>
+      <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">
+        {isEditing ? 'Edit Class' : 'Add a Class'}
+      </h3>
       <div className="flex flex-col gap-3">
         <div>
           <label className={labelClass}>Class Name</label>
@@ -281,13 +314,13 @@ function AddJobForm({ onDone, prefill }: AddJobFormProps) {
         </div>
         {err && <p className="text-[13px] text-accent-red">{err}</p>}
         <div className="flex gap-2 mt-1">
-          <SecondaryButton fullWidth onClick={onDone}>Cancel</SecondaryButton>
+          <SecondaryButton fullWidth onClick={() => onDone()}>Cancel</SecondaryButton>
           <button
             onClick={handleSubmit}
             disabled={saving}
             className="flex-1 bg-accent-blue text-white font-semibold text-[15px] rounded-btn px-5 py-4 active:opacity-70 disabled:opacity-40"
           >
-            {saving ? 'Saving…' : 'Add Class'}
+            {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Add Class'}
           </button>
         </div>
       </div>
@@ -440,9 +473,10 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
 }
 
 export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh }: PlanScreenProps) {
-  const [showAdd, setShowAdd]       = useState(false)
-  const [showBrowse, setShowBrowse] = useState(false)
-  const [prefill, setPrefill]       = useState<Prefill | null>(null)
+  const [showAdd, setShowAdd]         = useState(false)
+  const [showBrowse, setShowBrowse]   = useState(false)
+  const [prefill, setPrefill]         = useState<Prefill | null>(null)
+  const [editingJob, setEditingJob]   = useState<Job | null>(null)
 
   const handleToggle = async (job: Job) => {
     try {
@@ -456,6 +490,12 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     refresh()
   }
 
+  const handleEdit = (job: Job) => {
+    setEditingJob(job)
+    setPrefill(null)
+    setShowAdd(true)
+  }
+
   const handleTrack = (cls: ScrapedClass) => {
     setPrefill({
       classTitle: cls.class_title,
@@ -464,12 +504,15 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
       instructor: cls.instructor ?? '',
     })
     setShowBrowse(false)
+    setEditingJob(null)
     setShowAdd(true)
   }
 
-  const handleAddDone = () => {
+  const handleFormDone = (newJobId?: number) => {
     setShowAdd(false)
     setPrefill(null)
+    setEditingJob(null)
+    if (newJobId != null) onSelectJob(newJobId)
     refresh()
   }
 
@@ -479,12 +522,16 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     <>
       <AppHeader
         subtitle="Schedule"
-        action={showingControls ? { label: 'Add', onClick: () => setShowAdd(true) } : undefined}
+        action={showingControls ? { label: 'Add', onClick: () => { setEditingJob(null); setShowAdd(true) } } : undefined}
         secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
       />
       <ScreenContainer>
         {showAdd && (
-          <AddJobForm prefill={prefill} onDone={handleAddDone} />
+          <AddJobForm
+            prefill={editingJob ? null : prefill}
+            editJob={editingJob}
+            onDone={handleFormDone}
+          />
         )}
 
         <SectionHeader title={`${appState.jobs.length} Class${appState.jobs.length !== 1 ? 'es' : ''}`} />
@@ -500,7 +547,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
               Add a class to start automating your registrations
             </p>
             <button
-              onClick={() => setShowAdd(true)}
+              onClick={() => { setEditingJob(null); setShowAdd(true) }}
               className="mt-2 text-accent-blue text-[15px] font-semibold"
             >
               Add Class
@@ -515,6 +562,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
                 isWatching={job.id === selectedJobId}
                 onToggle={() => handleToggle(job)}
                 onDelete={() => handleDelete(job)}
+                onEdit={() => handleEdit(job)}
                 onSelect={() => onSelectJob(job.id)}
               />
             ))}
