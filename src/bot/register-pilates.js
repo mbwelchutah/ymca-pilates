@@ -19,6 +19,71 @@ const REASONTAG_TO_REASON = {
   'error':           'unexpected_error',
 };
 
+// ── Action-button selector strategies ────────────────────────────────────────
+// Each entry is [playwrightSelector, humanLabel]. Strategies are tried in order;
+// the first one that returns count > 0 wins. Having [role="button"] as a fallback
+// handles Bubble.io builds that render interactive elements as ARIA divs rather
+// than native <button> tags.
+const ACTION_SELECTORS = {
+  register: [
+    ['button:has-text("Register"), button:has-text("Reserve")',                   'button (Register/Reserve)'],
+    ['[role="button"]:has-text("Register"), [role="button"]:has-text("Reserve")', 'role=button (Register/Reserve)'],
+  ],
+  waitlist: [
+    ['button:has-text("aitlist")',            'button (Waitlist)'],
+    ['[role="button"]:has-text("aitlist")',   'role=button (Waitlist)'],
+  ],
+  // Combined selector used for the signal-driven modal wait.
+  modalReady: [
+    'button:has-text("Register")', 'button:has-text("Reserve")',
+    '[role="button"]:has-text("Register")', '[role="button"]:has-text("Reserve")',
+    'button:has-text("aitlist")', '[role="button"]:has-text("aitlist")',
+    'button:has-text("Login")',   '[role="button"]:has-text("Login")',
+  ].join(', '),
+  allVisible:    'button:visible, [role="button"]:visible',
+  loginRequired: /login to register|sign in to register/i,
+};
+
+// Detects which action buttons are present in the current page state.
+// Tries each selector strategy in order; stops at first match.
+// Returns:
+//   { hasRegister, hasWaitlist, hasLoginRequired,
+//     registerBtn, waitlistBtn, allBtnTexts,
+//     registerStrategy, waitlistStrategy }
+async function detectActionButtons(page) {
+  const allBtnTexts = await page.locator(ACTION_SELECTORS.allVisible).allTextContents().catch(() => []);
+
+  let registerBtn = null;
+  let registerStrategy = 'not found';
+  for (const [sel, label] of ACTION_SELECTORS.register) {
+    const loc = page.locator(sel);
+    if ((await loc.count()) > 0) {
+      registerBtn      = loc;
+      registerStrategy = label;
+      break;
+    }
+  }
+
+  let waitlistBtn = null;
+  let waitlistStrategy = 'not found';
+  for (const [sel, label] of ACTION_SELECTORS.waitlist) {
+    const loc = page.locator(sel);
+    if ((await loc.count()) > 0) {
+      waitlistBtn      = loc;
+      waitlistStrategy = label;
+      break;
+    }
+  }
+
+  const hasLoginRequired = allBtnTexts.some(t => ACTION_SELECTORS.loginRequired.test(t));
+  const hasRegister = registerBtn !== null;
+  const hasWaitlist = waitlistBtn !== null;
+
+  console.log(`[action-detect] register: ${registerStrategy} | waitlist: ${waitlistStrategy}`);
+
+  return { hasRegister, hasWaitlist, hasLoginRequired, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy };
+}
+
 const isHeadless = process.env.HEADLESS !== 'false';
 
 // Set to false to skip visual highlights in production.
@@ -1016,7 +1081,13 @@ async function runBookingJob(job, opts = {}) {
         await page.evaluate(() =>
           document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
         ).catch(() => {});
-        await page.waitForTimeout(2000);
+
+        // Signal-driven modal wait: resolve as soon as action buttons appear
+        // (capped at 3 s). Falls back gracefully — we proceed regardless.
+        // Replaces the blunt waitForTimeout(2000) to catch fast modal renders early.
+        await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
+        // Small settle buffer so the modal text is fully populated.
+        await page.waitForTimeout(300);
 
         // Verify the modal matches expected time + instructor.
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
@@ -1174,13 +1245,8 @@ async function runBookingJob(job, opts = {}) {
     // actually clicking Register/Waitlist.  Returns immediately after sniffing
     // which buttons are present in the already-open modal.
     if (PREFLIGHT_ONLY) {
-      const registerBtn = page.locator('button:has-text("Register"), button:has-text("Reserve")');
-      const waitlistBtn = page.locator('button:has-text("aitlist")');
-      const allBtns     = await page.locator('button:visible').allTextContents();
-      const hasLoginBtn = allBtns.some(b => b.toLowerCase().includes('login to register'));
-      const hasRegister = (await registerBtn.count()) > 0;
-      const hasWaitlist = (await waitlistBtn.count()) > 0;
-      console.log('[preflight] Visible buttons:', JSON.stringify(allBtns));
+      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts } = await detectActionButtons(page);
+      console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
 
       if (hasLoginBtn) {
         emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
@@ -1206,16 +1272,12 @@ async function runBookingJob(job, opts = {}) {
     // ──────────────────────────────────────────────────────────────────────────
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const registerBtn = page.locator('button:has-text("Register"), button:has-text("Reserve")');
-      const waitlistBtn = page.locator('button:has-text("aitlist")');
-      const hasRegister = await registerBtn.count() > 0;
-      const hasWaitlist = await waitlistBtn.count() > 0;
+      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginButton,
+              registerBtn, waitlistBtn, allBtnTexts: allBtns,
+              registerStrategy, waitlistStrategy } = await detectActionButtons(page);
 
-      // Log all visible buttons for debugging
-      const allBtns = await page.locator('button:visible').allTextContents();
       console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
-      const hasLoginButton = allBtns.some(b => b.toLowerCase().includes('login to register'));
       if (hasLoginButton) {
         console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
         await snap();
