@@ -427,15 +427,24 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return () => clearInterval(id)
   }, [])
 
-  // ── Clear stale readiness data when the selected job changes ─────────────────
-  // Sniper state is global (last-run-wins on the server), so when the user
-  // switches to a different class the preflight details and dry-run result from
-  // the previous job must be wiped immediately.  A fresh sniper-state and
-  // session-status fetch follows so the new job's existing data (if any) can
-  // repopulate through the snapshot restore effect below.
+  // ── Clear stale readiness data when the selected job changes OR is edited ─────
+  // Sniper state is global (last-run-wins on the server).  Two triggers require
+  // a wipe + fresh fetch:
+  //   1. selectedJobId changes — user switched to a different class (Stage 3).
+  //   2. jobFingerprint changes — same job was edited in place.  Check Now
+  //      results are tied to the class definition (title / day / time / date),
+  //      so editing any of those fields makes the old preflight stale.
+  // The snapshot restore effect (keyed on snapshotCheckedAt) will NOT re-fire
+  // when only the fingerprint changes, because snapshotCheckedAt stays the same
+  // value — the server hasn't written a new snapshot.  This keeps the details
+  // cleared until a new Check Now is run for the updated class definition.
+  const jobFingerprint = job
+    ? `${job.class_title}|${job.class_time}|${job.day_of_week}|${job.target_date ?? ''}`
+    : null
+
   useEffect(() => {
     if (selectedJobId == null) return
-    console.log('[class-select] now refreshed — clearing stale readiness for job', selectedJobId)
+    console.log('[class-select] now refreshed — clearing stale readiness for job', selectedJobId, jobFingerprint ?? '')
     setAuthDetail(null)
     setDiscoveryDetail(null)
     setModalDetail(null)
@@ -445,7 +454,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedJobId])
+  }, [selectedJobId, jobFingerprint])
 
   // Restore per-stage details from the persisted snapshot so the enriched
   // composite detail text survives page refreshes.  Guards prevent overwriting
