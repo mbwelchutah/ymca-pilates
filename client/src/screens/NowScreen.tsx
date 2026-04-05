@@ -780,8 +780,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       <AppHeader
         subtitle={
           isInactive
-            ? 'Off' + (appState.dryRun ? ' · Simulation' : '')
-            : cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : '')
+            ? 'Off' + (appState.dryRun ? ' · Test mode' : '')
+            : cfg.headerSubtitle + (appState.dryRun ? ' · Test mode' : '')
         }
       />
 
@@ -868,9 +868,35 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Check Now button + secondary actions + inline result */}
+          {/* Run Check action + mode selector + secondary actions */}
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
+
+              {/* Mode selector: Test / Live */}
+              <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2.5">
+                <button
+                  onClick={() => handleDryRun(true)}
+                  disabled={preflightRunning || sessionChecking}
+                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
+                    ${appState.dryRun
+                      ? 'bg-card shadow-card text-text-primary'
+                      : 'text-text-muted'}`}
+                >
+                  Test
+                </button>
+                <button
+                  onClick={() => handleDryRun(false)}
+                  disabled={preflightRunning || sessionChecking}
+                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
+                    ${!appState.dryRun
+                      ? 'bg-card shadow-card text-text-primary'
+                      : 'text-text-muted'}`}
+                >
+                  Live
+                </button>
+              </div>
+
+              {/* Primary action */}
               <button
                 onClick={handleCheckNow}
                 disabled={preflightRunning || (sessionStatus?.locked ?? false)}
@@ -881,38 +907,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   }`}
               >
                 {preflightRunning && (
-                  <svg
-                    className="animate-spin h-4 w-4 flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
+                  <svg className="animate-spin h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                   </svg>
                 )}
-                {preflightRunning ? 'Checking…' : 'Check Now'}
+                {preflightRunning ? 'Checking…' : 'Run Check'}
               </button>
 
-              {/* Secondary actions row: Dry Run + Refresh Session */}
+              {/* Secondary action: Refresh Session */}
               {!(sessionStatus?.locked ?? false) && !preflightRunning && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    onClick={handleRunDryRun}
-                    disabled={dryRunRunning || sessionChecking}
-                    className="flex-1 py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
-                  >
-                    {dryRunRunning && (
-                      <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                      </svg>
-                    )}
-                    {dryRunRunning ? 'Running…' : 'Dry Run'}
-                  </button>
+                <div className="mt-2">
                   <button
                     onClick={handleVerifySession}
-                    disabled={sessionChecking || dryRunRunning}
-                    className="flex-1 py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    disabled={sessionChecking}
+                    className="w-full py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
                   >
                     {sessionChecking && (
                       <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
@@ -922,28 +931,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     )}
                     {sessionChecking ? 'Refreshing…' : 'Refresh Session'}
                   </button>
-                </div>
-              )}
-
-              {/* Dry Run result badge */}
-              {dryRunResult && !dryRunRunning && !preflightRunning && (
-                <div className={`mt-2 rounded-xl px-3.5 py-2.5
-                  ${dryRunResult.color === 'green' ? 'bg-accent-green/10' :
-                    dryRunResult.color === 'amber' ? 'bg-accent-amber/10' :
-                    'bg-accent-red/10'}
-                `}>
-                  <div className="flex items-center gap-2">
-                    <StatusDot color={dryRunResult.color} />
-                    <span className={`text-[14px] font-semibold
-                      ${dryRunResult.color === 'green' ? 'text-accent-green' :
-                        dryRunResult.color === 'amber' ? 'text-accent-amber' :
-                        'text-accent-red'}
-                    `}>
-                      {dryRunResult.label}
-                    </span>
-                    <span className="ml-auto text-[11px] text-text-muted">Dry run</span>
-                  </div>
-                  <p className="text-[12px] text-text-muted mt-0.5 ml-5 line-clamp-2">{dryRunResult.detail}</p>
                 </div>
               )}
 
@@ -1249,11 +1236,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </>
         )}
 
-        {/* ── Simulation mode notice ─────────────────────────────── */}
+        {/* ── Test mode notice ───────────────────────────────────── */}
         {appState.dryRun && (
           <Card padding="sm" className="border border-accent-amber/30 bg-accent-amber/5">
             <p className="text-[13px] text-accent-amber font-medium">
-              Simulation mode is on — bookings won't actually register.
+              Test mode — the scheduler won't actually register. Switch to Live when ready.
             </p>
           </Card>
         )}

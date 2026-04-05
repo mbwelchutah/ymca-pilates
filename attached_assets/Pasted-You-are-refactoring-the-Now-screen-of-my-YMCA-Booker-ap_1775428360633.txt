@@ -1,0 +1,285 @@
+You are refactoring the Now screen of my YMCA Booker app.
+
+PRIMARY GOAL
+
+Make the Now screen feel calm, clear, and trustworthy.
+Right now it feels jarring because:
+- “Check Now” and “Dry Run” feel duplicative
+- too many status cards compete with each other
+- the most important message is not visually obvious
+
+This is a mobile-first web app.
+The Now screen should behave like a mission-control screen for one active class.
+
+DESIGN DIRECTION
+
+The Now screen should answer, at a glance:
+1. What class is targeted?
+2. When does registration open?
+3. Am I ready?
+4. What should I do next?
+
+Keep it clean, iPhone-friendly, and operational.
+Do NOT turn it into a dashboard full of technical details.
+Do NOT redesign the whole app in one pass.
+
+CORE PRODUCT CHANGE
+
+Replace the confusing “Check Now” + “Dry Run” dual-action model with:
+
+- one primary action:
+  - “Run Check”
+- one explicit mode control:
+  - Test mode
+  - Live mode
+
+This creates one action with two modes instead of two competing buttons.
+
+RULES
+
+- Keep the app runnable after every stage
+- Do not break existing booking logic
+- Do not remove Tools diagnostics
+- Do not show raw debug logs on Now
+- Stop after each stage and summarize what changed
+- Do not jump ahead
+
+================================
+STAGE 1 — UNIFY ACTION MODEL
+================================
+
+Goal:
+Replace the duplicate-feeling “Check Now” and “Dry Run” controls with a clearer model.
+
+Tasks:
+1. Remove the separate “Dry Run” button from the main Now action area
+2. Keep one primary action button:
+   - “Run Check”
+3. Add a mode selector above or near the primary action:
+   - Test
+   - Live
+4. Map behavior:
+   - Test mode = safe preflight / no booking
+   - Live mode = real run / booking-capable
+5. If existing Dry Run system already exists, wire the mode selector into it instead of inventing new behavior
+
+Important:
+- One action, two modes
+- This must reduce confusion, not add more
+
+After Stage 1:
+Stop and summarize:
+- how the old buttons were replaced
+- where the mode selector appears
+- how Test vs Live maps to existing logic
+
+================================
+STAGE 2 — SIMPLIFY HERO CARD
+================================
+
+Goal:
+Make the hero card the clear center of the Now screen.
+
+Tasks:
+1. Keep the active class prominently visible:
+   - class title
+   - day/time
+   - instructor
+2. Keep the countdown prominent
+3. Keep the booking-window message simple and human-readable
+4. Remove or reduce redundant sub-messages inside the hero if they repeat information shown elsewhere
+5. Keep the hero visually clean and calm
+
+Important:
+- The hero should feel like the single source of truth for the current mission
+- Do not overload it with multiple result cards
+
+After Stage 2:
+Stop and summarize:
+- what was simplified in the hero
+- what information remains there
+- what was removed as redundant
+
+================================
+STAGE 3 — REPLACE MULTIPLE STATUS CARDS WITH ONE PRIMARY RESULT CARD
+================================
+
+Goal:
+Reduce visual noise by showing one dominant current result instead of multiple competing status cards.
+
+Tasks:
+1. Replace the current stack of multiple result/status cards with one primary result card
+2. This primary result card should show the current most important status, for example:
+   - Ready to book
+   - Registration not open yet
+   - Session ready
+   - Login required
+   - Action unavailable
+3. The card should support severity levels, but wording should stay human and calm
+4. Use concise timestamp if useful
+5. Keep it easy to scan on mobile
+
+Important:
+- There should be one main truth, not several competing truths
+- Do not show green/red/gray cards all fighting for attention
+
+After Stage 3:
+Stop and summarize:
+- what result card replaced the old stack
+- how result priority is decided
+- what kinds of messages it can show
+
+================================
+STAGE 4 — MOVE SECONDARY DETAILS INTO A COMPACT DETAILS SECTION
+================================
+
+Goal:
+Keep supporting information available without cluttering the main mission view.
+
+Tasks:
+1. Move secondary sub-results into a compact details section, such as:
+   - Session
+   - Discovery
+   - Modal
+   - Action
+2. Keep this section compact and low-noise
+3. Prefer short row-based status summaries over large cards
+4. If appropriate, make it collapsible or visually secondary
+
+Important:
+- These are useful, but not as important as the main result
+- Do not bury them in Tools, but do not let them dominate the screen either
+
+After Stage 4:
+Stop and summarize:
+- what moved into the details section
+- how it is shown now
+- how the main screen became cleaner
+
+================================
+STAGE 5 — SIMPLIFY PROGRESS
+================================
+
+Goal:
+Make progress clearer and less abstract.
+
+Tasks:
+1. Audit the existing progress component
+2. Reduce its cognitive load
+3. Either:
+   - simplify the percentage-based progress display
+   OR
+   - replace it with simpler readiness milestones such as:
+     - Session verified
+     - Class found
+     - Action reachable
+4. Keep whichever option is clearer for a mobile user
+
+Important:
+- The user should not need to interpret abstract percentages if clearer wording works better
+- Keep this secondary to the hero and main result
+
+After Stage 5:
+Stop and summarize:
+- whether progress was simplified or replaced
+- why that choice was made
+- what the user now sees instead
+
+================================
+STAGE 6 — MAKE “REFRESH SESSION” SECONDARY AND USEFUL
+================================
+
+Goal:
+Keep session refresh available without competing with the main action.
+
+Tasks:
+1. Keep “Refresh Session” available as a secondary action
+2. Make sure it is visually secondary to “Run Check”
+3. Ensure it only does what the label promises
+4. If the user is in Test mode, Refresh Session should still behave safely
+5. Keep the screen calm and uncluttered
+
+After Stage 6:
+Stop and summarize:
+- where Refresh Session now lives
+- how it is visually secondary
+- how it behaves relative to mode
+
+================================
+STAGE 7 — IMPROVE WORDING
+================================
+
+Goal:
+Make status language more human and less technical.
+
+Tasks:
+1. Replace harsh or ambiguous system phrases with clearer human language where appropriate
+2. Examples:
+   - “Action blocked” -> “Registration not open yet” or “Booking action not available”
+   - “Not tested” -> “Not checked yet”
+   - “Booking action unavailable” -> clearer user-facing phrasing
+3. Preserve technical detail for Tools only
+
+Important:
+- Keep wording calm, simple, and trustworthy
+- Avoid jargon on the Now screen
+
+After Stage 7:
+Stop and summarize:
+- what wording was improved
+- what phrases were replaced
+- how the screen now feels more human
+
+================================
+STAGE 8 — FINAL NOW SCREEN CLEANUP
+================================
+
+Goal:
+Make the Now screen feel unified and intentional.
+
+Tasks:
+1. Clean spacing and hierarchy
+2. Ensure the order of attention is:
+   - Hero / target
+   - Main result
+   - Run Check + mode
+   - Secondary details
+   - Progress / supporting info
+3. Remove any duplicated information that still remains
+4. Keep the final screen clean and mobile-first
+
+Important:
+- This is a cleanup pass, not a full redesign
+- Keep the result calm and operational
+
+After Stage 8:
+Stop and summarize:
+- what was simplified
+- how the hierarchy now works
+- what the final Now screen communicates best
+
+FINAL RULES
+
+Do not:
+- reintroduce multiple competing status cards
+- keep both Dry Run and Run Check as equivalent primary actions
+- show raw logs on Now
+- redesign other screens unnecessarily
+
+Do:
+- make the Now screen clear
+- make one action primary
+- make mode explicit
+- reduce cognitive friction
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
