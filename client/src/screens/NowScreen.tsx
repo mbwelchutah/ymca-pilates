@@ -503,15 +503,44 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   }
 
   // ── Check Now (preflight) ──────────────────────────────────────────────────
+  type PreflightResult = { label: string; color: 'green' | 'amber' | 'red' | 'gray' }
+
+  function mapPreflightResult(result: {
+    success: boolean
+    status: string
+    message: string
+    sniperState: SniperRunState | null
+  }): PreflightResult {
+    const ss = result.sniperState?.sniperState
+    if (ss === 'SNIPER_READY')             return { label: 'Preflight passed',              color: 'green' }
+    if (ss === 'SNIPER_BLOCKED_AUTH')      return { label: 'Login required',                color: 'amber' }
+    if (ss === 'SNIPER_BLOCKED_DISCOVERY') return { label: 'Class not found',               color: 'red'   }
+    if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
+    if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
+    // Fall back to status field
+    if (result.status === 'success')            return { label: 'Preflight passed',         color: 'green' }
+    if (result.status === 'found_not_open_yet') return { label: 'Not open yet',             color: 'gray'  }
+    if (result.status === 'not_found')          return { label: 'Class not found',          color: 'red'   }
+    if (result.status === 'auth_failed')        return { label: 'Login required',           color: 'amber' }
+    if (result.status === 'locked')             return { label: 'System busy — try later',  color: 'gray'  }
+    if (result.message?.toLowerCase().includes('lock')) return { label: 'System busy — try later', color: 'gray' }
+    if (result.message?.toLowerCase().includes('session')) return { label: 'Session expired', color: 'amber' }
+    if (result.message?.toLowerCase().includes('modal')) return { label: 'Modal issue',     color: 'red'   }
+    return { label: 'Check failed',   color: 'red' }
+  }
+
   const [preflightRunning, setPreflightRunning] = useState(false)
+  const [preflightResult,  setPreflightResult]  = useState<PreflightResult | null>(null)
 
   const handleCheckNow = async () => {
     if (!job || preflightRunning || sessionStatus?.locked) return
     setPreflightRunning(true)
+    setPreflightResult(null)
     try {
       const result = await api.runPreflight(job.id)
       if (result.sniperState) setSniperRunState(result.sniperState)
-    } catch { /* swallow */ }
+      setPreflightResult(mapPreflightResult(result))
+    } catch { setPreflightResult({ label: 'Check failed', color: 'red' }) }
     finally { setPreflightRunning(false) }
   }
 
@@ -623,7 +652,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
             </div>
           )}
 
-          {/* Check Now button — preflight trigger on the active class card */}
+          {/* Check Now button + inline result */}
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
               <button
@@ -637,6 +666,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               >
                 {preflightRunning ? 'Checking…' : 'Check Now'}
               </button>
+
+              {/* Concise result — shown after Check Now completes */}
+              {preflightResult && !preflightRunning && (
+                <p className={`mt-2 text-center text-[13px] font-medium
+                  ${preflightResult.color === 'green' ? 'text-accent-green' :
+                    preflightResult.color === 'amber' ? 'text-accent-amber' :
+                    preflightResult.color === 'red'   ? 'text-accent-red'   :
+                    'text-text-muted'}
+                `}>
+                  {preflightResult.label}
+                </p>
+              )}
             </div>
           )}
         </Card>
