@@ -235,15 +235,22 @@ function loadState() {
   }
 }
 
-// Persists a slim snapshot of the last user-triggered preflight result.
+// Persists a snapshot of the last user-triggered preflight result.
 // Called from server.js after /api/preflight completes.  The snapshot
-// survives page refreshes and lets the frontend restore the composite label.
-function savePreflightSnapshot(status) {
+// survives page refreshes and lets the frontend restore the composite label
+// and all per-stage detail subtitles without rerunning Check Now.
+//
+// details (optional): { authDetail, discoveryDetail, modalDetail, actionDetail }
+function savePreflightSnapshot(status, details) {
   try {
     const s = loadState() || {};
     s.lastPreflightSnapshot = {
-      checkedAt: new Date().toISOString(),
-      status:    status || 'unknown',
+      checkedAt:       new Date().toISOString(),
+      status:          status || 'unknown',
+      authDetail:      details?.authDetail      ?? null,
+      discoveryDetail: details?.discoveryDetail ?? null,
+      modalDetail:     details?.modalDetail     ?? null,
+      actionDetail:    details?.actionDetail    ?? null,
     };
     saveState(s);
   } catch (e) {

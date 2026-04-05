@@ -3871,7 +3871,6 @@ const server = http.createServer((req, res) => {
             maxAttempts: 1,
           }, { preflightOnly: true, dryRun: getDryRun() });
           const { loadState, savePreflightSnapshot } = require('../bot/sniper-readiness');
-          savePreflightSnapshot(result.status);
           const state = loadState();
 
           // ── Auth + Discovery detail ───────────────────────────────────────
@@ -3947,11 +3946,16 @@ const server = http.createServer((req, res) => {
             modalPreview:   modalEvt.evidence?.modalPreview  ?? null,
           } : null;
 
+          // Persist the full preflight result so the frontend can restore the
+          // composite badge and per-stage detail subtitles after a page refresh.
+          savePreflightSnapshot(result.status, { authDetail, discoveryDetail, modalDetail, actionDetail });
+          const stateAfterSnapshot = loadState();
+
           json({
             success:         result.status === 'success',
             status:          result.status,
             message:         result.message,
-            sniperState:     state,
+            sniperState:     stateAfterSnapshot,
             authDetail,
             discoveryDetail,
             modalDetail,

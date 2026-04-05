@@ -483,6 +483,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return () => clearInterval(id)
   }, [])
 
+  // Restore per-stage details from the persisted snapshot so the enriched
+  // composite detail text survives page refreshes.  Guards prevent overwriting
+  // a fresh Check Now result if a new snapshot arrives during the same session.
+  const snapshotCheckedAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
+  useEffect(() => {
+    const snap = sniperRunState?.lastPreflightSnapshot
+    if (!snap) return
+    if (!authDetail      && snap.authDetail)      setAuthDetail(snap.authDetail as AuthDetail)
+    if (!discoveryDetail && snap.discoveryDetail) setDiscoveryDetail(snap.discoveryDetail as DiscoveryDetail)
+    if (!modalDetail     && snap.modalDetail)     setModalDetail(snap.modalDetail as ModalDetail)
+    if (!actionDetail    && snap.actionDetail)    setActionDetail(snap.actionDetail as ActionDetail)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshotCheckedAt])
+
   // ── Dedicated session check state ──────────────────────────────────────────
   const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
   const [sessionChecking, setSessionChecking] = useState(false)

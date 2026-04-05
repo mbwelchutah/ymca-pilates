@@ -21,7 +21,14 @@ export interface SniperRunState {
   timing:         SniperTiming | null
   events:                 SniperEvent[]
   updatedAt:              string | null
-  lastPreflightSnapshot:  { checkedAt: string; status: string } | null
+  lastPreflightSnapshot: {
+    checkedAt:       string
+    status:          string
+    authDetail:      { verdict: string; provider: string | null; detail: string | null } | null
+    discoveryDetail: { found: boolean; matched: string | null; score: string | null; signals: string | null; second: string | null; nearMisses: string | null } | null
+    modalDetail:     { verdict: string; detail: string | null; screenshot: string | null; buttonsVisible: string[] | null; modalPreview: string | null } | null
+    actionDetail:    { verdict: string; actionState: string | null; buttonsVisible: string[] | null; registerStrategy: string | null; waitlistStrategy: string | null; detail: string | null } | null
+  } | null
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
