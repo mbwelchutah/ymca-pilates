@@ -76,18 +76,34 @@ function formatShortDate(iso: string): string {
 interface JobCardProps {
   job: Job
   isWatching: boolean
-  onToggle: () => void
+  onToggle: () => Promise<void>
   onDelete: () => Promise<void>
   onEdit: () => void
   onSelect: () => void
 }
 
 function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobCardProps) {
+  const [toggling, setToggling]     = useState(false)
+  const [toggleErr, setToggleErr]   = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
   const dayName = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
   const phase = (job.phase ?? 'unknown') as Phase
+
+  const handleToggleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (toggling) return
+    setToggling(true)
+    setToggleErr(null)
+    try {
+      await onToggle()
+    } catch {
+      setToggleErr('Could not update — try again')
+    } finally {
+      setToggling(false)
+    }
+  }
 
   const handleConfirmDelete = async () => {
     setDeleting(true)
@@ -169,16 +185,17 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
 
         {/* Active toggle — stop propagation so it doesn't also select the job */}
         <button
-          onClick={e => { e.stopPropagation(); onToggle() }}
+          onClick={handleToggleClick}
+          disabled={toggling}
           className={`
             mt-0.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold flex-shrink-0
-            transition-colors active:opacity-70
+            transition-colors active:opacity-70 disabled:opacity-40
             ${job.is_active
               ? 'bg-accent-green/10 text-accent-green'
               : 'bg-divider text-text-secondary'}
           `}
         >
-          {job.is_active ? 'On' : 'Off'}
+          {toggling ? '…' : job.is_active ? 'On' : 'Off'}
         </button>
       </div>
 
@@ -186,6 +203,9 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
 
       {/* Footer: edit + delete */}
       <div className="px-4 py-2.5 flex flex-col gap-1.5">
+        {toggleErr && (
+          <p className="text-[12px] text-accent-red">{toggleErr}</p>
+        )}
         {deleteErr && (
           <p className="text-[12px] text-accent-red">{deleteErr}</p>
         )}
@@ -538,10 +558,8 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   const [editingJob, setEditingJob]   = useState<Job | null>(null)
 
   const handleToggle = async (job: Job) => {
-    try {
-      await api.toggleActive(job.id)
-      await refresh()
-    } catch { /* ignored */ }
+    await api.toggleActive(job.id)
+    await refresh()
   }
 
   const handleDelete = async (job: Job) => {

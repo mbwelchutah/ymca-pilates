@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -435,20 +435,49 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Sniper state is global (last-run-wins on the server).  Two triggers require
   // a wipe + fresh fetch:
   //   1. selectedJobId changes — user switched to a different class (Stage 3).
-  //   2. jobFingerprint changes — same job was edited in place.  Check Now
-  //      results are tied to the class definition (title / day / time / date),
-  //      so editing any of those fields makes the old preflight stale.
-  // The snapshot restore effect (keyed on snapshotCheckedAt) will NOT re-fire
-  // when only the fingerprint changes, because snapshotCheckedAt stays the same
-  // value — the server hasn't written a new snapshot.  This keeps the details
-  // cleared until a new Check Now is run for the updated class definition.
+  //   2. jobFingerprint changes to a new non-null value while selectedJobId is
+  //      stable — same job was edited in place (title / day / time / date).
+  //
+  // Stage 8 ref guard: without it, the effect fires twice on initial load:
+  //   render 1 — job not yet in appState → fingerprint is null
+  //   render 2 — appState populates      → fingerprint becomes "Core Pilates|…"
+  // The transition null → value is NOT a user edit; skip it.
+  // Track (selectedJobId, jobFingerprint) from the previous trigger using a ref
+  // so we can tell the difference between an actual edit and first population.
   const jobFingerprint = job
     ? `${job.class_title}|${job.class_time}|${job.day_of_week}|${job.target_date ?? ''}`
     : null
 
+  type Prev = { id: number | null; fp: string | null }
+  const prevRef = useRef<Prev | undefined>(undefined)
+
   useEffect(() => {
     if (selectedJobId == null) return
-    console.log('[class-select] now refreshed — clearing stale readiness for job', selectedJobId, jobFingerprint ?? '')
+
+    const prev = prevRef.current
+    prevRef.current = { id: selectedJobId, fp: jobFingerprint }
+
+    // Always fire when selectedJobId changes (job switch, or first render).
+    const jobSwitched = prev === undefined || prev.id !== selectedJobId
+
+    // Fire for fingerprint change only when:
+    //   • selectedJobId is stable (this render is not a job switch)
+    //   • previous fingerprint was non-null (job was already loaded — real edit)
+    //   • fingerprint actually changed (not noise)
+    const jobEdited =
+      !jobSwitched &&
+      prev !== undefined &&
+      prev.fp !== null &&
+      jobFingerprint !== null &&
+      prev.fp !== jobFingerprint
+
+    if (!jobSwitched && !jobEdited) return
+
+    if (jobSwitched) {
+      console.log('[class-select] job switched — clearing stale readiness for job', selectedJobId)
+    } else {
+      console.log('[class-select] job edited — clearing stale readiness for job', selectedJobId, jobFingerprint)
+    }
     setAuthDetail(null)
     setDiscoveryDetail(null)
     setModalDetail(null)
