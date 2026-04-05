@@ -53,8 +53,10 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const [feedback,       setFeedback]       = useState<Feedback | null>(null)
   const [lockWaiting,    setLockWaiting]    = useState(false)
 
-  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lockTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollTimerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  // After a timeout, suppress automatic re-entry until the user takes an action
+  const suppressAutoLockRef = useRef(false)
 
   const stopLockTimers = useCallback(() => {
     if (lockTimerRef.current) { clearTimeout(lockTimerRef.current);  lockTimerRef.current = null }
@@ -67,8 +69,11 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     setFeedback(null)
   }, [stopLockTimers])
 
-  // T003: separate timeout exit that shows a message instead of clearing to null
+  // Separate timeout exit: keeps buttons enabled and shows an explanatory message
+  // rather than silently clearing feedback. Also suppresses auto-relock so the user
+  // can act even while the server lock may still be set.
   const timeoutExit = useCallback(() => {
+    suppressAutoLockRef.current = true
     stopLockTimers()
     setLockWaiting(false)
     setFeedback({
@@ -88,19 +93,17 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   useEffect(() => () => stopLockTimers(), [stopLockTimers])
 
   const enterLockWait = useCallback(() => {
+    suppressAutoLockRef.current = false   // clear any prior timeout suppression
     setLockWaiting(true)
     setLoginState('idle')
     setRefreshState('idle')
     setClearState('idle')
-    // T003: updated message
     setFeedback({
       text: 'Booking in progress — settings will re-enable automatically',
       cls:  'text-accent-amber',
     })
     stopLockTimers()
-    // T003: use timeoutExit so timeout shows a message
     lockTimerRef.current = setTimeout(timeoutExit, 90_000)
-    // T001: only exit when server truly clears the lock
     pollTimerRef.current = setInterval(() => {
       api.getSessionStatus()
         .then(s => {
@@ -111,9 +114,12 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     }, 10_000)
   }, [stopLockTimers, exitLockWait, timeoutExit])
 
-  // T002: auto-enter lock-wait if page loads while a booking is running
+  // Auto-enter lock-wait if the page is opened while a booking job is running,
+  // unless a previous timeout has already released the buttons.
   useEffect(() => {
-    if (sessionStatus?.locked && !lockWaiting) enterLockWait()
+    if (sessionStatus?.locked && !lockWaiting && !suppressAutoLockRef.current) {
+      enterLockWait()
+    }
   }, [sessionStatus, lockWaiting, enterLockWait])
 
   const handleLogin = async () => {
@@ -237,7 +243,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
         </Card>
 
         <Card padding="sm" className="flex flex-col gap-2">
-          {/* T005: show "Waiting…" on primary button while locked */}
           <button
             onClick={handleLogin}
             disabled={anyBusy}
@@ -245,7 +250,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
           >
             {loginBusy ? 'Logging in…' : lockWaiting ? 'Waiting…' : 'Log in now'}
           </button>
-          {/* T006: duration-150 on all buttons */}
           <button
             onClick={handleRefresh}
             disabled={anyBusy}
@@ -261,7 +265,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
             {clearBusy ? 'Clearing…' : 'Clear session'}
           </button>
 
-          {/* T004: inline spinner + message while lock-waiting; plain message otherwise */}
           {lockWaiting && feedback ? (
             <div className="flex items-center gap-1.5 px-1">
               <svg
