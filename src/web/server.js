@@ -4123,7 +4123,6 @@ const server = http.createServer((req, res) => {
       }
       if (!sniper.bundle) sniper.bundle = {};
       sniper.bundle.session = 'SESSION_UNKNOWN';
-      sniper.updatedAt = now;
       fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
 
       console.log('[settings-clear] Auth state cleared.');
