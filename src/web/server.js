@@ -3880,7 +3880,9 @@ const server = http.createServer((req, res) => {
     // Runs a dedicated login check — login only, no booking pipeline.
     // Does NOT call setLastRun; does NOT update sniper-state.json.
     if (jobState.active) {
-      json({ valid: false, checkedAt: null, detail: 'Bot already running — try again when it finishes', screenshot: null });
+      // Return valid:null (not false) so the UI does not show a red auth-failure
+      // notice — "bot busy" is different from "login failed."
+      json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null });
       return;
     }
     (async () => {
