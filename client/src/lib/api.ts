@@ -216,10 +216,18 @@ export const api = {
     }),
 
   runPreflight: (jobId: number): Promise<{
-    success: boolean
-    status: string
-    message: string
-    sniperState: SniperRunState | null
+    success:         boolean
+    status:          string
+    message:         string
+    sniperState:     SniperRunState | null
+    discoveryDetail: {
+      found:      boolean
+      matched:    string | null
+      score:      string | null
+      signals:    string | null
+      second:     string | null
+      nearMisses: string | null
+    } | null
   }> =>
     apiFetch('/api/preflight', {
       method: 'POST',

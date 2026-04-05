@@ -3872,11 +3872,30 @@ const server = http.createServer((req, res) => {
           }, { preflightOnly: true, dryRun: getDryRun() });
           const { loadState, savePreflightSnapshot } = require('../bot/sniper-readiness');
           savePreflightSnapshot(result.status);
+          const state = loadState();
+
+          // ── Discovery detail ──────────────────────────────────────────────
+          // Pull the most recent DISCOVERY event (success or failure) from the
+          // event log and surface its evidence to the UI.  The event may be from
+          // this run or a prior run — the NowScreen only renders it after a fresh
+          // preflight so it will always be current from the user's perspective.
+          const events = state?.events || [];
+          const discoveryEvt = [...events].reverse().find(e => e.phase === 'DISCOVERY');
+          const discoveryDetail = discoveryEvt ? {
+            found:      !discoveryEvt.failureType,
+            matched:    discoveryEvt.evidence?.matched   ?? null,
+            score:      discoveryEvt.evidence?.score     ?? null,
+            signals:    discoveryEvt.evidence?.signals   ?? null,
+            second:     discoveryEvt.evidence?.second    ?? null,
+            nearMisses: discoveryEvt.evidence?.nearMisses ?? null,
+          } : null;
+
           json({
-            success:     result.status === 'success',
-            status:      result.status,
-            message:     result.message,
-            sniperState: loadState(),
+            success:         result.status === 'success',
+            status:          result.status,
+            message:         result.message,
+            sniperState:     state,
+            discoveryDetail,
           });
         } catch (err) {
           console.error('[preflight] error:', err.message);

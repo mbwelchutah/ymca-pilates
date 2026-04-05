@@ -243,20 +243,26 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
 // ── Readiness row sub-component ────────────────────────────────────────────────
 
 function ReadinessRow({
-  label, value, dotColor, last,
+  label, value, dotColor, last, detail,
 }: {
-  label: string
-  value: string
-  dotColor: DotColor
-  last?: boolean
+  label:     string
+  value:     string
+  dotColor:  DotColor
+  last?:     boolean
+  detail?:   string
 }) {
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${!last ? 'border-b border-divider' : ''}`}>
-      <span className="text-[14px] text-text-secondary">{label}</span>
-      <div className="flex items-center gap-2">
-        <StatusDot color={dotColor} />
-        <span className="text-[14px] font-medium text-text-primary">{value}</span>
+    <div className={`px-4 py-3 ${!last ? 'border-b border-divider' : ''}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-[14px] text-text-secondary">{label}</span>
+        <div className="flex items-center gap-2">
+          <StatusDot color={dotColor} />
+          <span className="text-[14px] font-medium text-text-primary">{value}</span>
+        </div>
       </div>
+      {detail && (
+        <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{detail}</p>
+      )}
     </div>
   )
 }
@@ -553,6 +559,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
 
+  // Discovery detail — populated after Check Now; shows matched text / near misses.
+  type DiscoveryDetail = {
+    found:      boolean
+    matched:    string | null
+    score:      string | null
+    signals:    string | null
+    second:     string | null
+    nearMisses: string | null
+  }
+  const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
+
   const handleCheckNow = async () => {
     if (!job || preflightRunning || sessionStatus?.locked) return
     setPreflightRunning(true)
@@ -560,6 +577,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       const result = await api.runPreflight(job.id)
       if (result.sniperState) setSniperRunState(result.sniperState)
       setPreflightStatus(result.status ?? null)
+      if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
     } catch { setPreflightStatus('error') }
     finally { setPreflightRunning(false) }
   }
@@ -895,6 +913,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     label="Discovery"
                     value={DISCOVERY_LABEL[bundle!.discovery] ?? bundle!.discovery}
                     dotColor={readinessDotColor(bundle!.discovery)}
+                    detail={(() => {
+                      if (!discoveryDetail) return undefined
+                      if (discoveryDetail.found) {
+                        // "7:45 a – 8:45 a Core Pilates · title, time, instr (13)"
+                        const parts: string[] = []
+                        if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
+                        const meta: string[] = []
+                        if (discoveryDetail.signals) meta.push(discoveryDetail.signals)
+                        if (discoveryDetail.score)   meta.push(`score ${discoveryDetail.score}`)
+                        if (meta.length) parts.push(`(${meta.join(', ')})`)
+                        return parts.join(' · ')
+                      } else {
+                        // Not found — show near misses if any
+                        if (discoveryDetail.nearMisses) return `Near: ${discoveryDetail.nearMisses}`
+                        return 'Class not visible on this day\'s schedule'
+                      }
+                    })()}
                   />
                   {bundle!.modal !== undefined && bundle!.modal !== 'MODAL_NOT_TESTED' && (
                     <ReadinessRow
