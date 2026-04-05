@@ -1312,11 +1312,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </Card>
         )}
 
-        {/* ── Secondary actions ───────────────────────────────────── */}
-        <SecondaryButton onClick={handlePauseResume} className="w-full">
-          {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
-        </SecondaryButton>
-
+        {/* ── Contextual action: Book again ───────────────────────── */}
         {isStaleBooking && job && (
           <SecondaryButton
             onClick={handleBookAgain}
@@ -1326,6 +1322,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             {resetting ? 'Resetting…' : 'Book again'}
           </SecondaryButton>
         )}
+
+        {/* ── Pause / Resume — quiet text link (Stage 7) ──────────── */}
+        <div className="flex justify-center pb-2">
+          <button
+            onClick={handlePauseResume}
+            className={
+              appState.schedulerPaused
+                ? 'text-[13px] font-medium text-accent-amber active:opacity-60'
+                : 'text-[12px] text-text-muted active:opacity-50'
+            }
+          >
+            {appState.schedulerPaused ? 'Resume scheduler' : 'Pause scheduler'}
+          </button>
+        </div>
       </ScreenContainer>
     </>
   )
