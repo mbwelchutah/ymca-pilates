@@ -502,6 +502,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
 
+  // ── Check Now (preflight) ──────────────────────────────────────────────────
+  const [preflightRunning, setPreflightRunning] = useState(false)
+
+  const handleCheckNow = async () => {
+    if (!job || preflightRunning || sessionStatus?.locked) return
+    setPreflightRunning(true)
+    try {
+      const result = await api.runPreflight(job.id)
+      if (result.sniperState) setSniperRunState(result.sniperState)
+    } catch { /* swallow */ }
+    finally { setPreflightRunning(false) }
+  }
+
   if (loading) {
     return (
       <>
@@ -607,6 +620,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               <p className={`text-[13px] font-medium ${blockedIsAuthWarn ? 'text-accent-amber' : 'text-accent-red'}`}>
                 {blocked}
               </p>
+            </div>
+          )}
+
+          {/* Check Now button — preflight trigger on the active class card */}
+          {job && (
+            <div className="mt-3 pt-3 border-t border-divider">
+              <button
+                onClick={handleCheckNow}
+                disabled={preflightRunning || (sessionStatus?.locked ?? false)}
+                className={`w-full py-2.5 rounded-xl text-[15px] font-semibold transition-opacity
+                  ${preflightRunning || (sessionStatus?.locked ?? false)
+                    ? 'bg-divider text-text-muted opacity-60'
+                    : 'bg-accent-blue/10 text-accent-blue active:opacity-70'
+                  }`}
+              >
+                {preflightRunning ? 'Checking…' : 'Check Now'}
+              </button>
             </div>
           )}
         </Card>

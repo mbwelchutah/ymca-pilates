@@ -1,0 +1,161 @@
+Implement a staged preflight UX update.
+
+Goal:
+Make preflight easier and more immediate by moving the primary trigger from Tools onto the active class card / Now screen.
+
+Product rule:
+Preflight is operationally critical, so it should be launched from the current target class on Now.
+Detailed logs and evidence should remain in Tools.
+
+STRICT RULES
+- Keep the app runnable after every stage
+- Do not redesign the entire app
+- Do not remove detailed preflight diagnostics from Tools
+- Do not clutter the Now screen
+- Stop after each stage and summarize exactly what changed
+
+================================
+STAGE 1 — ADD PREFLIGHT BUTTON TO NOW CLASS CARD
+================================
+
+Goal:
+Place a clear, immediate preflight trigger on the active class card / Now mission area.
+
+Tasks:
+1. Add a primary action on Now for the currently targeted class:
+   Preferred label: "Check Now"
+   Acceptable alternatives: "Run Preflight" or "Verify Class"
+
+2. Place it:
+   - on the active class card
+   - or directly below the hero card
+   - but clearly associated with the current target class
+
+3. Keep the button visually important but not overwhelming
+
+4. Do NOT remove Tools preflight yet
+
+After Stage 1:
+Stop and summarize:
+- where the button was added
+- what label was used
+- what logic it currently triggers
+
+================================
+STAGE 2 — SHOW PREFLIGHT RESULT ON THE CLASS CARD
+================================
+
+Goal:
+Surface the result immediately where the user triggered it.
+
+Tasks:
+1. After Check Now runs, show a concise result on the Now class card such as:
+   - Preflight passed
+   - Login required
+   - Class not found
+   - Action blocked
+   - Modal issue
+
+2. Keep this concise and human-readable
+3. Do not show raw debug details here
+4. Keep detailed evidence in Tools
+
+After Stage 2:
+Stop and summarize:
+- what result states are shown on the class card
+- how they map from existing readiness/failure states
+
+================================
+STAGE 3 — MAKE PREFLIGHT FEEL IMMEDIATE AND RELIABLE
+================================
+
+Goal:
+Reduce friction and make preflight feel responsive.
+
+Tasks:
+1. When Check Now is tapped:
+   - immediately show running state on the button/card
+   - disable repeated taps until the run completes
+   - show a subtle spinner or "Checking…"
+2. When preflight completes:
+   - restore the button
+   - show concise result
+3. If another booking/preflight lock is active:
+   - show calm message
+   - do not let the user spam the button
+
+After Stage 3:
+Stop and summarize:
+- how running state is shown
+- how repeat taps are prevented
+- how lock conflicts are handled
+
+================================
+STAGE 4 — KEEP TOOLS AS DEEP INSPECTION
+================================
+
+Goal:
+Clarify the split between Now and Tools.
+
+Tasks:
+1. Keep detailed preflight artifacts in Tools:
+   - phase traces
+   - screenshots
+   - failure reason
+   - selector/action evidence
+2. From the Now result, optionally allow a lightweight path to inspect deeper details in Tools
+3. Do not duplicate giant logs onto Now
+
+After Stage 4:
+Stop and summarize:
+- what remains in Tools
+- what is now shown on Now only
+
+================================
+STAGE 5 — OPTIONAL SECONDARY ACTIONS ON CLASS CARD
+================================
+
+Goal:
+Support fast operations from the current target card.
+
+Tasks:
+1. Evaluate adding one or both as secondary actions on the Now class card:
+   - Dry Run
+   - Refresh Session / Verify Session
+2. Keep them secondary to Check Now
+3. Avoid clutter
+
+Important:
+Only keep these if they improve the mission workflow.
+Do not overload the card.
+
+After Stage 5:
+Stop and summarize:
+- what secondary actions were added
+- whether the card stayed clean
+
+FINAL RULES
+
+Do not:
+- bury preflight only in Tools
+- remove Tools diagnostics
+- clutter the Now screen with debug detail
+- redesign the whole app in this pass
+
+Do:
+- make preflight immediate
+- attach it to the active class card
+- keep result feedback local to the class card
+- preserve deep inspection in Tools
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
