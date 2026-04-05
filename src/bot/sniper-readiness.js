@@ -119,9 +119,26 @@ function createRunState(jobId) {
     // in tick.js always reflects when the session actually failed, not when
     // the last skip event was written.
     authBlockedAt:  null,
+    // Timing data recorded by the bot during sniper / booking runs.
+    // null when no timing was captured (e.g. preflight-only or early-exit runs).
+    timing:         null,
     events:         [],
     updatedAt:      new Date().toISOString(),
   };
+}
+
+// Stores timing measurements captured during a run.
+// data shape: {
+//   bookingOpenAt:      ISO string — when the booking window was scheduled to open
+//   cardFoundAt:        ISO string | null — when the target class card appeared
+//   actionClickAt:      ISO string | null — when Register/Waitlist was clicked
+//   openToCardMs:       number | null — ms between booking open and card appearing
+//   openToClickMs:      number | null — ms between booking open and action click
+//   pollAttemptsPostOpen: number — how many tab re-clicks happened after window opened
+// }
+function recordTiming(state, data) {
+  state.timing    = data;
+  state.updatedAt = new Date().toISOString();
 }
 
 // Advances the current phase label (informational only — does not change bundle).
@@ -245,6 +262,7 @@ function emitTickSkip(jobId, reason, message) {
 module.exports = {
   createRunState,
   advance,
+  recordTiming,
   emitEvent,
   emitSuccess,
   emitTickSkip,

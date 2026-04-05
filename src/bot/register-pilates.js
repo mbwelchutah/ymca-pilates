@@ -8,7 +8,7 @@ const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 const { recordFailure }  = require('../db/failures');
 const {
-  createRunState, advance, emitEvent, emitSuccess, saveState,
+  createRunState, advance, recordTiming, emitEvent, emitSuccess, saveState,
 } = require('./sniper-readiness');
 
 // Maps modal-verification reasonTag → structured failure reason code.
@@ -71,6 +71,16 @@ async function runBookingJob(job, opts = {}) {
 
   // ── Readiness state for this run (taxonomy integration) ─────────────────────
   const _state = createRunState(job.id || job.jobId || null);
+
+  // ── Timing capture — filled in during the sniper poll and action phases ──────
+  // Written to _state.timing at the end of the run so it persists to the UI.
+  const _tc = {
+    bookingOpenAt:        null, // ISO: when booking window was scheduled to open
+    cardFoundAt:          null, // ISO: when the class card appeared after open
+    actionClickAt:        null, // ISO: when Register/Waitlist was actually clicked
+    pollAttemptsPostOpen: 0,    // tab re-clicks that happened at or after open time
+  };
+
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
   const DAY_SHORT = {
     Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
@@ -852,15 +862,19 @@ async function runBookingJob(job, opts = {}) {
         bwOpen = null;
       }
 
-      const POLL_LEAD_MS    = 15 * 60 * 1000; // start polling if open is ≤15 min away
-      const POLL_TIMEOUT_MS = 20 * 60 * 1000; // give up 20 min after open
-      const POLL_SLEEP_MS   =  5 * 1000;      // check every 5 seconds once open
-      const msUntilOpen     = bwOpen ? (bwOpen.getTime() - Date.now()) : Infinity;
+      const POLL_LEAD_MS       = 15 * 60 * 1000; // start polling if open is ≤15 min away
+      const POLL_TIMEOUT_MS    = 20 * 60 * 1000; // give up 20 min after open
+      const POLL_PRE_SLEEP_MS  =  5 * 1000;      // threshold: enter active poll within 5s of open
+      const POLL_POST_SLEEP_MS =  2 * 1000;      // retry every 2s once window is open
+      const msUntilOpen        = bwOpen ? (bwOpen.getTime() - Date.now()) : Infinity;
 
       if (bwOpen && msUntilOpen < POLL_LEAD_MS) {
+        // ── Record when the booking window is expected to open ────────────────
+        _tc.bookingOpenAt = bwOpen.toISOString();
+
         const openStr = bwOpen.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', second: '2-digit' });
         console.log(`\n⏳ Booking window opens at ${openStr} PT (${Math.round(msUntilOpen / 1000)}s away) — entering hold-and-poll mode.`);
-        console.log(`   Will re-click "${pollTabText}" tab every 5 s until class appears or 20 min after open.\n`);
+        console.log(`   Will re-click "${pollTabText}" tab every ${POLL_POST_SLEEP_MS / 1000}s once open, until class appears or ${POLL_TIMEOUT_MS / 60000} min after open.\n`);
 
         const pollDeadline = bwOpen.getTime() + POLL_TIMEOUT_MS;
         let attempt = 0;
@@ -869,7 +883,7 @@ async function runBookingJob(job, opts = {}) {
           attempt++;
           const msLeft = bwOpen.getTime() - Date.now();
 
-          if (msLeft > POLL_SLEEP_MS) {
+          if (msLeft > POLL_PRE_SLEEP_MS) {
             // Still before open — sleep in chunks (wake up 1 s early to be ready)
             const sleepMs = Math.min(msLeft - 1000, 10000); // max 10 s sleep chunk
             console.log(`  [poll #${attempt}] ${Math.round(msLeft / 1000)}s until open — sleeping ${Math.round(sleepMs / 1000)}s...`);
@@ -878,6 +892,7 @@ async function runBookingJob(job, opts = {}) {
           }
 
           // At or past opening time: re-click the tab and scan
+          _tc.pollAttemptsPostOpen++;
           console.log(`  [poll #${attempt}] Clicking "${pollTabText}" tab (${msLeft > 0 ? Math.round(msLeft / 1000) + 's before open' : Math.round(-msLeft / 1000) + 's after open'})...`);
           try {
             await dayTabs.nth(pollTabIndex).click();
@@ -889,10 +904,11 @@ async function runBookingJob(job, opts = {}) {
           await page.waitForTimeout(2000); // let Bubble.io re-render
           targetCard = await findTargetCard();
           if (targetCard) {
+            _tc.cardFoundAt = new Date().toISOString();
             console.log(`\n✅ Class appeared on poll attempt #${attempt} — proceeding to register!\n`);
           } else {
-            console.log(`  [poll #${attempt}] Not yet visible — waiting ${POLL_SLEEP_MS / 1000}s...`);
-            await page.waitForTimeout(POLL_SLEEP_MS);
+            console.log(`  [poll #${attempt}] Not yet visible — waiting ${POLL_POST_SLEEP_MS / 1000}s...`);
+            await page.waitForTimeout(POLL_POST_SLEEP_MS);
           }
         }
 
@@ -1213,6 +1229,7 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         }
+        _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
         console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'}`);
         // ── POINT 6: post_click — confirm registration took effect ─────────
@@ -1242,6 +1259,7 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         }
+        _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
         console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
         // ── POINT 6: post_click — confirm waitlist enrollment took effect ──
@@ -1425,6 +1443,19 @@ async function runBookingJob(job, opts = {}) {
     console.error('❌ Error:', err.message);
     return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
+    // ── Compute and persist timing deltas ────────────────────────────────────
+    if (_tc.bookingOpenAt) {
+      const openMs = new Date(_tc.bookingOpenAt).getTime();
+      recordTiming(_state, {
+        bookingOpenAt:        _tc.bookingOpenAt,
+        cardFoundAt:          _tc.cardFoundAt,
+        actionClickAt:        _tc.actionClickAt,
+        openToCardMs:         _tc.cardFoundAt   ? (new Date(_tc.cardFoundAt).getTime()   - openMs) : null,
+        openToClickMs:        _tc.actionClickAt ? (new Date(_tc.actionClickAt).getTime() - openMs) : null,
+        pollAttemptsPostOpen: _tc.pollAttemptsPostOpen,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
     saveState(_state);
     if (browser) await browser.close();
   }

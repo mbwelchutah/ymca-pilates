@@ -2,6 +2,15 @@ import type { Job, AppState, ScrapedClass } from '../types'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
 
+export interface SniperTiming {
+  bookingOpenAt:        string           // ISO — when the booking window was scheduled to open
+  cardFoundAt:          string | null    // ISO — when the class card appeared in the poll loop
+  actionClickAt:        string | null    // ISO — when Register/Waitlist was clicked
+  openToCardMs:         number | null    // ms: booking open → class card appeared
+  openToClickMs:        number | null    // ms: booking open → action button clicked
+  pollAttemptsPostOpen: number           // tab re-clicks that happened at or after open time
+}
+
 export interface SniperRunState {
   runId:          string | null
   jobId:          number | null
@@ -9,6 +18,7 @@ export interface SniperRunState {
   bundle:         ReadinessBundle
   sniperState:    SniperState
   authBlockedAt:  string | null   // set by real booking runs; never by skip events
+  timing:         SniperTiming | null
   events:         SniperEvent[]
   updatedAt:      string | null
 }

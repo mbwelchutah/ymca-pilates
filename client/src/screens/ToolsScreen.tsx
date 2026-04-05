@@ -5,7 +5,7 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import type { AppState } from '../types'
-import type { SniperRunState } from '../lib/api'
+import type { SniperRunState, SniperTiming } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
@@ -209,6 +209,42 @@ function EventDot({ hasFailure }: { hasFailure: boolean }) {
   )
 }
 
+// ── Timing helpers ─────────────────────────────────────────────────────────────
+
+function fmtDelay(ms: number | null | undefined): string {
+  if (ms == null) return '—'
+  if (ms < 0)     return `${Math.round(-ms / 100) / 10}s early`
+  if (ms < 1000)  return `${ms}ms`
+  return `${Math.round(ms / 100) / 10}s`
+}
+
+function TimingRow({ timing }: { timing: SniperTiming }) {
+  const hasData = timing.openToCardMs != null || timing.openToClickMs != null
+  if (!hasData && timing.pollAttemptsPostOpen === 0) return null
+  return (
+    <div className="px-4 py-2 border-b border-divider bg-bg-secondary/40">
+      <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1.5">Sniper Timing</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {timing.openToCardMs != null && (
+          <span className="text-[11px] text-text-secondary">
+            Open → Card: <span className="font-semibold text-text-primary">{fmtDelay(timing.openToCardMs)}</span>
+          </span>
+        )}
+        {timing.openToClickMs != null && (
+          <span className="text-[11px] text-text-secondary">
+            Open → Click: <span className="font-semibold text-text-primary">{fmtDelay(timing.openToClickMs)}</span>
+          </span>
+        )}
+        {timing.pollAttemptsPostOpen > 0 && (
+          <span className="text-[11px] text-text-secondary">
+            Polls after open: <span className="font-semibold text-text-primary">{timing.pollAttemptsPostOpen}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Last-run events section ────────────────────────────────────────────────────
 
 function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | null }) {
@@ -260,6 +296,9 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
           Action: {ACTION_LABEL[bundle.action]}
         </span>
       </div>
+
+      {/* Timing row — only shown when sniper poll data is available */}
+      {sniperRunState.timing && <TimingRow timing={sniperRunState.timing} />}
 
       {/* Event rows */}
       {events.map((ev, i) => {
