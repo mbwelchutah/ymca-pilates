@@ -4302,11 +4302,16 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
     // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.
-    const { getRecentFailures, getFailureSummary } = require('../db/failures');
+    const { getRecentFailures, getFailureSummary, getFailureTrends } = require('../db/failures');
     const fsM = require('fs'), pathM = require('path');
 
     const dbRecent  = getRecentFailures(20);
     const dbSummary = getFailureSummary();
+    const now       = Date.now();
+    const trends = {
+      h24: getFailureTrends({ sinceIso: new Date(now - 24 * 60 * 60 * 1000).toISOString() }),
+      d7:  getFailureTrends({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() }),
+    };
 
     // Build summary maps from DB data.
     const summaryByReason = {};
@@ -4345,7 +4350,7 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase });
+    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends });
 
   } else if (req.method === 'GET' && path === '/api/scraped-classes') {
     const db   = openDb();

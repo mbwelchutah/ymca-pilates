@@ -93,6 +93,10 @@ export const api = {
     }>
     summary:  Record<string, number>
     by_phase: Record<string, number>
+    trends: {
+      h24: { byReason: Array<{ reason: string; count: number }>; byPhase: Array<{ phase: string; count: number }>; total: number }
+      d7:  { byReason: Array<{ reason: string; count: number }>; byPhase: Array<{ phase: string; count: number }>; total: number }
+    }
   }> => apiFetch('/api/failures'),
 
   getScrapedClasses: (): Promise<{ classes: ScrapedClass[] }> =>

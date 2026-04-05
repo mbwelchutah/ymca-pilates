@@ -95,7 +95,7 @@ function getRecentFailures(limit = 20) {
 }
 
 /**
- * Return aggregated counts:
+ * Return all-time aggregated counts:
  *   byReason  — [{ reason, count }] sorted by count desc
  *   byPhase   — [{ phase,  count }] sorted by count desc
  */
@@ -111,4 +111,23 @@ function getFailureSummary() {
   return { byReason, byPhase };
 }
 
-module.exports = { recordFailure, getRecentFailures, getFailureSummary };
+/**
+ * Return windowed aggregates for a given time window.
+ *
+ * @param {{ sinceIso: string }} opts  ISO timestamp — only failures at or after this time are included.
+ * @returns {{ byReason: Array<{reason:string,count:number}>, byPhase: Array<{phase:string,count:number}>, total: number }}
+ */
+function getFailureTrends({ sinceIso }) {
+  const db = openDb();
+  const byReason = db.prepare(
+    `SELECT reason, COUNT(*) AS count FROM failures WHERE occurred_at >= ? GROUP BY reason ORDER BY count DESC`
+  ).all(sinceIso);
+  const byPhase = db.prepare(
+    `SELECT phase, COUNT(*) AS count FROM failures WHERE occurred_at >= ? GROUP BY phase ORDER BY count DESC`
+  ).all(sinceIso);
+  const total = byReason.reduce((s, r) => s + r.count, 0);
+  db.close();
+  return { byReason, byPhase, total };
+}
+
+module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends };
