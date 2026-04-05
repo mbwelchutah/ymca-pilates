@@ -1377,9 +1377,10 @@ async function runBookingJob(job, opts = {}) {
           emitEvent(_state, 'MODAL', 'MODAL_NOT_OPENED',
             `Preflight: modal unreachable — ${err.message.split('\n')[0]}`, {
             evidence: {
-              url:          (() => { try { return page.url(); } catch { return ''; } })(),
-              error:        err.message.split('\n')[0],
+              url:            (() => { try { return page.url(); } catch { return ''; } })(),
+              error:          err.message.split('\n')[0],
               candidateLabel,
+              screenshot:     screenshotPath ? path.basename(screenshotPath) : null,
             }
           });
         }
@@ -1516,9 +1517,13 @@ async function runBookingJob(job, opts = {}) {
             }
           }
         }
-        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
-        _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
+        // Capture screenshot BEFORE emitting event so the filename is available
+        // as evidence in the Tools timeline (e.g. "preflight-auth-fail-<ts>.png").
         await snap('preflight-auth-fail');
+        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register', {
+          evidence: { screenshot: screenshotPath ? path.basename(screenshotPath) : null }
+        });
+        _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
       } else if (hasRegister) {
         _state.bundle.action = 'ACTION_READY';

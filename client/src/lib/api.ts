@@ -225,6 +225,13 @@ export const api = {
       provider: string | null    // 'Daxko' | 'FamilyWorks'
       detail:   string | null
     } | null
+    modalDetail: {
+      verdict:        'reachable' | 'login_required' | 'blocked'
+      detail:         string | null
+      screenshot:     string | null       // filename in screenshots/ dir; null on success
+      buttonsVisible: string[] | null     // e.g. ["Register", "Cancel"]
+      modalPreview:   string | null       // text snippet of modal content
+    } | null
     discoveryDetail: {
       found:      boolean
       matched:    string | null

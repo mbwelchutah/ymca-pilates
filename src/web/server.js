@@ -3900,6 +3900,19 @@ const server = http.createServer((req, res) => {
             nearMisses: discoveryEvt.evidence?.nearMisses ?? null,
           } : null;
 
+          // Modal detail — whether the class modal could be opened after card click.
+          // Failure screenshots are stored on disk and linked via evidence.screenshot.
+          const modalEvt = [...events].reverse().find(e => e.phase === 'MODAL');
+          const modalDetail = modalEvt ? {
+            verdict:        modalEvt.failureType === 'MODAL_NOT_OPENED'     ? 'blocked'
+                          : modalEvt.failureType === 'MODAL_LOGIN_REQUIRED' ? 'login_required'
+                          :                                                   'reachable',
+            detail:         modalEvt.message            ?? null,
+            screenshot:     modalEvt.evidence?.screenshot ?? null,
+            buttonsVisible: modalEvt.evidence?.buttonsVisible ?? null,
+            modalPreview:   modalEvt.evidence?.modalPreview  ?? null,
+          } : null;
+
           json({
             success:         result.status === 'success',
             status:          result.status,
@@ -3907,6 +3920,7 @@ const server = http.createServer((req, res) => {
             sniperState:     state,
             authDetail,
             discoveryDetail,
+            modalDetail,
           });
         } catch (err) {
           console.error('[preflight] error:', err.message);

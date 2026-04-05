@@ -586,11 +586,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
 
-  // Auth + Discovery details — populated after Check Now; cleared when next check starts.
+  // Auth, Modal, and Discovery details — populated after Check Now; persist for the session.
   type AuthDetail = {
     verdict:  'ready' | 'login_required' | 'session_expired'
     provider: string | null
     detail:   string | null
+  }
+  type ModalDetail = {
+    verdict:        'reachable' | 'login_required' | 'blocked'
+    detail:         string | null
+    screenshot:     string | null
+    buttonsVisible: string[] | null
+    modalPreview:   string | null
   }
   type DiscoveryDetail = {
     found:      boolean
@@ -601,6 +608,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     nearMisses: string | null
   }
   const [authDetail,      setAuthDetail]      = useState<AuthDetail | null>(null)
+  const [modalDetail,     setModalDetail]     = useState<ModalDetail | null>(null)
   const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
 
   const handleCheckNow = async () => {
@@ -611,6 +619,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       if (result.sniperState) setSniperRunState(result.sniperState)
       setPreflightStatus(result.status ?? null)
       if (result.authDetail)      setAuthDetail(result.authDetail)
+      if (result.modalDetail)     setModalDetail(result.modalDetail)
       if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
       // Re-fetch session-status.json so the Session/Schedule access rows reflect
       // the auth outcome that was just written by the preflight pipeline.
@@ -974,6 +983,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       label="Modal"
                       value={MODAL_LABEL[bundle!.modal] ?? bundle!.modal}
                       dotColor={readinessDotColor(bundle!.modal)}
+                      detail={(() => {
+                        if (!modalDetail) return undefined
+                        if (modalDetail.verdict === 'reachable') {
+                          // Show what buttons were visible in the open modal
+                          const btns = Array.isArray(modalDetail.buttonsVisible)
+                            ? modalDetail.buttonsVisible.join(', ')
+                            : null
+                          return btns ? `Buttons: ${btns}` : 'Modal opened and verified'
+                        }
+                        if (modalDetail.verdict === 'login_required') {
+                          return 'Login to Register shown — schedule access required'
+                        }
+                        // blocked
+                        return modalDetail.detail
+                          ? `Could not open: ${modalDetail.detail}`
+                          : 'Modal did not open after card click'
+                      })()}
                     />
                   )}
                   <ReadinessRow
