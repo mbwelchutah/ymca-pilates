@@ -23,6 +23,8 @@ export default function App() {
   const handleSelectJob = (id: number) => {
     setClientSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
+    setTab('now')
+    localStorage.setItem('mobileTab', 'now')
   }
 
   const effectiveSelectedJobId = clientSelectedJobId ?? state.selectedJobId

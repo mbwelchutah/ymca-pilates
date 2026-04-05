@@ -3895,40 +3895,71 @@ const server = http.createServer((req, res) => {
     });
 
   } else if (req.method === 'POST' && path === '/toggle-active') {
+    const isJsonTa = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', () => {
-      const fields = {};
-      body.split('&').forEach(pair => {
-        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
-        if (k) fields[k] = (v || '').trim();
-      });
-      const id       = parseInt(fields.job_id, 10);
-      const isActive = fields.is_active === '1';
-      if (id) {
-        setJobActive(id, isActive);
-        console.log(`Set job #${id} is_active=${isActive}`);
+      let id, newActive;
+      if (isJsonTa) {
+        try {
+          const parsed = JSON.parse(body);
+          id = parseInt(parsed.id, 10);
+          if (parsed.is_active !== undefined) {
+            newActive = !!parsed.is_active;
+          } else {
+            const existing = id ? getJobById(id) : null;
+            newActive = existing ? !existing.is_active : true;
+          }
+        } catch { id = NaN; newActive = false; }
+      } else {
+        const fields = {};
+        body.split('&').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+          if (k) fields[k] = (v || '').trim();
+        });
+        id       = parseInt(fields.job_id, 10);
+        newActive = fields.is_active === '1';
       }
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('ok');
+      if (id) {
+        setJobActive(id, newActive);
+        console.log(`Set job #${id} is_active=${newActive}`);
+      }
+      if (isJsonTa) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: !!id, is_active: newActive }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+      }
     });
 
   } else if (req.method === 'POST' && path === '/delete-job') {
+    const isJsonDel = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', () => {
-      const fields = {};
-      body.split('&').forEach(pair => {
-        const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
-        if (k) fields[k] = (v || '').trim();
-      });
-      const id = parseInt(fields.job_id, 10);
+      let id;
+      if (isJsonDel) {
+        try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      } else {
+        const fields = {};
+        body.split('&').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => decodeURIComponent(s.replace(/\+/g, ' ')));
+          if (k) fields[k] = (v || '').trim();
+        });
+        id = parseInt(fields.job_id, 10);
+      }
       if (id) {
         deleteJob(id);
-        console.log(`Deleted job #${id} via web UI`);
+        console.log(`Deleted job #${id}`);
       }
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('ok');
+      if (isJsonDel) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: !!id }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+      }
     });
 
   } else if (req.method === 'POST' && path === '/add-job') {
