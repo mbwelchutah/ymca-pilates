@@ -3924,10 +3924,8 @@ const server = http.createServer((req, res) => {
       overall = 'FAMILYWORKS_SESSION_MISSING';
     } else if (daxko === 'DAXKO_READY' && familyworks === 'FAMILYWORKS_READY') {
       overall = 'DAXKO_READY';
-    } else if (daxko !== 'AUTH_UNKNOWN' || familyworks !== 'AUTH_UNKNOWN') {
-      // Partial knowledge — use the most informative non-unknown status
-      overall = daxko !== 'AUTH_UNKNOWN' ? daxko : familyworks;
     }
+    // else: at least one side is AUTH_UNKNOWN → overall stays AUTH_UNKNOWN
 
     // ── Last verified: most recent known timestamp ────────────────────────────
     const candidates = [raw.checkedAt, sniperLastEventAt].filter(Boolean);

@@ -1,4 +1,19 @@
 export type Phase = 'too_early' | 'warmup' | 'sniper' | 'late' | 'unknown'
+
+export type DaxkoStatus      = 'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+export type FamilyWorksStatus= 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_UNKNOWN'
+export type OverallAuthStatus= 'DAXKO_READY' | 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+
+export interface SessionStatus {
+  valid:        boolean | null
+  checkedAt:    string | null
+  detail:       string | null
+  screenshot:   string | null
+  daxko:        DaxkoStatus
+  familyworks:  FamilyWorksStatus
+  overall:      OverallAuthStatus
+  lastVerified: string | null
+}
 export type LastResult =
   | 'booked'
   | 'found_not_open_yet'

@@ -5,15 +5,13 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
-import type { AppState } from '../types'
+import type { AppState, SessionStatus } from '../types'
 import { api } from '../lib/api'
 
 interface SettingsScreenProps {
   appState: AppState
   refresh: () => void
 }
-
-type SessionStatus = Awaited<ReturnType<typeof api.getSessionStatus>>
 
 function daxkoLabel(s: SessionStatus['daxko']): { text: string; cls: string } {
   switch (s) {
@@ -44,16 +42,10 @@ function overallLabel(s: SessionStatus['overall']): { text: string; cls: string 
 function formatVerified(iso: string | null): string {
   if (!iso) return 'Never'
   try {
-    const d = new Date(iso)
-    const now = new Date()
-    const diffMs = now.getTime() - d.getTime()
-    const diffMin = Math.floor(diffMs / 60000)
-    if (diffMin < 1)   return 'Just now'
-    if (diffMin < 60)  return `${diffMin}m ago`
-    const diffH = Math.floor(diffMin / 60)
-    if (diffH < 24)    return `${diffH}h ago`
-    const diffD = Math.floor(diffH / 24)
-    return `${diffD}d ago`
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date(iso))
   } catch {
     return '—'
   }

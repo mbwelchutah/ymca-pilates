@@ -1,4 +1,4 @@
-import type { Job, AppState, ScrapedClass } from '../types'
+import type { Job, AppState, ScrapedClass, SessionStatus } from '../types'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
 
@@ -125,16 +125,7 @@ export const api = {
   getSniperState: (): Promise<SniperRunState> =>
     apiFetch('/api/sniper-state'),
 
-  getSessionStatus: (): Promise<{
-    valid: boolean | null
-    checkedAt: string | null
-    detail: string | null
-    screenshot: string | null
-    daxko: 'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
-    familyworks: 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_UNKNOWN'
-    overall: 'DAXKO_READY' | 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
-    lastVerified: string | null
-  }> => apiFetch('/api/session-status'),
+  getSessionStatus: (): Promise<SessionStatus> => apiFetch('/api/session-status'),
 
   checkSession: (): Promise<{
     valid: boolean | null
