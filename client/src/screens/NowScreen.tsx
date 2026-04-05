@@ -512,15 +512,27 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     message: string
     sniperState: SniperRunState | null
   }): PreflightResult {
-    const ss          = result.sniperState?.sniperState
+    const ss            = result.sniperState?.sniperState
     const sessionBundle = result.sniperState?.bundle?.session
+    const modalBundle   = result.sniperState?.bundle?.modal
     if (ss === 'SNIPER_READY')             return { label: 'Preflight passed',              color: 'green' }
+    // Modal login required — more specific than generic "Session expired"
+    // (MODAL_LOGIN_REQUIRED also sets session=SESSION_EXPIRED, check modal first)
+    if (modalBundle === 'MODAL_LOGIN_REQUIRED')
+                                           return { label: 'Modal login required',          color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_AUTH' && sessionBundle === 'SESSION_EXPIRED')
                                            return { label: 'Session expired',               color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_AUTH')      return { label: 'Login required',                color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_DISCOVERY') return { label: 'Class not found',               color: 'red'   }
+    // Modal blocked — modal could not be opened after card click
+    if (modalBundle === 'MODAL_BLOCKED')   return { label: 'Modal blocked',                 color: 'red'   }
     const disc = result.sniperState?.bundle?.discovery
-    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY') return { label: 'Class found', color: 'green' }
+    // Modal reachable — modal opened and verified, booking window not open yet
+    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY' && modalBundle === 'MODAL_READY')
+                                           return { label: 'Modal reachable',               color: 'green' }
+    // Class found — discovery ready but modal state unknown (Stage 6 fallback)
+    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY')
+                                           return { label: 'Class found',                   color: 'green' }
     if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
     if (sessionBundle === 'SESSION_READY' && disc === 'DISCOVERY_NOT_TESTED')
                                            return { label: 'Session ready',                 color: 'green' }
@@ -533,7 +545,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (result.status === 'locked')             return { label: 'System busy — try later',  color: 'gray'  }
     if (result.message?.toLowerCase().includes('lock')) return { label: 'System busy — try later', color: 'gray' }
     if (result.message?.toLowerCase().includes('session')) return { label: 'Session expired', color: 'amber' }
-    if (result.message?.toLowerCase().includes('modal')) return { label: 'Modal issue',     color: 'red'   }
+    if (result.message?.toLowerCase().includes('modal')) return { label: 'Modal blocked',   color: 'red'   }
     return { label: 'Check failed',   color: 'red' }
   }
 

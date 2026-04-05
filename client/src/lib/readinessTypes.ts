@@ -23,6 +23,15 @@ export type ActionReadiness =
   | 'ACTION_NOT_TESTED'  // No check has been performed yet
   | 'ACTION_BLOCKED'     // Button missing, requires login, or ambiguous
 
+// ── Modal readiness ───────────────────────────────────────────────────────────
+// Whether the target class modal can be opened and its content read.
+
+export type ModalReadiness =
+  | 'MODAL_READY'           // Modal opened and content verified (time + instructor)
+  | 'MODAL_NOT_TESTED'      // No modal check has been performed yet
+  | 'MODAL_BLOCKED'         // Modal could not be opened after card click
+  | 'MODAL_LOGIN_REQUIRED'  // Modal shows "Login to Register" — session issue
+
 // ── Preflight result ──────────────────────────────────────────────────────────
 // The outcome of a preflight (dry-run discovery) check.
 
@@ -57,5 +66,6 @@ export interface ReadinessBundle {
   session:    SessionReadiness
   discovery:  DiscoveryReadiness
   action:     ActionReadiness
+  modal?:     ModalReadiness
   preflight?: PreflightResult
 }

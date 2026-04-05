@@ -1,5 +1,5 @@
 import type { FailureType } from './failureTypes'
-import type { SessionReadiness, DiscoveryReadiness, ActionReadiness } from './readinessTypes'
+import type { SessionReadiness, DiscoveryReadiness, ActionReadiness, ModalReadiness } from './readinessTypes'
 
 // ── Readiness impact ──────────────────────────────────────────────────────────
 // A partial readiness bundle describing which dimensions a failure affects.
@@ -9,6 +9,7 @@ export interface ReadinessImpact {
   session?:   SessionReadiness
   discovery?: DiscoveryReadiness
   action?:    ActionReadiness
+  modal?:     ModalReadiness
 }
 
 // ── Failure → readiness impact map ───────────────────────────────────────────
@@ -25,7 +26,6 @@ export function failureToReadinessImpact(failureType: FailureType): ReadinessImp
       return { session: 'SESSION_REQUIRED' }
 
     case 'AUTH_SESSION_EXPIRED':
-    case 'MODAL_LOGIN_REQUIRED':
       return { session: 'SESSION_EXPIRED', action: 'ACTION_BLOCKED' }
 
     case 'AUTH_SURFACE_MISMATCH':
@@ -50,12 +50,17 @@ export function failureToReadinessImpact(failureType: FailureType): ReadinessImp
     case 'VERIFY_TITLE_MISMATCH':
       return { discovery: 'DISCOVERY_FAILED' }
 
-    // Modal failures → action layer blocked
+    // Modal failures → modal layer + action layer
     case 'MODAL_NOT_OPENED':
     case 'MODAL_TIMEOUT':
+      return { modal: 'MODAL_BLOCKED', action: 'ACTION_BLOCKED' }
+
+    case 'MODAL_LOGIN_REQUIRED':
+      return { modal: 'MODAL_LOGIN_REQUIRED', session: 'SESSION_EXPIRED', action: 'ACTION_BLOCKED' }
+
     case 'MODAL_ACTION_NOT_FOUND':
     case 'MODAL_ACTION_AMBIGUOUS':
-      return { action: 'ACTION_BLOCKED' }
+      return { modal: 'MODAL_READY', action: 'ACTION_BLOCKED' }
 
     // Action failures → action layer blocked
     case 'ACTION_NOT_FOUND':

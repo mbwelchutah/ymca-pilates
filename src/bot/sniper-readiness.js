@@ -24,8 +24,10 @@ function failureImpact(failureType) {
       return { session: 'SESSION_REQUIRED' };
 
     case 'AUTH_SESSION_EXPIRED':
-    case 'MODAL_LOGIN_REQUIRED':
       return { session: 'SESSION_EXPIRED', action: 'ACTION_BLOCKED' };
+
+    case 'MODAL_LOGIN_REQUIRED':
+      return { modal: 'MODAL_LOGIN_REQUIRED', session: 'SESSION_EXPIRED', action: 'ACTION_BLOCKED' };
 
     case 'AUTH_SURFACE_MISMATCH':
       return { session: 'SESSION_UNKNOWN' };
@@ -48,9 +50,11 @@ function failureImpact(failureType) {
 
     case 'MODAL_NOT_OPENED':
     case 'MODAL_TIMEOUT':
+      return { modal: 'MODAL_BLOCKED', action: 'ACTION_BLOCKED' };
+
     case 'MODAL_ACTION_NOT_FOUND':
     case 'MODAL_ACTION_AMBIGUOUS':
-      return { action: 'ACTION_BLOCKED' };
+      return { modal: 'MODAL_READY', action: 'ACTION_BLOCKED' };
 
     case 'ACTION_NOT_FOUND':
     case 'ACTION_TIMEOUT':
@@ -112,6 +116,7 @@ function createRunState(jobId) {
       session:      'SESSION_UNKNOWN',
       discovery:    'DISCOVERY_NOT_TESTED',
       action:       'ACTION_NOT_TESTED',
+      modal:        'MODAL_NOT_TESTED',
     },
     sniperState:    'SNIPER_WAITING',
     // Set to the event timestamp whenever an auth-block impact is applied by
@@ -167,6 +172,7 @@ function emitEvent(state, phase, failureType, message, extra = {}) {
     if (impact.session)   state.bundle.session   = impact.session;
     if (impact.discovery) state.bundle.discovery = impact.discovery;
     if (impact.action)    state.bundle.action    = impact.action;
+    if (impact.modal)     state.bundle.modal     = impact.modal;
 
     // Record when an auth-block was observed by a real booking run.
     // The scheduler readiness gate uses this field (not updatedAt) so that

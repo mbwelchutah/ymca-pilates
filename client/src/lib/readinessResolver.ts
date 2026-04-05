@@ -4,6 +4,7 @@ import type {
   SessionReadiness,
   DiscoveryReadiness,
   ActionReadiness,
+  ModalReadiness,
   PreflightResult,
 } from './readinessTypes'
 
@@ -14,6 +15,7 @@ export const DEFAULT_READINESS: ReadinessBundle = {
   session:   'SESSION_UNKNOWN',
   discovery: 'DISCOVERY_NOT_TESTED',
   action:    'ACTION_NOT_TESTED',
+  modal:     'MODAL_NOT_TESTED',
 }
 
 // ── Sniper state resolver ─────────────────────────────────────────────────────
@@ -122,6 +124,13 @@ export const ACTION_LABEL: Record<ActionReadiness, string> = {
   ACTION_READY:      'Reachable',
   ACTION_NOT_TESTED: 'Not tested',
   ACTION_BLOCKED:    'Blocked',
+}
+
+export const MODAL_LABEL: Record<ModalReadiness, string> = {
+  MODAL_READY:           'Reachable',
+  MODAL_NOT_TESTED:      'Not tested',
+  MODAL_BLOCKED:         'Blocked',
+  MODAL_LOGIN_REQUIRED:  'Login required',
 }
 
 export const PREFLIGHT_LABEL: Record<PreflightResult, string> = {

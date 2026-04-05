@@ -1373,6 +1373,16 @@ async function runBookingJob(job, opts = {}) {
           context:  { candidateLabel },
         });
         // ─────────────────────────────────────────────────────────────────
+        if (PREFLIGHT_ONLY) {
+          emitEvent(_state, 'MODAL', 'MODAL_NOT_OPENED',
+            `Preflight: modal unreachable — ${err.message.split('\n')[0]}`, {
+            evidence: {
+              url:          (() => { try { return page.url(); } catch { return ''; } })(),
+              error:        err.message.split('\n')[0],
+              candidateLabel,
+            }
+          });
+        }
         return { ok: false, failMsg, reasonTag: 'error', recorded: true };
       }
     }
@@ -1449,6 +1459,21 @@ async function runBookingJob(job, opts = {}) {
     if (PREFLIGHT_ONLY) {
       const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts } = await detectActionButtons(page);
       console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
+
+      // ── Stage 8: Modal Reachability Check ─────────────────────────────────
+      // We reached this gate via a successful attemptClickAndVerify(), which
+      // confirmed the modal opened and showed the expected time + instructor.
+      // Mark modal as reachable and record evidence for Tools before inspecting
+      // which booking buttons are present.
+      _state.bundle.modal = 'MODAL_READY';
+      emitEvent(_state, 'MODAL', null, 'Preflight: modal opened and verified', {
+        evidence: {
+          buttonsVisible: allBtnTexts,
+          modalPreview:   _lastModalPreview || '(preview not captured)',
+          url:            page.url(),
+        }
+      });
+      // ──────────────────────────────────────────────────────────────────────
 
       if (hasLoginBtn) {
         const inlineAuth = await attemptInlineAuth(page);
