@@ -4115,15 +4115,14 @@ const server = http.createServer((req, res) => {
         JSON.stringify({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: now, source: 'clear', detail: 'Session cleared by user' }, null, 2)
       );
 
-      // ── sniper-state.json — reset bundle only, keep events ────────────────
+      // ── sniper-state.json — reset bundle.session only, keep everything else ─
       const sniperPath = pathStatic.join(dataDir, 'sniper-state.json');
       let sniper = {};
       if (fsStatic.existsSync(sniperPath)) {
         try { sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8')); } catch (_) {}
       }
-      sniper.bundle = { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_UNKNOWN', action: 'ACTION_UNKNOWN' };
-      sniper.sniperState = 'SNIPER_UNKNOWN';
-      sniper.authBlockedAt = null;
+      if (!sniper.bundle) sniper.bundle = {};
+      sniper.bundle.session = 'SESSION_UNKNOWN';
       sniper.updatedAt = now;
       fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
 

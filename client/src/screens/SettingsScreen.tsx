@@ -121,6 +121,16 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
       if (result.success) {
         setClearState('done')
         setClearDetail(result.detail ?? 'Session cleared')
+        setSessionStatus({
+          valid:        false,
+          checkedAt:    null,
+          detail:       result.detail ?? null,
+          screenshot:   null,
+          daxko:        result.daxko       ?? 'AUTH_UNKNOWN',
+          familyworks:  result.familyworks ?? 'AUTH_UNKNOWN',
+          overall:      result.overall     ?? 'AUTH_UNKNOWN',
+          lastVerified: result.lastVerified ?? null,
+        })
       } else {
         setClearState('error')
         setClearDetail(result.detail ?? 'Clear failed')
@@ -128,8 +138,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     } catch (e: unknown) {
       setClearState('error')
       setClearDetail(e instanceof Error ? e.message : 'Clear failed unexpectedly')
-    } finally {
-      fetchSessionStatus()
     }
   }
 
