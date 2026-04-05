@@ -108,6 +108,11 @@ function resolveState(bundle, runtime = {}) {
 // ── Run-state lifecycle ───────────────────────────────────────────────────────
 
 function createRunState(jobId) {
+  // Carry forward any existing lastPreflightSnapshot so that booking and
+  // scheduler runs do not erase a user-triggered preflight result that was
+  // saved between runs.  One disk read here is acceptable; createRunState is
+  // called only once at the start of each bot run.
+  const prior = loadState();
   return {
     runId:          new Date().toISOString(),
     jobId:          jobId || null,
@@ -129,6 +134,9 @@ function createRunState(jobId) {
     timing:         null,
     events:         [],
     updatedAt:      new Date().toISOString(),
+    // Persisted across runs so the NowScreen badge survives page refreshes
+    // and scheduler cycles.  Only savePreflightSnapshot() ever writes this.
+    lastPreflightSnapshot: prior?.lastPreflightSnapshot ?? null,
   };
 }
 

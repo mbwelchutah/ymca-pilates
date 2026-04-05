@@ -4546,10 +4546,13 @@ const server = http.createServer((req, res) => {
     const sniperState = loadState();
     json(sniperState || {
       runId: null, jobId: null, phase: null,
-      bundle: { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED' },
+      bundle: { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED', modal: 'MODAL_NOT_TESTED' },
       sniperState: 'SNIPER_WAITING',
+      authBlockedAt: null,
+      timing: null,
       events: [],
       updatedAt: null,
+      lastPreflightSnapshot: null,
     });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
