@@ -1037,13 +1037,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 {preflightRunning ? 'Checking…' : 'Run Check'}
               </button>
 
-              {/* Secondary action: Refresh Session */}
+              {/* Secondary action: Refresh Session — quiet text link (Stage 6) */}
               {!(sessionStatus?.locked ?? false) && !preflightRunning && (
-                <div className="mt-2">
+                <div className="mt-2.5 flex flex-col items-center gap-1">
                   <button
                     onClick={handleVerifySession}
                     disabled={sessionChecking}
-                    className="w-full py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    className="flex items-center gap-1.5 text-[12px] text-text-muted active:opacity-50 disabled:opacity-40"
                   >
                     {sessionChecking && (
                       <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
@@ -1051,29 +1051,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                       </svg>
                     )}
-                    {sessionChecking ? 'Refreshing…' : 'Refresh Session'}
+                    {sessionChecking ? 'Refreshing session…' : 'Refresh session'}
                   </button>
-                </div>
-              )}
 
-              {/* Refresh Session result badge — shown after check completes */}
-              {verifyResult && !sessionChecking && !preflightRunning && (
-                <div className={`mt-2 rounded-xl px-3.5 py-2.5
-                  ${verifyResult.color === 'green' ? 'bg-accent-green/10' :
-                    verifyResult.color === 'amber' ? 'bg-accent-amber/10' :
-                    'bg-accent-red/10'}
-                `}>
-                  <div className="flex items-center gap-2">
-                    <StatusDot color={verifyResult.color} />
-                    <span className={`text-[14px] font-semibold
-                      ${verifyResult.color === 'green' ? 'text-accent-green' :
-                        verifyResult.color === 'amber' ? 'text-accent-amber' :
-                        'text-accent-red'}
-                    `}>
+                  {/* Inline result — single quiet line, no colored box (Stage 6) */}
+                  {verifyResult && !sessionChecking && (
+                    <span className={`text-[11px] ${
+                      verifyResult.color === 'green' ? 'text-accent-green' :
+                      verifyResult.color === 'amber' ? 'text-accent-amber' :
+                      'text-accent-red'
+                    }`}>
                       {verifyResult.label}
+                      {verifyResult.detail ? ` · ${verifyResult.detail}` : ''}
                     </span>
-                  </div>
-                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{verifyResult.detail}</p>
+                  )}
                 </div>
               )}
 
