@@ -657,6 +657,50 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Show the composite badge only when there is something meaningful to say.
   const showComposite = effectivePreflightStatus !== null || Boolean(hasReadinessData)
 
+  // ── Stage 8: Enriched composite detail ─────────────────────────────────────
+  // Replaces the generic composite.detail with the most specific evidence from
+  // per-stage detail objects populated by Check Now.  Falls back to
+  // composite.detail when no stage detail is available (e.g. page refresh).
+  const compositeDetail: string = (() => {
+    switch (composite.status) {
+      case 'COMPOSITE_READY': {
+        const parts: string[] = []
+        const btn = Array.isArray(actionDetail?.buttonsVisible)
+          ? actionDetail!.buttonsVisible.find(b => /register|reserve/i.test(b))
+          : null
+        if (btn) parts.push(`"${btn}" button visible`)
+        const match = discoveryDetail?.matched
+        if (match) parts.push(match.length > 42 ? match.slice(0, 42) + '…' : match)
+        return parts.length > 0 ? parts.join(' · ') : composite.detail
+      }
+
+      case 'COMPOSITE_WAITLIST': {
+        const match = discoveryDetail?.matched
+        const suffix = match ? ` · ${match.length > 36 ? match.slice(0, 36) + '…' : match}` : ''
+        return `Waitlist available — class is full${suffix}`
+      }
+
+      case 'COMPOSITE_LOGIN_REQUIRED':
+        // Modal login-required is more specific than a general session error
+        if (composite.detail.includes('modal') && modalDetail?.detail) return modalDetail.detail
+        return authDetail?.detail ?? composite.detail
+
+      case 'COMPOSITE_CLASS_NOT_FOUND':
+        if (discoveryDetail?.nearMisses) return `No exact match — nearest: ${discoveryDetail.nearMisses}`
+        if (discoveryDetail?.found === false) return 'Class not visible on this day\'s schedule'
+        return composite.detail
+
+      case 'COMPOSITE_ACTION_BLOCKED':
+        return actionDetail?.detail ?? composite.detail
+
+      case 'COMPOSITE_MODAL_ISSUE':
+        return modalDetail?.detail ?? composite.detail
+
+      default:
+        return composite.detail
+    }
+  })()
+
   if (loading) {
     return (
       <>
@@ -867,7 +911,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       </span>
                     )}
                   </div>
-                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{composite.detail}</p>
+                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{compositeDetail}</p>
                 </div>
               )}
 
