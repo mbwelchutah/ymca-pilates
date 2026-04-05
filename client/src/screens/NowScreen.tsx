@@ -528,8 +528,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
             </p>
             <div className="flex items-center gap-1">
               {STEPS.map((step, i) => {
-                const done    = i < stepIdx || (isBooked && i === stepIdx)
-                const current = i === stepIdx && !isBooked
+                // If the phase is `late` and the user is booked, treat Done (index 3)
+                // as the effective step so the bar reaches "Done" green.
+                const effectiveStepIdx = (phase === 'late' && isBooked) ? 3 : stepIdx
+                const done    = i < effectiveStepIdx || (isBooked && i === effectiveStepIdx)
+                const current = i === effectiveStepIdx && !isBooked
                 // late + not booked: the window closed without a booking.
                 // Show the current step (Booking) muted, not blue, so it reads
                 // as "window passed" rather than "actively booking".
