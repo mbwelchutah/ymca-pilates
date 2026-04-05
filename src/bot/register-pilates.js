@@ -1457,7 +1457,7 @@ async function runBookingJob(job, opts = {}) {
     // actually clicking Register/Waitlist.  Returns immediately after sniffing
     // which buttons are present in the already-open modal.
     if (PREFLIGHT_ONLY) {
-      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts } = await detectActionButtons(page);
+      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy } = await detectActionButtons(page);
       console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
 
       // ── Stage 8: Modal Reachability Check ─────────────────────────────────
@@ -1473,6 +1473,23 @@ async function runBookingJob(job, opts = {}) {
           url:            page.url(),
         }
       });
+      // ──────────────────────────────────────────────────────────────────────
+
+      // ── Stage 9: Action Detection Check ───────────────────────────────────
+      // Classify what booking action (if any) is available in the open modal,
+      // and record the result as evidence for Tools — without clicking anything.
+      const _hasCancelOnly = allBtnTexts.some(t => /\bcancel\b/i.test(t))
+        && !hasRegister && !hasWaitlist && !hasLoginBtn;
+      const _actionState = hasLoginBtn    ? 'LOGIN_REQUIRED'
+        : hasRegister
+            ? (allBtnTexts.some(t => /\breserve\b/i.test(t)) ? 'RESERVE_AVAILABLE' : 'REGISTER_AVAILABLE')
+        : hasWaitlist   ? 'WAITLIST_AVAILABLE'
+        : _hasCancelOnly ? 'CANCEL_ONLY'
+        : 'UNKNOWN_ACTION';
+      emitEvent(_state, 'ACTION', null, `Preflight: detected action state — ${_actionState}`, {
+        evidence: { actionState: _actionState, buttonsVisible: allBtnTexts, registerStrategy, waitlistStrategy }
+      });
+      console.log('[preflight] Action state:', _actionState);
       // ──────────────────────────────────────────────────────────────────────
 
       if (hasLoginBtn) {
@@ -1495,7 +1512,7 @@ async function runBookingJob(job, opts = {}) {
               emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: Waitlist only after inline auth');
               _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible after inline auth' });
               await snap('preflight-waitlist-after-auth');
-              return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
+              return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
             }
           }
         }
@@ -1515,11 +1532,17 @@ async function runBookingJob(job, opts = {}) {
         emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: only Waitlist button visible — class is full');
         _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible (class full)' });
         await snap('preflight-waitlist');
-        return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
+        return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
       } else {
-        emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
-        await snap('preflight-not-open');
-        return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
+        if (_hasCancelOnly) {
+          emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: only Cancel button visible — user may already be registered');
+          await snap('preflight-cancel-only');
+          return logRunSummary({ status: 'action_blocked', message: 'Preflight: Cancel button only — may already be registered or class blocked', screenshotPath });
+        } else {
+          emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
+          await snap('preflight-not-open');
+          return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
+        }
       }
     }
     // ──────────────────────────────────────────────────────────────────────────
