@@ -13,6 +13,7 @@ import { api } from '../lib/api'
 import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL,
 } from '../lib/readinessResolver'
+import { computeConfidence } from '../lib/confidence'
 
 interface NowScreenProps {
   appState: AppState
@@ -381,6 +382,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     sessionStatus?.valid === false ||
     sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH'
 
+  // ── Confidence score (Stage 9.1) ───────────────────────────────────────────
+  // Computed entirely from data already fetched — no new API calls.
+  const confidence = computeConfidence(
+    bundle ?? { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED' },
+    sessionStatus,
+    sniperRunState?.events ?? [],
+    sniperRunState?.updatedAt ?? null,
+  )
+
   // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
   const hasReadinessData = bundle && (
     bundle.session   !== 'SESSION_UNKNOWN'       ||
@@ -523,9 +533,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         {/* ── Progress steps ─────────────────────────────────────── */}
         <Card padding="none">
           <div className="px-5 pt-4 pb-5">
-            <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide mb-3">
-              Progress
-            </p>
+            {/* Progress label + confidence score on one line */}
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
+                Progress
+              </p>
+              <span className={`text-[12px] font-semibold tabular-nums ${
+                confidence.score >= 80 ? 'text-accent-green' :
+                confidence.score >= 60 ? 'text-accent-amber' :
+                'text-text-muted'
+              }`}>
+                {confidence.score}%
+              </span>
+            </div>
+
             <div className="flex items-center gap-1">
               {STEPS.map((step, i) => {
                 // If the phase is `late` and the user is booked, treat Done (index 3)
@@ -560,6 +581,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
                 )
               })}
             </div>
+
+            {/* Confidence explanation — muted footnote below the bars */}
+            <p className="text-[11px] text-text-muted mt-2.5 leading-snug">
+              {confidence.explanation}
+            </p>
           </div>
         </Card>
 

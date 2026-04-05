@@ -1,0 +1,238 @@
+You are implementing STAGE 9 — Sniper Optimization & Intelligence for my YMCA Booker app.
+
+All prior stages are complete:
+- readiness/taxonomy layer exists
+- Now screen shows sniper mission control
+- preflight flow exists
+- auth/session assurance exists
+- sniper logic is hardened
+- Tools diagnostics are structured
+
+GOAL OF STAGE 9
+
+Move from:
+“the sniper works and is diagnosable”
+
+to:
+“the sniper is optimized, self-checking, and gives high confidence before booking”
+
+Focus on:
+1. confidence scoring
+2. automated preflight
+3. session reliability
+4. smarter insights from failures
+5. improving booking success probability
+
+Do NOT redesign the whole app.
+Do NOT clutter the Now screen.
+Keep the UI clean and iPhone-oriented.
+
+================================
+STAGE 9.1 — SNIPER CONFIDENCE SCORE
+================================
+
+Goal:
+Provide a single clear confidence signal for booking readiness.
+
+Tasks:
+1. Implement a sniper confidence score (0–100%)
+2. Derive the score from:
+   - session readiness
+   - discovery success (recent preflight results)
+   - action availability (Reserve vs Waitlist vs blocked)
+   - recent failure history
+   - timing alignment with booking window
+3. Weight recent preflight results more heavily than older data
+4. Reduce score if:
+   - session unstable
+   - discovery failed recently
+   - action blocked or unknown
+   - repeated failures of same type
+5. Output:
+   - numeric score (e.g. 92%)
+   - short explanation:
+     “Session ready, class found, action reachable”
+
+6. Display on Now as:
+   - small, calm confidence indicator
+   - do not dominate screen
+
+After Stage 9.1:
+Stop and summarize:
+- how score is calculated
+- what factors influence it
+- how it appears on Now
+
+================================
+STAGE 9.2 — AUTO PREFLIGHT SYSTEM
+================================
+
+Goal:
+Automatically validate readiness before booking window.
+
+Tasks:
+1. Implement scheduled preflight runs:
+   - configurable timing (e.g. 30 min, 10 min, 2 min before window)
+2. Preflight should:
+   - validate session
+   - validate discovery
+   - validate action path
+3. Update readiness + confidence score after each run
+4. Store results in Tools
+5. Do not trigger real booking actions
+6. Avoid excessive runs (no tight loops)
+
+Optional:
+- allow user to enable/disable auto preflight
+
+After Stage 9.2:
+Stop and summarize:
+- when preflight runs
+- how it updates readiness
+- how it affects confidence
+
+================================
+STAGE 9.3 — SESSION KEEP-ALIVE / RELIABILITY
+================================
+
+Goal:
+Reduce session expiration before booking.
+
+Tasks:
+1. Implement lightweight session check or refresh:
+   - triggered by preflight
+   - optionally periodic (low frequency)
+2. Detect:
+   - session expired
+   - auth redirected
+   - login surface appearing
+3. If session invalid:
+   - update readiness immediately
+   - lower confidence score
+4. Do NOT aggressively spam login or navigation
+5. Capture auth failures in Tools with evidence
+
+After Stage 9.3:
+Stop and summarize:
+- how session is monitored
+- when it refreshes
+- how failures are surfaced
+
+================================
+STAGE 9.4 — FAILURE INSIGHTS + TRENDS
+================================
+
+Goal:
+Turn failure logs into actionable insight.
+
+Tasks:
+1. Aggregate recent failures by:
+   - failure type
+   - phase
+2. Show top failure types in Tools:
+   - last 24h / last 7 days
+3. Identify patterns:
+   - repeated instructor mismatch
+   - repeated modal failure
+   - repeated session expiration
+4. Keep this structured and readable
+5. Do not move this to Now
+
+After Stage 9.4:
+Stop and summarize:
+- what trends are shown
+- what common failure patterns are detected
+
+================================
+STAGE 9.5 — SMART SUGGESTIONS ENGINE
+================================
+
+Goal:
+Help user fix issues without digging through logs.
+
+Tasks:
+1. Based on failure patterns, generate simple suggestions:
+   - “Instructor mismatch detected — update class?”
+   - “Session expired recently — run preflight closer to window”
+   - “Action not found — check if class is waitlist-only”
+2. Keep suggestions short and actionable
+3. Show suggestions:
+   - optionally on Now (very minimal)
+   - or in Tools / Insights section
+4. Do not overwhelm the user
+
+After Stage 9.5:
+Stop and summarize:
+- what suggestions are generated
+- where they are displayed
+
+================================
+STAGE 9.6 — TIMING PRECISION IMPROVEMENTS
+================================
+
+Goal:
+Improve actual booking timing accuracy.
+
+Tasks:
+1. Measure:
+   - time between window open and click
+2. Track:
+   - delay from open → action attempt
+3. Log this timing in Tools
+4. Ensure sniper fires immediately when conditions are met
+5. Avoid early unsafe clicks
+6. Do not overcomplicate with external time sync yet
+
+After Stage 9.6:
+Stop and summarize:
+- how timing is measured
+- what data is recorded
+- what improvements were made
+
+================================
+STAGE 9.7 — SELECTOR RESILIENCE (LIGHT VERSION)
+================================
+
+Goal:
+Make the sniper more robust to UI changes.
+
+Tasks:
+1. Improve action detection:
+   - support both “Reserve” and “Register”
+   - support fallback selectors
+2. Improve modal detection robustness
+3. Avoid brittle single-selector logic
+4. Log which selector path was used
+
+After Stage 9.7:
+Stop and summarize:
+- what selector strategies are used
+- how fallback works
+
+================================
+FINAL RULES
+
+Do not:
+- redesign the entire app
+- clutter the Now screen
+- move detailed logs into Now
+- break existing readiness model
+- over-engineer timing or recurrence
+
+Do:
+- build on readiness + taxonomy
+- improve reliability and confidence
+- keep UI calm and clear
+- keep Tools powerful and structured
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 9.1 only.
+Do not jump ahead.
