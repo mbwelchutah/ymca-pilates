@@ -321,13 +321,18 @@ function formatAbsoluteTime(iso: string | null): string {
 }
 
 function AccountSessionBlock({
-  sessionStatus, bundleSession, sniperState, verifying, onVerify,
+  sessionStatus, bundleSession, sniperState, verifying, onVerify, authDetail,
 }: {
   sessionStatus: SessionStatus | null
   bundleSession: string
   sniperState:   SniperState | null
   verifying:     boolean
   onVerify:      () => void
+  authDetail?: {
+    verdict:  'ready' | 'login_required' | 'session_expired'
+    provider: string | null
+    detail:   string | null
+  } | null
 }) {
   const locked = sessionStatus?.locked ?? false
 
@@ -363,7 +368,7 @@ function AccountSessionBlock({
 
   return (
     <>
-      {/* Session row */}
+      {/* Session row (Daxko) */}
       <div className="border-b border-divider px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-text-secondary">Session</span>
@@ -385,9 +390,20 @@ function AccountSessionBlock({
             </span>
           </div>
         </div>
+        {/* Auth detail — shown after Check Now when Daxko login failed */}
+        {authDetail?.verdict === 'login_required' && !verifying && (
+          <p className="text-[12px] text-accent-red mt-0.5 leading-snug">
+            {authDetail.detail ?? 'Credentials rejected — re-enter in Settings'}
+          </p>
+        )}
+        {authDetail?.verdict === 'ready' && !verifying && (
+          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+            Daxko login confirmed
+          </p>
+        )}
       </div>
 
-      {/* Schedule access row */}
+      {/* Schedule access row (FamilyWorks) */}
       <div className="border-b border-divider px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-text-secondary">Schedule access</span>
@@ -398,6 +414,17 @@ function AccountSessionBlock({
             </span>
           </div>
         </div>
+        {/* Auth detail — shown after Check Now when FW session is missing */}
+        {authDetail?.verdict === 'session_expired' && !verifying && (
+          <p className="text-[12px] text-accent-amber mt-0.5 leading-snug">
+            {authDetail.detail ?? 'Schedule access requires re-login — use Settings → Log in now'}
+          </p>
+        )}
+        {authDetail?.verdict === 'ready' && !verifying && (
+          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+            Schedule access confirmed
+          </p>
+        )}
       </div>
 
       {/* Sniper row */}
@@ -559,7 +586,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
 
-  // Discovery detail — populated after Check Now; shows matched text / near misses.
+  // Auth + Discovery details — populated after Check Now; cleared when next check starts.
+  type AuthDetail = {
+    verdict:  'ready' | 'login_required' | 'session_expired'
+    provider: string | null
+    detail:   string | null
+  }
   type DiscoveryDetail = {
     found:      boolean
     matched:    string | null
@@ -568,6 +600,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     second:     string | null
     nearMisses: string | null
   }
+  const [authDetail,      setAuthDetail]      = useState<AuthDetail | null>(null)
   const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
 
   const handleCheckNow = async () => {
@@ -577,7 +610,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       const result = await api.runPreflight(job.id)
       if (result.sniperState) setSniperRunState(result.sniperState)
       setPreflightStatus(result.status ?? null)
+      if (result.authDetail)      setAuthDetail(result.authDetail)
       if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
+      // Re-fetch session-status.json so the Session/Schedule access rows reflect
+      // the auth outcome that was just written by the preflight pipeline.
+      api.getSessionStatus().then(setSessionStatus).catch(() => {})
     } catch { setPreflightStatus('error') }
     finally { setPreflightRunning(false) }
   }
@@ -905,6 +942,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 sniperState={sniperRunState?.sniperState ?? null}
                 verifying={sessionChecking}
                 onVerify={handleVerifySession}
+                authDetail={authDetail}
               />
               {/* Discovery + Modal + Action rows — only shown when sniper has data */}
               {hasReadinessData ? (

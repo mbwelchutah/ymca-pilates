@@ -220,6 +220,11 @@ export const api = {
     status:          string
     message:         string
     sniperState:     SniperRunState | null
+    authDetail: {
+      verdict:  'ready' | 'login_required' | 'session_expired'
+      provider: string | null    // 'Daxko' | 'FamilyWorks'
+      detail:   string | null
+    } | null
     discoveryDetail: {
       found:      boolean
       matched:    string | null

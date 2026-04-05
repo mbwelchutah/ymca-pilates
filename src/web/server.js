@@ -3874,12 +3874,22 @@ const server = http.createServer((req, res) => {
           savePreflightSnapshot(result.status);
           const state = loadState();
 
-          // ── Discovery detail ──────────────────────────────────────────────
-          // Pull the most recent DISCOVERY event (success or failure) from the
-          // event log and surface its evidence to the UI.  The event may be from
-          // this run or a prior run — the NowScreen only renders it after a fresh
-          // preflight so it will always be current from the user's perspective.
+          // ── Auth + Discovery detail ───────────────────────────────────────
+          // Pull the most recent AUTH and DISCOVERY events from the event log
+          // and surface their evidence to the UI.  Both events are always from
+          // this run because preflight starts with AUTH before reaching DISCOVERY.
           const events = state?.events || [];
+
+          // Auth detail — which provider was checked and what the outcome was.
+          const authEvt = [...events].reverse().find(e => e.phase === 'AUTH');
+          const authDetail = authEvt ? {
+            verdict:  authEvt.failureType === 'AUTH_LOGIN_FAILED'    ? 'login_required'
+                    : authEvt.failureType === 'AUTH_SESSION_EXPIRED'  ? 'session_expired'
+                    :                                                   'ready',
+            provider: authEvt.evidence?.provider ?? null,
+            detail:   authEvt.message            ?? null,
+          } : null;
+
           const discoveryEvt = [...events].reverse().find(e => e.phase === 'DISCOVERY');
           const discoveryDetail = discoveryEvt ? {
             found:      !discoveryEvt.failureType,
@@ -3895,6 +3905,7 @@ const server = http.createServer((req, res) => {
             status:          result.status,
             message:         result.message,
             sniperState:     state,
+            authDetail,
             discoveryDetail,
           });
         } catch (err) {
