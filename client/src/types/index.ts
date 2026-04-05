@@ -13,6 +13,7 @@ export interface SessionStatus {
   familyworks:  FamilyWorksStatus
   overall:      OverallAuthStatus
   lastVerified: string | null
+  locked?:      boolean
 }
 export type LastResult =
   | 'booked'

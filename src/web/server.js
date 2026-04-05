@@ -3962,7 +3962,7 @@ const server = http.createServer((req, res) => {
       ? candidates.reduce((a, b) => (a > b ? a : b))
       : null;
 
-    json({ ...raw, daxko, familyworks, overall, lastVerified });
+    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()) });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Runs a dedicated login check — login only, no booking pipeline.

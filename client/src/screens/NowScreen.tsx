@@ -211,6 +211,9 @@ function readinessDotColor(value: string): DotColor {
 
 // Derives a single concise string that describes the current blocker (if any).
 function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
+  // Suppress auth messages when a booking/auth operation is actively running —
+  // the lock being held is not itself an auth failure.
+  if (sessionStatus?.locked) return null
   // Settings session state takes priority over sniper signals
   if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — open Settings to log in'
   if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'Session expired — open Settings to log in again'
@@ -255,20 +258,25 @@ function ReadinessRow({
   )
 }
 
-// ── Session readiness row — with verify button + timestamp ─────────────────────
+// ── Account & Session block — two rows + timestamp ─────────────────────────────
 
-function overallToLabel(overall: SessionStatus['overall'] | undefined): { label: string; dotColor: DotColor } {
-  switch (overall) {
-    case 'DAXKO_READY':
-    case 'FAMILYWORKS_READY':          return { label: 'Session ready', dotColor: 'green' }
-    case 'AUTH_NEEDS_LOGIN':           return { label: 'Needs login', dotColor: 'red'   }
-    case 'FAMILYWORKS_SESSION_MISSING':return { label: 'Expired',     dotColor: 'amber' }
-    case 'AUTH_UNKNOWN':               return { label: 'Unknown',     dotColor: 'gray'  }
-    default:                           return { label: 'Unknown',     dotColor: 'gray'  }
+function daxkoToLabel(s: SessionStatus['daxko'] | undefined): { label: string; dotColor: DotColor } {
+  switch (s) {
+    case 'DAXKO_READY':      return { label: 'Ready',       dotColor: 'green' }
+    case 'AUTH_NEEDS_LOGIN': return { label: 'Needs login', dotColor: 'red'   }
+    default:                 return { label: 'Unknown',     dotColor: 'gray'  }
   }
 }
 
-function SessionReadinessRow({
+function fwToLabel(s: SessionStatus['familyworks'] | undefined): { label: string; dotColor: DotColor } {
+  switch (s) {
+    case 'FAMILYWORKS_READY':           return { label: 'Ready',   dotColor: 'green' }
+    case 'FAMILYWORKS_SESSION_MISSING': return { label: 'Expired', dotColor: 'amber' }
+    default:                            return { label: 'Unknown', dotColor: 'gray'  }
+  }
+}
+
+function AccountSessionBlock({
   sessionStatus, bundleSession, verifying, onVerify,
 }: {
   sessionStatus: SessionStatus | null
@@ -276,51 +284,75 @@ function SessionReadinessRow({
   verifying:     boolean
   onVerify:      () => void
 }) {
-  // Use Settings overall status when available; fall back to sniper bundle.
-  let dotColor: DotColor
-  let label: string
-  let subtext: string
+  const locked = sessionStatus?.locked ?? false
 
-  if (sessionStatus?.overall) {
-    const mapped = overallToLabel(sessionStatus.overall)
-    dotColor = mapped.dotColor
-    label    = mapped.label
-    const when = relativeTime(sessionStatus.lastVerified)
-    const isReady = sessionStatus.overall === 'DAXKO_READY' || sessionStatus.overall === 'FAMILYWORKS_READY'
-    subtext  = when === 'Never' ? 'Not yet verified' : `${isReady ? 'Verified' : 'Last checked'} ${when}`
-  } else {
-    // No Settings data yet — fall back to sniper bundle
-    dotColor = readinessDotColor(bundleSession)
-    label    = SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? bundleSession
-    subtext  = 'Not yet verified'
-  }
+  // Session (daxko) — fall back to sniper bundle when no sessionStatus yet
+  const sessionLabel = locked
+    ? { label: '—', dotColor: 'gray' as DotColor }
+    : sessionStatus
+    ? daxkoToLabel(sessionStatus.daxko)
+    : { label: SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? '—', dotColor: readinessDotColor(bundleSession) as DotColor }
+
+  // Schedule access (familyworks)
+  const fwLabel = (locked || !sessionStatus)
+    ? { label: '—', dotColor: 'gray' as DotColor }
+    : fwToLabel(sessionStatus.familyworks)
+
+  // Footer timestamp
+  const when = relativeTime(sessionStatus?.lastVerified ?? null)
+  const isReady = sessionStatus?.overall === 'DAXKO_READY' || sessionStatus?.overall === 'FAMILYWORKS_READY'
+  const subtext = locked
+    ? 'Booking in progress'
+    : when === 'Never'
+    ? 'Not yet verified'
+    : `${isReady ? 'Verified' : 'Last checked'} ${when}`
+
+  const verifyDisabled = verifying || locked
 
   return (
-    <div className="border-b border-divider px-4 py-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[14px] text-text-secondary">Session</span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onVerify}
-            disabled={verifying}
-            className={`text-[12px] font-medium px-2 py-0.5 rounded-md transition-opacity
-              ${verifying
-                ? 'text-text-muted bg-divider opacity-60'
-                : 'text-accent-blue bg-accent-blue/10 active:opacity-70'
-              }`}
-          >
-            {verifying ? 'Verifying…' : 'Verify'}
-          </button>
-          <StatusDot color={verifying ? 'gray' : dotColor} />
-          <span className="text-[14px] font-medium text-text-primary">
-            {verifying ? 'Checking…' : label}
-          </span>
+    <>
+      {/* Session row */}
+      <div className="border-b border-divider px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[14px] text-text-secondary">Session</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onVerify}
+              disabled={verifyDisabled}
+              className={`text-[12px] font-medium px-2 py-0.5 rounded-md transition-opacity
+                ${verifyDisabled
+                  ? 'text-text-muted bg-divider opacity-60'
+                  : 'text-accent-blue bg-accent-blue/10 active:opacity-70'
+                }`}
+            >
+              {verifying ? 'Verifying…' : 'Verify'}
+            </button>
+            <StatusDot color={verifying ? 'gray' : sessionLabel.dotColor} />
+            <span className="text-[14px] font-medium text-text-primary">
+              {verifying ? 'Checking…' : sessionLabel.label}
+            </span>
+          </div>
         </div>
       </div>
-      {!verifying && (
-        <p className="text-[11px] text-text-muted mt-0.5 text-right">{subtext}</p>
-      )}
-    </div>
+
+      {/* Schedule access row */}
+      <div className="border-b border-divider px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[14px] text-text-secondary">Schedule access</span>
+          <div className="flex items-center gap-2">
+            <StatusDot color={verifying ? 'gray' : fwLabel.dotColor} />
+            <span className="text-[14px] font-medium text-text-primary">
+              {verifying ? '—' : fwLabel.label}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Last verified footer */}
+      <div className="px-4 py-2">
+        <p className="text-[11px] text-text-muted text-right">{subtext}</p>
+      </div>
+    </>
   )
 }
 
@@ -601,8 +633,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           <>
             <SectionHeader title="Readiness" />
             <Card padding="none">
-              {/* Session row — always shown, has its own verify button */}
-              <SessionReadinessRow
+              {/* Account & Session block — Session + Schedule access rows + timestamp */}
+              <AccountSessionBlock
                 sessionStatus={sessionStatus}
                 bundleSession={bundle?.session ?? 'SESSION_UNKNOWN'}
                 verifying={sessionChecking}
