@@ -422,13 +422,36 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return () => clearInterval(id)
   }, [])
 
+  // ── Clear stale readiness data when the selected job changes ─────────────────
+  // Sniper state is global (last-run-wins on the server), so when the user
+  // switches to a different class the preflight details and dry-run result from
+  // the previous job must be wiped immediately.  A fresh sniper-state and
+  // session-status fetch follows so the new job's existing data (if any) can
+  // repopulate through the snapshot restore effect below.
+  useEffect(() => {
+    if (selectedJobId == null) return
+    console.log('[class-select] now refreshed — clearing stale readiness for job', selectedJobId)
+    setAuthDetail(null)
+    setDiscoveryDetail(null)
+    setModalDetail(null)
+    setActionDetail(null)
+    setPreflightStatus(null)
+    setDryRunResult(null)
+    api.getSniperState().then(setSniperRunState).catch(() => {})
+    api.getSessionStatus().then(setSessionStatus).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId])
+
   // Restore per-stage details from the persisted snapshot so the enriched
   // composite detail text survives page refreshes.  Guards prevent overwriting
   // a fresh Check Now result if a new snapshot arrives during the same session.
+  // Only restore when the snapshot belongs to the currently selected job —
+  // prevents cross-job data bleed when sniper state is still for the old run.
   const snapshotCheckedAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
   useEffect(() => {
     const snap = sniperRunState?.lastPreflightSnapshot
     if (!snap) return
+    if (sniperRunState?.jobId != null && sniperRunState.jobId !== selectedJobId) return
     if (!authDetail      && snap.authDetail)      setAuthDetail(snap.authDetail as AuthDetail)
     if (!discoveryDetail && snap.discoveryDetail) setDiscoveryDetail(snap.discoveryDetail as DiscoveryDetail)
     if (!modalDetail     && snap.modalDetail)     setModalDetail(snap.modalDetail as ModalDetail)
@@ -492,33 +515,39 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     } finally { setDryRunRunning(false) }
   }
 
-  const bundle  = sniperRunState?.bundle
-  const blocked = blockedReason(sniperRunState, sessionStatus)
+  // Sniper state is global (last-run-wins).  Only treat it as applicable to the
+  // current view when its jobId matches the selected job, or when the server
+  // hasn't stored a jobId yet (legacy/null).
+  const isReadinessForCurrentJob =
+    sniperRunState?.jobId == null || sniperRunState.jobId === selectedJobId
+
+  const bundle  = isReadinessForCurrentJob ? sniperRunState?.bundle : undefined
+  const blocked = isReadinessForCurrentJob ? blockedReason(sniperRunState, sessionStatus) : null
 
   // Auth issues show amber; discovery/action blocks show red.
   const blockedIsAuthWarn =
     sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'            ||
     sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
-    sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH'
+    (isReadinessForCurrentJob && sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH')
 
   // ── Confidence score (Stage 9.1) ───────────────────────────────────────────
   // Computed entirely from data already fetched — no new API calls.
   const confidence = computeConfidence(
     bundle ?? { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED' },
     sessionStatus,
-    sniperRunState?.events ?? [],
-    sniperRunState?.updatedAt ?? null,
+    isReadinessForCurrentJob ? (sniperRunState?.events ?? []) : [],
+    isReadinessForCurrentJob ? (sniperRunState?.updatedAt ?? null) : null,
   )
 
   // ── Suggestions (Stage 9.5) — high-priority only, max 1 on Now ─────────────
   const nowSuggestion = generateSuggestions({
     sessionValid:    sessionStatus?.valid ?? null,
-    sniperState:     sniperRunState?.sniperState ?? null,
+    sniperState:     isReadinessForCurrentJob ? (sniperRunState?.sniperState ?? null) : null,
     confidenceScore: confidence.score,
   }).filter(s => s.priority === 'high')[0] ?? null
 
-  // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
-  const hasReadinessData = bundle && (
+  // True only when there's useful readiness data for the current job.
+  const hasReadinessData = isReadinessForCurrentJob && bundle && (
     bundle.session   !== 'SESSION_UNKNOWN'       ||
     bundle.discovery !== 'DISCOVERY_NOT_TESTED'  ||
     bundle.action    !== 'ACTION_NOT_TESTED'     ||
