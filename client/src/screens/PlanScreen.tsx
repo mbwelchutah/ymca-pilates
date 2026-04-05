@@ -73,6 +73,18 @@ function formatShortDate(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// Convert "H:MM AM/PM" → minutes since midnight for chronological comparison.
+function timeToMinutes(t: string): number {
+  const m = t.match(/^(\d+):(\d+)\s*(AM|PM)$/i)
+  if (!m) return 0
+  let h = parseInt(m[1], 10)
+  const min = parseInt(m[2], 10)
+  const isPM = m[3].toUpperCase() === 'PM'
+  if (isPM && h !== 12) h += 12
+  if (!isPM && h === 12) h = 0
+  return h * 60 + min
+}
+
 interface JobCardProps {
   job: Job
   isWatching: boolean
@@ -665,7 +677,21 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </Card>
         ) : (
           <div className="flex flex-col gap-2">
-            {appState.jobs.map(job => (
+            {[...appState.jobs]
+              .sort((a, b) => {
+                // Primary: target_date ascending; nulls sort after dated jobs
+                const da = a.target_date ?? ''
+                const db = b.target_date ?? ''
+                if (da !== db) {
+                  if (!da) return 1
+                  if (!db) return -1
+                  if (da < db) return -1
+                  if (da > db) return 1
+                }
+                // Secondary: class_time ascending (within the same date)
+                return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+              })
+              .map(job => (
               <JobCard
                 key={job.id}
                 job={job}
