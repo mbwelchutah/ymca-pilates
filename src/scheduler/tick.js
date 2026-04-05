@@ -145,12 +145,16 @@ async function runTick({ onlyJobId = null } = {}) {
       // Use authBlockedAt (written only by real runs) rather than updatedAt
       // (written by every state save including skip events) so that emitting a
       // tick-skip event cannot refresh the gate's clock and extend suppression.
-      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH' && sniperState.authBlockedAt) {
-        const age = Date.now() - new Date(sniperState.authBlockedAt).getTime();
-        if (age < AUTH_BLOCK_STALE_MS) {
-          const minAgo = Math.round(age / 60000);
-          skipReason  = 'SNIPER_BLOCKED_AUTH';
-          skipMessage = `Skipped warmup: SNIPER_BLOCKED_AUTH from last run (${minAgo} min ago) — session still likely expired`;
+      // Fall back to updatedAt for older state files that predate authBlockedAt.
+      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH') {
+        const refTime = sniperState.authBlockedAt || sniperState.updatedAt;
+        if (refTime) {
+          const age = Date.now() - new Date(refTime).getTime();
+          if (age < AUTH_BLOCK_STALE_MS) {
+            const minAgo = Math.round(age / 60000);
+            skipReason  = 'SNIPER_BLOCKED_AUTH';
+            skipMessage = `Skipped warmup: SNIPER_BLOCKED_AUTH from last run (${minAgo} min ago) — session still likely expired`;
+          }
         }
       }
 
