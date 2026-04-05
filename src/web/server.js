@@ -4001,6 +4001,99 @@ const server = http.createServer((req, res) => {
       }
     })();
 
+  } else if (req.method === 'POST' && path === '/api/settings-refresh') {
+    // Lightweight session revalidation triggered from Settings > Refresh session.
+    // Verifies Daxko credentials via a fresh browser login (runSessionCheck),
+    // then reads the most recent FamilyWorks state from persisted files only.
+    // Does NOT attempt FamilyWorks SSO or modal interaction — use Log in now for that.
+    // Does NOT auto-login if invalid — simply reports AUTH_NEEDS_LOGIN.
+    if (jobState.active) {
+      json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
+      return;
+    }
+    (async () => {
+      try {
+        // ── Daxko check ──────────────────────────────────────────────────────
+        console.log('[settings-refresh] Starting session refresh...');
+        const { runSessionCheck } = require('../bot/session-check');
+        const checkResult = await runSessionCheck({ source: 'refresh' });
+
+        const daxko = checkResult.valid ? 'DAXKO_READY' : 'AUTH_NEEDS_LOGIN';
+        console.log(`[settings-refresh] Daxko: ${daxko} — ${checkResult.detail}`);
+
+        // ── FamilyWorks — read from persisted files, no browser ───────────
+        let familyworks = 'AUTH_UNKNOWN';
+        let fwCheckedAt  = null;
+        let sniperLastAt = null;
+
+        try {
+          const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
+          if (fsStatic.existsSync(fwPath)) {
+            const fwEntry = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
+            fwCheckedAt = fwEntry?.checkedAt || null;
+            const fwSettingsMs = fwCheckedAt ? new Date(fwCheckedAt).getTime() : 0;
+
+            // Also read sniper-state to compare recency
+            let sniperMs = 0;
+            let sniperFw = null;
+            const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
+            if (fsStatic.existsSync(sniperPath)) {
+              const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+              const events = Array.isArray(sniper?.events) ? sniper.events : [];
+              sniperLastAt = events.length > 0 ? (events[events.length - 1].timestamp || null) : null;
+              sniperMs     = sniperLastAt ? new Date(sniperLastAt).getTime() : 0;
+              const bundleSession = sniper?.bundle?.session;
+              const hasModal = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
+              if (bundleSession === 'SESSION_READY') sniperFw = 'FAMILYWORKS_READY';
+              else if (bundleSession === 'SESSION_EXPIRED' || hasModal) sniperFw = 'FAMILYWORKS_SESSION_MISSING';
+            }
+
+            if (fwSettingsMs >= sniperMs) {
+              familyworks = fwEntry.status || 'AUTH_UNKNOWN';
+            } else if (sniperFw) {
+              familyworks = sniperFw;
+            }
+          } else {
+            // No familyworks-session.json — fall back to sniper-state only
+            const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
+            if (fsStatic.existsSync(sniperPath)) {
+              const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+              const events = Array.isArray(sniper?.events) ? sniper.events : [];
+              sniperLastAt = events.length > 0 ? (events[events.length - 1].timestamp || null) : null;
+              const bundleSession = sniper?.bundle?.session;
+              const hasModal = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
+              if (bundleSession === 'SESSION_READY') familyworks = 'FAMILYWORKS_READY';
+              else if (bundleSession === 'SESSION_EXPIRED' || hasModal) familyworks = 'FAMILYWORKS_SESSION_MISSING';
+            }
+          }
+        } catch (_) { /* non-fatal — leave familyworks as AUTH_UNKNOWN */ }
+
+        console.log(`[settings-refresh] FamilyWorks: ${familyworks} (from persisted state)`);
+
+        // ── Derive overall ────────────────────────────────────────────────
+        let overall = 'AUTH_UNKNOWN';
+        if (daxko === 'AUTH_NEEDS_LOGIN') {
+          overall = 'AUTH_NEEDS_LOGIN';
+        } else if (familyworks === 'FAMILYWORKS_SESSION_MISSING') {
+          overall = 'FAMILYWORKS_SESSION_MISSING';
+        } else if (daxko === 'DAXKO_READY' && familyworks === 'FAMILYWORKS_READY') {
+          overall = 'DAXKO_READY';
+        }
+
+        // ── Last verified: most recent of all known timestamps ────────────
+        const stamps = [checkResult.checkedAt, fwCheckedAt, sniperLastAt].filter(Boolean);
+        const lastVerified = stamps.length > 0 ? stamps.reduce((a, b) => (a > b ? a : b)) : null;
+
+        const detail = `Daxko: ${daxko} | FamilyWorks: ${familyworks} — ${checkResult.detail}`;
+        console.log('[settings-refresh] Done.', { daxko, familyworks, overall });
+
+        json({ success: true, daxko, familyworks, overall, lastVerified, detail });
+      } catch (err) {
+        console.error('[settings-refresh] route error:', err.message);
+        json({ success: false, detail: err.message || 'Refresh failed unexpectedly' });
+      }
+    })();
+
   } else if (req.method === 'GET' && path === '/api/auto-preflight-config') {
     // Returns settings, last run info, and the next scheduled trigger.
     const settings    = loadAutoPreflightSettings();

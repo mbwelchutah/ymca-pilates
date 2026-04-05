@@ -51,12 +51,14 @@ function formatVerified(iso: string | null): string {
   }
 }
 
-type LoginState = 'idle' | 'running' | 'done' | 'error'
+type ActionState = 'idle' | 'running' | 'done' | 'error'
 
 export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
-  const [loginState,    setLoginState]    = useState<LoginState>('idle')
-  const [loginDetail,   setLoginDetail]   = useState<string>('')
+  const [sessionStatus,  setSessionStatus]  = useState<SessionStatus | null>(null)
+  const [loginState,     setLoginState]     = useState<ActionState>('idle')
+  const [loginDetail,    setLoginDetail]    = useState<string>('')
+  const [refreshState,   setRefreshState]   = useState<ActionState>('idle')
+  const [refreshDetail,  setRefreshDetail]  = useState<string>('')
 
   const fetchSessionStatus = () => {
     api.getSessionStatus()
@@ -67,7 +69,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   useEffect(() => { fetchSessionStatus() }, [])
 
   const handleLogin = async () => {
-    if (loginState === 'running') return
+    if (loginState === 'running' || refreshState === 'running') return
     setLoginState('running')
     setLoginDetail('Logging in — this takes about 30 seconds…')
     try {
@@ -82,6 +84,27 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     } catch (e: unknown) {
       setLoginState('error')
       setLoginDetail(e instanceof Error ? e.message : 'Login failed unexpectedly')
+    } finally {
+      fetchSessionStatus()
+    }
+  }
+
+  const handleRefresh = async () => {
+    if (loginState === 'running' || refreshState === 'running') return
+    setRefreshState('running')
+    setRefreshDetail('Checking credentials — this takes about 15 seconds…')
+    try {
+      const result = await api.settingsRefresh()
+      if (result.success) {
+        setRefreshState('done')
+        setRefreshDetail(result.detail ?? 'Refresh complete')
+      } else {
+        setRefreshState('error')
+        setRefreshDetail(result.detail ?? 'Refresh failed')
+      }
+    } catch (e: unknown) {
+      setRefreshState('error')
+      setRefreshDetail(e instanceof Error ? e.message : 'Refresh failed unexpectedly')
     } finally {
       fetchSessionStatus()
     }
@@ -104,11 +127,18 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const overall    = sessionStatus ? overallLabel(sessionStatus.overall)        : { text: '—', cls: 'text-text-secondary' }
   const verified   = sessionStatus ? formatVerified(sessionStatus.lastVerified) : '—'
 
+  const anyBusy   = loginState === 'running' || refreshState === 'running'
   const loginBusy = loginState === 'running'
   const loginFeedbackCls =
     loginState === 'done'    ? 'text-accent-green' :
     loginState === 'error'   ? 'text-accent-red'   :
     loginState === 'running' ? 'text-text-secondary' : ''
+
+  const refreshBusy = refreshState === 'running'
+  const refreshFeedbackCls =
+    refreshState === 'done'    ? 'text-accent-green' :
+    refreshState === 'error'   ? 'text-accent-red'   :
+    refreshState === 'running' ? 'text-text-secondary' : ''
 
   return (
     <>
@@ -137,8 +167,8 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
         <Card padding="sm" className="flex flex-col gap-2">
           <button
             onClick={handleLogin}
-            disabled={loginBusy}
-            className={`w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold transition-opacity ${loginBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
+            disabled={anyBusy}
+            className={`w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
             {loginBusy ? 'Logging in…' : 'Log in now'}
           </button>
@@ -146,11 +176,15 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
             <p className={`text-[12px] px-1 ${loginFeedbackCls}`}>{loginDetail}</p>
           ) : null}
           <button
-            disabled
-            className="w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-[#1c1c1e] text-[14px] font-semibold opacity-50 cursor-not-allowed"
+            onClick={handleRefresh}
+            disabled={anyBusy}
+            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-[#1c1c1e] text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
-            Refresh session
+            {refreshBusy ? 'Checking…' : 'Refresh session'}
           </button>
+          {refreshDetail ? (
+            <p className={`text-[12px] px-1 ${refreshFeedbackCls}`}>{refreshDetail}</p>
+          ) : null}
           <button
             disabled
             className="w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-accent-red text-[14px] font-semibold opacity-50 cursor-not-allowed"

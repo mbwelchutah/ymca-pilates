@@ -143,6 +143,15 @@ export const api = {
     screenshot?: string | null
   }> => apiFetch('/api/settings-login', { method: 'POST' }),
 
+  settingsRefresh: (): Promise<{
+    success: boolean
+    daxko?: SessionStatus['daxko']
+    familyworks?: SessionStatus['familyworks']
+    overall?: SessionStatus['overall']
+    lastVerified?: string | null
+    detail?: string
+  }> => apiFetch('/api/settings-refresh', { method: 'POST' }),
+
   getAutoPreflightConfig: (): Promise<{
     enabled: boolean
     lastRun: {
