@@ -7,6 +7,9 @@ const path = require('path');
 const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 const { recordFailure }  = require('../db/failures');
+const {
+  createRunState, advance, emitEvent, emitSuccess, saveState,
+} = require('./sniper-readiness');
 
 // Maps modal-verification reasonTag → structured failure reason code.
 const REASONTAG_TO_REASON = {
@@ -63,6 +66,9 @@ async function runBookingJob(job, opts = {}) {
   const DRY_RUN = opts.dryRun !== undefined ? !!opts.dryRun : (process.env.DRY_RUN === '1');
   if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
   const { classTitle, classTime, instructor, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
+
+  // ── Readiness state for this run (taxonomy integration) ─────────────────────
+  const _state = createRunState(job.id || job.jobId || null);
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
   const DAY_SHORT = {
     Sunday: 'Sun', Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
@@ -151,10 +157,12 @@ async function runBookingJob(job, opts = {}) {
 
     // Use the shared session module: launches Chromium, logs in to Daxko,
     // and verifies the auth cookie before returning.
+    advance(_state, 'AUTH');
     let _session;
     try {
       _session = await createSession({ headless: isHeadless });
     } catch (loginErr) {
+      emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message);
       return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
     browser = _session.browser;
@@ -166,6 +174,7 @@ async function runBookingJob(job, opts = {}) {
     };
 
     // Step 2: Go to schedule and filter by the job's instructor
+    advance(_state, 'NAVIGATION');
     console.log('Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
     await page.waitForLoadState('networkidle');
@@ -177,9 +186,11 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
+      emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED', 'Session not established — schedule page requires login');
       return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired on schedule page', url: page.url() });
     }
     console.log('Auth valid on schedule page — continuing.');
+    emitEvent(_state, 'AUTH', null, 'Auth valid on schedule page');
 
     // Wait for any dropdown to have options loaded (Bubble.io loads them async)
     await page.waitForFunction(() => {
@@ -361,6 +372,7 @@ async function runBookingJob(job, opts = {}) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    advance(_state, 'DISCOVERY');
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
     // ---------------------------------------------------------------------------
@@ -895,6 +907,7 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await snap('not-found');
+      emitEvent(_state, 'DISCOVERY', 'DISCOVERY_EMPTY', msg);
       return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'No matching class card found', url: page.url() });
     }
 
@@ -965,6 +978,7 @@ async function runBookingJob(job, opts = {}) {
           await clickTarget.click({ timeout: 5000 });
         } catch (clickErr) {
           console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
+          emitEvent(_state, 'ACTION', 'ACTION_FORCE_CLICK_USED', `Normal click failed — force-click fallback (${candidateLabel})`);
           // ── POINT 5: click — fallback to force click ──────────────────────
           recordFailure({
             jobId:    job.id || job.jobId || null,
@@ -1008,6 +1022,9 @@ async function runBookingJob(job, opts = {}) {
           const reasonTag   = reasons.join('-');
           const reasonLabel = { 'time': 'Time mismatch', 'instructor': 'Instructor mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Unknown mismatch';
           console.log(`❌ Modal verification failed (${candidateLabel}):`, reasonLabel);
+          // ── taxonomy: emit verify failure ──
+          const _ftMap = { 'time': 'VERIFY_TIME_MISMATCH', 'instructor': 'VERIFY_INSTRUCTOR_MISMATCH', 'time-instructor': 'VERIFY_MISMATCH' };
+          emitEvent(_state, 'VERIFY', _ftMap[reasonTag] || 'VERIFY_MISMATCH', reasonLabel, { evidence: { candidateLabel, verifyTime, verifyInst } });
           console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
           console.log('Modal preview:', modalText.slice(0, 300));
           await snap(`verify-${reasonTag}`);
@@ -1043,6 +1060,11 @@ async function runBookingJob(job, opts = {}) {
         }
 
         console.log(`✅ Modal verified (${candidateLabel}) — proceeding to booking.`);
+        // Card found, session valid, class discovered and identity confirmed
+        emitEvent(_state, 'VERIFY', null, `Modal verified (${candidateLabel})`, { evidence: { verifyTime, verifyInst } });
+        _state.bundle.session   = 'SESSION_READY';
+        _state.bundle.discovery = 'DISCOVERY_READY';
+        _state.sniperState      = 'SNIPER_BOOKING';
         return { ok: true };
 
       } catch (err) {
@@ -1125,6 +1147,7 @@ async function runBookingJob(job, opts = {}) {
 
     // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet.
     // maxAttemptsOpt can be passed in job object (e.g. 1 for web UI, 20 for cron).
+    advance(_state, 'ACTION');
     const maxAttempts = maxAttemptsOpt || 20;
     let registered = false;
 
@@ -1142,6 +1165,7 @@ async function runBookingJob(job, opts = {}) {
       if (hasLoginButton) {
         console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
         await snap();
+        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
         return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
       }
 
@@ -1356,12 +1380,14 @@ async function runBookingJob(job, opts = {}) {
       ? `DRY RUN complete for ${classTitle}`
       : `Registered for ${classTitle} with Stephanie`;
     await snap();
+    emitSuccess(_state);
     return logRunSummary({ status: 'success', message: successMsg, screenshotPath });
 
   } catch (err) {
     console.error('❌ Error:', err.message);
     return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
+    saveState(_state);
     if (browser) await browser.close();
   }
 }

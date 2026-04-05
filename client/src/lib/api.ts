@@ -1,4 +1,16 @@
 import type { Job, AppState, ScrapedClass } from '../types'
+import type { ReadinessBundle, SniperState } from './readinessTypes'
+import type { ExecutionPhase, SniperEvent } from './failureTypes'
+
+export interface SniperRunState {
+  runId:       string | null
+  jobId:       number | null
+  phase:       ExecutionPhase | null
+  bundle:      ReadinessBundle
+  sniperState: SniperState
+  events:      SniperEvent[]
+  updatedAt:   string | null
+}
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options)
@@ -94,4 +106,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     }),
+
+  getSniperState: (): Promise<SniperRunState> =>
+    apiFetch('/api/sniper-state'),
 }

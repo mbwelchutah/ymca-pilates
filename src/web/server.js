@@ -4173,6 +4173,17 @@ const server = http.createServer((req, res) => {
       jobs,
     });
 
+  } else if (req.method === 'GET' && path === '/api/sniper-state') {
+    const { loadState } = require('../bot/sniper-readiness');
+    const sniperState = loadState();
+    json(sniperState || {
+      runId: null, jobId: null, phase: null,
+      bundle: { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED' },
+      sniperState: 'SNIPER_WAITING',
+      events: [],
+      updatedAt: null,
+    });
+
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
     // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.
