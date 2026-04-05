@@ -413,6 +413,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const isBooked = isBookingCurrentCycle(job)
   const isStaleBooking =
     (job?.last_result === 'booked' || job?.last_result === 'dry_run') && !isBooked
+  // True when the watched job exists but has been toggled off in the Plan tab.
+  // The scheduler will not run it; show a distinct "Off" state so the countdown
+  // and phase labels don't mislead the user into thinking booking is pending.
+  const isInactive = job != null && !job.is_active
 
   const [resetting, setResetting] = useState(false)
 
@@ -745,7 +749,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   return (
     <>
       <AppHeader
-        subtitle={cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : '')}
+        subtitle={
+          isInactive
+            ? 'Off' + (appState.dryRun ? ' · Simulation' : '')
+            : cfg.headerSubtitle + (appState.dryRun ? ' · Simulation' : '')
+        }
       />
 
       <ScreenContainer>
@@ -753,9 +761,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         <Card padding="md">
           {/* State row */}
           <div className="flex items-center gap-2 mb-3">
-            <StatusDot color={cfg.dotColor} />
+            <StatusDot color={isInactive ? 'gray' : cfg.dotColor} />
             <span className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
-              {cfg.label}
+              {isInactive ? 'Off' : cfg.label}
             </span>
             {appState.schedulerPaused && (
               <span className="ml-auto text-[12px] font-medium text-accent-amber bg-accent-amber/10 px-2 py-0.5 rounded-pill">
@@ -783,13 +791,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Status banner — booked / sniper / late / countdown */}
+          {/* Status banner — booked / off / sniper / late / countdown */}
           {isBooked ? (
             <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="green" />
               <span className="text-[17px] font-semibold text-accent-green">
                 {job?.last_result === 'dry_run' ? 'Simulated Booking' : 'Booked'}
               </span>
+            </div>
+          ) : isInactive ? (
+            <div className="bg-surface rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <StatusDot color="gray" />
+                <span className="text-[16px] text-text-secondary">Scheduling off</span>
+              </div>
+              <p className="text-[12px] text-text-muted mt-1 ml-[22px]">
+                Turn this class on in the Plan tab to resume booking
+              </p>
             </div>
           ) : phase === 'sniper' ? (
             <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
@@ -812,8 +830,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Inline blocked callout — surfaces the most critical issue without scrolling */}
-          {blocked && (
+          {/* Inline blocked callout — suppressed when job is inactive (not scheduled) */}
+          {blocked && !isInactive && (
             <div className={`mt-3 rounded-xl px-3.5 py-2.5 ${blockedIsAuthWarn ? 'bg-accent-amber/10' : 'bg-accent-red/10'}`}>
               <p className={`text-[13px] font-medium ${blockedIsAuthWarn ? 'text-accent-amber' : 'text-accent-red'}`}>
                 {blocked}
@@ -977,8 +995,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           )}
         </Card>
 
-        {/* ── Progress steps ─────────────────────────────────────── */}
-        <Card padding="none">
+        {/* ── Progress steps — hidden when job is inactive (not meaningful) ──── */}
+        {/* Keep visible when isBooked, even if now inactive, so "Done" state shows. */}
+        {(!isInactive || isBooked) && <Card padding="none">
           <div className="px-5 pt-4 pb-5">
             {/* Progress label + confidence score on one line */}
             <div className="flex items-center justify-between mb-3">
@@ -1034,7 +1053,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {confidence.explanation}
             </p>
           </div>
-        </Card>
+        </Card>}
 
         {/* ── Readiness ──────────────────────────────────────────── */}
         {(bundle || sessionStatus) && (
