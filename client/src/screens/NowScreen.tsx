@@ -179,6 +179,15 @@ function isBookingCurrentCycle(job: Job | null): boolean {
   return isThisWeekUTC(job.last_success_at)
 }
 
+// ── Session check result type ──────────────────────────────────────────────────
+
+interface SessionCheckResult {
+  valid:      boolean | null
+  checkedAt:  string  | null
+  detail:     string  | null
+  screenshot: string  | null
+}
+
 // ── Readiness helpers ──────────────────────────────────────────────────────────
 
 type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
@@ -195,7 +204,9 @@ function readinessDotColor(value: string): DotColor {
 }
 
 // Derives a single concise string that describes the current blocker (if any).
-function blockedReason(s: SniperRunState | null): string | null {
+function blockedReason(s: SniperRunState | null, sessionStatus: SessionCheckResult | null): string | null {
+  // Dedicated session check takes priority
+  if (sessionStatus?.valid === false) return sessionStatus.detail ?? 'Login failed — check credentials'
   if (!s) return null
   switch (s.sniperState) {
     case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
@@ -203,6 +214,17 @@ function blockedReason(s: SniperRunState | null): string | null {
     case 'SNIPER_BLOCKED_ACTION':    return 'Booking action unavailable'
     default: return null
   }
+}
+
+// Returns a concise relative-time string for a UTC ISO timestamp.
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'Never'
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 5_000)         return 'just now'
+  if (diff < 60_000)        return `${Math.floor(diff / 1_000)}s ago`
+  if (diff < 3_600_000)     return `${Math.floor(diff / 60_000)} min ago`
+  if (diff < 86_400_000)    return `${Math.floor(diff / 3_600_000)} hr ago`
+  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 // ── Readiness row sub-component ────────────────────────────────────────────────
@@ -222,6 +244,71 @@ function ReadinessRow({
         <StatusDot color={dotColor} />
         <span className="text-[14px] font-medium text-text-primary">{value}</span>
       </div>
+    </div>
+  )
+}
+
+// ── Session readiness row — with verify button + timestamp ─────────────────────
+
+function SessionReadinessRow({
+  sessionStatus, bundleSession, verifying, onVerify,
+}: {
+  sessionStatus: SessionCheckResult | null
+  bundleSession: string
+  verifying:     boolean
+  onVerify:      () => void
+}) {
+  // Derive status label + dot from dedicated check when available,
+  // otherwise fall back to the sniper-bundle's session dimension.
+  let dotColor: DotColor
+  let label: string
+  let subtext: string
+
+  if (sessionStatus?.valid === true) {
+    dotColor = 'green'
+    label    = 'Active'
+    subtext  = `Verified ${relativeTime(sessionStatus.checkedAt)}`
+  } else if (sessionStatus?.valid === false) {
+    dotColor = 'red'
+    label    = 'Login failed'
+    subtext  = `Checked ${relativeTime(sessionStatus.checkedAt)}`
+  } else if (sessionStatus?.valid === null && sessionStatus?.checkedAt) {
+    // Should not normally happen but guard gracefully
+    dotColor = 'gray'
+    label    = 'Unknown'
+    subtext  = `Checked ${relativeTime(sessionStatus.checkedAt)}`
+  } else {
+    // No dedicated check yet — fall back to sniper bundle
+    dotColor = readinessDotColor(bundleSession)
+    label    = SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? bundleSession
+    subtext  = 'Not yet verified'
+  }
+
+  return (
+    <div className="border-b border-divider px-4 py-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[14px] text-text-secondary">Session</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onVerify}
+            disabled={verifying}
+            className={`text-[12px] font-medium px-2 py-0.5 rounded-md transition-opacity
+              ${verifying
+                ? 'text-text-muted bg-divider opacity-60'
+                : 'text-accent-blue bg-accent-blue/10 active:opacity-70'
+              }`}
+          >
+            {verifying ? 'Verifying…' : 'Verify'}
+          </button>
+          <StatusDot color={verifying ? 'gray' : dotColor} />
+          <span className="text-[14px] font-medium text-text-primary">
+            {verifying ? 'Checking…' : label}
+          </span>
+        </div>
+      </div>
+      {!verifying && (
+        <p className="text-[11px] text-text-muted mt-0.5 text-right">{subtext}</p>
+      )}
     </div>
   )
 }
@@ -255,8 +342,26 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     return () => clearInterval(id)
   }, [])
 
+  // ── Dedicated session check state ──────────────────────────────────────────
+  const [sessionStatus,   setSessionStatus]   = useState<SessionCheckResult | null>(null)
+  const [sessionChecking, setSessionChecking] = useState(false)
+
+  useEffect(() => {
+    api.getSessionStatus().then(setSessionStatus).catch(() => {})
+  }, [])
+
+  const handleVerifySession = async () => {
+    if (sessionChecking) return
+    setSessionChecking(true)
+    try {
+      const result = await api.checkSession()
+      setSessionStatus(result)
+    } catch { /* swallow — UI shows previous status */ }
+    finally { setSessionChecking(false) }
+  }
+
   const bundle  = sniperRunState?.bundle
-  const blocked = blockedReason(sniperRunState)
+  const blocked = blockedReason(sniperRunState, sessionStatus)
 
   // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
   const hasReadinessData = bundle && (
@@ -449,32 +554,35 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         )}
 
         {/* ── Readiness ──────────────────────────────────────────── */}
-        {bundle && (
+        {(bundle || sessionStatus) && (
           <>
             <SectionHeader title="Readiness" />
             <Card padding="none">
+              {/* Session row — always shown, has its own verify button */}
+              <SessionReadinessRow
+                sessionStatus={sessionStatus}
+                bundleSession={bundle?.session ?? 'SESSION_UNKNOWN'}
+                verifying={sessionChecking}
+                onVerify={handleVerifySession}
+              />
+              {/* Discovery + Action rows — only shown when sniper has data */}
               {hasReadinessData ? (
                 <>
                   <ReadinessRow
-                    label="Session"
-                    value={SESSION_LABEL[bundle.session] ?? bundle.session}
-                    dotColor={readinessDotColor(bundle.session)}
-                  />
-                  <ReadinessRow
                     label="Discovery"
-                    value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
-                    dotColor={readinessDotColor(bundle.discovery)}
+                    value={DISCOVERY_LABEL[bundle!.discovery] ?? bundle!.discovery}
+                    dotColor={readinessDotColor(bundle!.discovery)}
                   />
                   <ReadinessRow
                     label="Action"
-                    value={ACTION_LABEL[bundle.action] ?? bundle.action}
-                    dotColor={readinessDotColor(bundle.action)}
+                    value={ACTION_LABEL[bundle!.action] ?? bundle!.action}
+                    dotColor={readinessDotColor(bundle!.action)}
                     last
                   />
                 </>
               ) : (
-                <div className="px-4 py-3">
-                  <p className="text-[13px] text-text-muted">No readiness data yet — waiting for first run</p>
+                <div className="px-4 py-3 pb-3">
+                  <p className="text-[12px] text-text-muted">Run Preflight Check in Tools to test discovery &amp; action</p>
                 </div>
               )}
             </Card>

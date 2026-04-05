@@ -110,6 +110,20 @@ export const api = {
   getSniperState: (): Promise<SniperRunState> =>
     apiFetch('/api/sniper-state'),
 
+  getSessionStatus: (): Promise<{
+    valid: boolean | null
+    checkedAt: string | null
+    detail: string | null
+    screenshot: string | null
+  }> => apiFetch('/api/session-status'),
+
+  checkSession: (): Promise<{
+    valid: boolean | null
+    checkedAt: string | null
+    detail: string | null
+    screenshot: string | null
+  }> => apiFetch('/api/session-check', { method: 'POST' }),
+
   runPreflight: (jobId: number): Promise<{
     success: boolean
     status: string

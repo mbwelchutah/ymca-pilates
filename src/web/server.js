@@ -3871,6 +3871,29 @@ const server = http.createServer((req, res) => {
       })();
     });
 
+  } else if (req.method === 'GET' && path === '/api/session-status') {
+    // Returns the persisted result of the last session check (fast, no browser).
+    const { loadStatus } = require('../bot/session-check');
+    json(loadStatus() || { valid: null, checkedAt: null, detail: null, screenshot: null });
+
+  } else if (req.method === 'POST' && path === '/api/session-check') {
+    // Runs a dedicated login check — login only, no booking pipeline.
+    // Does NOT call setLastRun; does NOT update sniper-state.json.
+    if (jobState.active) {
+      json({ valid: false, checkedAt: null, detail: 'Bot already running — try again when it finishes', screenshot: null });
+      return;
+    }
+    (async () => {
+      try {
+        const { runSessionCheck } = require('../bot/session-check');
+        const result = await runSessionCheck();
+        json(result);
+      } catch (err) {
+        console.error('[session-check] route error:', err.message);
+        json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null });
+      }
+    })();
+
   } else if (req.method === 'GET' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const id    = parsed.searchParams.get('id');
