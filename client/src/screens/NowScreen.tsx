@@ -653,7 +653,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Check Now button + inline result */}
+          {/* Check Now button + secondary actions + inline result */}
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
               <button
@@ -677,6 +677,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )}
                 {preflightRunning ? 'Checking…' : 'Check Now'}
               </button>
+
+              {/* Verify Session — secondary action, fast auth-only check */}
+              {!(sessionStatus?.locked ?? false) && !preflightRunning && (
+                <button
+                  onClick={handleVerifySession}
+                  disabled={sessionChecking}
+                  className="mt-2 w-full text-center text-[13px] text-text-muted active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                >
+                  {sessionChecking && (
+                    <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  )}
+                  {sessionChecking ? 'Verifying…' : 'Verify Session'}
+                </button>
+              )}
 
               {/* Lock note — shown when a booking is actively running */}
               {(sessionStatus?.locked ?? false) && !preflightRunning && (
@@ -799,7 +816,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </>
               ) : (
                 <div className="px-4 py-3 pb-3">
-                  <p className="text-[12px] text-text-muted">Run Preflight Check in Tools to test discovery &amp; action</p>
+                  <p className="text-[12px] text-text-muted">Use Check Now above to test discovery &amp; action</p>
                 </div>
               )}
             </Card>
