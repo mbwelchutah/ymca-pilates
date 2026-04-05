@@ -11,6 +11,7 @@ export type ExecutionPhase =
   | 'ACTION'        // Clicking Reserve / Waitlist
   | 'CONFIRMATION'  // Detecting post-click success confirmation
   | 'RECOVERY'      // Any automated recovery attempt after a failure
+  | 'SYSTEM'        // Scheduler-level meta events (e.g. warmup skip)
 
 // ── Failure types ─────────────────────────────────────────────────────────────
 // Granular failure identifiers — primarily used in Tools diagnostics and logs.

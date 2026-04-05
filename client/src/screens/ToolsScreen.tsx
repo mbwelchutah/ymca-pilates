@@ -7,7 +7,9 @@ import { DetailRow } from '../components/ui/DetailRow'
 import type { AppState } from '../types'
 import type { SniperRunState } from '../lib/api'
 import { api } from '../lib/api'
-import { FAILURE_LABEL } from '../lib/failureMapper'
+import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
+import type { FailureType } from '../lib/failureTypes'
+import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL } from '../lib/readinessResolver'
 
 interface FailureEntry {
   id:           number | null
@@ -87,6 +89,35 @@ const PHASE_LABELS: Record<string, string> = {
   'ACTION':       'Action',
   'CONFIRMATION': 'Confirmation',
   'RECOVERY':     'Recovery',
+  'SYSTEM':       'System',
+}
+
+// Impact badge color based on readiness value
+function impactBadgeColor(value: string): string {
+  if (value.includes('READY'))    return 'text-accent-green bg-accent-green/10'
+  if (
+    value.includes('REQUIRED') || value.includes('EXPIRED') ||
+    value.includes('FAILED')   || value.includes('BLOCKED')
+  ) return 'text-accent-red bg-accent-red/10'
+  return 'text-text-muted bg-divider'
+}
+
+// Known evidence key → human label
+const EVIDENCE_KEY_LABEL: Record<string, string> = {
+  verifyTime:  'Time',
+  verifyInst:  'Instructor',
+  buttons:     'Buttons',
+  buttonText:  'Button',
+  title:       'Title',
+  count:       'Count',
+  url:         'URL',
+}
+
+function formatEvidenceValue(v: unknown): string {
+  if (v === true)  return '✓'
+  if (v === false) return '✗'
+  if (Array.isArray(v)) return v.join(', ')
+  return String(v)
 }
 
 const RESULT_LABELS: Record<string, string> = {
@@ -183,7 +214,7 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
     )
   }
 
-  const { runId, events, sniperState } = sniperRunState
+  const { runId, events, sniperState, bundle, jobId } = sniperRunState
   const runLabel = runId ? fmtStr(runId) : '—'
 
   // Sniper state badge color
@@ -196,41 +227,114 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
 
   return (
     <Card padding="none">
-      {/* Header row */}
+      {/* Header row: run timestamp + sniper state badge */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-        <span className="text-[13px] text-text-muted">{runLabel}</span>
+        <div>
+          <span className="text-[13px] text-text-muted">{runLabel}</span>
+          {jobId != null && (
+            <span className="text-[11px] text-text-muted ml-2">Job #{jobId}</span>
+          )}
+        </div>
         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-pill ${stateBadgeColor}`}>
           {sniperState?.replace('SNIPER_', '').replace(/_/g, ' ')}
+        </span>
+      </div>
+
+      {/* Readiness bundle summary */}
+      <div className="flex gap-2 px-4 py-2 border-b border-divider flex-wrap">
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(bundle.session)}`}>
+          Session: {SESSION_LABEL[bundle.session]}
+        </span>
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(bundle.discovery)}`}>
+          Class: {DISCOVERY_LABEL[bundle.discovery]}
+        </span>
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(bundle.action)}`}>
+          Action: {ACTION_LABEL[bundle.action]}
         </span>
       </div>
 
       {/* Event rows */}
       {events.map((ev, i) => {
         const isLast = i === events.length - 1
-        const phaseLabel = PHASE_LABELS[ev.phase] ?? ev.phase
-        const failLabel = ev.failureType
-          ? (FAILURE_LABEL[ev.failureType as keyof typeof FAILURE_LABEL] ?? ev.failureType)
+        const phaseLabel  = PHASE_LABELS[ev.phase] ?? ev.phase
+        const isKnownType = ev.failureType != null && (ev.failureType as string) in FAILURE_LABEL
+        const failLabel   = ev.failureType
+          ? (isKnownType ? FAILURE_LABEL[ev.failureType as FailureType] : ev.failureType.replace(/_/g, ' '))
           : null
-        const msgSnip = ev.message
-          ? (ev.message.length > 70 ? ev.message.slice(0, 70) + '…' : ev.message)
+        const impact      = isKnownType
+          ? failureToReadinessImpact(ev.failureType as FailureType)
           : null
+        const hasImpact   = impact && Object.keys(impact).length > 0
+        const evidence    = ev.evidence ? Object.entries(ev.evidence) : []
 
         return (
           <div key={i} className={`flex gap-3 px-4 py-3 ${!isLast ? 'border-b border-divider' : ''}`}>
             <EventDot hasFailure={!!ev.failureType} />
             <div className="flex-1 min-w-0">
+
+              {/* Phase chip + failure label + timestamp */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-semibold text-text-muted bg-divider rounded px-1.5 py-0.5 leading-tight">
+                <span className="text-[11px] font-semibold text-text-muted bg-divider rounded px-1.5 py-0.5 leading-tight flex-shrink-0">
                   {phaseLabel}
                 </span>
                 {failLabel && (
-                  <span className="text-[12px] font-medium text-accent-red truncate">{failLabel}</span>
+                  <span className={`text-[11px] font-medium truncate ${ev.failureType && isKnownType ? 'text-accent-red' : 'text-text-secondary'}`}>
+                    {failLabel}
+                  </span>
                 )}
                 <span className="text-[11px] text-text-muted ml-auto flex-shrink-0">{fmtTime(ev.timestamp)}</span>
               </div>
-              {msgSnip && (
-                <p className="text-[11px] text-text-muted mt-1 break-words leading-snug">{msgSnip}</p>
+
+              {/* Message */}
+              {ev.message && (
+                <p className="text-[11px] text-text-muted mt-1 break-words leading-snug">{ev.message}</p>
               )}
+
+              {/* Readiness impact pills */}
+              {hasImpact && (
+                <div className="flex gap-1.5 flex-wrap mt-1.5">
+                  {impact!.session && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(impact!.session)}`}>
+                      Session: {SESSION_LABEL[impact!.session]}
+                    </span>
+                  )}
+                  {impact!.discovery && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(impact!.discovery)}`}>
+                      Class: {DISCOVERY_LABEL[impact!.discovery]}
+                    </span>
+                  )}
+                  {impact!.action && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${impactBadgeColor(impact!.action)}`}>
+                      Action: {ACTION_LABEL[impact!.action]}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Evidence key-value pairs */}
+              {evidence.length > 0 && (
+                <div className="flex gap-x-3 gap-y-0.5 flex-wrap mt-1.5">
+                  {evidence.map(([k, v]) => (
+                    <span key={k} className="text-[10px] text-text-muted">
+                      <span className="font-semibold">{EVIDENCE_KEY_LABEL[k] ?? k}:</span>{' '}
+                      <span className={typeof v === 'boolean' ? (v ? 'text-accent-green' : 'text-accent-red') : ''}>
+                        {formatEvidenceValue(v)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Screenshot thumbnail */}
+              {ev.screenshot && (
+                <img
+                  src={`/screenshots/${ev.screenshot}`}
+                  alt={ev.phase}
+                  className="w-full mt-2 rounded-lg border border-divider"
+                  loading="lazy"
+                />
+              )}
+
             </div>
           </div>
         )

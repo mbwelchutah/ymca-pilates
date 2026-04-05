@@ -3,13 +3,14 @@ import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
 
 export interface SniperRunState {
-  runId:       string | null
-  jobId:       number | null
-  phase:       ExecutionPhase | null
-  bundle:      ReadinessBundle
-  sniperState: SniperState
-  events:      SniperEvent[]
-  updatedAt:   string | null
+  runId:          string | null
+  jobId:          number | null
+  phase:          ExecutionPhase | null
+  bundle:         ReadinessBundle
+  sniperState:    SniperState
+  authBlockedAt:  string | null   // set by real booking runs; never by skip events
+  events:         SniperEvent[]
+  updatedAt:      string | null
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
