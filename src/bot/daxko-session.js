@@ -105,6 +105,79 @@ async function createSession(opts = {}) {
   }
   console.log('Auth looks valid — proceeding.');
 
+  // ---- Step 2: Establish Familyworks member session (non-fatal) ----
+  // The schedule embed (my.familyworks.app) requires its own session for
+  // booking. Familyworks uses Daxko SSO — navigating to their sign-in page
+  // while already authenticated with Daxko should complete the SSO handshake
+  // and set the Familyworks session cookie automatically.
+  try {
+    console.log('[session] Attempting Familyworks pre-auth (SSO)...');
+    await page.goto('https://my.familyworks.app/eugeneymca', { timeout: 30000 });
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(2000);
+    const fwUrl = page.url();
+    console.log('[session] Familyworks landing URL:', fwUrl);
+
+    // Check if Familyworks already recognises us as signed in
+    const alreadySignedIn = (await page.locator('text=/my account|log out|sign out|my profile/i').count()) > 0;
+    if (alreadySignedIn) {
+      console.log('[session] Familyworks: already signed in — session established.');
+    } else {
+      // Look for a Sign-In / Log-In button or link
+      const signInBtn = page.locator(
+        'button:has-text("Sign In"), a:has-text("Sign In"), button:has-text("Log In"), a:has-text("Log In"), [href*="login"], [href*="signin"]'
+      ).first();
+      if ((await signInBtn.count()) > 0) {
+        console.log('[session] Familyworks: clicking Sign In...');
+        await signInBtn.click();
+        await page.waitForTimeout(3000);
+        const afterClickUrl = page.url();
+        console.log('[session] After Sign In click, URL:', afterClickUrl);
+
+        // If Daxko SSO redirected back and we're done, great.
+        // If a login form appeared (not Daxko-native), fill credentials.
+        const hasEmailField = (await page.locator('input[type="email"], input[type="text"]').count()) > 0;
+        const isOnDaxkoLogin = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('find_account');
+
+        if (isOnDaxkoLogin) {
+          // Daxko SSO redirect — we should already be authenticated; submit the
+          // email to trigger the SSO short-circuit.
+          console.log('[session] SSO redirected to Daxko — submitting email to complete SSO...');
+          await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
+          await page.click('#submit_button');
+          await page.waitForTimeout(1500);
+          // If password field appears, fill it too
+          if ((await page.locator('input[type="password"]').count()) > 0) {
+            await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+            await page.click('#submit_button');
+          }
+          await page.waitForTimeout(3000);
+          console.log('[session] SSO complete. Final URL:', page.url());
+        } else if (hasEmailField && !isOnDaxkoLogin) {
+          // Familyworks-native login form
+          console.log('[session] Familyworks native login form — filling credentials...');
+          await page.fill('input[type="email"], input[type="text"]', process.env.YMCA_EMAIL);
+          const passField = page.locator('input[type="password"]').first();
+          if ((await passField.count()) > 0) {
+            await passField.fill(process.env.YMCA_PASSWORD);
+          }
+          const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
+          if ((await submitBtn.count()) > 0) {
+            await submitBtn.click();
+            await page.waitForTimeout(3000);
+          }
+          console.log('[session] Familyworks login submitted. URL:', page.url());
+        } else {
+          console.log('[session] Familyworks: no login form detected after Sign In click.');
+        }
+      } else {
+        console.log('[session] Familyworks: no Sign In button found — page may be public or layout differs.');
+      }
+    }
+  } catch (fwErr) {
+    console.log('[session] Familyworks pre-auth step failed (non-fatal):', fwErr.message);
+  }
+
   return { browser, page, snap, close };
 }
 

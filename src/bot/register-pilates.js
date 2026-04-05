@@ -84,6 +84,79 @@ async function detectActionButtons(page) {
   return { hasRegister, hasWaitlist, hasLoginRequired, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy };
 }
 
+// ── Inline Familyworks authentication ─────────────────────────────────────
+// Called when a booking modal shows "Login to Register" despite a successful
+// Daxko login.  Clicks the button, handles whatever login flow appears
+// (Daxko SSO redirect or a Familyworks-native form), and returns an outcome.
+// Non-throwing — the caller decides how to handle failure.
+async function attemptInlineAuth(page) {
+  try {
+    console.log('[inline-auth] "Login to Register" detected — attempting inline auth...');
+
+    // Click the Login to Register button inside the modal
+    const loginBtn = page.locator(
+      'button:has-text("Login to Register"), [role="button"]:has-text("Login to Register"), a:has-text("Login to Register")'
+    ).first();
+    if ((await loginBtn.count()) === 0) {
+      return { authenticated: false, detail: 'Login to Register button not found in modal' };
+    }
+    await loginBtn.click();
+    await page.waitForTimeout(3000);
+
+    const afterClickUrl = page.url();
+    console.log('[inline-auth] After click, URL:', afterClickUrl);
+
+    const isOnDaxkoLogin = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('find_account');
+
+    if (isOnDaxkoLogin) {
+      // SSO redirected to Daxko — fill email to trigger the short-circuit
+      console.log('[inline-auth] SSO redirect to Daxko — completing SSO...');
+      await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
+      await page.click('#submit_button');
+      await page.waitForTimeout(1500);
+      if ((await page.locator('input[type="password"]').count()) > 0) {
+        await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+        await page.click('#submit_button');
+      }
+      await page.waitForTimeout(4000);
+      console.log('[inline-auth] SSO complete. URL:', page.url());
+      return { authenticated: true, detail: 'Completed Daxko SSO redirect after Login to Register' };
+    }
+
+    // Look for a login form on the current page (Familyworks-native)
+    const emailInput = page.locator('input[type="email"], input[type="text"]').first();
+    if ((await emailInput.count()) > 0) {
+      console.log('[inline-auth] Login form found — filling credentials...');
+      await emailInput.fill(process.env.YMCA_EMAIL || '');
+      // Multi-step: first "Continue / Next" button
+      const nextBtn = page.locator(
+        'button:has-text("Continue"), button:has-text("Next"), #submit_button'
+      ).first();
+      if ((await nextBtn.count()) > 0) {
+        await nextBtn.click();
+        await page.waitForTimeout(1500);
+      }
+      const passField = page.locator('input[type="password"]').first();
+      if ((await passField.count()) > 0) {
+        await passField.fill(process.env.YMCA_PASSWORD || '');
+        const submitBtn = page.locator(
+          'button[type="submit"], input[type="submit"], button:has-text("Sign In"), button:has-text("Log In")'
+        ).first();
+        if ((await submitBtn.count()) > 0) {
+          await submitBtn.click();
+          await page.waitForTimeout(4000);
+          console.log('[inline-auth] Login submitted. URL:', page.url());
+        }
+      }
+      return { authenticated: true, detail: 'Submitted inline login form' };
+    }
+
+    return { authenticated: false, detail: 'No SSO redirect or login form detected after clicking Login to Register' };
+  } catch (err) {
+    return { authenticated: false, detail: `Inline auth error: ${err.message}` };
+  }
+}
+
 const isHeadless = process.env.HEADLESS !== 'false';
 
 // Set to false to skip visual highlights in production.
@@ -1249,6 +1322,27 @@ async function runBookingJob(job, opts = {}) {
       console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
 
       if (hasLoginBtn) {
+        const inlineAuth = await attemptInlineAuth(page);
+        console.log('[preflight] inline-auth result:', inlineAuth.detail);
+        if (inlineAuth.authenticated) {
+          await page.waitForTimeout(1000);
+          const recheck = await detectActionButtons(page);
+          if (!recheck.hasLoginRequired) {
+            if (recheck.hasRegister) {
+              _state.bundle.action = 'ACTION_READY';
+              _state.sniperState   = 'SNIPER_READY';
+              emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible after inline auth');
+              await snap('preflight-pass-after-auth');
+              return logRunSummary({ status: 'success', message: 'Preflight passed after inline auth — Register button available', screenshotPath });
+            }
+            if (recheck.hasWaitlist) {
+              _state.bundle.action = 'ACTION_READY';
+              emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: Waitlist only after inline auth');
+              await snap('preflight-waitlist-after-auth');
+              return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
+            }
+          }
+        }
         emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
         await snap('preflight-auth-fail');
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
@@ -1272,17 +1366,34 @@ async function runBookingJob(job, opts = {}) {
     // ──────────────────────────────────────────────────────────────────────────
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginButton,
-              registerBtn, waitlistBtn, allBtnTexts: allBtns,
-              registerStrategy, waitlistStrategy } = await detectActionButtons(page);
+      let { hasRegister, hasWaitlist, hasLoginRequired: hasLoginButton,
+            registerBtn, waitlistBtn, allBtnTexts: allBtns,
+            registerStrategy, waitlistStrategy } = await detectActionButtons(page);
 
       console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
       if (hasLoginButton) {
-        console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
-        await snap();
-        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
-        return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
+        const inlineAuth = await attemptInlineAuth(page);
+        console.log('[inline-auth] result:', inlineAuth.detail);
+        if (inlineAuth.authenticated) {
+          await page.waitForTimeout(1500);
+          const recheck = await detectActionButtons(page);
+          hasRegister      = recheck.hasRegister;
+          hasWaitlist      = recheck.hasWaitlist;
+          hasLoginButton   = recheck.hasLoginRequired;
+          if (recheck.registerBtn)  registerBtn      = recheck.registerBtn;
+          if (recheck.waitlistBtn)  waitlistBtn      = recheck.waitlistBtn;
+          if (recheck.allBtnTexts)  allBtns          = recheck.allBtnTexts;
+          if (recheck.registerStrategy) registerStrategy = recheck.registerStrategy;
+          if (recheck.waitlistStrategy) waitlistStrategy = recheck.waitlistStrategy;
+          console.log('[inline-auth] re-check buttons:', JSON.stringify(allBtns));
+        }
+        if (hasLoginButton) {
+          console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
+          await snap();
+          emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
+          return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
+        }
       }
 
       if (hasRegister) {
