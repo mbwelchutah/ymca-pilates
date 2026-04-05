@@ -15,37 +15,31 @@ interface SettingsScreenProps {
 
 function daxkoLabel(s: SessionStatus['daxko']): { text: string; cls: string } {
   switch (s) {
-    case 'DAXKO_READY':       return { text: 'Ready',      cls: 'text-accent-green' }
-    case 'AUTH_NEEDS_LOGIN':  return { text: 'Needs login', cls: 'text-accent-red'  }
-    default:                  return { text: 'Unknown',    cls: 'text-text-secondary' }
+    case 'DAXKO_READY':       return { text: 'Ready',         cls: 'text-accent-green' }
+    case 'AUTH_NEEDS_LOGIN':  return { text: 'Login required', cls: 'text-accent-red'  }
+    default:                  return { text: 'Unknown',        cls: 'text-text-secondary' }
   }
 }
 
 function familyworksLabel(s: SessionStatus['familyworks']): { text: string; cls: string } {
   switch (s) {
     case 'FAMILYWORKS_READY':            return { text: 'Ready',          cls: 'text-accent-green' }
-    case 'FAMILYWORKS_SESSION_MISSING':  return { text: 'Session missing', cls: 'text-accent-amber' }
+    case 'FAMILYWORKS_SESSION_MISSING':  return { text: 'Expired',        cls: 'text-accent-amber' }
     default:                             return { text: 'Unknown',        cls: 'text-text-secondary' }
-  }
-}
-
-function overallLabel(s: SessionStatus['overall']): { text: string; cls: string } {
-  switch (s) {
-    case 'DAXKO_READY':                  return { text: 'All systems ready',  cls: 'text-accent-green' }
-    case 'FAMILYWORKS_READY':            return { text: 'All systems ready',  cls: 'text-accent-green' }
-    case 'FAMILYWORKS_SESSION_MISSING':  return { text: 'Session missing',    cls: 'text-accent-amber' }
-    case 'AUTH_NEEDS_LOGIN':             return { text: 'Login required',     cls: 'text-accent-red'   }
-    default:                             return { text: 'Unknown',            cls: 'text-text-secondary' }
   }
 }
 
 function formatVerified(iso: string | null): string {
   if (!iso) return 'Never'
   try {
-    return new Intl.DateTimeFormat('en-US', {
+    const d = new Date(iso)
+    const datePart = new Intl.DateTimeFormat('en-US', {
       month: 'short', day: 'numeric',
+    }).format(d)
+    const timePart = new Intl.DateTimeFormat('en-US', {
       hour: 'numeric', minute: '2-digit', hour12: true,
-    }).format(new Date(iso))
+    }).format(d)
+    return `${datePart} at ${timePart}`
   } catch {
     return '—'
   }
@@ -53,14 +47,17 @@ function formatVerified(iso: string | null): string {
 
 type ActionState = 'idle' | 'running' | 'done' | 'error'
 
+interface Feedback {
+  text: string
+  cls:  string
+}
+
 export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
-  const [sessionStatus,  setSessionStatus]  = useState<SessionStatus | null>(null)
-  const [loginState,     setLoginState]     = useState<ActionState>('idle')
-  const [loginDetail,    setLoginDetail]    = useState<string>('')
-  const [refreshState,   setRefreshState]   = useState<ActionState>('idle')
-  const [refreshDetail,  setRefreshDetail]  = useState<string>('')
-  const [clearState,     setClearState]     = useState<ActionState>('idle')
-  const [clearDetail,    setClearDetail]    = useState<string>('')
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
+  const [loginState,    setLoginState]    = useState<ActionState>('idle')
+  const [refreshState,  setRefreshState]  = useState<ActionState>('idle')
+  const [clearState,    setClearState]    = useState<ActionState>('idle')
+  const [feedback,      setFeedback]      = useState<Feedback | null>(null)
 
   const fetchSessionStatus = () => {
     api.getSessionStatus()
@@ -73,19 +70,19 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const handleLogin = async () => {
     if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setLoginState('running')
-    setLoginDetail('Logging in — this takes about 30 seconds…')
+    setFeedback({ text: 'Logging in — this takes about 30 seconds…', cls: 'text-text-secondary' })
     try {
       const result = await api.settingsLogin()
       if (result.success) {
         setLoginState('done')
-        setLoginDetail(result.detail ?? 'Login complete')
+        setFeedback({ text: result.detail ?? 'Login complete', cls: 'text-accent-green' })
       } else {
         setLoginState('error')
-        setLoginDetail(result.detail ?? 'Login failed')
+        setFeedback({ text: result.detail ?? 'Login failed', cls: 'text-accent-red' })
       }
     } catch (e: unknown) {
       setLoginState('error')
-      setLoginDetail(e instanceof Error ? e.message : 'Login failed unexpectedly')
+      setFeedback({ text: e instanceof Error ? e.message : 'Login failed unexpectedly', cls: 'text-accent-red' })
     } finally {
       fetchSessionStatus()
     }
@@ -94,19 +91,19 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const handleRefresh = async () => {
     if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setRefreshState('running')
-    setRefreshDetail('Checking credentials — this takes about 15 seconds…')
+    setFeedback({ text: 'Checking credentials — this takes about 15 seconds…', cls: 'text-text-secondary' })
     try {
       const result = await api.settingsRefresh()
       if (result.success) {
         setRefreshState('done')
-        setRefreshDetail(result.detail ?? 'Refresh complete')
+        setFeedback({ text: result.detail ?? 'Session refreshed', cls: 'text-accent-green' })
       } else {
         setRefreshState('error')
-        setRefreshDetail(result.detail ?? 'Refresh failed')
+        setFeedback({ text: result.detail ?? 'Refresh failed', cls: 'text-accent-red' })
       }
     } catch (e: unknown) {
       setRefreshState('error')
-      setRefreshDetail(e instanceof Error ? e.message : 'Refresh failed unexpectedly')
+      setFeedback({ text: e instanceof Error ? e.message : 'Refresh failed unexpectedly', cls: 'text-accent-red' })
     } finally {
       fetchSessionStatus()
     }
@@ -115,12 +112,12 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const handleClear = async () => {
     if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setClearState('running')
-    setClearDetail('Clearing session data…')
+    setFeedback({ text: 'Clearing session data…', cls: 'text-text-secondary' })
     try {
       const result = await api.settingsClear()
       if (result.success) {
         setClearState('done')
-        setClearDetail(result.detail ?? 'Session cleared')
+        setFeedback({ text: result.detail ?? 'Session cleared', cls: 'text-accent-green' })
         setSessionStatus({
           valid:        false,
           checkedAt:    null,
@@ -133,11 +130,11 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
         })
       } else {
         setClearState('error')
-        setClearDetail(result.detail ?? 'Clear failed')
+        setFeedback({ text: result.detail ?? 'Clear failed', cls: 'text-accent-red' })
       }
     } catch (e: unknown) {
       setClearState('error')
-      setClearDetail(e instanceof Error ? e.message : 'Clear failed unexpectedly')
+      setFeedback({ text: e instanceof Error ? e.message : 'Clear failed unexpectedly', cls: 'text-accent-red' })
     }
   }
 
@@ -153,53 +150,34 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     } catch { /* ignored */ }
   }
 
-  const daxko      = sessionStatus ? daxkoLabel(sessionStatus.daxko)           : { text: '—', cls: 'text-text-secondary' }
-  const familyworks= sessionStatus ? familyworksLabel(sessionStatus.familyworks): { text: '—', cls: 'text-text-secondary' }
-  const overall    = sessionStatus ? overallLabel(sessionStatus.overall)        : { text: '—', cls: 'text-text-secondary' }
-  const verified   = sessionStatus ? formatVerified(sessionStatus.lastVerified) : '—'
+  const daxko       = sessionStatus ? daxkoLabel(sessionStatus.daxko)            : { text: '—', cls: 'text-text-secondary' }
+  const familyworks = sessionStatus ? familyworksLabel(sessionStatus.familyworks) : { text: '—', cls: 'text-text-secondary' }
+  const verified    = sessionStatus ? formatVerified(sessionStatus.lastVerified)  : '—'
 
-  const anyBusy   = loginState === 'running' || refreshState === 'running' || clearState === 'running'
-  const loginBusy = loginState === 'running'
-  const loginFeedbackCls =
-    loginState === 'done'    ? 'text-accent-green' :
-    loginState === 'error'   ? 'text-accent-red'   :
-    loginState === 'running' ? 'text-text-secondary' : ''
-
-  const refreshBusy = refreshState === 'running'
-  const refreshFeedbackCls =
-    refreshState === 'done'    ? 'text-accent-green' :
-    refreshState === 'error'   ? 'text-accent-red'   :
-    refreshState === 'running' ? 'text-text-secondary' : ''
-
-  const clearBusy = clearState === 'running'
-  const clearFeedbackCls =
-    clearState === 'done'    ? 'text-accent-green' :
-    clearState === 'error'   ? 'text-accent-red'   :
-    clearState === 'running' ? 'text-text-secondary' : ''
+  const anyBusy    = loginState === 'running' || refreshState === 'running' || clearState === 'running'
+  const loginBusy  = loginState === 'running'
+  const refreshBusy= refreshState === 'running'
+  const clearBusy  = clearState === 'running'
 
   return (
     <>
       <AppHeader subtitle="Settings" />
       <ScreenContainer>
 
-        {/* Account & Session */}
-        <SectionHeader title="Account & Session" />
+        {/* Session */}
+        <SectionHeader title="Session" />
         <Card padding="none">
           <div className="flex items-center justify-between py-3 px-4">
-            <span className="text-[14px] text-text-secondary">Daxko login</span>
+            <span className="text-[14px] text-text-secondary">Account</span>
             <span className={`text-[14px] font-medium ${daxko.cls}`}>{daxko.text}</span>
           </div>
           <div className="h-px bg-divider mx-4" />
           <div className="flex items-center justify-between py-3 px-4">
-            <span className="text-[14px] text-text-secondary">FamilyWorks session</span>
+            <span className="text-[14px] text-text-secondary">Schedule access</span>
             <span className={`text-[14px] font-medium ${familyworks.cls}`}>{familyworks.text}</span>
           </div>
           <div className="h-px bg-divider mx-4" />
-          <DetailRow label="Last verified" value={verified} />
-          <div className="flex items-center justify-between py-3 px-4">
-            <span className="text-[14px] text-text-secondary">Overall status</span>
-            <span className={`text-[14px] font-medium ${overall.cls}`}>{overall.text}</span>
-          </div>
+          <DetailRow label="Last verified" value={verified} last />
         </Card>
         <Card padding="sm" className="flex flex-col gap-2">
           <button
@@ -209,9 +187,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
           >
             {loginBusy ? 'Logging in…' : 'Log in now'}
           </button>
-          {loginDetail ? (
-            <p className={`text-[12px] px-1 ${loginFeedbackCls}`}>{loginDetail}</p>
-          ) : null}
           <button
             onClick={handleRefresh}
             disabled={anyBusy}
@@ -219,9 +194,6 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
           >
             {refreshBusy ? 'Checking…' : 'Refresh session'}
           </button>
-          {refreshDetail ? (
-            <p className={`text-[12px] px-1 ${refreshFeedbackCls}`}>{refreshDetail}</p>
-          ) : null}
           <button
             onClick={handleClear}
             disabled={anyBusy}
@@ -229,8 +201,8 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
           >
             {clearBusy ? 'Clearing…' : 'Clear session'}
           </button>
-          {clearDetail ? (
-            <p className={`text-[12px] px-1 ${clearFeedbackCls}`}>{clearDetail}</p>
+          {feedback ? (
+            <p className={`text-[12px] px-1 ${feedback.cls}`}>{feedback.text}</p>
           ) : null}
         </Card>
 

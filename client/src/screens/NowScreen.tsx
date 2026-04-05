@@ -213,7 +213,7 @@ function readinessDotColor(value: string): DotColor {
 function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
   // Settings session state takes priority over sniper signals
   if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — open Settings to log in'
-  if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'FamilyWorks session expired — tap Log in now in Settings'
+  if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'Session expired — open Settings to log in again'
   if (!s) return null
   switch (s.sniperState) {
     case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
@@ -287,7 +287,7 @@ function SessionReadinessRow({
     label    = mapped.label
     const when = relativeTime(sessionStatus.lastVerified)
     const isReady = sessionStatus.overall === 'DAXKO_READY' || sessionStatus.overall === 'FAMILYWORKS_READY'
-    subtext  = when === 'Never' ? 'Not yet verified' : `${isReady ? 'Verified' : 'Checked'} ${when}`
+    subtext  = when === 'Never' ? 'Not yet verified' : `${isReady ? 'Verified' : 'Last checked'} ${when}`
   } else {
     // No Settings data yet — fall back to sniper bundle
     dotColor = readinessDotColor(bundleSession)
