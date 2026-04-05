@@ -62,6 +62,7 @@ export default function App() {
             loading={loading}
             error={error}
             refresh={refresh}
+            onGoToTools={() => handleTabChange('tools')}
           />
         )}
         {tab === 'plan' && (

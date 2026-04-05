@@ -23,6 +23,7 @@ interface NowScreenProps {
   loading: boolean
   error: string | null
   refresh: () => void
+  onGoToTools?: () => void
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -400,7 +401,7 @@ function AccountSessionBlock({
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools }: NowScreenProps) {
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
 
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
@@ -694,6 +695,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
                 `}>
                   {preflightResult.label}
                 </p>
+              )}
+
+              {/* Subtle link to full diagnostics in Tools */}
+              {preflightResult && !preflightRunning && onGoToTools && (
+                <button
+                  onClick={onGoToTools}
+                  className="mt-1 w-full text-center text-[12px] text-text-muted active:opacity-60"
+                >
+                  View details in Tools →
+                </button>
               )}
             </div>
           )}
