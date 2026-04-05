@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import { DetailRow } from '../components/ui/DetailRow'
+import { ToggleRow } from '../components/ui/ToggleRow'
 import type { AppState, Job, Phase } from '../types'
 import { api } from '../lib/api'
 
@@ -228,6 +229,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
     }
   }
 
+  const handleDryRun = async (enabled: boolean) => {
+    try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
+  }
+
   if (loading) {
     return (
       <>
@@ -409,7 +414,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
                     })
                   : '—'}
               />
-              <DetailRow label="Mode" value={appState.dryRun ? 'Simulation' : 'Live'} last />
+              <ToggleRow
+                label="Simulation Mode"
+                value={appState.dryRun}
+                onChange={handleDryRun}
+              />
             </Card>
           </>
         )}
@@ -418,7 +427,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         {appState.dryRun && (
           <Card padding="sm" className="border border-accent-amber/30 bg-accent-amber/5">
             <p className="text-[13px] text-accent-amber font-medium">
-              Simulation mode is on — bookings won't actually register. Turn it off in Settings.
+              Simulation mode is on — bookings won't actually register.
             </p>
           </Card>
         )}
