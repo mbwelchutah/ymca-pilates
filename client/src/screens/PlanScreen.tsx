@@ -211,7 +211,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
         )}
         <div className="flex items-center justify-between">
           <button
-            onClick={onEdit}
+            onClick={e => { e.stopPropagation(); onEdit() }}
             className="text-[13px] text-accent-blue font-medium active:opacity-70"
           >
             Edit
@@ -627,6 +627,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
       <ScreenContainer>
         {showAdd && (
           <AddJobForm
+            key={editingJob?.id ?? 'new'}
             prefill={editingJob ? null : prefill}
             editJob={editingJob}
             onSaved={handleFormSaved}
