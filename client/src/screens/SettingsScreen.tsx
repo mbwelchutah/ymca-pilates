@@ -59,6 +59,8 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const [loginDetail,    setLoginDetail]    = useState<string>('')
   const [refreshState,   setRefreshState]   = useState<ActionState>('idle')
   const [refreshDetail,  setRefreshDetail]  = useState<string>('')
+  const [clearState,     setClearState]     = useState<ActionState>('idle')
+  const [clearDetail,    setClearDetail]    = useState<string>('')
 
   const fetchSessionStatus = () => {
     api.getSessionStatus()
@@ -69,7 +71,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   useEffect(() => { fetchSessionStatus() }, [])
 
   const handleLogin = async () => {
-    if (loginState === 'running' || refreshState === 'running') return
+    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setLoginState('running')
     setLoginDetail('Logging in — this takes about 30 seconds…')
     try {
@@ -90,7 +92,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   }
 
   const handleRefresh = async () => {
-    if (loginState === 'running' || refreshState === 'running') return
+    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setRefreshState('running')
     setRefreshDetail('Checking credentials — this takes about 15 seconds…')
     try {
@@ -105,6 +107,27 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     } catch (e: unknown) {
       setRefreshState('error')
       setRefreshDetail(e instanceof Error ? e.message : 'Refresh failed unexpectedly')
+    } finally {
+      fetchSessionStatus()
+    }
+  }
+
+  const handleClear = async () => {
+    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
+    setClearState('running')
+    setClearDetail('Clearing session data…')
+    try {
+      const result = await api.settingsClear()
+      if (result.success) {
+        setClearState('done')
+        setClearDetail(result.detail ?? 'Session cleared')
+      } else {
+        setClearState('error')
+        setClearDetail(result.detail ?? 'Clear failed')
+      }
+    } catch (e: unknown) {
+      setClearState('error')
+      setClearDetail(e instanceof Error ? e.message : 'Clear failed unexpectedly')
     } finally {
       fetchSessionStatus()
     }
@@ -127,7 +150,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const overall    = sessionStatus ? overallLabel(sessionStatus.overall)        : { text: '—', cls: 'text-text-secondary' }
   const verified   = sessionStatus ? formatVerified(sessionStatus.lastVerified) : '—'
 
-  const anyBusy   = loginState === 'running' || refreshState === 'running'
+  const anyBusy   = loginState === 'running' || refreshState === 'running' || clearState === 'running'
   const loginBusy = loginState === 'running'
   const loginFeedbackCls =
     loginState === 'done'    ? 'text-accent-green' :
@@ -139,6 +162,12 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     refreshState === 'done'    ? 'text-accent-green' :
     refreshState === 'error'   ? 'text-accent-red'   :
     refreshState === 'running' ? 'text-text-secondary' : ''
+
+  const clearBusy = clearState === 'running'
+  const clearFeedbackCls =
+    clearState === 'done'    ? 'text-accent-green' :
+    clearState === 'error'   ? 'text-accent-red'   :
+    clearState === 'running' ? 'text-text-secondary' : ''
 
   return (
     <>
@@ -186,11 +215,15 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
             <p className={`text-[12px] px-1 ${refreshFeedbackCls}`}>{refreshDetail}</p>
           ) : null}
           <button
-            disabled
-            className="w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-accent-red text-[14px] font-semibold opacity-50 cursor-not-allowed"
+            onClick={handleClear}
+            disabled={anyBusy}
+            className={`w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-accent-red text-[14px] font-semibold transition-opacity ${anyBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
-            Clear session
+            {clearBusy ? 'Clearing…' : 'Clear session'}
           </button>
+          {clearDetail ? (
+            <p className={`text-[12px] px-1 ${clearFeedbackCls}`}>{clearDetail}</p>
+          ) : null}
         </Card>
 
         {/* Scheduler */}

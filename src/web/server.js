@@ -4094,6 +4094,53 @@ const server = http.createServer((req, res) => {
       }
     })();
 
+  } else if (req.method === 'POST' && path === '/api/settings-clear') {
+    // Instantly wipes all persisted auth state. No browser launched.
+    // Overwrites session-status.json and familyworks-session.json with cleared
+    // values, and resets bundle.session in sniper-state.json to SESSION_UNKNOWN
+    // (events array is preserved for run history).
+    try {
+      const now = new Date().toISOString();
+      const dataDir = pathStatic.join(__dirname, '../data');
+
+      // ── session-status.json ───────────────────────────────────────────────
+      fsStatic.writeFileSync(
+        pathStatic.join(dataDir, 'session-status.json'),
+        JSON.stringify({ valid: false, checkedAt: now, source: 'clear', detail: 'Session cleared by user' }, null, 2)
+      );
+
+      // ── familyworks-session.json ──────────────────────────────────────────
+      fsStatic.writeFileSync(
+        pathStatic.join(dataDir, 'familyworks-session.json'),
+        JSON.stringify({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: now, source: 'clear', detail: 'Session cleared by user' }, null, 2)
+      );
+
+      // ── sniper-state.json — reset bundle only, keep events ────────────────
+      const sniperPath = pathStatic.join(dataDir, 'sniper-state.json');
+      let sniper = {};
+      if (fsStatic.existsSync(sniperPath)) {
+        try { sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8')); } catch (_) {}
+      }
+      sniper.bundle = { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_UNKNOWN', action: 'ACTION_UNKNOWN' };
+      sniper.sniperState = 'SNIPER_UNKNOWN';
+      sniper.authBlockedAt = null;
+      sniper.updatedAt = now;
+      fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+
+      console.log('[settings-clear] Auth state cleared.');
+      json({
+        success: true,
+        daxko: 'AUTH_NEEDS_LOGIN',
+        familyworks: 'FAMILYWORKS_SESSION_MISSING',
+        overall: 'AUTH_NEEDS_LOGIN',
+        lastVerified: null,
+        detail: 'Session cleared. Log in before the next booking run.',
+      });
+    } catch (err) {
+      console.error('[settings-clear] error:', err.message);
+      json({ success: false, detail: err.message || 'Clear failed unexpectedly' });
+    }
+
   } else if (req.method === 'GET' && path === '/api/auto-preflight-config') {
     // Returns settings, last run info, and the next scheduled trigger.
     const settings    = loadAutoPreflightSettings();
