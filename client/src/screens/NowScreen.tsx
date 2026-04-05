@@ -658,17 +658,34 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               <button
                 onClick={handleCheckNow}
                 disabled={preflightRunning || (sessionStatus?.locked ?? false)}
-                className={`w-full py-2.5 rounded-xl text-[15px] font-semibold transition-opacity
+                className={`w-full py-2.5 rounded-xl text-[15px] font-semibold transition-opacity flex items-center justify-center gap-2
                   ${preflightRunning || (sessionStatus?.locked ?? false)
                     ? 'bg-divider text-text-muted opacity-60'
                     : 'bg-accent-blue/10 text-accent-blue active:opacity-70'
                   }`}
               >
+                {preflightRunning && (
+                  <svg
+                    className="animate-spin h-4 w-4 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                )}
                 {preflightRunning ? 'Checking…' : 'Check Now'}
               </button>
 
+              {/* Lock note — shown when a booking is actively running */}
+              {(sessionStatus?.locked ?? false) && !preflightRunning && (
+                <p className="mt-2 text-center text-[12px] text-text-muted">
+                  A booking is in progress
+                </p>
+              )}
+
               {/* Concise result — shown after Check Now completes */}
-              {preflightResult && !preflightRunning && (
+              {preflightResult && !preflightRunning && !(sessionStatus?.locked ?? false) && (
                 <p className={`mt-2 text-center text-[13px] font-medium
                   ${preflightResult.color === 'green' ? 'text-accent-green' :
                     preflightResult.color === 'amber' ? 'text-accent-amber' :
