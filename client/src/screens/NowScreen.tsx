@@ -15,8 +15,6 @@ import {
   DEFAULT_READINESS, computeCompositeReadiness,
 } from '../lib/readinessResolver'
 import type { CompositeReadiness } from '../lib/readinessResolver'
-import { computeConfidence } from '../lib/confidence'
-import { generateSuggestions } from '../lib/suggestions'
 
 interface NowScreenProps {
   appState: AppState
@@ -328,11 +326,6 @@ function formatDayTime(job: Job) {
   return `${dayName}${dateStr} at ${job.class_time}${job.instructor ? ` with ${job.instructor}` : ''}`
 }
 
-const STEPS = ['Waiting', 'Opening Soon', 'Booking', 'Done']
-const PHASE_STEP: Record<Phase, number> = {
-  too_early: 0, warmup: 1, sniper: 2, late: 2, unknown: 0,
-}
-
 // ── Cycle-aware booking helpers ────────────────────────────────────────────────
 
 function isThisWeekUTC(isoStr: string | null | undefined): boolean {
@@ -561,12 +554,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? null
 
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
-  const warmupMs      = bookingOpenMs ? bookingOpenMs - 10 * 60 * 1000 : null
   const phase: Phase  = computePhase(bookingOpenMs)
 
   const cfg      = PHASE_CONFIG[phase]
   const countdown = useCountdown(bookingOpenMs)
-  const stepIdx  = PHASE_STEP[phase]
   const isBooked = isBookingCurrentCycle(job)
   const isStaleBooking =
     (job?.last_result === 'booked' || job?.last_result === 'dry_run') && !isBooked
@@ -640,7 +631,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setModalDetail(null)
     setActionDetail(null)
     setPreflightStatus(null)
-    setDryRunResult(null)
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -670,8 +660,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Result badge shown after Verify Session completes — cleared on next check.
   type VerifyResult = { label: string; color: 'green' | 'amber' | 'red'; detail: string }
   const [verifyResult,    setVerifyResult]    = useState<VerifyResult | null>(null)
-  const [dryRunRunning,   setDryRunRunning]   = useState(false)
-  const [dryRunResult,    setDryRunResult]    = useState<VerifyResult | null>(null)
 
   useEffect(() => {
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
@@ -705,20 +693,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     } finally { setSessionChecking(false) }
   }
 
-  const handleRunDryRun = async () => {
-    if (!job || dryRunRunning || (sessionStatus?.locked ?? false)) return
-    setDryRunRunning(true)
-    setDryRunResult(null)
-    try {
-      const r = await api.runDryRun(job.id)
-      setDryRunResult({ label: r.label, color: r.color, detail: r.message ?? '' })
-      // Refresh sniper-state so Tools timeline updates.
-      api.getSniperState().then(setSniperRunState).catch(() => {})
-    } catch {
-      setDryRunResult({ label: 'Dry run failed', color: 'red', detail: 'An error occurred — check Tools for details' })
-    } finally { setDryRunRunning(false) }
-  }
-
   // Sniper state is global (last-run-wins).  Only treat it as applicable to the
   // current view when its jobId matches the selected job, or when the server
   // hasn't stored a jobId yet (legacy/null).
@@ -733,22 +707,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'            ||
     sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
     (isReadinessForCurrentJob && sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH')
-
-  // ── Confidence score (Stage 9.1) ───────────────────────────────────────────
-  // Computed entirely from data already fetched — no new API calls.
-  const confidence = computeConfidence(
-    bundle ?? { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED' },
-    sessionStatus,
-    isReadinessForCurrentJob ? (sniperRunState?.events ?? []) : [],
-    isReadinessForCurrentJob ? (sniperRunState?.updatedAt ?? null) : null,
-  )
-
-  // ── Suggestions (Stage 9.5) — high-priority only, max 1 on Now ─────────────
-  const nowSuggestion = generateSuggestions({
-    sessionValid:    sessionStatus?.valid ?? null,
-    sniperState:     isReadinessForCurrentJob ? (sniperRunState?.sniperState ?? null) : null,
-    confidenceScore: confidence.score,
-  }).filter(s => s.priority === 'high')[0] ?? null
 
   // True only when there's useful readiness data for the current job.
   const hasReadinessData = isReadinessForCurrentJob && bundle && (
@@ -1181,9 +1139,54 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           )
         })()}
 
-        {/* ── Compact details section (Stage 4) ──────────────────── */}
+        {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
         {(sessionStatus || hasReadinessData) && (
           <Card padding="none">
+            {/* ── Readiness milestones (Stage 5) — 3-column strip ─── */}
+            {(() => {
+              // Session milestone
+              const sessReady   = sessionStatus?.daxko === 'DAXKO_READY'
+              const sessBlocked = sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'
+              const sessDot:   DotColor = sessReady ? 'green' : sessBlocked ? 'red' : 'gray'
+              const sessValue = sessReady ? 'Ready' : sessBlocked ? 'Login needed' : 'Unknown'
+
+              // Class (discovery) milestone
+              const classReady   = bundle?.discovery === 'DISCOVERY_READY'
+              const classFailed  = bundle?.discovery === 'DISCOVERY_FAILED'
+              const classTested  = classReady || classFailed
+              const classDot:   DotColor = classReady ? 'green' : classFailed ? 'red' : 'gray'
+              const classValue = classReady ? 'Found' : classFailed ? 'Not found' : classTested ? 'Unknown' : 'Not checked'
+
+              // Action milestone
+              const actionReady   = bundle?.action === 'ACTION_READY'
+              const actionBlocked = bundle?.action === 'ACTION_BLOCKED'
+              const actionTested  = actionReady || actionBlocked
+              const isWaitlist    = effectivePreflightStatus === 'waitlist_only'
+              const actionDot: DotColor = actionReady ? 'green' : isWaitlist ? 'amber' : actionBlocked ? 'red' : 'gray'
+              const actionValue = actionReady ? 'Reachable' : isWaitlist ? 'Waitlist' : actionBlocked ? 'Blocked' : actionTested ? 'Unknown' : 'Not checked'
+
+              const milestones = [
+                { label: 'Session', dot: sessDot,   value: sessValue   },
+                { label: 'Class',   dot: classDot,  value: classValue  },
+                { label: 'Action',  dot: actionDot, value: actionValue },
+              ]
+
+              return (
+                <div className="flex border-b border-divider">
+                  {milestones.map((m, i) => (
+                    <div
+                      key={m.label}
+                      className={`flex-1 flex flex-col items-center py-3 gap-1 ${i > 0 ? 'border-l border-divider' : ''}`}
+                    >
+                      <StatusDot color={m.dot} />
+                      <span className="text-[12px] font-medium text-text-secondary">{m.value}</span>
+                      <span className="text-[10px] text-text-muted">{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
             {/* Session */}
             {sessionStatus && (() => {
               const s  = daxkoToLabel(sessionStatus.daxko)
