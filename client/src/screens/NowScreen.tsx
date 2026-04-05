@@ -685,7 +685,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               )}
 
               {/* Concise result — shown after Check Now completes */}
-              {preflightResult && !preflightRunning && !(sessionStatus?.locked ?? false) && (
+              {preflightResult && !preflightRunning && (
                 <p className={`mt-2 text-center text-[13px] font-medium
                   ${preflightResult.color === 'green' ? 'text-accent-green' :
                     preflightResult.color === 'amber' ? 'text-accent-amber' :
