@@ -454,6 +454,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
   const [sessionChecking, setSessionChecking] = useState(false)
 
+  // Result badge shown after Verify Session completes — cleared on next check.
+  type VerifyResult = { label: string; color: 'green' | 'amber' | 'red'; detail: string }
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null)
+
   useEffect(() => {
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
   }, [])
@@ -461,13 +465,29 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const handleVerifySession = async () => {
     if (sessionChecking) return
     setSessionChecking(true)
+    setVerifyResult(null)
     try {
-      await api.checkSession()
+      const checkResult = await api.checkSession()
       // Re-fetch full status so overall/lastVerified fields are populated
       const full = await api.getSessionStatus()
       setSessionStatus(full)
-    } catch { /* swallow — UI shows previous status */ }
-    finally { setSessionChecking(false) }
+
+      // Derive the result badge from the enriched check response.
+      // Fall back to reading full status if the enriched label is missing.
+      if (checkResult.valid === null) {
+        setVerifyResult({ label: 'Bot busy', color: 'amber', detail: 'Try again when the booking run finishes' })
+      } else if (checkResult.daxko === 'AUTH_NEEDS_LOGIN' || checkResult.valid === false) {
+        setVerifyResult({ label: 'Login required', color: 'red', detail: checkResult.detail ?? 'Credentials rejected — re-enter in Settings' })
+      } else if (checkResult.familyworks === 'FAMILYWORKS_SESSION_MISSING') {
+        setVerifyResult({ label: 'Schedule access missing', color: 'amber', detail: 'Daxko OK — use Settings → Log in now to restore schedule access' })
+      } else if (full.overall === 'DAXKO_READY' && full.familyworks === 'FAMILYWORKS_READY') {
+        setVerifyResult({ label: 'Session ready', color: 'green', detail: 'Daxko and schedule access both confirmed' })
+      } else {
+        setVerifyResult({ label: checkResult.label ?? 'Session ready', color: 'green', detail: 'Daxko confirmed — run Check Now for full readiness' })
+      }
+    } catch {
+      setVerifyResult({ label: 'Verification failed', color: 'red', detail: 'Check failed — try again' })
+    } finally { setSessionChecking(false) }
   }
 
   const bundle  = sniperRunState?.bundle
@@ -711,6 +731,27 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   )}
                   {sessionChecking ? 'Verifying…' : 'Verify Session'}
                 </button>
+              )}
+
+              {/* Verify Session result badge — shown after check completes */}
+              {verifyResult && !sessionChecking && !preflightRunning && (
+                <div className={`mt-2 rounded-xl px-3.5 py-2.5
+                  ${verifyResult.color === 'green' ? 'bg-accent-green/10' :
+                    verifyResult.color === 'amber' ? 'bg-accent-amber/10' :
+                    'bg-accent-red/10'}
+                `}>
+                  <div className="flex items-center gap-2">
+                    <StatusDot color={verifyResult.color} />
+                    <span className={`text-[14px] font-semibold
+                      ${verifyResult.color === 'green' ? 'text-accent-green' :
+                        verifyResult.color === 'amber' ? 'text-accent-amber' :
+                        'text-accent-red'}
+                    `}>
+                      {verifyResult.label}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{verifyResult.detail}</p>
+                </div>
               )}
 
               {/* Lock indicator — shown when a booking is actively running */}

@@ -251,6 +251,40 @@ function savePreflightSnapshot(status) {
   }
 }
 
+// ── Session-check event ───────────────────────────────────────────────────────
+// Appended to sniper-state.json when the user runs Verify Session from the Now
+// screen.  Appears in the Tools diagnostic event log so the user can see a
+// timestamped history of manual session checks without needing to run Check Now.
+// Does NOT reset the bundle or sniperState — only appends a SYSTEM event.
+
+function emitSessionCheck(daxko, familyworks, detail) {
+  try {
+    const state = loadState();
+    if (!state) return; // No prior state — nothing to annotate yet.
+    const ts      = new Date().toISOString();
+    const passed  = daxko === 'DAXKO_READY' && familyworks === 'FAMILYWORKS_READY';
+    const fwOk    = familyworks === 'FAMILYWORKS_READY';
+    const failure = !passed
+      ? (daxko !== 'DAXKO_READY' ? 'AUTH_FAILED' : (!fwOk ? 'FW_SESSION_MISSING' : null))
+      : null;
+    const event = {
+      phase:       'SESSION_VERIFY',
+      failureType: failure,
+      message:     detail || `Session check — Daxko: ${daxko}, FamilyWorks: ${familyworks}`,
+      timestamp:   ts,
+      screenshot:  null,
+      evidence:    { daxko, familyworks },
+    };
+    state.events = state.events || [];
+    state.events.push(event);
+    if (state.events.length > 20) state.events = state.events.slice(-20);
+    state.updatedAt = ts;
+    saveState(state);
+  } catch (e) {
+    console.warn('[sniper-readiness] emitSessionCheck failed:', e.message);
+  }
+}
+
 // ── Tick-skip event ───────────────────────────────────────────────────────────
 // Called by the scheduler tick when it decides to skip a warmup-phase run
 // based on the current readiness state.  Appends a SYSTEM event to the
@@ -296,6 +330,7 @@ module.exports = {
   emitEvent,
   emitSuccess,
   emitTickSkip,
+  emitSessionCheck,
   saveState,
   loadState,
   savePreflightSnapshot,

@@ -129,10 +129,13 @@ export const api = {
   getSessionStatus: (): Promise<SessionStatus> => apiFetch('/api/session-status'),
 
   checkSession: (): Promise<{
-    valid: boolean | null
-    checkedAt: string | null
-    detail: string | null
-    screenshot: string | null
+    valid:       boolean | null
+    checkedAt:   string | null
+    detail:      string | null
+    screenshot:  string | null
+    label:       string | null          // "Session ready" | "Login required" | etc.
+    daxko:       string | null          // 'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+    familyworks: string | null          // 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | etc.
   }> => apiFetch('/api/session-check', { method: 'POST' }),
 
   settingsLogin: (): Promise<{

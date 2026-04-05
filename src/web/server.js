@@ -3967,21 +3967,67 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Runs a dedicated login check — login only, no booking pipeline.
-    // Does NOT call setLastRun; does NOT update sniper-state.json.
+    // Checks Daxko credentials via a live browser login, then reads the most
+    // recent FamilyWorks session status from persisted files (no FW browser run).
+    // Emits a SESSION_VERIFY event to sniper-state.json so it appears in Tools.
+    // Does NOT call setLastRun; does NOT reset the readiness bundle.
     if (jobState.active) {
       // Return valid:null (not false) so the UI does not show a red auth-failure
       // notice — "bot busy" is different from "login failed."
-      json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null });
+      json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null, label: 'Bot busy', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN' });
       return;
     }
     (async () => {
       try {
         const { runSessionCheck } = require('../bot/session-check');
         const result = await runSessionCheck();
-        json(result);
+
+        // ── Daxko status ────────────────────────────────────────────────────
+        const daxko = result.valid === true  ? 'DAXKO_READY'
+                    : result.valid === false ? 'AUTH_NEEDS_LOGIN'
+                    :                         'AUTH_UNKNOWN';
+
+        // ── FamilyWorks status (file-based, no additional browser run) ──────
+        // Reads familyworks-session.json written by preflight / Settings login.
+        // Treats entries older than 6 hours as Unknown to avoid stale "Ready".
+        let familyworks = 'AUTH_UNKNOWN';
+        try {
+          const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
+          if (fsStatic.existsSync(fwPath)) {
+            const fwData = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
+            const ageMs  = Date.now() - new Date(fwData.checkedAt || 0).getTime();
+            if (ageMs < 6 * 3600 * 1000) {
+              familyworks = fwData.status || 'AUTH_UNKNOWN';
+            }
+            // else: FW status is stale — leave as AUTH_UNKNOWN
+          }
+        } catch (_) { /* non-fatal — familyworks stays AUTH_UNKNOWN */ }
+
+        // ── Human-readable result label ─────────────────────────────────────
+        let label;
+        if (result.valid === null) {
+          label = 'Bot busy';
+        } else if (daxko !== 'DAXKO_READY') {
+          label = 'Login required';
+        } else if (familyworks === 'FAMILYWORKS_READY') {
+          label = 'Session ready';
+        } else if (familyworks === 'FAMILYWORKS_SESSION_MISSING') {
+          label = 'Schedule access missing';
+        } else {
+          // Daxko confirmed; FW stale or unknown — partial verification
+          label = 'Session ready';
+        }
+
+        // ── Log to Tools (sniper-state event log) ───────────────────────────
+        try {
+          const { emitSessionCheck } = require('../bot/sniper-readiness');
+          emitSessionCheck(daxko, familyworks, `Verify Session: ${label} — ${result.detail || ''}`);
+        } catch (_) { /* non-fatal */ }
+
+        json({ ...result, daxko, familyworks, label });
       } catch (err) {
         console.error('[session-check] route error:', err.message);
-        json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null });
+        json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null, label: 'Verification failed', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN' });
       }
     })();
 
