@@ -512,14 +512,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     message: string
     sniperState: SniperRunState | null
   }): PreflightResult {
-    const ss = result.sniperState?.sniperState
+    const ss          = result.sniperState?.sniperState
+    const sessionBundle = result.sniperState?.bundle?.session
     if (ss === 'SNIPER_READY')             return { label: 'Preflight passed',              color: 'green' }
+    if (ss === 'SNIPER_BLOCKED_AUTH' && sessionBundle === 'SESSION_EXPIRED')
+                                           return { label: 'Session expired',               color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_AUTH')      return { label: 'Login required',                color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_DISCOVERY') return { label: 'Class not found',               color: 'red'   }
     const disc = result.sniperState?.bundle?.discovery
     if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY') return { label: 'Class found', color: 'green' }
     if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
     if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
+    if (sessionBundle === 'SESSION_READY' && disc === 'DISCOVERY_NOT_TESTED')
+                                           return { label: 'Session ready',                 color: 'green' }
     // Fall back to status field
     if (result.status === 'success')            return { label: 'Preflight passed',         color: 'green' }
     if (result.status === 'found_not_open_yet') return { label: 'Not open yet',             color: 'gray'  }

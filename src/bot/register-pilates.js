@@ -409,7 +409,12 @@ async function runBookingJob(job, opts = {}) {
         detail:    loginErr.message || 'Login failed',
         screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
       });
-      emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message);
+      emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message, {
+        evidence: {
+          provider: 'Daxko',
+          detail:   (loginErr.message || 'Login failed').slice(0, 120),
+        }
+      });
       return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
     browser = _session.browser;
@@ -433,12 +438,20 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await snap();
-      emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED', 'Session not established — schedule page requires login');
+      emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED',
+        'Session not established — schedule page requires login', {
+        evidence: {
+          provider: 'FamilyWorks',
+          detail:   'Schedule embed showed login prompt after Daxko auth',
+          url:      page.url(),
+        }
+      });
       _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: _runSource, detail: 'Schedule page requires login — FamilyWorks session missing' });
       return logRunSummary({ status: 'error', message: 'Session not established — schedule page requires login', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired on schedule page', url: page.url() });
     }
     console.log('Auth valid on schedule page — continuing.');
     emitEvent(_state, 'AUTH', null, 'Auth valid on schedule page');
+    _state.bundle.session = 'SESSION_READY';
 
     // Wait for any dropdown to have options loaded (Bubble.io loads them async)
     await page.waitForFunction(() => {
