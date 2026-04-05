@@ -106,13 +106,30 @@ function nextOccurrence(dayOfWeek, hours, minutes, now) {
  * Given a DB job row, returns:
  *   nextClass    — Date of next class occurrence
  *   bookingOpen  — Date when registration opens (3 days before, 1 hr before class)
+ *
+ * If the job has a target_date (YYYY-MM-DD), the booking window is computed
+ * relative to that specific date rather than the next natural weekday occurrence.
+ * This ensures the scheduler phases (too_early / warmup / sniper / late) align
+ * with what the bot is actually going to try to book.
  */
 function getBookingWindow(job) {
   const { hours, minutes } = parseTime(job.classTime || job.class_time);
-  const now = new Date();
-  const nextClass = nextOccurrence(job.dayOfWeek || job.day_of_week, hours, minutes, now);
+  const targetDate = job.targetDate || job.target_date;
 
-  const bookingOpen = new Date(nextClass);
+  let nextClass;
+  if (targetDate) {
+    // Parse YYYY-MM-DD and place the class at hours:minutes in Pacific time.
+    const [y, m, d] = targetDate.split('-').map(Number);
+    // Use noon UTC on the target date to determine the Pacific offset that day.
+    const approxDate = new Date(Date.UTC(y, m - 1, d, 12, 0));
+    const offset     = pacificOffset(approxDate); // e.g. -7 for PDT, -8 for PST
+    nextClass = new Date(Date.UTC(y, m - 1, d, hours - offset, minutes));
+  } else {
+    const now = new Date();
+    nextClass = nextOccurrence(job.dayOfWeek || job.day_of_week, hours, minutes, now);
+  }
+
+  const bookingOpen = new Date(nextClass.getTime());
   bookingOpen.setDate(bookingOpen.getDate() - BOOKING_LEAD_DAYS);
   bookingOpen.setMinutes(bookingOpen.getMinutes() - BOOKING_LEAD_MINUTES);
 
