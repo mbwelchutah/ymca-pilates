@@ -227,6 +227,22 @@ function loadState() {
   }
 }
 
+// Persists a slim snapshot of the last user-triggered preflight result.
+// Called from server.js after /api/preflight completes.  The snapshot
+// survives page refreshes and lets the frontend restore the composite label.
+function savePreflightSnapshot(status) {
+  try {
+    const s = loadState() || {};
+    s.lastPreflightSnapshot = {
+      checkedAt: new Date().toISOString(),
+      status:    status || 'unknown',
+    };
+    saveState(s);
+  } catch (e) {
+    console.warn('[sniper-readiness] savePreflightSnapshot failed:', e.message);
+  }
+}
+
 // ── Tick-skip event ───────────────────────────────────────────────────────────
 // Called by the scheduler tick when it decides to skip a warmup-phase run
 // based on the current readiness state.  Appends a SYSTEM event to the
@@ -274,5 +290,6 @@ module.exports = {
   emitTickSkip,
   saveState,
   loadState,
+  savePreflightSnapshot,
   resolveState,
 };

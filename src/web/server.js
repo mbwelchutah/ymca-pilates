@@ -3870,7 +3870,8 @@ const server = http.createServer((req, res) => {
             targetDate: dbJob.target_date || null,
             maxAttempts: 1,
           }, { preflightOnly: true, dryRun: getDryRun() });
-          const { loadState } = require('../bot/sniper-readiness');
+          const { loadState, savePreflightSnapshot } = require('../bot/sniper-readiness');
+          savePreflightSnapshot(result.status);
           json({
             success:     result.status === 'success',
             status:      result.status,

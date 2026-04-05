@@ -122,6 +122,16 @@ const fmt = (ms: number) =>
     hour: 'numeric', minute: '2-digit',
   })
 
+// Formats a preflight snapshot ISO timestamp as "Apr 5, 7:14 AM".
+function formatPreflightTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date(iso))
+  } catch { return '—' }
+}
+
 // Absolute date + a "· in Xd Xh" suffix when the time is in the future.
 function fmtWithRelative(ms: number): string {
   const abs  = fmt(ms)
@@ -526,14 +536,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   // ── Composite readiness (Stage 10) ─────────────────────────────────────────
   // Derived at render time from the live bundle + last preflight status.
+  // Effective preflight status — prefer the current session value; fall back to
+  // the persisted snapshot so the composite stays accurate across page refreshes.
+  const effectivePreflightStatus =
+    preflightStatus ?? sniperRunState?.lastPreflightSnapshot?.status ?? null
+
+  // Timestamp of the last user-triggered Check Now (persisted in sniper-state.json).
+  const lastPreflightAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
+
   // Replaces the old per-call mapPreflightResult() priority chain.
   const composite: CompositeReadiness = computeCompositeReadiness(
     bundle ?? DEFAULT_READINESS,
-    preflightStatus,
+    effectivePreflightStatus,
     sniperRunState?.sniperState ?? null,
   )
   // Show the composite badge only when there is something meaningful to say.
-  const showComposite = preflightStatus !== null || Boolean(hasReadinessData)
+  const showComposite = effectivePreflightStatus !== null || Boolean(hasReadinessData)
 
   if (loading) {
     return (
@@ -710,6 +728,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     `}>
                       {composite.label}
                     </span>
+                    {lastPreflightAt && (
+                      <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
+                        {formatPreflightTime(lastPreflightAt)}
+                      </span>
+                    )}
                   </div>
                   <p className="text-[12px] text-text-muted mt-0.5 ml-5">{composite.detail}</p>
                 </div>

@@ -19,8 +19,9 @@ export interface SniperRunState {
   sniperState:    SniperState
   authBlockedAt:  string | null   // set by real booking runs; never by skip events
   timing:         SniperTiming | null
-  events:         SniperEvent[]
-  updatedAt:      string | null
+  events:                 SniperEvent[]
+  updatedAt:              string | null
+  lastPreflightSnapshot:  { checkedAt: string; status: string } | null
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
