@@ -54,14 +54,34 @@ interface JobCardProps {
   job: Job
   isWatching: boolean
   onToggle: (e: React.MouseEvent) => void
-  onDelete: () => void
+  onDelete: () => Promise<void>
   onSelect: () => void
 }
 
 function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps) {
   const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting]     = useState(false)
+  const [deleteErr, setDeleteErr]   = useState<string | null>(null)
   const dayName = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
   const phase = (job.phase ?? 'unknown') as Phase
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true)
+    setDeleteErr(null)
+    try {
+      await onDelete()
+      // On success the card unmounts — no state reset needed
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : 'Could not remove class')
+      setConfirming(false)
+      setDeleting(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setConfirming(false)
+    setDeleteErr(null)
+  }
 
   return (
     <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-50' : ''}`}>
@@ -130,21 +150,26 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
       <div className="h-px bg-divider mx-4" />
 
       {/* Footer: delete */}
-      <div className="px-4 py-2.5 flex items-center justify-end">
+      <div className="px-4 py-2.5 flex flex-col items-end gap-1.5">
+        {deleteErr && (
+          <p className="text-[12px] text-accent-red self-stretch">{deleteErr} — try again</p>
+        )}
         {confirming ? (
           <div className="flex items-center gap-3">
             <span className="text-[13px] text-text-secondary">Remove this class?</span>
             <button
-              onClick={() => setConfirming(false)}
-              className="text-[13px] font-semibold text-text-secondary"
+              onClick={handleCancel}
+              disabled={deleting}
+              className="text-[13px] font-semibold text-text-secondary disabled:opacity-40"
             >
               Cancel
             </button>
             <button
-              onClick={onDelete}
-              className="text-[13px] font-semibold text-accent-red"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="text-[13px] font-semibold text-accent-red disabled:opacity-40"
             >
-              Remove
+              {deleting ? 'Removing…' : 'Remove'}
             </button>
           </div>
         ) : (
@@ -427,10 +452,8 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   }
 
   const handleDelete = async (job: Job) => {
-    try {
-      await api.deleteJob(job.id)
-      refresh()
-    } catch { /* ignored */ }
+    await api.deleteJob(job.id)
+    refresh()
   }
 
   const handleTrack = (cls: ScrapedClass) => {
