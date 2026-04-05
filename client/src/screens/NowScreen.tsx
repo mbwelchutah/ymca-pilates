@@ -396,7 +396,12 @@ function AccountSessionBlock({
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools }: NowScreenProps) {
-  const job = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
+  // Strict lookup — no silent fallback to jobs[0].
+  // App.tsx's selectedJobId validation effect is the single source of truth:
+  // when the watched job is deleted it updates selectedJobId before the next
+  // render, so NowScreen never needs to guess.  When job is transiently null
+  // the hero card renders its own "No class selected" empty state.
+  const job = appState.jobs.find(j => j.id === selectedJobId) ?? null
 
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
   const warmupMs      = bookingOpenMs ? bookingOpenMs - 10 * 60 * 1000 : null

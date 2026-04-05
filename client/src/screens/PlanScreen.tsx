@@ -539,13 +539,16 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   const handleToggle = async (job: Job) => {
     try {
       await api.toggleActive(job.id)
-      refresh()
+      await refresh()
     } catch { /* ignored */ }
   }
 
   const handleDelete = async (job: Job) => {
     await api.deleteJob(job.id)
-    refresh()
+    // Await so App.tsx's selectedJobId validation effect runs on fresh state —
+    // if this was the watched job, the fallback selection happens immediately
+    // rather than waiting for the next 5-second poll.
+    await refresh()
   }
 
   const handleEdit = (job: Job) => {
