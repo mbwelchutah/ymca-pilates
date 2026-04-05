@@ -1,0 +1,116 @@
+Implement a refined lock-state UX for the Settings → Account & Session section.
+
+Context:
+When a booking job is running, the server returns { locked: true }.
+Currently:
+- buttons are disabled
+- amber message is shown
+- polling runs every 10s
+
+Goal:
+Make the locked state feel intentional, calm, and self-resolving.
+
+================================
+TASKS
+================================
+
+1. VISUAL LOCK STATE
+
+When locked === true:
+
+- Add a subtle loading indicator (spinner) inside the Account & Session card
+- Place it:
+  - right side of header OR
+  - inline with status text (preferred: next to message)
+
+- Replace message with:
+  "Booking in progress — settings will re-enable automatically"
+
+- Use calm styling:
+  - amber text
+  - not error red
+  - medium emphasis (not bold alert)
+
+--------------------------------
+
+2. BUTTON STATES
+
+While locked:
+
+- Disable all three buttons:
+  - Log in now
+  - Refresh session
+  - Clear session
+
+- Apply:
+  - opacity reduction (e.g. opacity-50)
+  - pointer-events: none
+
+- Add small inline label on primary button:
+  "Waiting…"
+
+--------------------------------
+
+3. POLLING FEEDBACK
+
+While polling:
+
+- Do NOT show timers or countdowns
+- Do NOT spam UI updates
+- Keep UI stable
+
+Optional:
+- very subtle spinner animation only
+
+--------------------------------
+
+4. UNLOCK TRANSITION
+
+When locked becomes false:
+
+- Remove spinner
+- Restore buttons immediately
+- Restore original labels (Log in now, etc.)
+- Fade transition (fast, subtle — ~150–200ms)
+
+--------------------------------
+
+5. SAFETY TIMEOUT (existing 90s)
+
+If timeout triggers:
+
+- Remove spinner
+- Re-enable buttons
+- Show message:
+  "Previous booking finished or timed out — you can try again"
+
+--------------------------------
+
+6. EDGE CASE
+
+If locked AND session status updates:
+
+- Update status rows (Account / Schedule access)
+- Keep buttons disabled until lock clears
+
+--------------------------------
+
+RULES
+
+- Do NOT redesign the Settings page
+- Do NOT change server behavior
+- Do NOT remove polling
+- Do NOT introduce new states beyond “locked”
+- Keep UI minimal and iPhone-native feeling
+
+--------------------------------
+
+AFTER IMPLEMENTATION
+
+Report:
+1. where spinner appears
+2. how buttons behave during lock
+3. how unlock transition works
+4. how timeout fallback behaves
+
+Stop after this change.

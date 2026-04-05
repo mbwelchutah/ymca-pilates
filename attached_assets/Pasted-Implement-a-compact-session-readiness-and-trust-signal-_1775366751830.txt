@@ -1,0 +1,153 @@
+Implement a compact session-readiness and trust-signal section on the Now screen.
+
+Context:
+Settings now owns login/session control.
+The Now screen should not contain login buttons, but it should reassure the user that they are ready to book.
+
+Goal:
+Make the Now screen answer:
+- am I logged in?
+- is schedule access ready?
+- when was this last verified?
+- is the sniper currently ready or blocked?
+
+Do this with a small, calm readiness block.
+Do NOT redesign the whole Now screen.
+
+================================
+TASKS
+================================
+
+1. ADD A COMPACT READINESS CARD OR SECTION ON NOW
+
+Place it near the top of the Now screen:
+- ideally below the hero card
+- or below the target-class summary
+- but above lower-priority details
+
+Show these rows:
+- Session
+- Schedule access
+- Last verified
+- Sniper
+
+Preferred examples:
+- Session: Ready
+- Schedule access: Ready
+- Last verified: Apr 4 at 10:09 PM
+- Sniper: Waiting
+
+--------------------------------
+
+2. MAP EXISTING STATE INTO USER-FACING LABELS
+
+Use current account/session and sniper state to derive:
+
+Session:
+- Ready
+- Needs login
+- Expired
+- Unknown
+
+Schedule access:
+- Ready
+- Missing
+- Expired
+- Unknown
+
+Sniper:
+- Waiting
+- Ready
+- Armed
+- Booking
+- Blocked
+- Recovering
+- Unknown
+
+Do NOT expose raw backend state keys on the Now screen.
+
+--------------------------------
+
+3. STYLE
+
+Keep the block:
+- calm
+- compact
+- easy to scan
+- iPhone-friendly
+
+Use:
+- small section title if needed, such as “Readiness”
+- simple rows with label on left, value on right
+- subtle status color only on the value
+  - green for Ready
+  - amber for Needs login / Unknown
+  - red only for truly blocked/expired
+- no giant icons
+- no debug text
+- no large alert banners
+
+--------------------------------
+
+4. LOCK STATE HANDLING
+
+If a booking run lock is active:
+- do NOT show it as an auth/session failure
+- do NOT replace Session with an error
+- optionally show Sniper as:
+  - Booking
+  - or Busy
+- keep Session / Schedule access based on real auth state
+
+--------------------------------
+
+5. LAST VERIFIED LOGIC
+
+Show last verified time from the current Account & Session flow if available.
+
+If unavailable:
+- show em dash or “Not yet”
+
+--------------------------------
+
+6. NO LOGIN CONTROLS ON NOW
+
+Do NOT add:
+- Log in now
+- Refresh session
+- Clear session
+
+Those remain in Settings.
+
+--------------------------------
+
+7. OPTIONAL SMALL TRUST LINE
+
+If the system is in a strong state, you may add a subtle one-line reassurance under the readiness rows, such as:
+- “Ready for the next booking window”
+- “Session verified and class path available”
+
+Keep this optional and minimal.
+
+--------------------------------
+
+RULES
+
+- Do NOT redesign the entire Now screen
+- Do NOT move Settings controls into Now
+- Do NOT add debug logs to Now
+- Do NOT create fake readiness states
+- Reuse existing readiness/session/sniper state where possible
+- Keep the app runnable
+
+--------------------------------
+
+AFTER IMPLEMENTATION
+
+Report:
+1. where the readiness block appears
+2. what rows/states are shown
+3. how session and schedule readiness are derived
+4. how lock state is distinguished from login failure
+
+Stop after this change.
