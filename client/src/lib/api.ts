@@ -130,6 +130,10 @@ export const api = {
     checkedAt: string | null
     detail: string | null
     screenshot: string | null
+    daxko: 'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+    familyworks: 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_UNKNOWN'
+    overall: 'DAXKO_READY' | 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+    lastVerified: string | null
   }> => apiFetch('/api/session-status'),
 
   checkSession: (): Promise<{

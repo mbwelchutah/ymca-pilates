@@ -3885,8 +3885,57 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'GET' && path === '/api/session-status') {
     // Returns the persisted result of the last session check (fast, no browser).
+    // Also derives per-provider status from sniper-state.json (no browser launched).
     const { loadStatus } = require('../bot/session-check');
-    json(loadStatus() || { valid: null, checkedAt: null, detail: null, screenshot: null });
+    const raw = loadStatus() || { valid: null, checkedAt: null, detail: null, screenshot: null };
+
+    // ── Derive Daxko status ───────────────────────────────────────────────────
+    let daxko = 'AUTH_UNKNOWN';
+    if (raw.valid === true)  daxko = 'DAXKO_READY';
+    if (raw.valid === false) daxko = 'AUTH_NEEDS_LOGIN';
+
+    // ── Derive FamilyWorks status from sniper-state.json ─────────────────────
+    let familyworks = 'AUTH_UNKNOWN';
+    let sniperLastEventAt = null;
+    try {
+      const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
+      if (fsStatic.existsSync(sniperPath)) {
+        const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+        const bundleSession = sniper?.bundle?.session;
+        const events = Array.isArray(sniper?.events) ? sniper.events : [];
+        const hasModalLoginEvent = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
+        if (bundleSession === 'SESSION_READY') {
+          familyworks = 'FAMILYWORKS_READY';
+        } else if (bundleSession === 'SESSION_EXPIRED' || hasModalLoginEvent) {
+          familyworks = 'FAMILYWORKS_SESSION_MISSING';
+        }
+        // Last event timestamp for lastVerified calculation
+        if (events.length > 0) {
+          sniperLastEventAt = events[events.length - 1].timestamp || null;
+        }
+      }
+    } catch (_) { /* non-fatal — leave familyworks as AUTH_UNKNOWN */ }
+
+    // ── Derive overall status ─────────────────────────────────────────────────
+    let overall = 'AUTH_UNKNOWN';
+    if (daxko === 'AUTH_NEEDS_LOGIN') {
+      overall = 'AUTH_NEEDS_LOGIN';
+    } else if (familyworks === 'FAMILYWORKS_SESSION_MISSING') {
+      overall = 'FAMILYWORKS_SESSION_MISSING';
+    } else if (daxko === 'DAXKO_READY' && familyworks === 'FAMILYWORKS_READY') {
+      overall = 'DAXKO_READY';
+    } else if (daxko !== 'AUTH_UNKNOWN' || familyworks !== 'AUTH_UNKNOWN') {
+      // Partial knowledge — use the most informative non-unknown status
+      overall = daxko !== 'AUTH_UNKNOWN' ? daxko : familyworks;
+    }
+
+    // ── Last verified: most recent known timestamp ────────────────────────────
+    const candidates = [raw.checkedAt, sniperLastEventAt].filter(Boolean);
+    const lastVerified = candidates.length > 0
+      ? candidates.reduce((a, b) => (a > b ? a : b))
+      : null;
+
+    json({ ...raw, daxko, familyworks, overall, lastVerified });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Runs a dedicated login check — login only, no booking pipeline.
