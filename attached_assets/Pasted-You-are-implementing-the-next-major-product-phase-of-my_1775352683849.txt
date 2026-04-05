@@ -1,0 +1,453 @@
+You are implementing the next major product phase of my YMCA Booker app.
+
+This app is a mobile-first gym class registration assistant.
+Its highest priority is now the sniper workflow.
+
+PRIMARY PRODUCT GOAL
+
+The app should make it clear, before the booking window opens:
+
+1. what class is currently targeted
+2. whether the user is logged in and ready
+3. whether the sniper can currently find the class
+4. whether the action path is reachable
+5. whether the sniper is armed and ready to book
+6. what happened in the latest preflight test
+7. what exact phase failed if something is blocked
+
+This is the new center of the product.
+
+PRIORITY ORDER
+
+1. Now screen = Sniper Mission Control
+2. Readiness / taxonomy layer
+3. Preflight / Check Class Now
+4. Login and session assurance
+5. Sniper reliability hardening
+6. Tools diagnostics alignment
+7. Plan remains useful but secondary in this pass
+
+STRICT RULES
+
+- Keep the app runnable after every stage
+- Do not redesign the whole app at once
+- Do not move giant logs into Now
+- Do not remove Tools diagnostics
+- Keep the UI clean and iPhone-oriented
+- Keep detailed evidence in Tools
+- Show only concise readiness and mission state on Now
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+APP SCREEN RESPONSIBILITIES
+
+NOW
+- current target class
+- booking window
+- sniper readiness
+- session readiness
+- preflight trigger
+- concise current mission state
+- quick Live / Simulation access
+
+PLAN
+- add/edit/delete/update classes
+- choose active tracked class
+
+TOOLS
+- detailed diagnostics
+- failure logs
+- screenshots
+- phase traces
+- preflight evidence
+- advanced sniper evidence
+
+SETTINGS
+- broader app configuration
+
+IMPORTANT PRODUCT SHIFT
+
+The Now screen is no longer just a passive countdown screen.
+It should become a sniper mission-control screen.
+
+When the user opens Now, they should be able to tell:
+- Am I logged in?
+- Can the sniper find the class?
+- Can it reach the booking action?
+- Is the sniper waiting, ready, armed, booking, blocked, or recovering?
+- What happened the last time I tested it?
+
+================================
+STAGE 1 — READINESS / TAXONOMY FOUNDATION
+================================
+
+Goal:
+Build the structured readiness + failure + phase model that the sniper workflow will use.
+
+Implement 3 connected layers:
+
+1. READINESS STATES
+These are concise operational states for the Now screen.
+
+Implement these readiness states:
+
+- SESSION_READY
+- SESSION_REQUIRED
+- SESSION_UNKNOWN
+- SESSION_EXPIRED
+
+- DISCOVERY_READY
+- DISCOVERY_NOT_TESTED
+- DISCOVERY_FAILED
+
+- ACTION_READY
+- ACTION_NOT_TESTED
+- ACTION_BLOCKED
+
+- PREFLIGHT_PASS
+- PREFLIGHT_FAIL_AUTH
+- PREFLIGHT_FAIL_DISCOVERY
+- PREFLIGHT_FAIL_VERIFY
+- PREFLIGHT_FAIL_MODAL
+- PREFLIGHT_FAIL_ACTION
+
+- SNIPER_READY
+- SNIPER_WAITING
+- SNIPER_ARMED
+- SNIPER_BOOKING
+- SNIPER_CONFIRMING
+- SNIPER_BLOCKED_AUTH
+- SNIPER_BLOCKED_DISCOVERY
+- SNIPER_BLOCKED_ACTION
+- SNIPER_RECOVERY_ACTIVE
+
+2. FAILURE TYPES
+These remain more detailed and are mostly for Tools and logging.
+
+Implement or normalize these failure types:
+
+- AUTH_LOGIN_FAILED
+- AUTH_SESSION_EXPIRED
+- AUTH_RESTORE_FAILED
+- AUTH_SURFACE_MISMATCH
+
+- NAVIGATION_TIMEOUT
+- NAVIGATION_FAILED
+
+- DISCOVERY_EMPTY
+- DISCOVERY_FILTER_FAILED
+- DISCOVERY_AMBIGUOUS
+
+- VERIFY_MISMATCH
+- VERIFY_AMBIGUOUS
+- VERIFY_TIME_MISMATCH
+- VERIFY_INSTRUCTOR_MISMATCH
+- VERIFY_TITLE_MISMATCH
+
+- MODAL_NOT_OPENED
+- MODAL_TIMEOUT
+- MODAL_LOGIN_REQUIRED
+- MODAL_ACTION_NOT_FOUND
+- MODAL_ACTION_AMBIGUOUS
+
+- ACTION_NOT_FOUND
+- ACTION_TIMEOUT
+- ACTION_FORCE_CLICK_USED
+- ACTION_FORCE_CLICK_FAILED
+
+- CONFIRMATION_FAILED
+- POST_CLICK_RESULT_AMBIGUOUS
+- WAITLIST_ONLY
+- CAPACITY_FULL
+
+- SYSTEM_EXCEPTION
+
+3. PHASES
+These identify where in the pipeline something happened.
+
+Implement these phases:
+
+- AUTH
+- NAVIGATION
+- DISCOVERY
+- VERIFY
+- MODAL
+- ACTION
+- CONFIRMATION
+- RECOVERY
+
+TASKS
+1. Create shared types/helpers for readiness, failure type, and phase
+2. Create mapping helpers:
+   - failure type -> readiness impact
+   - readiness bundle -> sniper state
+3. Create a shared event/result structure for sniper/preflight/runtime events
+
+Suggested files:
+- readinessTypes.ts
+- failureTypes.ts
+- readinessResolver.ts
+- failureMapper.ts
+
+Do not change UI yet in this stage.
+
+After Stage 1:
+Stop and summarize:
+- what types/helpers/files were created
+- how readiness, failure, and phase now relate
+- what remains for UI integration
+
+================================
+STAGE 2 — CONNECT TAXONOMY TO EXISTING SNIPER FLOW
+================================
+
+Goal:
+Make the real sniper path emit readiness and phase-based failures.
+
+Tasks:
+1. At auth/session checks:
+   emit SESSION_READY / SESSION_REQUIRED / SESSION_EXPIRED
+2. At navigation:
+   emit navigation-phase failures if relevant
+3. At class discovery:
+   emit DISCOVERY_READY / DISCOVERY_FAILED / DISCOVERY_NOT_TESTED
+4. At verify:
+   emit readiness/failure impacts as appropriate
+5. At modal/action detection:
+   emit ACTION_READY / ACTION_BLOCKED and relevant failures
+6. Derive sniper state from real readiness bundle:
+   - if session + discovery + action are ready -> SNIPER_READY or SNIPER_ARMED
+   - if auth fails -> SNIPER_BLOCKED_AUTH
+   - if discovery fails -> SNIPER_BLOCKED_DISCOVERY
+   - if action fails -> SNIPER_BLOCKED_ACTION
+7. Ensure this uses real checks, not fake UI-only states
+
+Do not redesign screens yet.
+
+After Stage 2:
+Stop and summarize:
+- where readiness is now emitted
+- which sniper code points are instrumented
+- how sniper state is derived
+
+================================
+STAGE 3 — NOW SCREEN AS SNIPER MISSION CONTROL
+================================
+
+Goal:
+Update the Now screen so it clearly communicates sniper readiness.
+
+Tasks:
+1. Keep the current target class as the hero
+2. Keep booking window info visible on Now
+3. Add a concise readiness section showing:
+   - Session: Ready / Login required / Unknown / Expired
+   - Class: Found / Not found / Not tested
+   - Action: Reachable / Blocked / Not tested
+   - Sniper: Waiting / Ready / Armed / Booking / Confirming / Blocked
+4. Keep this clean and easy to scan
+5. Do not show raw stack traces or giant diagnostic cards on Now
+6. Keep detailed evidence in Tools
+
+Desired outcome:
+The user should be able to answer:
+- “Am I logged in?”
+- “Can the sniper find the class?”
+- “Can it reach the action?”
+- “Am I ready to go?”
+
+After Stage 3:
+Stop and summarize:
+- what readiness block now appears on Now
+- what key states are shown
+- what remains only in Tools
+
+================================
+STAGE 4 — PREFLIGHT / CHECK CLASS NOW
+================================
+
+Goal:
+Allow the user to safely test the sniper path before the booking window opens.
+
+Tasks:
+1. Add a clearly labeled action on Now:
+   - Check Class Now
+   - or Run Preflight
+2. This action should:
+   - validate login/session
+   - navigate to the schedule
+   - apply filters if needed
+   - find the target class
+   - verify title/instructor/time/date
+   - optionally open modal safely
+   - detect Reserve / Waitlist / Closed state
+3. The preflight must stop before actual booking unless explicitly allowed
+4. The preflight must produce a structured result using the taxonomy
+5. Show a concise result on Now:
+   - Preflight passed
+   - Login required
+   - Class not found
+   - Action blocked
+   - Modal issue
+6. Store detailed evidence in Tools
+
+Important:
+This is a readiness check, not a real booking attempt.
+
+After Stage 4:
+Stop and summarize:
+- how preflight works
+- what it checks
+- what Now shows after preflight
+- what evidence goes into Tools
+
+================================
+STAGE 5 — SESSION / LOGIN ASSURANCE
+================================
+
+Goal:
+Make login/session readiness explicit and trustworthy.
+
+Tasks:
+1. Add a clear session assurance section or row on Now
+2. Explicitly show:
+   - Session valid
+   - Login required
+   - Session expired
+   - Last auth verified time
+3. Distinguish:
+   - authenticated on schedule surface
+   - authenticated in booking modal
+   - auth unknown
+   - auth blocked
+4. If auth is invalid, make that clearly visible on Now
+5. Capture auth evidence in Tools:
+   - URL
+   - title
+   - visible headings
+   - login form present?
+   - screenshot on auth failures
+
+This stage should remove guesswork about whether the user is ready.
+
+After Stage 5:
+Stop and summarize:
+- how session readiness is determined
+- what is shown on Now
+- what evidence is captured in Tools
+
+================================
+STAGE 6 — SNIPER HARDENING
+================================
+
+Goal:
+Improve actual sniper reliability using the new readiness/taxonomy structure.
+
+Tasks:
+1. Strengthen class candidate selection and verify logic
+2. Improve modal/action detection:
+   - Reserve
+   - Waitlist
+   - Cancel
+   - Closed / Full / Unknown
+3. Improve auth-in-modal detection
+4. Improve post-click outcome classification
+5. Improve recovery logic
+6. Ensure screenshots/evidence are captured for ambiguous failures
+7. Continue to keep Now concise and Tools detailed
+
+Focus on these practical reliability areas:
+- correct class targeting
+- safer verification
+- better action-state detection
+- better post-click confirmation
+- better auth/session awareness
+- better recovery traces
+
+After Stage 6:
+Stop and summarize:
+- what sniper logic was hardened
+- what new guardrails were added
+- what new evidence is captured
+- what major risks remain
+
+================================
+STAGE 7 — TOOLS ALIGNMENT
+================================
+
+Goal:
+Make Tools reflect the new readiness + sniper model clearly.
+
+Tasks:
+1. Update Tools to show:
+   - phase
+   - failure type
+   - readiness impact
+   - message
+   - screenshots/evidence
+2. Add or refine:
+   - recent failures
+   - failure summary
+   - sniper-specific recent events
+   - preflight results
+3. Keep this detailed, but structured and readable
+
+Important:
+Tools is where deep evidence lives.
+Now should remain concise.
+
+After Stage 7:
+Stop and summarize:
+- what Tools now shows
+- how readiness/failure/phase are displayed
+- what remains for future polish
+
+================================
+STAGE 8 — NOW SCREEN POLISH FOR MISSION CLARITY
+================================
+
+Goal:
+Polish the Now screen after the underlying sniper/readiness work is real.
+
+Tasks:
+1. Keep target class and booking window clear
+2. Keep readiness concise and easy to scan
+3. Keep preflight access obvious but not overwhelming
+4. Keep quick Live / Simulation mode access
+5. Make the main reassurance obvious:
+   - logged in?
+   - class findable?
+   - action reachable?
+   - sniper ready?
+6. Avoid dashboard clutter
+
+Important:
+Do not do superficial polish before the earlier stages are done.
+
+After Stage 8:
+Stop and summarize:
+- how the polished Now screen communicates readiness
+- what reassurance it now provides
+- what remains in Tools for deeper inspection
+
+DO NOTS
+
+Do not:
+- redesign the whole app at once
+- bury readiness only in Tools
+- put giant raw logs on Now
+- fake readiness states without real checks
+- break screen responsibilities
+- remove current diagnostics
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Make only that stage’s changes
+2. Keep the app runnable
+3. Summarize exactly what changed
+4. Explain what remains for the next stage
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

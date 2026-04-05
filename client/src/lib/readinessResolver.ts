@@ -1,0 +1,134 @@
+import type {
+  ReadinessBundle,
+  SniperState,
+  SessionReadiness,
+  DiscoveryReadiness,
+  ActionReadiness,
+  PreflightResult,
+} from './readinessTypes'
+
+// ── Default / initial bundle ──────────────────────────────────────────────────
+// Used before any preflight or runtime data is available.
+
+export const DEFAULT_READINESS: ReadinessBundle = {
+  session:   'SESSION_UNKNOWN',
+  discovery: 'DISCOVERY_NOT_TESTED',
+  action:    'ACTION_NOT_TESTED',
+}
+
+// ── Sniper state resolver ─────────────────────────────────────────────────────
+// Derives the SniperState from the readiness bundle + optional runtime signals.
+// Blocked states take priority over ready states; runtime signals override all.
+
+export interface RuntimeSignals {
+  armed?:      boolean  // Booking window imminent (e.g. in warmup/sniper phase)
+  booking?:    boolean  // Actively executing a booking attempt
+  confirming?: boolean  // Waiting for post-click confirmation
+  recovering?: boolean  // Running recovery after partial failure
+}
+
+export function resolveSniperState(
+  bundle: ReadinessBundle,
+  runtime: RuntimeSignals = {},
+): SniperState {
+  // Explicit runtime phase signals take highest priority
+  if (runtime.recovering)  return 'SNIPER_RECOVERY_ACTIVE'
+  if (runtime.confirming)  return 'SNIPER_CONFIRMING'
+  if (runtime.booking)     return 'SNIPER_BOOKING'
+  if (runtime.armed)       return 'SNIPER_ARMED'
+
+  // Auth blocks — cannot proceed without a session
+  if (
+    bundle.session === 'SESSION_REQUIRED' ||
+    bundle.session === 'SESSION_EXPIRED'
+  ) return 'SNIPER_BLOCKED_AUTH'
+
+  // Discovery blocks — session ok but class not locatable
+  if (bundle.discovery === 'DISCOVERY_FAILED') return 'SNIPER_BLOCKED_DISCOVERY'
+
+  // Action blocks — class found but action unreachable
+  if (bundle.action === 'ACTION_BLOCKED') return 'SNIPER_BLOCKED_ACTION'
+
+  // All three dimensions confirmed ready → SNIPER_READY
+  if (
+    bundle.session   === 'SESSION_READY'    &&
+    bundle.discovery === 'DISCOVERY_READY'  &&
+    bundle.action    === 'ACTION_READY'
+  ) return 'SNIPER_READY'
+
+  // Anything else → still gathering evidence
+  return 'SNIPER_WAITING'
+}
+
+// ── Preflight → readiness updater ─────────────────────────────────────────────
+// Given a preflight result, returns the updated readiness bundle dimensions.
+// Merges with the caller's existing bundle.
+
+export function applyPreflightResult(
+  existing: ReadinessBundle,
+  result: PreflightResult,
+): ReadinessBundle {
+  switch (result) {
+    case 'PREFLIGHT_PASS':
+      return {
+        session:   'SESSION_READY',
+        discovery: 'DISCOVERY_READY',
+        action:    'ACTION_READY',
+        preflight: result,
+      }
+    case 'PREFLIGHT_FAIL_AUTH':
+      return { ...existing, session: 'SESSION_REQUIRED', preflight: result }
+    case 'PREFLIGHT_FAIL_DISCOVERY':
+      return { ...existing, discovery: 'DISCOVERY_FAILED', preflight: result }
+    case 'PREFLIGHT_FAIL_VERIFY':
+      return { ...existing, discovery: 'DISCOVERY_FAILED', preflight: result }
+    case 'PREFLIGHT_FAIL_MODAL':
+      return { ...existing, action: 'ACTION_BLOCKED', preflight: result }
+    case 'PREFLIGHT_FAIL_ACTION':
+      return { ...existing, action: 'ACTION_BLOCKED', preflight: result }
+    default:
+      return { ...existing, preflight: result }
+  }
+}
+
+// ── Human-readable labels ─────────────────────────────────────────────────────
+
+export const SNIPER_STATE_LABEL: Record<SniperState, string> = {
+  SNIPER_WAITING:            'Waiting',
+  SNIPER_READY:              'Ready',
+  SNIPER_ARMED:              'Armed',
+  SNIPER_BOOKING:            'Booking…',
+  SNIPER_CONFIRMING:         'Confirming…',
+  SNIPER_BLOCKED_AUTH:       'Blocked — login required',
+  SNIPER_BLOCKED_DISCOVERY:  'Blocked — class not found',
+  SNIPER_BLOCKED_ACTION:     'Blocked — action unavailable',
+  SNIPER_RECOVERY_ACTIVE:    'Recovering',
+}
+
+export const SESSION_LABEL: Record<SessionReadiness, string> = {
+  SESSION_READY:    'Ready',
+  SESSION_REQUIRED: 'Login required',
+  SESSION_UNKNOWN:  'Unknown',
+  SESSION_EXPIRED:  'Expired',
+}
+
+export const DISCOVERY_LABEL: Record<DiscoveryReadiness, string> = {
+  DISCOVERY_READY:      'Found',
+  DISCOVERY_NOT_TESTED: 'Not tested',
+  DISCOVERY_FAILED:     'Not found',
+}
+
+export const ACTION_LABEL: Record<ActionReadiness, string> = {
+  ACTION_READY:      'Reachable',
+  ACTION_NOT_TESTED: 'Not tested',
+  ACTION_BLOCKED:    'Blocked',
+}
+
+export const PREFLIGHT_LABEL: Record<PreflightResult, string> = {
+  PREFLIGHT_PASS:             'Passed',
+  PREFLIGHT_FAIL_AUTH:        'Failed — login required',
+  PREFLIGHT_FAIL_DISCOVERY:   'Failed — class not found',
+  PREFLIGHT_FAIL_VERIFY:      'Failed — verification mismatch',
+  PREFLIGHT_FAIL_MODAL:       'Failed — modal issue',
+  PREFLIGHT_FAIL_ACTION:      'Failed — action blocked',
+}
