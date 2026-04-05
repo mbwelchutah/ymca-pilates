@@ -135,33 +135,49 @@ async function checkFwModalSession(page, snap, { attempt = 1 } = {}) {
     return { ready: null, ssoClickDone: false, detail: 'Could not click any class card' };
   }
 
-  // Wait for modal to appear (button with "Register" or "Login to Register").
+  // Wait for modal to appear.
   await page.waitForTimeout(2500);
 
-  const registerBtn      = page.locator('button, [role="button"], a').filter({ hasText: /^(Register|Reserve)$/i });
-  const loginToRegister  = page.locator('button, [role="button"], a').filter({ hasText: /Login to Register/i });
+  // Capture all visible button texts for diagnostics regardless of outcome.
+  const allBtnTexts = await page.locator('button:visible, [role="button"]:visible, a:visible').allTextContents().catch(() => []);
+  const btnSummary  = allBtnTexts.map(t => t.trim()).filter(Boolean).join(' | ') || '(none)';
+  console.log(`[settings-session] Visible buttons: ${btnSummary}`);
 
-  const hasRegister = await registerBtn.count() > 0;
-  const hasLogin    = await loginToRegister.count() > 0;
+  // Session-ready buttons: Register / Reserve / Waitlist variants all mean the
+  // user is authenticated. Waitlist means the class is full but session is valid.
+  const sessionReadyBtn = page.locator('button, [role="button"], a').filter({
+    hasText: /^(Register|Reserve|Waitlist|Join Waitlist|Add to Waitlist)$/i,
+  });
 
-  if (hasRegister) {
-    console.log('[settings-session] Modal shows "Register" — FamilyWorks session active.');
-    return { ready: true, ssoClickDone: false, detail: 'FamilyWorks session active — Register button visible' };
+  // Login-required buttons: any variant of "Login/Log in/Sign in to Register".
+  // Covers: "Login to Register", "Log in to Register", "Sign in to Register", etc.
+  const loginRequiredBtn = page.locator('button, [role="button"], a').filter({
+    hasText: /log\s*in\s+to\s+register|sign\s*in\s+to\s+register|login\s+to\s+register/i,
+  });
+
+  const hasSessionReady = await sessionReadyBtn.count() > 0;
+  const hasLoginRequired = await loginRequiredBtn.count() > 0;
+
+  if (hasSessionReady) {
+    const foundText = (await sessionReadyBtn.first().textContent() ?? '').trim();
+    console.log(`[settings-session] Modal shows "${foundText}" — FamilyWorks session active.`);
+    return { ready: true, ssoClickDone: false, detail: `FamilyWorks session active — "${foundText}" button visible` };
   }
 
-  if (hasLogin) {
-    console.log('[settings-session] Modal shows "Login to Register" — clicking to trigger SSO...');
-    await loginToRegister.first().click();
+  if (hasLoginRequired) {
+    const foundText = (await loginRequiredBtn.first().textContent() ?? '').trim();
+    console.log(`[settings-session] Modal shows "${foundText}" — clicking to trigger SSO...`);
+    await loginRequiredBtn.first().click();
     await page.waitForTimeout(3500);
     const afterUrl = page.url();
-    console.log('[settings-session] After "Login to Register" click, URL:', afterUrl);
+    console.log('[settings-session] After SSO-trigger click, URL:', afterUrl);
     await snap('settings-after-login-to-register');
-    return { ready: false, ssoClickDone: true, afterUrl, detail: 'Clicked "Login to Register" — SSO triggered' };
+    return { ready: false, ssoClickDone: true, afterUrl, detail: `Clicked "${foundText}" — SSO triggered` };
   }
 
   await snap(`settings-modal-unknown-attempt${attempt}`);
-  console.log('[settings-session] Modal opened but no recognized button found.');
-  return { ready: null, ssoClickDone: false, detail: 'Modal opened but no recognized button (Register / Login to Register) found' };
+  console.log(`[settings-session] Modal opened but no recognized button found. Buttons seen: ${btnSummary}`);
+  return { ready: null, ssoClickDone: false, detail: `Modal opened but no recognized button found. Buttons: ${btnSummary}` };
 }
 
 // ── Main exported function ────────────────────────────────────────────────────
