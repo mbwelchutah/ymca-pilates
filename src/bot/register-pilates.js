@@ -63,8 +63,10 @@ async function highlightElement(page, locator) {
 }
 
 async function runBookingJob(job, opts = {}) {
-  const DRY_RUN = opts.dryRun !== undefined ? !!opts.dryRun : (process.env.DRY_RUN === '1');
-  if (DRY_RUN) console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
+  const DRY_RUN       = opts.dryRun       !== undefined ? !!opts.dryRun       : (process.env.DRY_RUN === '1');
+  const PREFLIGHT_ONLY = opts.preflightOnly !== undefined ? !!opts.preflightOnly : false;
+  if (DRY_RUN)        console.log('--- DRY RUN MODE: will not click Register/Waitlist ---');
+  if (PREFLIGHT_ONLY) console.log('--- PREFLIGHT MODE: will check readiness but NOT book ---');
   const { classTitle, classTime, instructor, dayOfWeek, targetDate, maxAttempts: maxAttemptsOpt } = job;
 
   // ── Readiness state for this run (taxonomy integration) ─────────────────────
@@ -1150,6 +1152,42 @@ async function runBookingJob(job, opts = {}) {
     advance(_state, 'ACTION');
     const maxAttempts = maxAttemptsOpt || 20;
     let registered = false;
+
+    // ── PREFLIGHT GATE ─────────────────────────────────────────────────────────
+    // When preflightOnly is set, check readiness of the booking action without
+    // actually clicking Register/Waitlist.  Returns immediately after sniffing
+    // which buttons are present in the already-open modal.
+    if (PREFLIGHT_ONLY) {
+      const registerBtn = page.locator('button:has-text("Register"), button:has-text("Reserve")');
+      const waitlistBtn = page.locator('button:has-text("aitlist")');
+      const allBtns     = await page.locator('button:visible').allTextContents();
+      const hasLoginBtn = allBtns.some(b => b.toLowerCase().includes('login to register'));
+      const hasRegister = (await registerBtn.count()) > 0;
+      const hasWaitlist = (await waitlistBtn.count()) > 0;
+      console.log('[preflight] Visible buttons:', JSON.stringify(allBtns));
+
+      if (hasLoginBtn) {
+        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
+        await snap('preflight-auth-fail');
+        return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
+      } else if (hasRegister) {
+        _state.bundle.action = 'ACTION_READY';
+        _state.sniperState   = 'SNIPER_READY';
+        emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible — action ready');
+        await snap('preflight-pass');
+        return logRunSummary({ status: 'success', message: 'Preflight passed — Register button available and ready', screenshotPath });
+      } else if (hasWaitlist) {
+        _state.bundle.action = 'ACTION_READY';
+        emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: only Waitlist button visible — class is full');
+        await snap('preflight-waitlist');
+        return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
+      } else {
+        emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
+        await snap('preflight-not-open');
+        return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const registerBtn = page.locator('button:has-text("Register"), button:has-text("Reserve")');

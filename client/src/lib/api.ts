@@ -109,4 +109,16 @@ export const api = {
 
   getSniperState: (): Promise<SniperRunState> =>
     apiFetch('/api/sniper-state'),
+
+  runPreflight: (jobId: number): Promise<{
+    success: boolean
+    status: string
+    message: string
+    sniperState: SniperRunState | null
+  }> =>
+    apiFetch('/api/preflight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    }),
 }

@@ -3834,6 +3834,43 @@ const server = http.createServer((req, res) => {
       }
     })();
 
+  } else if (req.method === 'POST' && path === '/api/preflight') {
+    // Safe readiness check: runs the full pipeline up to the modal action check
+    // but does NOT click Register or Waitlist.  Updates sniper-state.json.
+    // Does NOT call setLastRun — this is not a booking attempt.
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      let jobId;
+      try { jobId = JSON.parse(body).jobId; } catch { /* fall through */ }
+      const dbJob = jobId ? getJobById(Number(jobId)) : (getAllJobs().find(j => j.is_active === 1) || null);
+      if (!dbJob) { json({ success: false, message: 'No job found for preflight' }); return; }
+      console.log(`[preflight] Running readiness check for Job #${dbJob.id} (${dbJob.class_title})`);
+      (async () => {
+        try {
+          const result = await runBookingJob({
+            id:         dbJob.id,
+            classTitle: dbJob.class_title,
+            classTime:  dbJob.class_time,
+            instructor: dbJob.instructor  || null,
+            dayOfWeek:  dbJob.day_of_week,
+            targetDate: dbJob.target_date || null,
+            maxAttempts: 1,
+          }, { preflightOnly: true, dryRun: getDryRun() });
+          const { loadState } = require('../bot/sniper-readiness');
+          json({
+            success:     result.status === 'success',
+            status:      result.status,
+            message:     result.message,
+            sniperState: loadState(),
+          });
+        } catch (err) {
+          console.error('[preflight] error:', err.message);
+          json({ success: false, message: err.message, sniperState: null });
+        }
+      })();
+    });
+
   } else if (req.method === 'GET' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const id    = parsed.searchParams.get('id');

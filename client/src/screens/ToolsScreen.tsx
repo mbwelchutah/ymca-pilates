@@ -248,10 +248,12 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
   const [expandedKey, setExpandedKey]     = useState<string | null>(null)
-  const [forceLoading, setForceLoading]   = useState(false)
-  const [forceMsg, setForceMsg]           = useState<{ ok: boolean; text: string } | null>(null)
-  const [runOnceLoading, setRunOnceLoading] = useState(false)
-  const [runOnceMsg, setRunOnceMsg]       = useState<{ ok: boolean; text: string } | null>(null)
+  const [forceLoading, setForceLoading]       = useState(false)
+  const [forceMsg, setForceMsg]               = useState<{ ok: boolean; text: string } | null>(null)
+  const [runOnceLoading, setRunOnceLoading]   = useState(false)
+  const [runOnceMsg, setRunOnceMsg]           = useState<{ ok: boolean; text: string } | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
+  const [preflightMsg, setPreflightMsg]       = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
@@ -289,6 +291,24 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
       setRunOnceMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
     } finally {
       setRunOnceLoading(false)
+    }
+  }
+
+  const handlePreflight = async () => {
+    if (!selectedJob) return
+    setPreflightLoading(true)
+    setPreflightMsg(null)
+    try {
+      const r = await api.runPreflight(selectedJob.id)
+      if (r.sniperState) setSniperRunState(r.sniperState)
+      setPreflightMsg({
+        ok:   r.success,
+        text: r.message ?? (r.success ? 'Preflight passed' : 'Preflight blocked'),
+      })
+    } catch (e) {
+      setPreflightMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
+    } finally {
+      setPreflightLoading(false)
     }
   }
 
@@ -488,6 +508,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
         <SectionHeader title="Actions" />
         <Card padding="none">
           <ActionRow
+            label={selectedJob ? `Preflight Check — ${selectedJob.class_title}` : 'Preflight Check'}
+            detail={
+              selectedJob
+                ? `Job #${selectedJob.id} · verify readiness without booking`
+                : 'Select a class in Plan first'
+            }
+            onClick={handlePreflight}
+            loading={preflightLoading}
+            disabled={!selectedJob}
+          />
+          <div className="h-px bg-divider mx-4" />
+          <ActionRow
             label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
             detail={
               selectedJob
@@ -507,15 +539,20 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
           />
         </Card>
 
-        {(forceMsg || runOnceMsg) && (
+        {(preflightMsg || forceMsg || runOnceMsg) && (
           <Card padding="sm">
+            {preflightMsg && (
+              <p className={`text-[13px] ${preflightMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+                {preflightMsg.text}
+              </p>
+            )}
             {forceMsg && (
-              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg ? 'mt-2' : ''}`}>
                 {forceMsg.text}
               </p>
             )}
             {runOnceMsg && (
-              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${forceMsg ? 'mt-2' : ''}`}>
+              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg || forceMsg ? 'mt-2' : ''}`}>
                 {runOnceMsg.text}
               </p>
             )}
