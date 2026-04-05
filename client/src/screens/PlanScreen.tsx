@@ -71,8 +71,8 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
     try {
       await onDelete()
       // On success the card unmounts — no state reset needed
-    } catch (e) {
-      setDeleteErr(e instanceof Error ? e.message : 'Could not remove class')
+    } catch {
+      setDeleteErr('Could not remove class — try again')
       setConfirming(false)
       setDeleting(false)
     }
@@ -152,7 +152,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onSelect }: JobCardProps
       {/* Footer: delete */}
       <div className="px-4 py-2.5 flex flex-col items-end gap-1.5">
         {deleteErr && (
-          <p className="text-[12px] text-accent-red self-stretch">{deleteErr} — try again</p>
+          <p className="text-[12px] text-accent-red self-stretch">{deleteErr}</p>
         )}
         {confirming ? (
           <div className="flex items-center gap-3">
