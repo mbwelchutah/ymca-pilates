@@ -516,6 +516,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (ss === 'SNIPER_READY')             return { label: 'Preflight passed',              color: 'green' }
     if (ss === 'SNIPER_BLOCKED_AUTH')      return { label: 'Login required',                color: 'amber' }
     if (ss === 'SNIPER_BLOCKED_DISCOVERY') return { label: 'Class not found',               color: 'red'   }
+    const disc = result.sniperState?.bundle?.discovery
+    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY') return { label: 'Class found', color: 'green' }
     if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
     if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
     // Fall back to status field

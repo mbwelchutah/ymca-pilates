@@ -321,6 +321,8 @@ async function runBookingJob(job, opts = {}) {
   let _lastSecondScore = 0;
   let _lastSecondText  = '';
   let _lastModalPreview = '';
+  let _lastBestReasons = [];   // reasons array from last findTargetCard() hit
+  let _lastAllTexts    = [];   // allTexts from last findTargetCard() miss
 
   // logRunSummary — defined before the try block so it is in scope for both
   // the try body and the catch handler.  Returns `result` so it can be inlined:
@@ -803,6 +805,8 @@ async function runBookingJob(job, opts = {}) {
         _lastSecondCard  = null;
         _lastSecondScore = 0;
         _lastSecondText  = '';
+        _lastAllTexts    = result.allTexts || [];
+        _lastBestReasons = [];
         return null;
       }
 
@@ -814,6 +818,8 @@ async function runBookingJob(job, opts = {}) {
       _lastSecondCard  = result.secondMatched
         ? page.locator('[data-target-class-second="yes"]').first()
         : null;
+      _lastBestReasons = result.reasons || [];
+      _lastAllTexts    = [];
 
       // PART 7 — required log lines
       console.log(`Best score: ${result.score} (${result.reasons ? result.reasons.join(', ') : ''})`);
@@ -1159,9 +1165,23 @@ async function runBookingJob(job, opts = {}) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await snap('not-found');
-      emitEvent(_state, 'DISCOVERY', 'DISCOVERY_EMPTY', msg);
+      const _topSignals = (_lastAllTexts || []).slice(0, 3).map(r => r.txt.slice(0, 60)).join(' | ');
+      emitEvent(_state, 'DISCOVERY', 'DISCOVERY_EMPTY', msg, {
+        evidence: { ...(_topSignals ? { nearMisses: _topSignals } : {}) }
+      });
       return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'No matching class card found', url: page.url() });
     }
+
+    // Card confirmed on schedule — mark discovery ready before proceeding to modal.
+    _state.bundle.discovery = 'DISCOVERY_READY';
+    emitEvent(_state, 'DISCOVERY', null, 'Class found on schedule', {
+      evidence: {
+        matched:  _lastBestText.slice(0, 80),
+        score:    String(_lastBestScore),
+        signals:  (_lastBestReasons || []).join(', '),
+        ...(_lastSecondText ? { second: _lastSecondText.slice(0, 80) } : {}),
+      }
+    });
 
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
     // Scrolls the card into view, clicks its interactive child (button/link/
