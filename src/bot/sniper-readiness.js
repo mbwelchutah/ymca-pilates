@@ -105,17 +105,22 @@ function resolveState(bundle, runtime = {}) {
 
 function createRunState(jobId) {
   return {
-    runId:       new Date().toISOString(),
-    jobId:       jobId || null,
-    phase:       'AUTH',
+    runId:          new Date().toISOString(),
+    jobId:          jobId || null,
+    phase:          'AUTH',
     bundle: {
-      session:   'SESSION_UNKNOWN',
-      discovery: 'DISCOVERY_NOT_TESTED',
-      action:    'ACTION_NOT_TESTED',
+      session:      'SESSION_UNKNOWN',
+      discovery:    'DISCOVERY_NOT_TESTED',
+      action:       'ACTION_NOT_TESTED',
     },
-    sniperState: 'SNIPER_WAITING',
-    events:      [],
-    updatedAt:   new Date().toISOString(),
+    sniperState:    'SNIPER_WAITING',
+    // Set to the event timestamp whenever an auth-block impact is applied by
+    // a real booking run.  emitTickSkip() never writes this field, so the gate
+    // in tick.js always reflects when the session actually failed, not when
+    // the last skip event was written.
+    authBlockedAt:  null,
+    events:         [],
+    updatedAt:      new Date().toISOString(),
   };
 }
 
@@ -145,6 +150,13 @@ function emitEvent(state, phase, failureType, message, extra = {}) {
     if (impact.session)   state.bundle.session   = impact.session;
     if (impact.discovery) state.bundle.discovery = impact.discovery;
     if (impact.action)    state.bundle.action    = impact.action;
+
+    // Record when an auth-block was observed by a real booking run.
+    // The scheduler readiness gate uses this field (not updatedAt) so that
+    // skip-event writes cannot extend the suppression window.
+    if (impact.session === 'SESSION_REQUIRED' || impact.session === 'SESSION_EXPIRED') {
+      state.authBlockedAt = event.timestamp;
+    }
   }
 
   state.sniperState = resolveState(state.bundle);

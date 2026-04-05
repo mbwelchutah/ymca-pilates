@@ -142,8 +142,11 @@ async function runTick({ onlyJobId = null } = {}) {
       let skipReason  = null;
       let skipMessage = null;
 
-      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH' && sniperState.updatedAt) {
-        const age = Date.now() - new Date(sniperState.updatedAt).getTime();
+      // Use authBlockedAt (written only by real runs) rather than updatedAt
+      // (written by every state save including skip events) so that emitting a
+      // tick-skip event cannot refresh the gate's clock and extend suppression.
+      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH' && sniperState.authBlockedAt) {
+        const age = Date.now() - new Date(sniperState.authBlockedAt).getTime();
         if (age < AUTH_BLOCK_STALE_MS) {
           const minAgo = Math.round(age / 60000);
           skipReason  = 'SNIPER_BLOCKED_AUTH';
