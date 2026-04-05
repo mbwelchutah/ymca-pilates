@@ -12,8 +12,10 @@ import type { SniperRunState } from '../lib/api'
 import type { SniperState } from '../lib/readinessTypes'
 import { api } from '../lib/api'
 import {
-  SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL,
+  SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL,
+  DEFAULT_READINESS, computeCompositeReadiness,
 } from '../lib/readinessResolver'
+import type { CompositeReadiness } from '../lib/readinessResolver'
 import { computeConfidence } from '../lib/confidence'
 import { generateSuggestions } from '../lib/suggestions'
 
@@ -477,7 +479,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const hasReadinessData = bundle && (
     bundle.session   !== 'SESSION_UNKNOWN'       ||
     bundle.discovery !== 'DISCOVERY_NOT_TESTED'  ||
-    bundle.action    !== 'ACTION_NOT_TESTED'
+    bundle.action    !== 'ACTION_NOT_TESTED'     ||
+    (bundle.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED')
   )
 
   const handlePauseResume = async () => {
@@ -504,68 +507,33 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }
 
   // ── Check Now (preflight) ──────────────────────────────────────────────────
-  type PreflightResult = { label: string; color: 'green' | 'amber' | 'red' | 'gray' }
-
-  function mapPreflightResult(result: {
-    success: boolean
-    status: string
-    message: string
-    sniperState: SniperRunState | null
-  }): PreflightResult {
-    const ss            = result.sniperState?.sniperState
-    const sessionBundle = result.sniperState?.bundle?.session
-    const modalBundle   = result.sniperState?.bundle?.modal
-    if (ss === 'SNIPER_READY')             return { label: 'Action reachable',              color: 'green' }
-    // Login required via modal — more specific than generic "Session expired"
-    // (MODAL_LOGIN_REQUIRED also sets session=SESSION_EXPIRED, check modal first)
-    if (modalBundle === 'MODAL_LOGIN_REQUIRED')
-                                           return { label: 'Login required',                color: 'amber' }
-    if (ss === 'SNIPER_BLOCKED_AUTH' && sessionBundle === 'SESSION_EXPIRED')
-                                           return { label: 'Session expired',               color: 'amber' }
-    if (ss === 'SNIPER_BLOCKED_AUTH')      return { label: 'Login required',                color: 'amber' }
-    if (ss === 'SNIPER_BLOCKED_DISCOVERY') return { label: 'Class not found',               color: 'red'   }
-    // Modal blocked — modal could not be opened after card click
-    if (modalBundle === 'MODAL_BLOCKED')   return { label: 'Modal blocked',                 color: 'red'   }
-    const disc = result.sniperState?.bundle?.discovery
-    // Waitlist / Cancel-only — status-driven (bundle can't distinguish from generic BLOCKED_ACTION)
-    if (result.status === 'waitlist_only')  return { label: 'Waitlist only',                color: 'amber' }
-    if (result.status === 'action_blocked') return { label: 'Action blocked',               color: 'red'   }
-    // Modal reachable — modal opened and verified, booking window not open yet
-    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY' && modalBundle === 'MODAL_READY')
-                                           return { label: 'Modal reachable',               color: 'green' }
-    // Class found — discovery ready but modal state unknown (Stage 6 fallback)
-    if (ss === 'SNIPER_BLOCKED_ACTION' && disc === 'DISCOVERY_READY')
-                                           return { label: 'Class found',                   color: 'green' }
-    if (ss === 'SNIPER_BLOCKED_ACTION')    return { label: 'Action blocked',                color: 'red'   }
-    if (sessionBundle === 'SESSION_READY' && disc === 'DISCOVERY_NOT_TESTED')
-                                           return { label: 'Session ready',                 color: 'green' }
-    if (ss === 'SNIPER_WAITING')           return { label: 'Not open yet',                  color: 'gray'  }
-    // Fall back to status field
-    if (result.status === 'success')            return { label: 'Action reachable',         color: 'green' }
-    if (result.status === 'found_not_open_yet') return { label: 'Not open yet',             color: 'gray'  }
-    if (result.status === 'not_found')          return { label: 'Class not found',          color: 'red'   }
-    if (result.status === 'auth_failed')        return { label: 'Login required',           color: 'amber' }
-    if (result.status === 'locked')             return { label: 'System busy — try later',  color: 'gray'  }
-    if (result.message?.toLowerCase().includes('lock')) return { label: 'System busy — try later', color: 'gray' }
-    if (result.message?.toLowerCase().includes('session')) return { label: 'Session expired', color: 'amber' }
-    if (result.message?.toLowerCase().includes('modal')) return { label: 'Modal blocked',   color: 'red'   }
-    return { label: 'Check failed',   color: 'red' }
-  }
-
+  // preflightStatus: raw status string from the last logRunSummary call.
+  // Stored separately so computeCompositeReadiness() can distinguish
+  // waitlist_only from action_blocked (both use ACTION_BLOCKED in the bundle).
   const [preflightRunning, setPreflightRunning] = useState(false)
-  const [preflightResult,  setPreflightResult]  = useState<PreflightResult | null>(null)
+  const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
 
   const handleCheckNow = async () => {
     if (!job || preflightRunning || sessionStatus?.locked) return
     setPreflightRunning(true)
-    setPreflightResult(null)
     try {
       const result = await api.runPreflight(job.id)
       if (result.sniperState) setSniperRunState(result.sniperState)
-      setPreflightResult(mapPreflightResult(result))
-    } catch { setPreflightResult({ label: 'Check failed', color: 'red' }) }
+      setPreflightStatus(result.status ?? null)
+    } catch { setPreflightStatus('error') }
     finally { setPreflightRunning(false) }
   }
+
+  // ── Composite readiness (Stage 10) ─────────────────────────────────────────
+  // Derived at render time from the live bundle + last preflight status.
+  // Replaces the old per-call mapPreflightResult() priority chain.
+  const composite: CompositeReadiness = computeCompositeReadiness(
+    bundle ?? DEFAULT_READINESS,
+    preflightStatus,
+    sniperRunState?.sniperState ?? null,
+  )
+  // Show the composite badge only when there is something meaningful to say.
+  const showComposite = preflightStatus !== null || Boolean(hasReadinessData)
 
   if (loading) {
     return (
@@ -724,20 +692,31 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </p>
               )}
 
-              {/* Concise result — shown after Check Now completes */}
-              {preflightResult && !preflightRunning && (
-                <p className={`mt-2 text-center text-[13px] font-medium
-                  ${preflightResult.color === 'green' ? 'text-accent-green' :
-                    preflightResult.color === 'amber' ? 'text-accent-amber' :
-                    preflightResult.color === 'red'   ? 'text-accent-red'   :
-                    'text-text-muted'}
+              {/* Composite readiness badge — shown after Check Now or when live data exists */}
+              {showComposite && !preflightRunning && (
+                <div className={`mt-2 rounded-xl px-3.5 py-2.5
+                  ${composite.color === 'green' ? 'bg-accent-green/10' :
+                    composite.color === 'amber' ? 'bg-accent-amber/10' :
+                    composite.color === 'red'   ? 'bg-accent-red/10'   :
+                    'bg-surface'}
                 `}>
-                  {preflightResult.label}
-                </p>
+                  <div className="flex items-center gap-2">
+                    <StatusDot color={composite.color} />
+                    <span className={`text-[15px] font-semibold
+                      ${composite.color === 'green' ? 'text-accent-green' :
+                        composite.color === 'amber' ? 'text-accent-amber' :
+                        composite.color === 'red'   ? 'text-accent-red'   :
+                        'text-text-secondary'}
+                    `}>
+                      {composite.label}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-text-muted mt-0.5 ml-5">{composite.detail}</p>
+                </div>
               )}
 
               {/* Subtle link to full diagnostics in Tools */}
-              {preflightResult && !preflightRunning && onGoToTools && (
+              {showComposite && !preflightRunning && onGoToTools && (
                 <button
                   onClick={onGoToTools}
                   className="mt-1 w-full text-center text-[12px] text-text-muted active:opacity-60"
@@ -811,7 +790,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         {/* ── Readiness ──────────────────────────────────────────── */}
         {(bundle || sessionStatus) && (
           <>
-            <SectionHeader title="Readiness" />
+            <SectionHeader
+              title="Readiness"
+              action={showComposite && composite.status !== 'COMPOSITE_NOT_TESTED' ? {
+                label: composite.label,
+                onClick: onGoToTools ?? (() => {}),
+              } : undefined}
+            />
             <Card padding="none">
               {/* Account & Session block — Session + Schedule access rows + timestamp */}
               <AccountSessionBlock
@@ -821,7 +806,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 verifying={sessionChecking}
                 onVerify={handleVerifySession}
               />
-              {/* Discovery + Action rows — only shown when sniper has data */}
+              {/* Discovery + Modal + Action rows — only shown when sniper has data */}
               {hasReadinessData ? (
                 <>
                   <ReadinessRow
@@ -829,6 +814,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     value={DISCOVERY_LABEL[bundle!.discovery] ?? bundle!.discovery}
                     dotColor={readinessDotColor(bundle!.discovery)}
                   />
+                  {bundle!.modal !== undefined && bundle!.modal !== 'MODAL_NOT_TESTED' && (
+                    <ReadinessRow
+                      label="Modal"
+                      value={MODAL_LABEL[bundle!.modal] ?? bundle!.modal}
+                      dotColor={readinessDotColor(bundle!.modal)}
+                    />
+                  )}
                   <ReadinessRow
                     label="Action"
                     value={ACTION_LABEL[bundle!.action] ?? bundle!.action}

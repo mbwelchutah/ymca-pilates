@@ -141,3 +141,103 @@ export const PREFLIGHT_LABEL: Record<PreflightResult, string> = {
   PREFLIGHT_FAIL_MODAL:       'Failed — modal issue',
   PREFLIGHT_FAIL_ACTION:      'Failed — action blocked',
 }
+
+// ── Composite readiness ────────────────────────────────────────────────────────
+// Combines all four dimensions (session, discovery, modal, action) into one
+// user-facing result — the single source of truth for the Now screen badge
+// and the Readiness section composite label.
+
+export type CompositeStatus =
+  | 'COMPOSITE_READY'
+  | 'COMPOSITE_WAITLIST'
+  | 'COMPOSITE_LOGIN_REQUIRED'
+  | 'COMPOSITE_CLASS_NOT_FOUND'
+  | 'COMPOSITE_MODAL_ISSUE'
+  | 'COMPOSITE_ACTION_BLOCKED'
+  | 'COMPOSITE_NOT_TESTED'
+
+export interface CompositeReadiness {
+  status:  CompositeStatus
+  label:   string
+  color:   'green' | 'amber' | 'red' | 'gray'
+  detail:  string
+}
+
+export function computeCompositeReadiness(
+  bundle: ReadinessBundle,
+  preflightStatus: string | null,   // raw status from the last logRunSummary
+  sniperState: SniperState | null,
+): CompositeReadiness {
+  // Priority: auth > discovery > modal blocked > waitlist > action blocked > ready > untested
+
+  // 1. Auth / session blocked (modal login required is an auth sub-case)
+  if (
+    bundle.session === 'SESSION_REQUIRED' ||
+    bundle.session === 'SESSION_EXPIRED'  ||
+    bundle.modal   === 'MODAL_LOGIN_REQUIRED'
+  ) {
+    const detail = bundle.modal === 'MODAL_LOGIN_REQUIRED'
+      ? 'Login required in the booking modal'
+      : 'Session expired or missing — log in via Settings'
+    return { status: 'COMPOSITE_LOGIN_REQUIRED', label: 'Login required', color: 'amber', detail }
+  }
+
+  // 2. Class not discovered
+  if (bundle.discovery === 'DISCOVERY_FAILED') {
+    return {
+      status: 'COMPOSITE_CLASS_NOT_FOUND',
+      label:  'Class not found',
+      color:  'red',
+      detail: 'Class card not located on the schedule page',
+    }
+  }
+
+  // 3. Modal could not be opened
+  if (bundle.modal === 'MODAL_BLOCKED') {
+    return {
+      status: 'COMPOSITE_MODAL_ISSUE',
+      label:  'Modal issue',
+      color:  'red',
+      detail: 'Booking modal could not be opened',
+    }
+  }
+
+  // 4. Waitlist — status-driven because bundle uses same ACTION_BLOCKED code for
+  //    waitlist, cancel-only, and unknown actions
+  if (preflightStatus === 'waitlist_only') {
+    return {
+      status: 'COMPOSITE_WAITLIST',
+      label:  'Waitlist only',
+      color:  'amber',
+      detail: 'Class is full — waitlist is available',
+    }
+  }
+
+  // 5. Action explicitly blocked (cancel-only, unknown, or no button)
+  if (bundle.action === 'ACTION_BLOCKED' || preflightStatus === 'action_blocked') {
+    return {
+      status: 'COMPOSITE_ACTION_BLOCKED',
+      label:  'Action blocked',
+      color:  'red',
+      detail: 'No booking action available in the modal',
+    }
+  }
+
+  // 6. All dimensions confirmed ready
+  if (sniperState === 'SNIPER_READY') {
+    return {
+      status: 'COMPOSITE_READY',
+      label:  'Ready to book',
+      color:  'green',
+      detail: 'Session active, class found, action reachable',
+    }
+  }
+
+  // 7. Not enough data yet
+  return {
+    status: 'COMPOSITE_NOT_TESTED',
+    label:  'Not tested',
+    color:  'gray',
+    detail: 'Tap Check Now to verify readiness',
+  }
+}
