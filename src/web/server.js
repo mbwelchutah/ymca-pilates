@@ -3988,16 +3988,16 @@ const server = http.createServer((req, res) => {
     // Full login + FamilyWorks session establishment, triggered from Settings.
     // Rejects if the booking bot or another auth operation is currently running.
     if (jobState.active) {
-      json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
+      json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
       return;
     }
     if (isAuthLocked()) {
-      json({ success: false, detail: `Another login operation is already in progress (${authLockOwner()}) — please wait and try again.` });
+      json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
       return;
     }
     (async () => {
       if (!acquireAuthLock('settings-login')) {
-        json({ success: false, detail: 'Another login operation started just now — please wait and try again.' });
+        json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
         return;
       }
       try {
@@ -4019,16 +4019,16 @@ const server = http.createServer((req, res) => {
     // Does NOT attempt FamilyWorks SSO or modal interaction — use Log in now for that.
     // Does NOT auto-login if invalid — simply reports AUTH_NEEDS_LOGIN.
     if (jobState.active) {
-      json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
+      json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
       return;
     }
     if (isAuthLocked()) {
-      json({ success: false, detail: `Another login operation is already in progress (${authLockOwner()}) — please wait and try again.` });
+      json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
       return;
     }
     (async () => {
       if (!acquireAuthLock('settings-refresh')) {
-        json({ success: false, detail: 'Another login operation started just now — please wait and try again.' });
+        json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
         return;
       }
       try {

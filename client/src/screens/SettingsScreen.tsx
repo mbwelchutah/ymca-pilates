@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -23,9 +23,9 @@ function daxkoLabel(s: SessionStatus['daxko']): { text: string; cls: string } {
 
 function familyworksLabel(s: SessionStatus['familyworks']): { text: string; cls: string } {
   switch (s) {
-    case 'FAMILYWORKS_READY':            return { text: 'Ready',          cls: 'text-accent-green' }
-    case 'FAMILYWORKS_SESSION_MISSING':  return { text: 'Expired',        cls: 'text-accent-amber' }
-    default:                             return { text: 'Unknown',        cls: 'text-text-secondary' }
+    case 'FAMILYWORKS_READY':            return { text: 'Ready',   cls: 'text-accent-green' }
+    case 'FAMILYWORKS_SESSION_MISSING':  return { text: 'Expired', cls: 'text-accent-amber' }
+    default:                             return { text: 'Unknown', cls: 'text-text-secondary' }
   }
 }
 
@@ -33,12 +33,8 @@ function formatVerified(iso: string | null): string {
   if (!iso) return 'Never'
   try {
     const d = new Date(iso)
-    const datePart = new Intl.DateTimeFormat('en-US', {
-      month: 'short', day: 'numeric',
-    }).format(d)
-    const timePart = new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric', minute: '2-digit', hour12: true,
-    }).format(d)
+    const datePart = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d)
+    const timePart = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
     return `${datePart} at ${timePart}`
   } catch {
     return '—'
@@ -47,33 +43,69 @@ function formatVerified(iso: string | null): string {
 
 type ActionState = 'idle' | 'running' | 'done' | 'error'
 
-interface Feedback {
-  text: string
-  cls:  string
-}
+interface Feedback { text: string; cls: string }
 
 export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
-  const [loginState,    setLoginState]    = useState<ActionState>('idle')
-  const [refreshState,  setRefreshState]  = useState<ActionState>('idle')
-  const [clearState,    setClearState]    = useState<ActionState>('idle')
-  const [feedback,      setFeedback]      = useState<Feedback | null>(null)
+  const [sessionStatus,  setSessionStatus]  = useState<SessionStatus | null>(null)
+  const [loginState,     setLoginState]     = useState<ActionState>('idle')
+  const [refreshState,   setRefreshState]   = useState<ActionState>('idle')
+  const [clearState,     setClearState]     = useState<ActionState>('idle')
+  const [feedback,       setFeedback]       = useState<Feedback | null>(null)
+  const [lockWaiting,    setLockWaiting]    = useState(false)
 
-  const fetchSessionStatus = () => {
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopLockTimers = useCallback(() => {
+    if (lockTimerRef.current) { clearTimeout(lockTimerRef.current);  lockTimerRef.current = null }
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
+  }, [])
+
+  const exitLockWait = useCallback(() => {
+    stopLockTimers()
+    setLockWaiting(false)
+    setFeedback(null)
+  }, [stopLockTimers])
+
+  const fetchSessionStatus = useCallback(() => {
     api.getSessionStatus()
-      .then(setSessionStatus)
+      .then(s => setSessionStatus(s))
       .catch(() => setSessionStatus(null))
-  }
+  }, [])
 
-  useEffect(() => { fetchSessionStatus() }, [])
+  useEffect(() => { fetchSessionStatus() }, [fetchSessionStatus])
+
+  useEffect(() => () => stopLockTimers(), [stopLockTimers])
+
+  const enterLockWait = useCallback(() => {
+    setLockWaiting(true)
+    setLoginState('idle')
+    setRefreshState('idle')
+    setClearState('idle')
+    setFeedback({
+      text: 'A booking run is in progress — buttons will re-enable when it finishes.',
+      cls:  'text-accent-amber',
+    })
+    stopLockTimers()
+    lockTimerRef.current = setTimeout(exitLockWait, 90_000)
+    pollTimerRef.current = setInterval(() => {
+      api.getSessionStatus()
+        .then(s => { setSessionStatus(s); exitLockWait() })
+        .catch(() => { /* keep waiting */ })
+    }, 10_000)
+  }, [stopLockTimers, exitLockWait])
 
   const handleLogin = async () => {
-    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
+    if (lockWaiting || loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setLoginState('running')
     setFeedback({ text: 'Logging in — this takes about 30 seconds…', cls: 'text-text-secondary' })
+    let gotLocked = false
     try {
       const result = await api.settingsLogin()
-      if (result.success) {
+      if (result.locked) {
+        gotLocked = true
+        enterLockWait()
+      } else if (result.success) {
         setLoginState('done')
         setFeedback({ text: result.detail ?? 'Login complete', cls: 'text-accent-green' })
       } else {
@@ -84,17 +116,21 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
       setLoginState('error')
       setFeedback({ text: e instanceof Error ? e.message : 'Login failed unexpectedly', cls: 'text-accent-red' })
     } finally {
-      fetchSessionStatus()
+      if (!gotLocked) fetchSessionStatus()
     }
   }
 
   const handleRefresh = async () => {
-    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
+    if (lockWaiting || loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setRefreshState('running')
     setFeedback({ text: 'Checking credentials — this takes about 15 seconds…', cls: 'text-text-secondary' })
+    let gotLocked = false
     try {
       const result = await api.settingsRefresh()
-      if (result.success) {
+      if (result.locked) {
+        gotLocked = true
+        enterLockWait()
+      } else if (result.success) {
         setRefreshState('done')
         setFeedback({ text: result.detail ?? 'Session refreshed', cls: 'text-accent-green' })
       } else {
@@ -105,12 +141,12 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
       setRefreshState('error')
       setFeedback({ text: e instanceof Error ? e.message : 'Refresh failed unexpectedly', cls: 'text-accent-red' })
     } finally {
-      fetchSessionStatus()
+      if (!gotLocked) fetchSessionStatus()
     }
   }
 
   const handleClear = async () => {
-    if (loginState === 'running' || refreshState === 'running' || clearState === 'running') return
+    if (lockWaiting || loginState === 'running' || refreshState === 'running' || clearState === 'running') return
     setClearState('running')
     setFeedback({ text: 'Clearing session data…', cls: 'text-text-secondary' })
     try {
@@ -138,10 +174,9 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
     }
   }
 
-  const handleDryRun = async (enabled: boolean) => {
+  const handleDryRun     = async (enabled: boolean) => {
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
-
   const handlePauseResume = async (pause: boolean) => {
     try {
       if (pause) await api.pauseScheduler()
@@ -154,10 +189,10 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const familyworks = sessionStatus ? familyworksLabel(sessionStatus.familyworks) : { text: '—', cls: 'text-text-secondary' }
   const verified    = sessionStatus ? formatVerified(sessionStatus.lastVerified)  : '—'
 
-  const anyBusy    = loginState === 'running' || refreshState === 'running' || clearState === 'running'
-  const loginBusy  = loginState === 'running'
-  const refreshBusy= refreshState === 'running'
-  const clearBusy  = clearState === 'running'
+  const anyBusy     = lockWaiting || loginState === 'running' || refreshState === 'running' || clearState === 'running'
+  const loginBusy   = loginState  === 'running'
+  const refreshBusy = refreshState === 'running'
+  const clearBusy   = clearState  === 'running'
 
   return (
     <>
@@ -179,6 +214,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
           <div className="h-px bg-divider mx-4" />
           <DetailRow label="Last verified" value={verified} last />
         </Card>
+
         <Card padding="sm" className="flex flex-col gap-2">
           <button
             onClick={handleLogin}

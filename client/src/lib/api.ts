@@ -136,6 +136,7 @@ export const api = {
 
   settingsLogin: (): Promise<{
     success: boolean
+    locked?: boolean
     daxko?: SessionStatus['daxko']
     familyworks?: SessionStatus['familyworks']
     lastVerified?: string | null
@@ -145,6 +146,7 @@ export const api = {
 
   settingsRefresh: (): Promise<{
     success: boolean
+    locked?: boolean
     daxko?: SessionStatus['daxko']
     familyworks?: SessionStatus['familyworks']
     overall?: SessionStatus['overall']
