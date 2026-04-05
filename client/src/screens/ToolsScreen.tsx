@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -112,14 +112,33 @@ function impactBadgeColor(value: string): string {
 
 // Known evidence key → human label
 const EVIDENCE_KEY_LABEL: Record<string, string> = {
-  verifyTime:  'Time',
-  verifyInst:  'Instructor',
-  buttons:     'Buttons',
-  buttonText:  'Button',
-  title:       'Title',
-  count:       'Count',
-  url:         'URL',
+  verifyTime:       'Time',
+  verifyInst:       'Instructor',
+  buttons:          'Buttons',
+  buttonText:       'Button',
+  title:            'Title',
+  count:            'Count',
+  url:              'URL',
+  // Discovery phase
+  matched:          'Matched class',
+  score:            'Match score',
+  signals:          'Signals',
+  second:           'Runner-up',
+  nearMisses:       'Near misses',
+  // Action phase
+  actionState:      'Action state',
+  buttonsVisible:   'Buttons',
+  registerStrategy: 'Register via',
+  waitlistStrategy: 'Waitlist via',
+  // Auth phase
+  provider:         'Provider',
+  // Modal phase
+  modalPreview:     'Preview',
 }
+
+// Evidence keys that are too long for the compact inline display —
+// screenshot is rendered as an <img> below the evidence row anyway.
+const EVIDENCE_KEY_SKIP = new Set(['screenshot', 'modalPreview', 'nearMisses', 'second'])
 
 function formatEvidenceValue(v: unknown): string {
   if (v === true)  return '✓'
@@ -358,10 +377,10 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
                 </div>
               )}
 
-              {/* Evidence key-value pairs */}
-              {evidence.length > 0 && (
+              {/* Evidence key-value pairs — skip keys that are too long for inline display */}
+              {evidence.filter(([k]) => !EVIDENCE_KEY_SKIP.has(k)).length > 0 && (
                 <div className="flex gap-x-3 gap-y-0.5 flex-wrap mt-1.5">
-                  {evidence.map(([k, v]) => (
+                  {evidence.filter(([k]) => !EVIDENCE_KEY_SKIP.has(k)).map(([k, v]) => (
                     <span key={k} className="text-[10px] text-text-muted">
                       <span className="font-semibold">{EVIDENCE_KEY_LABEL[k] ?? k}:</span>{' '}
                       <span className={typeof v === 'boolean' ? (v ? 'text-accent-green' : 'text-accent-red') : ''}>
@@ -387,6 +406,189 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
         )
       })}
     </Card>
+  )
+}
+
+// ── Last Check Now diagnostics ─────────────────────────────────────────────────
+// Shows the persisted per-stage detail from the last user-triggered Check Now
+// (stored in lastPreflightSnapshot since Stage 9).  Each phase is a collapsible
+// row inside a single card.  This section lives only in Tools — Now shows only
+// the summary label; the evidence traces belong here.
+
+function KVRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex gap-2.5 items-start">
+      <span className="text-[10px] font-semibold text-text-muted w-[76px] flex-shrink-0 pt-px leading-relaxed uppercase tracking-wide">
+        {label}
+      </span>
+      <span className={`text-[11px] text-text-secondary break-words leading-relaxed flex-1 min-w-0 ${mono ? 'font-mono' : ''}`}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function CheckNowVerdictBadge({ verdict }: { verdict: string }) {
+  const color =
+    verdict === 'ready' || verdict === 'found' || verdict === 'reachable'
+      ? 'text-accent-green bg-accent-green/10'
+      : verdict === 'waitlist_only' || verdict === 'login_required'
+      ? 'text-accent-amber bg-accent-amber/10'
+      : 'text-accent-red bg-accent-red/10'
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${color}`}>
+      {verdict.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+function CheckNowPhaseRow({
+  id, phase, verdict, summary, expanded, onToggle, children,
+}: {
+  id: string
+  phase: string
+  verdict: string
+  summary: string
+  expanded: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="border-b border-divider last:border-0">
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-2 w-full px-4 py-3 text-left active:bg-divider/50 transition-colors"
+      >
+        <span className="text-[10px] font-semibold text-text-muted bg-divider rounded px-1.5 py-0.5 w-[66px] flex-shrink-0 text-center leading-tight">
+          {phase}
+        </span>
+        <CheckNowVerdictBadge verdict={verdict} />
+        <span className="text-[12px] text-text-secondary flex-1 mx-1 truncate">{summary}</span>
+        <ChevronIcon rotated={expanded} />
+      </button>
+      {expanded && (
+        <div className="px-4 pb-3 space-y-2 border-t border-divider bg-bg-secondary/30">
+          <div className="pt-2 space-y-1.5">{children}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunState | null }) {
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null)
+
+  const snap = sniperRunState?.lastPreflightSnapshot
+  if (!snap) return null
+  const { authDetail, discoveryDetail, modalDetail, actionDetail } = snap
+  if (!authDetail && !discoveryDetail && !modalDetail && !actionDetail) return null
+
+  const toggle = (id: string) => setExpandedPhase(prev => prev === id ? null : id)
+
+  return (
+    <>
+      <SectionHeader title={`Last Check · ${fmtStr(snap.checkedAt)}`} />
+      <Card padding="none">
+
+        {/* Session / Auth */}
+        {authDetail && (
+          <CheckNowPhaseRow
+            id="auth" phase="Session"
+            verdict={authDetail.verdict}
+            summary={
+              authDetail.provider
+                ? `${authDetail.provider} · ${(authDetail.detail ?? '').slice(0, 50)}`
+                : (authDetail.detail ?? '').slice(0, 65)
+            }
+            expanded={expandedPhase === 'auth'}
+            onToggle={() => toggle('auth')}
+          >
+            {authDetail.provider && <KVRow label="Provider" value={authDetail.provider} />}
+            {authDetail.detail   && <KVRow label="Detail"   value={authDetail.detail} />}
+          </CheckNowPhaseRow>
+        )}
+
+        {/* Discovery */}
+        {discoveryDetail && (
+          <CheckNowPhaseRow
+            id="discovery" phase="Discovery"
+            verdict={discoveryDetail.found ? 'found' : 'not found'}
+            summary={
+              discoveryDetail.matched
+                ? `${discoveryDetail.matched.slice(0, 55)}${discoveryDetail.score ? ` · ${discoveryDetail.score}pts` : ''}`
+                : discoveryDetail.found ? 'Class found' : 'Class not on schedule'
+            }
+            expanded={expandedPhase === 'discovery'}
+            onToggle={() => toggle('discovery')}
+          >
+            {discoveryDetail.matched    && <KVRow label="Matched"    value={discoveryDetail.matched} />}
+            {discoveryDetail.score      && <KVRow label="Score"      value={`${discoveryDetail.score} pts`} />}
+            {discoveryDetail.signals    && <KVRow label="Signals"    value={discoveryDetail.signals} />}
+            {discoveryDetail.second     && <KVRow label="Runner-up"  value={discoveryDetail.second} />}
+            {discoveryDetail.nearMisses && <KVRow label="Near misses" value={discoveryDetail.nearMisses} />}
+          </CheckNowPhaseRow>
+        )}
+
+        {/* Modal */}
+        {modalDetail && (
+          <CheckNowPhaseRow
+            id="modal" phase="Modal"
+            verdict={modalDetail.verdict}
+            summary={
+              modalDetail.buttonsVisible?.length
+                ? modalDetail.buttonsVisible.join(', ')
+                : (modalDetail.detail ?? '').slice(0, 65)
+            }
+            expanded={expandedPhase === 'modal'}
+            onToggle={() => toggle('modal')}
+          >
+            {modalDetail.detail          && <KVRow label="Result"   value={modalDetail.detail} />}
+            {modalDetail.buttonsVisible?.length && (
+              <KVRow label="Buttons" value={modalDetail.buttonsVisible.join(', ')} />
+            )}
+            {modalDetail.modalPreview    && (
+              <KVRow label="Preview" value={modalDetail.modalPreview.slice(0, 120)} mono />
+            )}
+            {modalDetail.screenshot && (
+              <img
+                src={`/screenshots/${modalDetail.screenshot}`}
+                alt="Modal screenshot"
+                className="w-full mt-1 rounded-lg border border-divider"
+                loading="lazy"
+              />
+            )}
+          </CheckNowPhaseRow>
+        )}
+
+        {/* Action */}
+        {actionDetail && (
+          <CheckNowPhaseRow
+            id="action" phase="Action"
+            verdict={actionDetail.verdict}
+            summary={
+              actionDetail.actionState
+                ? actionDetail.actionState.replace(/_/g, ' ').toLowerCase()
+                : (actionDetail.detail ?? '').slice(0, 65)
+            }
+            expanded={expandedPhase === 'action'}
+            onToggle={() => toggle('action')}
+          >
+            {actionDetail.detail          && <KVRow label="Result"       value={actionDetail.detail} />}
+            {actionDetail.actionState     && <KVRow label="State"        value={actionDetail.actionState} mono />}
+            {actionDetail.buttonsVisible?.length && (
+              <KVRow label="Buttons" value={actionDetail.buttonsVisible.join(', ')} />
+            )}
+            {actionDetail.registerStrategy && (
+              <KVRow label="Register via" value={actionDetail.registerStrategy} mono />
+            )}
+            {actionDetail.waitlistStrategy && (
+              <KVRow label="Waitlist via" value={actionDetail.waitlistStrategy} mono />
+            )}
+          </CheckNowPhaseRow>
+        )}
+
+      </Card>
+    </>
   )
 }
 
@@ -568,7 +770,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
         />
         <LastRunEvents sniperRunState={sniperRunState} />
 
-        {/* ── 1c. Auto Preflight ──────────────────────────────── */}
+        {/* ── 1c. Last Check Now (per-phase diagnostics) ──────── */}
+        <LastCheckNowSection sniperRunState={sniperRunState} />
+
+        {/* ── 1d. Auto Preflight ──────────────────────────────── */}
         <SectionHeader title="Auto Preflight" />
         <Card padding="none">
           {/* Enable / disable toggle row */}
