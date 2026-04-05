@@ -125,6 +125,30 @@ export const api = {
     screenshot: string | null
   }> => apiFetch('/api/session-check', { method: 'POST' }),
 
+  getAutoPreflightConfig: (): Promise<{
+    enabled: boolean
+    lastRun: {
+      timestamp:   string
+      jobId:       number
+      classTitle:  string
+      triggerName: string   // '30min' | '10min' | '2min'
+      status:      string   // 'pass' | 'fail' | 'error'
+      message:     string
+    } | null
+    nextTrigger: {
+      jobId:       number
+      triggerName: string
+      msUntil:     number   // ms until trigger fires
+    } | null
+  }> => apiFetch('/api/auto-preflight-config'),
+
+  setAutoPreflightEnabled: (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> =>
+    apiFetch('/api/auto-preflight-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
+
   runPreflight: (jobId: number): Promise<{
     success: boolean
     status: string

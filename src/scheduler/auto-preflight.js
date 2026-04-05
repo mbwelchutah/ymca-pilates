@@ -1,0 +1,211 @@
+// Auto-preflight scheduler (Stage 9.2)
+//
+// Fires preflight checks at 30 min, 10 min, and 2 min before each job's
+// booking window opens.  Each trigger fires at most once per booking cycle
+// (keyed by jobId + bookingOpen epoch).  Does NOT run during sniper or late
+// phases — the real booking run owns those phases entirely.
+//
+// Safe to call every 60 s (same cadence as the scheduler tick).
+// Does NOT call setLastRun(); preflight results flow only through sniper-state.json.
+
+const fs   = require('fs');
+const path = require('path');
+
+const { getAllJobs }    = require('../db/jobs');
+const { getPhase }     = require('./booking-window');
+const { runBookingJob } = require('../bot/register-pilates');
+const { getDryRun }    = require('../bot/dry-run-state');
+
+const DATA_DIR      = path.resolve(__dirname, '../data');
+const SETTINGS_FILE = path.join(DATA_DIR, 'auto-preflight-settings.json');
+const LOG_FILE      = path.join(DATA_DIR, 'auto-preflight-log.json');
+
+// ── Trigger definitions ───────────────────────────────────────────────────────
+// windowMs:    how far before booking-open the trigger fires (ms)
+// toleranceMs: half-width of the firing window — the trigger fires when
+//              |msUntilOpen - windowMs| <= toleranceMs.
+//              With a 60 s tick and 90 s tolerance, every trigger fires within
+//              one tick of its named checkpoint.
+
+const TRIGGERS = [
+  { name: '30min', windowMs: 30 * 60 * 1000, toleranceMs: 90 * 1000 },
+  { name: '10min', windowMs: 10 * 60 * 1000, toleranceMs: 90 * 1000 },
+  { name: '2min',  windowMs:  2 * 60 * 1000, toleranceMs: 90 * 1000 },
+];
+
+// ── In-memory state ───────────────────────────────────────────────────────────
+// Tracks which trigger keys have already fired this server session.
+// Key format: `${jobId}:${bookingOpenMs}:${triggerName}`
+const firedThisCycle = new Set();
+let running = false;
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+
+function loadSettings() {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) return { enabled: true };
+    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  } catch { return { enabled: true }; }
+}
+
+function saveSettings(settings) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (e) { console.warn('[auto-preflight] saveSettings failed:', e.message); }
+}
+
+function loadLog() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return [];
+    const raw = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function appendLog(entry) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    let entries = loadLog();
+    entries.push(entry);
+    if (entries.length > 50) entries = entries.slice(-50); // keep last 50
+    fs.writeFileSync(LOG_FILE, JSON.stringify(entries, null, 2));
+  } catch (e) { console.warn('[auto-preflight] appendLog failed:', e.message); }
+}
+
+// ── Next-trigger calculator (used by /api/auto-preflight-config) ──────────────
+
+function getNextTrigger() {
+  let soonest = null;
+  const jobs = getAllJobs().filter(j => j.is_active === 1);
+
+  for (const dbJob of jobs) {
+    const job = {
+      id:         dbJob.id,
+      classTitle: dbJob.class_title,
+      classTime:  dbJob.class_time,
+      instructor: dbJob.instructor  || null,
+      dayOfWeek:  dbJob.day_of_week,
+      targetDate: dbJob.target_date || null,
+    };
+
+    let phaseResult;
+    try { phaseResult = getPhase(job); } catch { continue; }
+    const { phase, msUntilOpen, bookingOpen } = phaseResult;
+
+    if (phase === 'sniper' || phase === 'late') continue;
+
+    const bookingOpenMs = bookingOpen.getTime();
+
+    for (const trigger of TRIGGERS) {
+      const cycleKey = `${dbJob.id}:${bookingOpenMs}:${trigger.name}`;
+      if (firedThisCycle.has(cycleKey)) continue;
+
+      const msUntilTrigger = msUntilOpen - trigger.windowMs;
+      if (msUntilTrigger < 0) continue; // already past (not in window)
+
+      if (!soonest || msUntilTrigger < soonest.msUntil) {
+        soonest = {
+          jobId:       dbJob.id,
+          triggerName: trigger.name,
+          msUntil:     msUntilTrigger,
+        };
+      }
+    }
+  }
+
+  return soonest; // null if no upcoming trigger
+}
+
+// ── Main check function ───────────────────────────────────────────────────────
+// Call this every tick.  isActive: true when a booking run is in progress
+// (prevents launching a browser while another is already open).
+
+async function checkAutoPreflights({ isActive = false } = {}) {
+  const settings = loadSettings();
+  if (!settings.enabled) return;
+  if (running)           return; // prior preflight not finished
+  if (isActive)          return; // booking run is live — stay out of the way
+
+  const jobs = getAllJobs().filter(j => j.is_active === 1);
+
+  for (const dbJob of jobs) {
+    const job = {
+      id:         dbJob.id,
+      classTitle: dbJob.class_title,
+      classTime:  dbJob.class_time,
+      instructor: dbJob.instructor  || null,
+      dayOfWeek:  dbJob.day_of_week,
+      targetDate: dbJob.target_date || null,
+    };
+
+    let phaseResult;
+    try { phaseResult = getPhase(job); } catch { continue; }
+    const { phase, msUntilOpen, bookingOpen } = phaseResult;
+
+    // Sniper and late phases are owned by the real booking run.
+    if (phase === 'sniper' || phase === 'late') continue;
+
+    const bookingOpenMs = bookingOpen.getTime();
+
+    for (const trigger of TRIGGERS) {
+      const cycleKey = `${dbJob.id}:${bookingOpenMs}:${trigger.name}`;
+      if (firedThisCycle.has(cycleKey)) continue;
+
+      // Fire when msUntilOpen is within ±toleranceMs of the trigger point.
+      const deviation = Math.abs(msUntilOpen - trigger.windowMs);
+      if (deviation > trigger.toleranceMs) continue;
+
+      // ── Trigger fires ────────────────────────────────────────────────────
+      firedThisCycle.add(cycleKey); // mark before await so parallel ticks skip
+      running = true;
+
+      const firedAt = new Date().toISOString();
+      console.log(`[auto-preflight] ${trigger.name} preflight — Job #${dbJob.id} (${dbJob.class_title})`);
+
+      try {
+        const result = await runBookingJob({
+          id:          dbJob.id,
+          classTitle:  dbJob.class_title,
+          classTime:   dbJob.class_time,
+          instructor:  dbJob.instructor  || null,
+          dayOfWeek:   dbJob.day_of_week,
+          targetDate:  dbJob.target_date || null,
+          maxAttempts: 1,
+        }, { preflightOnly: true, dryRun: getDryRun() });
+
+        const status = result.status === 'success' ? 'pass' : 'fail';
+        console.log(`[auto-preflight] ${trigger.name} done — ${status}: ${result.message}`);
+
+        appendLog({
+          timestamp:   firedAt,
+          jobId:       dbJob.id,
+          classTitle:  dbJob.class_title,
+          triggerName: trigger.name,
+          status,
+          message:     result.message,
+        });
+      } catch (err) {
+        console.error(`[auto-preflight] ${trigger.name} error:`, err.message);
+        appendLog({
+          timestamp:   firedAt,
+          jobId:       dbJob.id,
+          classTitle:  dbJob.class_title,
+          triggerName: trigger.name,
+          status:      'error',
+          message:     err.message,
+        });
+      } finally {
+        running = false;
+      }
+    }
+  }
+}
+
+module.exports = {
+  checkAutoPreflights,
+  loadSettings,
+  saveSettings,
+  loadLog,
+  getNextTrigger,
+};

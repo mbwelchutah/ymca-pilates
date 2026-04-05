@@ -10,6 +10,13 @@ const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
+const {
+  checkAutoPreflights,
+  loadSettings:      loadAutoPreflightSettings,
+  saveSettings:      saveAutoPreflightSettings,
+  loadLog:           loadAutoPreflightLog,
+  getNextTrigger:    getNextAutoTrigger,
+} = require('../scheduler/auto-preflight');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -3896,6 +3903,28 @@ const server = http.createServer((req, res) => {
       }
     })();
 
+  } else if (req.method === 'GET' && path === '/api/auto-preflight-config') {
+    // Returns settings, last run info, and the next scheduled trigger.
+    const settings    = loadAutoPreflightSettings();
+    const entries     = loadAutoPreflightLog();
+    const lastEntry   = entries.length > 0 ? entries[entries.length - 1] : null;
+    const nextTrigger = getNextAutoTrigger();
+    json({ enabled: settings.enabled, lastRun: lastEntry, nextTrigger });
+
+  } else if (req.method === 'POST' && path === '/api/auto-preflight-config') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      try {
+        const { enabled } = JSON.parse(body);
+        if (typeof enabled !== 'boolean') { json({ success: false, message: 'enabled must be boolean' }); return; }
+        saveAutoPreflightSettings({ enabled });
+        json({ success: true, enabled });
+      } catch {
+        json({ success: false, message: 'Invalid body' });
+      }
+    });
+
   } else if (req.method === 'GET' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const id    = parsed.searchParams.get('id');
@@ -4389,6 +4418,11 @@ function schedulerTick() {
     return;
   }
   runTick().catch(err => console.error('[Scheduler] tick error:', err.message));
+  // Auto-preflight: fires before booking window at 30 min, 10 min, 2 min.
+  // Runs in parallel with the tick; the jobState.active guard prevents
+  // launching a browser while a booking run is already open.
+  checkAutoPreflights({ isActive: jobState.active })
+    .catch(err => console.error('[auto-preflight] tick error:', err.message));
 }
 // Delay first tick 30 s so the server is fully warm before the first run.
 setTimeout(() => {
