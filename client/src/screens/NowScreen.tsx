@@ -116,6 +116,19 @@ const fmt = (ms: number) =>
     hour: 'numeric', minute: '2-digit',
   })
 
+// Absolute date + a "· in Xd Xh" suffix when the time is in the future.
+function fmtWithRelative(ms: number): string {
+  const abs  = fmt(ms)
+  const diff = ms - Date.now()
+  if (diff <= 0) return abs
+  const d = Math.floor(diff / 86_400_000)
+  const h = Math.floor((diff % 86_400_000) / 3_600_000)
+  const m = Math.floor((diff % 3_600_000) / 60_000)
+  if (d > 0) return `${abs} · in ${d}d ${h}h`
+  if (h > 0) return `${abs} · in ${h}h ${m}m`
+  return `${abs} · in ${m}m`
+}
+
 // ── Static config ──────────────────────────────────────────────────────────────
 
 const PHASE_CONFIG: Record<Phase, {
@@ -153,7 +166,7 @@ function formatDayTime(job: Job) {
 
 const STEPS = ['Waiting', 'Opening Soon', 'Booking', 'Done']
 const PHASE_STEP: Record<Phase, number> = {
-  too_early: 0, warmup: 1, sniper: 2, late: 3, unknown: 0,
+  too_early: 0, warmup: 1, sniper: 2, late: 2, unknown: 0,
 }
 
 // ── Cycle-aware booking helpers ────────────────────────────────────────────────
@@ -363,6 +376,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   const bundle  = sniperRunState?.bundle
   const blocked = blockedReason(sniperRunState, sessionStatus)
 
+  // Auth issues show amber; discovery/action blocks show red.
+  const blockedIsAuthWarn =
+    sessionStatus?.valid === false ||
+    sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH'
+
   // True only when there's useful readiness data (at least one dimension is not in the default "unknown/not tested" state)
   const hasReadinessData = bundle && (
     bundle.session   !== 'SESSION_UNKNOWN'       ||
@@ -491,6 +509,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
             </div>
           )}
+
+          {/* Inline blocked callout — surfaces the most critical issue without scrolling */}
+          {blocked && (
+            <div className={`mt-3 rounded-xl px-3.5 py-2.5 ${blockedIsAuthWarn ? 'bg-accent-amber/10' : 'bg-accent-red/10'}`}>
+              <p className={`text-[13px] font-medium ${blockedIsAuthWarn ? 'text-accent-amber' : 'text-accent-red'}`}>
+                {blocked}
+              </p>
+            </div>
+          )}
         </Card>
 
         {/* ── Progress steps ─────────────────────────────────────── */}
@@ -503,20 +530,26 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
               {STEPS.map((step, i) => {
                 const done    = i < stepIdx || (isBooked && i === stepIdx)
                 const current = i === stepIdx && !isBooked
+                // late + not booked: the window closed without a booking.
+                // Show the current step (Booking) muted, not blue, so it reads
+                // as "window passed" rather than "actively booking".
+                const windowMissed = current && phase === 'late'
                 const future  = !done && !current
                 return (
                   <div key={step} className="flex-1 flex flex-col items-center gap-1.5">
                     <div className={`
                       h-1.5 w-full rounded-pill
-                      ${done    ? 'bg-accent-green' : ''}
-                      ${current ? 'bg-accent-blue'  : ''}
-                      ${future  ? 'bg-divider'       : ''}
+                      ${done         ? 'bg-accent-green' : ''}
+                      ${current && !windowMissed ? 'bg-accent-blue'  : ''}
+                      ${current &&  windowMissed ? 'bg-divider'      : ''}
+                      ${future       ? 'bg-divider'       : ''}
                     `} />
                     <span className={`
                       text-[10px] font-medium text-center leading-tight
-                      ${done    ? 'text-accent-green' : ''}
-                      ${current ? 'text-accent-blue'  : ''}
-                      ${future  ? 'text-text-muted'   : ''}
+                      ${done         ? 'text-accent-green' : ''}
+                      ${current && !windowMissed ? 'text-accent-blue' : ''}
+                      ${current &&  windowMissed ? 'text-text-muted'  : ''}
+                      ${future       ? 'text-text-muted'   : ''}
                     `}>
                       {step}
                     </span>
@@ -526,32 +559,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
             </div>
           </div>
         </Card>
-
-        {/* ── Action row ─────────────────────────────────────────── */}
-        <SecondaryButton onClick={handlePauseResume} className="w-full">
-          {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
-        </SecondaryButton>
-
-        {isStaleBooking && job && (
-          <SecondaryButton
-            onClick={handleBookAgain}
-            disabled={resetting}
-            className="w-full"
-          >
-            {resetting ? 'Resetting…' : 'Book again'}
-          </SecondaryButton>
-        )}
-
-        {/* ── Booking Window ─────────────────────────────────────── */}
-        {bookingOpenMs && (
-          <>
-            <SectionHeader title="Booking Window" />
-            <Card padding="none">
-              <DetailRow label="Opens"  value={fmt(bookingOpenMs)} />
-              <DetailRow label="Warmup" value={warmupMs ? fmt(warmupMs) : '—'} last />
-            </Card>
-          </>
-        )}
 
         {/* ── Readiness ──────────────────────────────────────────── */}
         {(bundle || sessionStatus) && (
@@ -586,11 +593,32 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
                 </div>
               )}
             </Card>
-            {blocked && (
-              <Card padding="sm" className="border border-accent-red/20 bg-accent-red/5">
-                <p className="text-[13px] text-accent-red font-medium">{blocked}</p>
-              </Card>
-            )}
+          </>
+        )}
+
+        {/* ── Action row ─────────────────────────────────────────── */}
+        <SecondaryButton onClick={handlePauseResume} className="w-full">
+          {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
+        </SecondaryButton>
+
+        {isStaleBooking && job && (
+          <SecondaryButton
+            onClick={handleBookAgain}
+            disabled={resetting}
+            className="w-full"
+          >
+            {resetting ? 'Resetting…' : 'Book again'}
+          </SecondaryButton>
+        )}
+
+        {/* ── Booking Window ─────────────────────────────────────── */}
+        {bookingOpenMs && (
+          <>
+            <SectionHeader title="Booking Window" />
+            <Card padding="none">
+              <DetailRow label="Opens"  value={fmtWithRelative(bookingOpenMs)} />
+              <DetailRow label="Warmup" value={warmupMs ? fmtWithRelative(warmupMs) : '—'} last />
+            </Card>
           </>
         )}
 
@@ -599,7 +627,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
           <>
             <SectionHeader title="Details" />
             <Card padding="none">
-              <DetailRow label="Job"      value={`#${job.id}`} />
               <DetailRow
                 label="Status"
                 value={job.last_result
