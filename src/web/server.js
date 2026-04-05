@@ -3978,13 +3978,14 @@ const server = http.createServer((req, res) => {
       (async () => {
         try {
           const { jobId } = JSON.parse(body || '{}');
-          const db = openDb();
-          const dbJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+          const dbJob = getJobById(Number(jobId));
           if (!dbJob) { json({ success: false, message: 'Job not found' }); return; }
 
           const result = await runBookingJob({
             id:         dbJob.id,
-            className:  dbJob.class_name,
+            classTitle: dbJob.class_title,
+            classTime:  dbJob.class_time,
+            instructor: dbJob.instructor  || null,
             dayOfWeek:  dbJob.day_of_week,
             targetDate: dbJob.target_date || null,
             maxAttempts: 1,
