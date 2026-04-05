@@ -149,6 +149,30 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
 
+  getSessionKeepaliveConfig: (): Promise<{
+    enabled:       boolean
+    intervalHours: number
+    lastRun: {
+      timestamp:  string
+      valid:      boolean
+      detail:     string
+      screenshot: string | null
+    } | null
+    next: {
+      msUntil:       number
+      intervalHours: number
+    } | null
+  }> => apiFetch('/api/session-keepalive-config'),
+
+  setSessionKeepaliveConfig: (enabled: boolean, intervalHours?: number): Promise<{
+    success: boolean; enabled: boolean; intervalHours: number
+  }> =>
+    apiFetch('/api/session-keepalive-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, intervalHours }),
+    }),
+
   runPreflight: (jobId: number): Promise<{
     success: boolean
     status: string

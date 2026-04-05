@@ -367,11 +367,21 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
   } | null>(null)
   const [apfToggling, setApfToggling] = useState(false)
 
+  // ── Session keepalive config (Stage 9.3) ──────────────────────────────────
+  const [keepaliveConfig, setKeepaliveConfig] = useState<{
+    enabled:       boolean
+    intervalHours: number
+    lastRun:       { timestamp: string; valid: boolean; detail: string; screenshot: string | null } | null
+    next:          { msUntil: number; intervalHours: number } | null
+  } | null>(null)
+  const [kaToggling, setKaToggling] = useState(false)
+
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setSessionStatus).catch(() => {})
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
+    api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
   }, [])
 
   const lastRunJob = [...appState.jobs]
@@ -433,6 +443,16 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
       const r = await api.setAutoPreflightEnabled(next)
       if (r.success) setAutoPreflightConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
     } catch { /* ignored */ } finally { setApfToggling(false) }
+  }
+
+  const handleKeepaliveToggle = async () => {
+    if (kaToggling || !keepaliveConfig) return
+    setKaToggling(true)
+    try {
+      const next = !keepaliveConfig.enabled
+      const r = await api.setSessionKeepaliveConfig(next, keepaliveConfig.intervalHours)
+      if (r.success) setKeepaliveConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
+    } catch { /* ignored */ } finally { setKaToggling(false) }
   }
 
   const failureEntries = Object.entries(failures?.summary ?? {})
@@ -573,6 +593,81 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
             })() : (
               <span className="text-[13px] text-text-muted">
                 {autoPreflightConfig?.enabled ? 'None scheduled' : 'Disabled'}
+              </span>
+            )}
+          </div>
+        </Card>
+
+        {/* ── 1d. Session Monitor ─────────────────────────────── */}
+        <SectionHeader title="Session Monitor" />
+        <Card padding="none">
+          {/* Enable / disable toggle */}
+          <button
+            onClick={handleKeepaliveToggle}
+            disabled={kaToggling || keepaliveConfig === null}
+            className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
+          >
+            <div>
+              <p className="text-[15px] font-medium text-text-primary">
+                {kaToggling ? 'Updating…' : 'Periodic Session Check'}
+              </p>
+              <p className="text-[12px] text-text-secondary mt-0.5">
+                {keepaliveConfig
+                  ? `Verifies login every ${keepaliveConfig.intervalHours}h automatically`
+                  : 'Loading…'}
+              </p>
+            </div>
+            <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ml-4 ${
+              keepaliveConfig?.enabled ? 'bg-accent-blue' : 'bg-divider'
+            }`}>
+              <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+                keepaliveConfig?.enabled ? 'translate-x-5' : 'translate-x-0'
+              }`} />
+            </div>
+          </button>
+
+          {/* Last keepalive result */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+            <span className="text-[14px] text-text-secondary">Last check</span>
+            {keepaliveConfig?.lastRun ? (
+              <div className="text-right">
+                <div className="flex items-center gap-1.5 justify-end">
+                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
+                    keepaliveConfig.lastRun.valid
+                      ? 'text-accent-green bg-accent-green/10'
+                      : 'text-accent-red bg-accent-red/10'
+                  }`}>
+                    {keepaliveConfig.lastRun.valid ? 'VALID' : 'FAILED'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  {fmtStr(keepaliveConfig.lastRun.timestamp)}
+                </p>
+                {!keepaliveConfig.lastRun.valid && (
+                  <p className="text-[11px] text-accent-red mt-0.5 max-w-[180px] text-right break-words">
+                    {keepaliveConfig.lastRun.detail.length > 60
+                      ? keepaliveConfig.lastRun.detail.slice(0, 60) + '…'
+                      : keepaliveConfig.lastRun.detail}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <span className="text-[13px] text-text-muted">Never</span>
+            )}
+          </div>
+
+          {/* Next scheduled check */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-[14px] text-text-secondary">Next check</span>
+            {keepaliveConfig?.next ? (() => {
+              const ms = keepaliveConfig.next.msUntil
+              const h  = Math.floor(ms / 3_600_000)
+              const m  = Math.floor((ms % 3_600_000) / 60_000)
+              const countdown = h > 0 ? `in ${h}h ${m}m` : ms < 60_000 ? 'due now' : `in ${m}m`
+              return <span className="text-[13px] text-text-primary">{countdown}</span>
+            })() : (
+              <span className="text-[13px] text-text-muted">
+                {keepaliveConfig?.enabled ? 'None scheduled' : 'Disabled'}
               </span>
             )}
           </div>

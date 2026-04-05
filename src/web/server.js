@@ -17,6 +17,11 @@ const {
   loadLog:           loadAutoPreflightLog,
   getNextTrigger:    getNextAutoTrigger,
 } = require('../scheduler/auto-preflight');
+const {
+  checkSessionKeepalive,
+  saveSettings:      saveKeepaliveSettings,
+  getKeepaliveConfig,
+} = require('../scheduler/session-keepalive');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -3925,6 +3930,25 @@ const server = http.createServer((req, res) => {
       }
     });
 
+  } else if (req.method === 'GET' && path === '/api/session-keepalive-config') {
+    // Returns keepalive settings, last run info, and next scheduled time.
+    json(getKeepaliveConfig());
+
+  } else if (req.method === 'POST' && path === '/api/session-keepalive-config') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      try {
+        const { enabled, intervalHours } = JSON.parse(body);
+        if (typeof enabled !== 'boolean') { json({ success: false, message: 'enabled must be boolean' }); return; }
+        const hours = typeof intervalHours === 'number' && intervalHours > 0 ? intervalHours : 4;
+        saveKeepaliveSettings({ enabled, intervalHours: hours });
+        json({ success: true, enabled, intervalHours: hours });
+      } catch {
+        json({ success: false, message: 'Invalid body' });
+      }
+    });
+
   } else if (req.method === 'GET' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const id    = parsed.searchParams.get('id');
@@ -4423,6 +4447,9 @@ function schedulerTick() {
   // launching a browser while a booking run is already open.
   checkAutoPreflights({ isActive: jobState.active })
     .catch(err => console.error('[auto-preflight] tick error:', err.message));
+  // Session keep-alive: periodic low-frequency check (default every 4 h).
+  checkSessionKeepalive({ isActive: jobState.active })
+    .catch(err => console.error('[session-keepalive] tick error:', err.message));
 }
 // Delay first tick 30 s so the server is fully warm before the first run.
 setTimeout(() => {

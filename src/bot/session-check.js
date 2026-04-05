@@ -31,11 +31,12 @@ function loadStatus() {
   }
 }
 
-async function runSessionCheck() {
+// source: 'manual' | 'keepalive' | 'preflight'
+async function runSessionCheck({ source = 'manual' } = {}) {
   const checkedAt = new Date().toISOString();
   let session = null;
 
-  console.log('[session-check] Starting dedicated login check...');
+  console.log(`[session-check] Starting dedicated login check (source: ${source})...`);
 
   try {
     session = await createSession({ headless: true });
@@ -45,6 +46,7 @@ async function runSessionCheck() {
     const status = {
       valid:      true,
       checkedAt,
+      source,
       detail:     'Login successful — credentials valid',
       screenshot,
     };
@@ -52,12 +54,16 @@ async function runSessionCheck() {
     console.log('[session-check] Login succeeded — credentials valid.');
     return status;
   } catch (err) {
+    // err.screenshotPath is set by daxko-session.js when login fails and a
+    // screenshot was already captured before the error was thrown.
+    const screenshot = err.screenshotPath ? path.basename(err.screenshotPath) : null;
     console.warn('[session-check] Login failed:', err.message);
     const status = {
       valid:      false,
       checkedAt,
+      source,
       detail:     err.message || 'Login failed',
-      screenshot: null,
+      screenshot,
     };
     saveStatus(status);
     return status;

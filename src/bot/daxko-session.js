@@ -97,9 +97,11 @@ async function createSession(opts = {}) {
   const stillOnLogin = postLoginUrl.includes('/login') || postLoginUrl.includes('find_account');
   console.log('Password field gone:', passwordFieldGone, '| Still on login page:', stillOnLogin);
   if (stillOnLogin || !passwordFieldGone) {
-    await snap('login-failed');
+    const screenshotPath = await snap('login-failed');
     await close();
-    throw new Error('Login failed or session not established');
+    const loginErr = new Error('Login failed or session not established');
+    loginErr.screenshotPath = screenshotPath;
+    throw loginErr;
   }
   console.log('Auth looks valid — proceeding.');
 
