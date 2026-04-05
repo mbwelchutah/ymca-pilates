@@ -599,6 +599,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     buttonsVisible: string[] | null
     modalPreview:   string | null
   }
+  type ActionDetail = {
+    verdict:          'ready' | 'waitlist_only' | 'login_required' | 'full' | 'unknown'
+    actionState:      string | null
+    buttonsVisible:   string[] | null
+    registerStrategy: string | null
+    waitlistStrategy: string | null
+    detail:           string | null
+  }
   type DiscoveryDetail = {
     found:      boolean
     matched:    string | null
@@ -609,6 +617,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }
   const [authDetail,      setAuthDetail]      = useState<AuthDetail | null>(null)
   const [modalDetail,     setModalDetail]     = useState<ModalDetail | null>(null)
+  const [actionDetail,    setActionDetail]    = useState<ActionDetail | null>(null)
   const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
 
   const handleCheckNow = async () => {
@@ -620,6 +629,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       setPreflightStatus(result.status ?? null)
       if (result.authDetail)      setAuthDetail(result.authDetail)
       if (result.modalDetail)     setModalDetail(result.modalDetail)
+      if (result.actionDetail)    setActionDetail(result.actionDetail)
       if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
       // Re-fetch session-status.json so the Session/Schedule access rows reflect
       // the auth outcome that was just written by the preflight pipeline.
@@ -1007,6 +1017,29 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     value={ACTION_LABEL[bundle!.action] ?? bundle!.action}
                     dotColor={readinessDotColor(bundle!.action)}
                     last
+                    detail={(() => {
+                      if (!actionDetail) return undefined
+                      switch (actionDetail.verdict) {
+                        case 'ready': {
+                          // Show which specific button was detected (Register vs Reserve)
+                          const btnName = Array.isArray(actionDetail.buttonsVisible)
+                            ? actionDetail.buttonsVisible.find(b =>
+                                /register|reserve/i.test(b)) ?? 'Register'
+                            : 'Register'
+                          return `"${btnName}" button visible — ready to book`
+                        }
+                        case 'waitlist_only':
+                          return 'Waitlist available — class is full'
+                        case 'login_required':
+                          return 'Login to Register shown — use Settings → Log in now'
+                        case 'full':
+                          return actionDetail.actionState === 'CANCEL_ONLY'
+                            ? 'Only Cancel visible — you may already be registered'
+                            : 'No booking button found — class may be full'
+                        default:
+                          return 'Unable to determine available action'
+                      }
+                    })()}
                   />
                 </>
               ) : (

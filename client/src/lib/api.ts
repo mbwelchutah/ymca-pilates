@@ -232,6 +232,14 @@ export const api = {
       buttonsVisible: string[] | null     // e.g. ["Register", "Cancel"]
       modalPreview:   string | null       // text snippet of modal content
     } | null
+    actionDetail: {
+      verdict:          'ready' | 'waitlist_only' | 'login_required' | 'full' | 'unknown'
+      actionState:      string | null     // raw e.g. 'REGISTER_AVAILABLE', 'WAITLIST_AVAILABLE'
+      buttonsVisible:   string[] | null   // all button labels seen in the modal
+      registerStrategy: string | null     // how the Register button is identified
+      waitlistStrategy: string | null     // how the Waitlist button is identified
+      detail:           string | null     // human-readable resolution message
+    } | null
     discoveryDetail: {
       found:      boolean
       matched:    string | null

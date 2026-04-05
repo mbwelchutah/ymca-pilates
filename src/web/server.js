@@ -3900,6 +3900,40 @@ const server = http.createServer((req, res) => {
             nearMisses: discoveryEvt.evidence?.nearMisses ?? null,
           } : null;
 
+          // Action detail — what booking action (if any) is available in the modal.
+          // Two ACTION events may exist per run:
+          //   1. detection event  — always has evidence.actionState + buttonsVisible
+          //   2. resolution event — records the final outcome (may lack button evidence)
+          // We combine both: button details from detection, final verdict from resolution.
+          const actionEvts = [...events].reverse().filter(e => e.phase === 'ACTION');
+          const actionDetectEvt  = actionEvts.find(e => e.evidence?.actionState);
+          const actionResolveEvt = actionEvts[0]; // most recent = final resolution
+
+          const rawActionState = actionDetectEvt?.evidence?.actionState ?? null;
+          // Map detection actionState → user-facing verdict. Fall back to the
+          // resolution event failureType when the detection event is absent.
+          const actionVerdict =
+              rawActionState === 'REGISTER_AVAILABLE'
+           || rawActionState === 'RESERVE_AVAILABLE'   ? 'ready'
+            : rawActionState === 'WAITLIST_AVAILABLE'  ? 'waitlist_only'
+            : rawActionState === 'LOGIN_REQUIRED'      ? 'login_required'
+            : rawActionState === 'CANCEL_ONLY'         ? 'full'
+            : rawActionState === 'UNKNOWN_ACTION'      ? 'full'
+            // No detection evidence — fall back to resolution event failureType
+            : actionResolveEvt?.failureType === 'WAITLIST_ONLY'    ? 'waitlist_only'
+            : actionResolveEvt?.failureType === 'ACTION_NOT_FOUND' ? 'full'
+            : actionResolveEvt && !actionResolveEvt.failureType    ? 'ready'
+            : 'unknown';
+
+          const actionDetail = (actionDetectEvt || actionResolveEvt) ? {
+            verdict:          actionVerdict,
+            actionState:      rawActionState,
+            buttonsVisible:   actionDetectEvt?.evidence?.buttonsVisible  ?? null,
+            registerStrategy: actionDetectEvt?.evidence?.registerStrategy ?? null,
+            waitlistStrategy: actionDetectEvt?.evidence?.waitlistStrategy ?? null,
+            detail:           actionResolveEvt?.message ?? actionDetectEvt?.message ?? null,
+          } : null;
+
           // Modal detail — whether the class modal could be opened after card click.
           // Failure screenshots are stored on disk and linked via evidence.screenshot.
           const modalEvt = [...events].reverse().find(e => e.phase === 'MODAL');
@@ -3921,6 +3955,7 @@ const server = http.createServer((req, res) => {
             authDetail,
             discoveryDetail,
             modalDetail,
+            actionDetail,
           });
         } catch (err) {
           console.error('[preflight] error:', err.message);
