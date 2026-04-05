@@ -164,8 +164,8 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
       <AppHeader subtitle="Settings" />
       <ScreenContainer>
 
-        {/* Session */}
-        <SectionHeader title="Session" />
+        {/* Account & Session */}
+        <SectionHeader title="Account & Session" />
         <Card padding="none">
           <div className="flex items-center justify-between py-3 px-4">
             <span className="text-[14px] text-text-secondary">Account</span>

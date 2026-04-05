@@ -260,7 +260,7 @@ function ReadinessRow({
 function overallToLabel(overall: SessionStatus['overall'] | undefined): { label: string; dotColor: DotColor } {
   switch (overall) {
     case 'DAXKO_READY':
-    case 'FAMILYWORKS_READY':          return { label: 'Ready',       dotColor: 'green' }
+    case 'FAMILYWORKS_READY':          return { label: 'Session ready', dotColor: 'green' }
     case 'AUTH_NEEDS_LOGIN':           return { label: 'Needs login', dotColor: 'red'   }
     case 'FAMILYWORKS_SESSION_MISSING':return { label: 'Expired',     dotColor: 'amber' }
     case 'AUTH_UNKNOWN':               return { label: 'Unknown',     dotColor: 'gray'  }
