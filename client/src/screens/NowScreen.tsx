@@ -388,6 +388,34 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   }
 }
 
+// ── Compact detail row (Stage 4) ───────────────────────────────────────────────
+// Visually secondary: 12 px text, sm dot, muted colors.
+// Used in the collapsible details section below the primary result card.
+
+function CompactRow({
+  label, value, dotColor, detail,
+}: {
+  label:     string
+  value:     string
+  dotColor:  DotColor
+  detail?:   string
+}) {
+  return (
+    <div className="px-4 py-2.5 border-b border-divider last:border-0">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] text-text-muted">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <StatusDot color={dotColor} size="sm" />
+          <span className="text-[12px] font-medium text-text-secondary">{value}</span>
+        </div>
+      </div>
+      {detail && (
+        <p className="text-[11px] text-text-muted mt-0.5 leading-snug">{detail}</p>
+      )}
+    </div>
+  )
+}
+
 // ── Readiness row sub-component ────────────────────────────────────────────────
 
 function ReadinessRow({
@@ -1153,6 +1181,143 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           )
         })()}
 
+        {/* ── Compact details section (Stage 4) ──────────────────── */}
+        {(sessionStatus || hasReadinessData) && (
+          <Card padding="none">
+            {/* Session */}
+            {sessionStatus && (() => {
+              const s  = daxkoToLabel(sessionStatus.daxko)
+              const lv = sessionStatus.lastVerified
+                ? `Last checked: ${formatPreflightTime(sessionStatus.lastVerified)}`
+                : undefined
+              const authD =
+                authDetail?.verdict === 'login_required'
+                  ? (authDetail.detail ?? 'Credentials rejected — re-enter in Settings')
+                  : authDetail?.verdict === 'ready'
+                  ? 'Login confirmed'
+                  : lv
+              return (
+                <CompactRow
+                  label="Session"
+                  value={sessionChecking ? 'Checking…' : s.label}
+                  dotColor={sessionChecking ? 'gray' : s.dotColor}
+                  detail={authD}
+                />
+              )
+            })()}
+
+            {/* Schedule (FamilyWorks) */}
+            {sessionStatus && (() => {
+              const fw = fwToLabel(sessionStatus.familyworks)
+              const fwD =
+                authDetail?.verdict === 'session_expired'
+                  ? (authDetail.detail ?? 'Re-login required — use Settings → Log in now')
+                  : authDetail?.verdict === 'ready'
+                  ? 'Schedule access confirmed'
+                  : undefined
+              return (
+                <CompactRow
+                  label="Schedule"
+                  value={sessionChecking ? '—' : fw.label}
+                  dotColor={sessionChecking ? 'gray' : fw.dotColor}
+                  detail={fwD}
+                />
+              )
+            })()}
+
+            {/* Discovery — only when bundle has tested it */}
+            {bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+              <CompactRow
+                label="Discovery"
+                value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
+                dotColor={readinessDotColor(bundle.discovery)}
+                detail={(() => {
+                  if (!discoveryDetail) return undefined
+                  if (discoveryDetail.found) {
+                    const parts: string[] = []
+                    if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
+                    if (discoveryDetail.score) parts.push(`score ${discoveryDetail.score}`)
+                    return parts.join(' · ') || undefined
+                  }
+                  return discoveryDetail.nearMisses
+                    ? `Near: ${discoveryDetail.nearMisses}`
+                    : 'Not visible on this day\'s schedule'
+                })()}
+              />
+            )}
+
+            {/* Modal — only when tested */}
+            {bundle && bundle.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED' && (
+              <CompactRow
+                label="Modal"
+                value={MODAL_LABEL[bundle.modal] ?? bundle.modal}
+                dotColor={readinessDotColor(bundle.modal)}
+                detail={(() => {
+                  if (!modalDetail) return undefined
+                  if (modalDetail.verdict === 'reachable') {
+                    const btns = Array.isArray(modalDetail.buttonsVisible)
+                      ? modalDetail.buttonsVisible.join(', ')
+                      : null
+                    return btns ? `Buttons: ${btns}` : 'Opened and verified'
+                  }
+                  if (modalDetail.verdict === 'login_required') return 'Login to Register shown'
+                  return modalDetail.detail ? `Could not open: ${modalDetail.detail}` : undefined
+                })()}
+              />
+            )}
+
+            {/* Action — only when tested */}
+            {bundle && bundle.action !== 'ACTION_NOT_TESTED' && (
+              <CompactRow
+                label="Action"
+                value={ACTION_LABEL[bundle.action] ?? bundle.action}
+                dotColor={readinessDotColor(bundle.action)}
+                detail={(() => {
+                  if (!actionDetail) return undefined
+                  switch (actionDetail.verdict) {
+                    case 'ready': {
+                      const btn = Array.isArray(actionDetail.buttonsVisible)
+                        ? actionDetail.buttonsVisible.find(b => /register|reserve/i.test(b)) ?? 'Register'
+                        : 'Register'
+                      return `"${btn}" button visible`
+                    }
+                    case 'waitlist_only': return 'Waitlist available — class is full'
+                    case 'login_required': return 'Login to Register shown'
+                    case 'full':
+                      return actionDetail.actionState === 'CANCEL_ONLY'
+                        ? 'Only Cancel visible — may already be registered'
+                        : 'No booking button — class may be full'
+                    default: return undefined
+                  }
+                })()}
+              />
+            )}
+
+            {/* Last run timestamp — quiet footer row */}
+            {job?.last_run_at && (
+              <div className="px-4 py-2 border-b border-divider last:border-0 flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Last run</span>
+                <span className="text-[11px] text-text-muted tabular-nums">
+                  {new Date(job.last_run_at).toLocaleString([], {
+                    month: 'short', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit',
+                  })}
+                </span>
+              </div>
+            )}
+
+            {/* Tools link — footer of the details card */}
+            {onGoToTools && (
+              <button
+                onClick={onGoToTools}
+                className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-2.5 border-t border-divider"
+              >
+                View details in Tools →
+              </button>
+            )}
+          </Card>
+        )}
+
         {/* ── Secondary actions ───────────────────────────────────── */}
         <SecondaryButton onClick={handlePauseResume} className="w-full">
           {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
@@ -1166,15 +1331,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           >
             {resetting ? 'Resetting…' : 'Book again'}
           </SecondaryButton>
-        )}
-
-        {onGoToTools && showComposite && (
-          <button
-            onClick={onGoToTools}
-            className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-1"
-          >
-            View details in Tools →
-          </button>
         )}
       </ScreenContainer>
     </>
