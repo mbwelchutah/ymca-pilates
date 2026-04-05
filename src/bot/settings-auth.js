@@ -115,15 +115,28 @@ async function checkFwModalSession(page, snap, { attempt = 1 } = {}) {
   }
   console.log(`[settings-session] Found ${cardCount} card-like elements on schedule.`);
 
-  // Try to click a card that is large enough to be a proper class card, not a
-  // tiny time-label fragment. Prefer elements with height > 30px.
+  // Try to click a card that is properly sized as a class card.
+  // Min 80×30 to avoid tiny time-label fragments.
+  // Max 350 height / 1260 width to avoid clicking giant container divs.
+  // Real class cards are ~1200×168 based on observed booking logs.
+  // We click the first button/link CHILD of the card (same as the booking bot),
+  // not the card container itself, so the modal navigation is triggered properly.
   let clicked = false;
-  for (let i = 0; i < Math.min(cardCount, 12); i++) {
+  for (let i = 0; i < Math.min(cardCount, 60); i++) {
     const el = cardLocator.nth(i);
     try {
       const box = await el.boundingBox();
-      if (!box || box.width < 80 || box.height < 30) continue;
-      await el.click({ timeout: 3000 });
+      if (!box) continue;
+      if (box.width < 80  || box.height < 30)  continue; // too small
+      if (box.height > 350 || box.width > 1260) continue; // container div
+      // Prefer clicking a child button/link to ensure the modal opens
+      const child = el.locator('button, [role="button"], a').first();
+      const childCount = await child.count();
+      if (childCount > 0) {
+        await child.click({ timeout: 3000 });
+      } else {
+        await el.click({ timeout: 3000 });
+      }
       clicked = true;
       console.log(`[settings-session] Clicked card element ${i} (${Math.round(box.width)}×${Math.round(box.height)})`);
       break;
@@ -135,18 +148,20 @@ async function checkFwModalSession(page, snap, { attempt = 1 } = {}) {
     return { ready: null, ssoClickDone: false, detail: 'Could not click any class card' };
   }
 
-  // Wait for modal to appear.
-  await page.waitForTimeout(2500);
+  // Wait for the modal's URL signature (register_pu=open) or fall back to time-based wait.
+  await page.waitForURL(url => url.toString().includes('register_pu=open') || url.toString().includes('event_instance'), { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 
   // Capture all visible button texts for diagnostics regardless of outcome.
   const allBtnTexts = await page.locator('button:visible, [role="button"]:visible, a:visible').allTextContents().catch(() => []);
   const btnSummary  = allBtnTexts.map(t => t.trim()).filter(Boolean).join(' | ') || '(none)';
   console.log(`[settings-session] Visible buttons: ${btnSummary}`);
 
-  // Session-ready buttons: Register / Reserve / Waitlist variants all mean the
-  // user is authenticated. Waitlist means the class is full but session is valid.
+  // Session-active buttons: Register / Waitlist / and any status button that
+  // would NOT appear unless the user is logged in (Completed, Class Canceled,
+  // Registration Unavailable, Closed - Full, etc.)
   const sessionReadyBtn = page.locator('button, [role="button"], a').filter({
-    hasText: /^(Register|Reserve|Waitlist|Join Waitlist|Add to Waitlist)$/i,
+    hasText: /register\s*now|waitlist|join\s*waitlist|add\s*to\s*waitlist|reserve|register|closed\s*-?\s*full|class\s*canceled|completed|registration\s*unavailable|until\s*open\s*registration/i,
   });
 
   // Login-required buttons: any variant of "Login/Log in/Sign in to Register".
@@ -158,20 +173,70 @@ async function checkFwModalSession(page, snap, { attempt = 1 } = {}) {
   const hasSessionReady = await sessionReadyBtn.count() > 0;
   const hasLoginRequired = await loginRequiredBtn.count() > 0;
 
-  if (hasSessionReady) {
+  // If the modal URL is open (register_pu=open) and there is NO login-required button,
+  // the session is active even if the class status is "Canceled" / "Completed" / etc.
+  const currentUrl = page.url();
+  const modalIsOpen = currentUrl.includes('register_pu=open') || currentUrl.includes('event_instance');
+
+  if (hasSessionReady && !hasLoginRequired) {
     const foundText = (await sessionReadyBtn.first().textContent() ?? '').trim();
     console.log(`[settings-session] Modal shows "${foundText}" — FamilyWorks session active.`);
     return { ready: true, ssoClickDone: false, detail: `FamilyWorks session active — "${foundText}" button visible` };
+  }
+
+  if (modalIsOpen && !hasLoginRequired) {
+    console.log(`[settings-session] Modal opened (URL: ${currentUrl.slice(-60)}) with no login prompt — session active.`);
+    return { ready: true, ssoClickDone: false, detail: `FamilyWorks session active — modal open, no login required` };
   }
 
   if (hasLoginRequired) {
     const foundText = (await loginRequiredBtn.first().textContent() ?? '').trim();
     console.log(`[settings-session] Modal shows "${foundText}" — clicking to trigger SSO...`);
     await loginRequiredBtn.first().click();
-    await page.waitForTimeout(3500);
+
+    // Wait for navigation (either find_account OAuth or MyAccountV2 if already authed)
+    await page.waitForURL(url => url.toString().includes('daxko.com') || url.toString().includes('familyworks'), { timeout: 8000 }).catch(() => {});
     const afterUrl = page.url();
     console.log('[settings-session] After SSO-trigger click, URL:', afterUrl);
     await snap('settings-after-login-to-register');
+
+    const onDaxkoLogin   = afterUrl.includes('daxko.com') && (afterUrl.includes('find_account') || afterUrl.includes('/login'));
+    const onDaxkoAccount = afterUrl.includes('daxko.com') && afterUrl.includes('MyAccount');
+
+    if (onDaxkoLogin) {
+      // No existing Daxko session — complete the full OAuth login
+      console.log('[settings-session] On Daxko login page — completing OAuth credentials...');
+      try {
+        await page.waitForSelector('input[type="text"], input[type="email"], input[type="tel"]', { timeout: 8000 });
+        await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
+        await page.click('#submit_button');
+        await page.waitForTimeout(1500);
+        if ((await page.locator('input[type="password"]').count()) > 0) {
+          await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+          await page.click('#submit_button');
+        }
+        // Wait for Daxko to redirect back to FamilyWorks
+        await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 20000 }).catch(() => {});
+        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(2000);
+        console.log('[settings-session] After OAuth login, URL:', page.url());
+        await snap('settings-after-oauth');
+        // Session should now be established — re-navigate to schedule to confirm
+        return { ready: true, ssoClickDone: true, detail: 'Completed Daxko OAuth login — FamilyWorks session established' };
+      } catch (loginErr) {
+        console.log('[settings-session] OAuth login failed:', loginErr.message.split('\n')[0]);
+        return { ready: null, ssoClickDone: true, detail: `OAuth login attempt failed: ${loginErr.message.split('\n')[0]}` };
+      }
+    }
+
+    if (onDaxkoAccount) {
+      // Already authenticated with Daxko — wait for OAuth redirect back to FW
+      console.log('[settings-session] On Daxko account page (already auth) — waiting for redirect...');
+      await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 8000 }).catch(() => {
+        console.log('[settings-session] No auto-redirect from Daxko account page.');
+      });
+    }
+
     return { ready: false, ssoClickDone: true, afterUrl, detail: `Clicked "${foundText}" — SSO triggered` };
   }
 

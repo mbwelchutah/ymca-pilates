@@ -114,6 +114,7 @@ async function createSession(opts = {}) {
       try {
         const box = await el.boundingBox();
         if (!box || box.width < 80 || box.height < 30) continue;
+        if (box.height > 350 || box.width > 1260) continue; // skip container divs
         await el.click({ timeout: 3000 });
         clicked = true;
         console.log(`[session] Clicked class card ${i} (${Math.round(box.width)}x${Math.round(box.height)})`);
