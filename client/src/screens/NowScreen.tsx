@@ -47,35 +47,55 @@ function parseClassTime(classTime: string): { hours: number; minutes: number } |
 }
 
 /**
- * Compute the booking-open epoch ms entirely in browser local time.
- * Rules: booking opens 3 days before the class, 1 hour before class start.
+ * Compute booking-open epoch ms for a job.
+ *
+ * Priority:
+ *  1. Use the server-computed bookingOpenMs when available — it correctly
+ *     accounts for target_date via the backend booking-window calculator.
+ *  2. Fall back to local computation:
+ *     a. If target_date is set, compute from that specific YYYY-MM-DD date.
+ *     b. Otherwise find the next natural weekday occurrence (legacy path).
  */
 function computeBookingOpenMs(job: Job): number | null {
-  if (!job?.class_time || !job?.day_of_week) return null
+  // ── 1. Prefer the server-enriched value ──────────────────────────────────
+  if (job.bookingOpenMs != null) return job.bookingOpenMs
+
+  // ── 2. Local fallback ────────────────────────────────────────────────────
+  if (!job?.class_time) return null
   const time = parseClassTime(job.class_time)
   if (!time) return null
-  const targetDay = DAY_IDX[job.day_of_week as string]
-  if (targetDay === undefined) return null
 
-  const now = new Date()
-  let daysUntil = (targetDay - now.getDay() + 7) % 7
+  let nextClassMs: number
 
-  if (daysUntil === 0) {
-    const classToday = new Date(now)
-    classToday.setHours(time.hours, time.minutes, 0, 0)
-    if (now >= classToday) daysUntil = 7
+  if (job.target_date) {
+    // Parse YYYY-MM-DD as local midnight, place class at hours:minutes.
+    const [y, m, d] = job.target_date.split('-').map(Number)
+    const classDate = new Date(y, m - 1, d)
+    classDate.setHours(time.hours, time.minutes, 0, 0)
+    nextClassMs = classDate.getTime()
+  } else {
+    if (!job.day_of_week) return null
+    const targetDay = DAY_IDX[job.day_of_week as string]
+    if (targetDay === undefined) return null
+
+    const now = new Date()
+    let daysUntil = (targetDay - now.getDay() + 7) % 7
+    if (daysUntil === 0) {
+      const classToday = new Date(now)
+      classToday.setHours(time.hours, time.minutes, 0, 0)
+      if (now >= classToday) daysUntil = 7
+    }
+    const nextClass = new Date(now)
+    nextClass.setDate(nextClass.getDate() + daysUntil)
+    nextClass.setHours(time.hours, time.minutes, 0, 0)
+    nextClass.setSeconds(0, 0)
+    nextClass.setMilliseconds(0)
+    nextClassMs = nextClass.getTime()
   }
 
-  const nextClass = new Date(now)
-  nextClass.setDate(nextClass.getDate() + daysUntil)
-  nextClass.setHours(time.hours, time.minutes, 0, 0)
-  nextClass.setSeconds(0, 0)
-  nextClass.setMilliseconds(0)
-
-  const bookingOpen = new Date(nextClass)
+  const bookingOpen = new Date(nextClassMs)
   bookingOpen.setDate(bookingOpen.getDate() - 3)
   bookingOpen.setHours(bookingOpen.getHours() - 1)
-
   return bookingOpen.getTime()
 }
 

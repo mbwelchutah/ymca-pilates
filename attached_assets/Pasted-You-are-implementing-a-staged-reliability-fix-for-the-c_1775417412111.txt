@@ -1,0 +1,195 @@
+You are implementing a staged reliability fix for the class update flow in my YMCA Booker app.
+
+PROBLEM
+
+A new class can be found and selected in the browse/search screen, but after exiting, the active class on the Now screen does not update reliably.
+
+The likely issue is that selection is being kept in temporary UI state and not being committed cleanly to the real active job/class state before dismissal.
+
+GOAL
+
+Make the class update flow explicit, reliable, and easy to understand.
+
+After selecting a class, the app should:
+1. commit the new class to the underlying job/class record
+2. update the active tracked target
+3. refresh the Now screen immediately
+4. recalculate booking window and readiness
+5. avoid stale class data after dismissing the picker/search view
+
+STRICT RULES
+
+- Keep the app runnable after every stage
+- Do not redesign the entire app
+- Focus only on class selection / commit / refresh flow
+- Stop after each stage and summarize what changed
+
+================================
+STAGE 1 — TRACE AND FIX COMMIT PATH
+================================
+
+Goal:
+Find and fix the stale-state bug in the selection -> save -> refresh flow.
+
+Tasks:
+1. Trace the full class update path:
+   - open browse/search
+   - select class
+   - commit class
+   - dismiss picker
+   - refresh active target
+2. Identify where state is currently stale:
+   - temporary selection state
+   - missing commit
+   - missing active-target update
+   - missing Now refresh
+3. Fix the path so the real job/class record is updated before dismissal
+4. Add logging:
+   - [class-select] selected
+   - [class-select] commit started
+   - [class-select] commit success
+   - [class-select] active target updated
+   - [class-select] now refreshed
+
+After Stage 1:
+Stop and summarize:
+- where the stale-state bug was
+- what code path was fixed
+- how commit now works
+
+================================
+STAGE 2 — MAKE SAVE EXPLICIT
+================================
+
+Goal:
+Avoid relying on close/dismiss to imply save.
+
+Tasks:
+1. Add an explicit action such as:
+   - Use this class
+   - Save class update
+2. The new class should only become active when this explicit action succeeds
+3. Dismiss/close should not silently discard or half-save the change
+4. Keep the UI simple and mobile-friendly
+
+Important:
+- If implicit auto-save is kept, it must still be fully reliable
+- But explicit confirmation is preferred if it reduces ambiguity
+
+After Stage 2:
+Stop and summarize:
+- what explicit save action was added
+- whether close behavior changed
+- how ambiguity was reduced
+
+================================
+STAGE 3 — ENSURE NOW REFRESHES IMMEDIATELY
+================================
+
+Goal:
+When the class update is committed, the Now screen should refresh immediately.
+
+Tasks:
+1. After successful class commit:
+   - update active class title
+   - update instructor
+   - update day/time
+   - update booking window
+   - update readiness/preflight target
+2. Make sure Now does not show stale cached data
+3. Ensure any active class card / hero card re-renders immediately
+
+After Stage 3:
+Stop and summarize:
+- what fields now refresh immediately
+- how stale hero-card data was prevented
+
+================================
+STAGE 4 — HANDLE CANCEL / EXIT SAFELY
+================================
+
+Goal:
+Make exit behavior predictable and safe.
+
+Tasks:
+1. If the user exits without saving:
+   - do not apply partial changes
+2. If the user saved successfully:
+   - exiting should preserve the new active class
+3. Prevent accidental partial state updates on dismiss
+4. Make the distinction between:
+   - selected candidate
+   - committed active class
+   explicit in code/state if needed
+
+After Stage 4:
+Stop and summarize:
+- how cancel works
+- how saved vs unsaved state is separated
+- how partial updates are prevented
+
+================================
+STAGE 5 — RECALCULATE BOOKING WINDOW + READINESS
+================================
+
+Goal:
+Changing the class should update all dependent mission-control data.
+
+Tasks:
+1. After commit, recalculate:
+   - booking window
+   - warmup/open times
+   - readiness/preflight target
+   - active mission state if applicable
+2. Ensure the updated class becomes the real target for Check Now / sniper readiness
+
+After Stage 5:
+Stop and summarize:
+- what dependent data is recalculated
+- how the new class becomes the live target
+
+================================
+STAGE 6 — LIGHT UX POLISH
+================================
+
+Goal:
+Make the flow feel obvious and trustworthy.
+
+Tasks:
+1. Keep the class update flow simple on mobile
+2. Make it obvious when a new class has been applied
+3. Optionally show a small confirmation such as:
+   - Class updated
+   - New target selected
+4. Avoid clutter
+
+After Stage 6:
+Stop and summarize:
+- what UX was improved
+- how the user now knows the update succeeded
+
+FINAL RULES
+
+Do not:
+- redesign unrelated screens
+- break current booking logic
+- leave selection in temporary-only state
+- rely on dismiss to do half-saves
+
+Do:
+- make commit explicit and reliable
+- refresh Now immediately
+- recalculate dependent mission data
+- keep the app calm and mobile-friendly
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

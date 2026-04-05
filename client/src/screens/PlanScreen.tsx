@@ -13,7 +13,7 @@ interface PlanScreenProps {
   selectedJobId: number | null
   onSelectJob: (id: number) => void
   loading: boolean
-  refresh: () => void
+  refresh: () => Promise<void>
 }
 
 const DAY_NAMES: Record<number, string> = {
@@ -537,6 +537,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   }
 
   const handleTrack = (cls: ScrapedClass) => {
+    console.log('[class-select] selected', { classTitle: cls.class_title, day: cls.day_of_week, time: cls.class_time })
     setPrefill({
       classTitle: cls.class_title,
       dayOfWeek: DAY_NAME_TO_NUM[cls.day_of_week] ?? 2,
@@ -548,12 +549,21 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     setShowAdd(true)
   }
 
-  const handleFormDone = (newJobId?: number) => {
+  const handleFormDone = async (newJobId?: number) => {
     setShowAdd(false)
     setPrefill(null)
     setEditingJob(null)
-    if (newJobId != null) onSelectJob(newJobId)
-    refresh()
+    console.log('[class-select] commit started', { newJobId })
+    // Await the refresh so appState.jobs is up to date before switching tabs.
+    // Without await, onSelectJob fires before the new job appears in the list
+    // and NowScreen falls back to jobs[0], showing the wrong class.
+    await refresh()
+    console.log('[class-select] commit success — job list refreshed')
+    if (newJobId != null) {
+      console.log('[class-select] active target updated → job', newJobId)
+      onSelectJob(newJobId)
+      console.log('[class-select] now refreshed')
+    }
   }
 
   const showingControls = !showAdd
