@@ -3894,27 +3894,55 @@ const server = http.createServer((req, res) => {
     if (raw.valid === true)  daxko = 'DAXKO_READY';
     if (raw.valid === false) daxko = 'AUTH_NEEDS_LOGIN';
 
-    // ── Derive FamilyWorks status from sniper-state.json ─────────────────────
+    // ── Derive FamilyWorks status ─────────────────────────────────────────────
+    // Priority 1: familyworks-session.json written by Settings > Log in now
+    // Priority 2: sniper-state.json bundle.session (written by booking runs)
+    // Whichever has the more recent checkedAt/timestamp wins.
     let familyworks = 'AUTH_UNKNOWN';
     let sniperLastEventAt = null;
+    let fwCheckedAt = null;
+
+    // Read familyworks-session.json (Settings login result)
+    let fwSettingsEntry = null;
+    try {
+      const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
+      if (fsStatic.existsSync(fwPath)) {
+        fwSettingsEntry = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
+        fwCheckedAt = fwSettingsEntry?.checkedAt || null;
+      }
+    } catch (_) { /* non-fatal */ }
+
+    // Read sniper-state.json (booking run result)
+    let sniperEntry = null;
     try {
       const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
       if (fsStatic.existsSync(sniperPath)) {
-        const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
-        const bundleSession = sniper?.bundle?.session;
-        const events = Array.isArray(sniper?.events) ? sniper.events : [];
-        const hasModalLoginEvent = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
-        if (bundleSession === 'SESSION_READY') {
-          familyworks = 'FAMILYWORKS_READY';
-        } else if (bundleSession === 'SESSION_EXPIRED' || hasModalLoginEvent) {
-          familyworks = 'FAMILYWORKS_SESSION_MISSING';
-        }
-        // Last event timestamp for lastVerified calculation
+        sniperEntry = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+        const events = Array.isArray(sniperEntry?.events) ? sniperEntry.events : [];
         if (events.length > 0) {
           sniperLastEventAt = events[events.length - 1].timestamp || null;
         }
       }
-    } catch (_) { /* non-fatal — leave familyworks as AUTH_UNKNOWN */ }
+    } catch (_) { /* non-fatal */ }
+
+    // Determine which source is more recent and use it
+    const fwSettingsMs = fwCheckedAt ? new Date(fwCheckedAt).getTime() : 0;
+    const sniperMs     = sniperLastEventAt ? new Date(sniperLastEventAt).getTime() : 0;
+
+    if (fwSettingsMs >= sniperMs && fwSettingsEntry) {
+      // Settings login result is newer (or equal) — use it
+      familyworks = fwSettingsEntry.status || 'AUTH_UNKNOWN';
+    } else if (sniperEntry) {
+      // Booking run result is newer — derive from sniper-state
+      const bundleSession = sniperEntry?.bundle?.session;
+      const events = Array.isArray(sniperEntry?.events) ? sniperEntry.events : [];
+      const hasModalLoginEvent = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
+      if (bundleSession === 'SESSION_READY') {
+        familyworks = 'FAMILYWORKS_READY';
+      } else if (bundleSession === 'SESSION_EXPIRED' || hasModalLoginEvent) {
+        familyworks = 'FAMILYWORKS_SESSION_MISSING';
+      }
+    }
 
     // ── Derive overall status ─────────────────────────────────────────────────
     let overall = 'AUTH_UNKNOWN';
@@ -3928,7 +3956,7 @@ const server = http.createServer((req, res) => {
     // else: at least one side is AUTH_UNKNOWN → overall stays AUTH_UNKNOWN
 
     // ── Last verified: most recent known timestamp ────────────────────────────
-    const candidates = [raw.checkedAt, sniperLastEventAt].filter(Boolean);
+    const candidates = [raw.checkedAt, sniperLastEventAt, fwCheckedAt].filter(Boolean);
     const lastVerified = candidates.length > 0
       ? candidates.reduce((a, b) => (a > b ? a : b))
       : null;
@@ -3952,6 +3980,24 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         console.error('[session-check] route error:', err.message);
         json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null });
+      }
+    })();
+
+  } else if (req.method === 'POST' && path === '/api/settings-login') {
+    // Full login + FamilyWorks session establishment, triggered from Settings.
+    // Rejects if the booking bot is currently running to avoid browser conflicts.
+    if (jobState.active) {
+      json({ success: false, detail: 'Bot is currently running — wait for it to finish, then try again.' });
+      return;
+    }
+    (async () => {
+      try {
+        const { runSettingsLogin } = require('../bot/settings-auth');
+        const result = await runSettingsLogin({ source: 'settings' });
+        json({ success: true, ...result });
+      } catch (err) {
+        console.error('[settings-auth] route error:', err.message);
+        json({ success: false, detail: err.message || 'Login failed unexpectedly' });
       }
     })();
 

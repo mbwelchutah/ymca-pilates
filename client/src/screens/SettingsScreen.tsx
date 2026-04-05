@@ -51,14 +51,41 @@ function formatVerified(iso: string | null): string {
   }
 }
 
+type LoginState = 'idle' | 'running' | 'done' | 'error'
+
 export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
+  const [loginState,    setLoginState]    = useState<LoginState>('idle')
+  const [loginDetail,   setLoginDetail]   = useState<string>('')
 
-  useEffect(() => {
+  const fetchSessionStatus = () => {
     api.getSessionStatus()
       .then(setSessionStatus)
       .catch(() => setSessionStatus(null))
-  }, [])
+  }
+
+  useEffect(() => { fetchSessionStatus() }, [])
+
+  const handleLogin = async () => {
+    if (loginState === 'running') return
+    setLoginState('running')
+    setLoginDetail('Logging in — this takes about 30 seconds…')
+    try {
+      const result = await api.settingsLogin()
+      if (result.success) {
+        setLoginState('done')
+        setLoginDetail(result.detail ?? 'Login complete')
+      } else {
+        setLoginState('error')
+        setLoginDetail(result.detail ?? 'Login failed')
+      }
+    } catch (e: unknown) {
+      setLoginState('error')
+      setLoginDetail(e instanceof Error ? e.message : 'Login failed unexpectedly')
+    } finally {
+      fetchSessionStatus()
+    }
+  }
 
   const handleDryRun = async (enabled: boolean) => {
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
@@ -76,6 +103,12 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
   const familyworks= sessionStatus ? familyworksLabel(sessionStatus.familyworks): { text: '—', cls: 'text-text-secondary' }
   const overall    = sessionStatus ? overallLabel(sessionStatus.overall)        : { text: '—', cls: 'text-text-secondary' }
   const verified   = sessionStatus ? formatVerified(sessionStatus.lastVerified) : '—'
+
+  const loginBusy = loginState === 'running'
+  const loginFeedbackCls =
+    loginState === 'done'    ? 'text-accent-green' :
+    loginState === 'error'   ? 'text-accent-red'   :
+    loginState === 'running' ? 'text-text-secondary' : ''
 
   return (
     <>
@@ -103,11 +136,15 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
         </Card>
         <Card padding="sm" className="flex flex-col gap-2">
           <button
-            disabled
-            className="w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold opacity-50 cursor-not-allowed"
+            onClick={handleLogin}
+            disabled={loginBusy}
+            className={`w-full py-2.5 px-4 rounded-lg bg-accent-blue text-white text-[14px] font-semibold transition-opacity ${loginBusy ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
           >
-            Log in now
+            {loginBusy ? 'Logging in…' : 'Log in now'}
           </button>
+          {loginDetail ? (
+            <p className={`text-[12px] px-1 ${loginFeedbackCls}`}>{loginDetail}</p>
+          ) : null}
           <button
             disabled
             className="w-full py-2.5 px-4 rounded-lg bg-[#f2f2f7] text-[#1c1c1e] text-[14px] font-semibold opacity-50 cursor-not-allowed"
