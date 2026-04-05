@@ -251,7 +251,10 @@ function normalizeTime(raw: string): string | null {
 }
 
 function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
-  const isEditing = !!editJob
+  const isEditing    = !!editJob
+  // Distinct from a plain manual-add: user arrived here via Browse → Track.
+  // Only use this class becomes active when the explicit save action succeeds.
+  const isFromBrowse = !isEditing && !!prefill
 
   // When editing, initialize from the existing job; otherwise use prefill or blank defaults.
   const initDayOfWeek = () => {
@@ -274,6 +277,11 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
     if (normalized) setClassTime(normalized)
   }
 
+  const handleCancel = () => {
+    console.log('[class-select] cancelled', { isEditing, isFromBrowse, classTitle })
+    onDone()
+  }
+
   const handleSubmit = async () => {
     if (!classTitle.trim() || !classTime.trim()) {
       setErr('Class name and time are required')
@@ -284,6 +292,7 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
       setErr('Enter time like 10:45 AM')
       return
     }
+    console.log('[class-select] save confirmed', { isEditing, isFromBrowse, classTitle })
     setSaving(true)
     setErr(null)
     try {
@@ -318,10 +327,19 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
   const inputClass = 'w-full bg-surface rounded-xl px-4 py-3 text-[15px] text-text-primary outline-none border border-transparent focus:border-accent-blue/40 transition-colors'
   const labelClass = 'text-[12px] font-semibold text-text-secondary uppercase tracking-wide mb-1 block'
 
+  const formTitle  = isEditing    ? 'Edit Class'
+                   : isFromBrowse ? 'Track This Class'
+                   :                'Add a Class'
+
+  const saveLabel  = saving       ? 'Saving…'
+                   : isEditing    ? 'Save Changes'
+                   : isFromBrowse ? 'Use This Class'
+                   :                'Add Class'
+
   return (
     <Card padding="md">
       <h3 className="text-[17px] font-bold text-text-primary tracking-tight mb-4">
-        {isEditing ? 'Edit Class' : 'Add a Class'}
+        {formTitle}
       </h3>
       <div className="flex flex-col gap-3">
         <div>
@@ -349,13 +367,13 @@ function AddJobForm({ onDone, prefill, editJob }: AddJobFormProps) {
         </div>
         {err && <p className="text-[13px] text-accent-red">{err}</p>}
         <div className="flex gap-2 mt-1">
-          <SecondaryButton fullWidth onClick={() => onDone()}>Cancel</SecondaryButton>
+          <SecondaryButton fullWidth onClick={handleCancel}>Cancel</SecondaryButton>
           <button
             onClick={handleSubmit}
             disabled={saving}
             className="flex-1 bg-accent-blue text-white font-semibold text-[15px] rounded-btn px-5 py-4 active:opacity-70 disabled:opacity-40"
           >
-            {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Add Class'}
+            {saveLabel}
           </button>
         </div>
       </div>
