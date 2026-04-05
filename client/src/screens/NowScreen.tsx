@@ -183,7 +183,7 @@ const RESULT_CONFIG: Record<string, {
   dotColor: 'gray' | 'green' | 'amber' | 'red' | 'blue'
 }> = {
   booked:             { label: 'Booked',            dotColor: 'green' },
-  dry_run:            { label: 'Simulated Booking',  dotColor: 'blue'  },
+  dry_run:            { label: 'Test run',            dotColor: 'blue'  },
   found_not_open_yet: { label: 'Not Open Yet',       dotColor: 'amber' },
   not_found:          { label: 'Class Not Found',    dotColor: 'red'   },
   error:              { label: 'Error',              dotColor: 'red'   },
@@ -196,7 +196,11 @@ function formatDayTime(job: Job) {
     4:'Thursday',5:'Friday',6:'Saturday',
   }
   const dayName = days[job.day_of_week as unknown as number] ?? job.day_of_week
-  return `${dayName} at ${job.class_time}${job.instructor ? ` with ${job.instructor}` : ''}`
+  // When a specific date is set, show it so the user knows exactly which class they're targeting.
+  const dateStr = job.target_date
+    ? `, ${new Date(job.target_date + 'T00:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+    : ''
+  return `${dayName}${dateStr} at ${job.class_time}${job.instructor ? ` with ${job.instructor}` : ''}`
 }
 
 const STEPS = ['Waiting', 'Opening Soon', 'Booking', 'Done']
@@ -788,13 +792,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       <ScreenContainer>
         {/* ── Hero card ──────────────────────────────────────────── */}
         <Card padding="md">
-          {/* State row */}
+          {/* Status indicator row — dot only; Paused badge when scheduler is halted */}
           <div className="flex items-center gap-2 mb-3">
             <StatusDot color={isInactive ? 'gray' : cfg.dotColor} />
-            <span className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
+            <span className="text-[13px] font-medium text-text-secondary">
               {isInactive ? 'Off' : cfg.label}
             </span>
-            {appState.schedulerPaused && (
+            {appState.schedulerPaused && !isInactive && (
               <span className="ml-auto text-[12px] font-medium text-accent-amber bg-accent-amber/10 px-2 py-0.5 rounded-pill">
                 Paused
               </span>
@@ -825,7 +829,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="green" />
               <span className="text-[17px] font-semibold text-accent-green">
-                {job?.last_result === 'dry_run' ? 'Simulated Booking' : 'Booked'}
+                {job?.last_result === 'dry_run' ? 'Test run' : 'Booked'}
               </span>
             </div>
           ) : isInactive ? (
@@ -851,11 +855,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <span className="text-[16px] text-text-secondary">Booking window has closed</span>
             </div>
           ) : (
-            <div className="bg-surface rounded-xl px-4 py-3 flex items-baseline gap-2">
-              <span className="text-[42px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
-                {countdown || '—'}
-              </span>
-              <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
+            <div className="bg-surface rounded-xl px-4 py-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[42px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
+                  {countdown || '—'}
+                </span>
+                <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
+              </div>
+              {bookingOpenMs != null && (
+                <p className="text-[12px] text-text-muted mt-1">
+                  Opens {fmt(bookingOpenMs)}
+                </p>
+              )}
             </div>
           )}
 
