@@ -87,4 +87,11 @@ export const api = {
 
   refreshSchedule: (): Promise<{ count: number; scraped_at: string }> =>
     apiFetch('/refresh-schedule', { method: 'POST' }),
+
+  resetBooking: (id: number): Promise<{ success: boolean }> =>
+    apiFetch('/reset-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }),
 }

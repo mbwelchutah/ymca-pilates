@@ -156,6 +156,40 @@ const PHASE_STEP: Record<Phase, number> = {
   too_early: 0, warmup: 1, sniper: 2, late: 3, unknown: 0,
 }
 
+// ── Cycle-aware booking helpers ────────────────────────────────────────────────
+
+/**
+ * True if `isoStr` falls within the current Mon–Sun UTC week.
+ * Mirrors tick.js `isThisWeek` exactly.
+ */
+function isThisWeekUTC(isoStr: string | null | undefined): boolean {
+  if (!isoStr) return false
+  const successDate  = new Date(isoStr)
+  const now          = new Date()
+  const daysSinceMon = (now.getUTCDay() + 6) % 7
+  const weekStart    = new Date(now)
+  weekStart.setUTCHours(0, 0, 0, 0)
+  weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon)
+  return successDate >= weekStart
+}
+
+/**
+ * Returns true when the job has a valid booking that covers the *current* cycle.
+ * Mirrors the scheduler's skip-check logic so the banner only shows when relevant.
+ *
+ * - `target_date` jobs: booked if target_date >= today (YYYY-MM-DD in local time).
+ * - Recurring jobs: booked if last_success_at falls in the current Mon–Sun UTC week.
+ */
+function isBookingCurrentCycle(job: Job | null): boolean {
+  if (!job) return false
+  if (job.last_result !== 'booked' && job.last_result !== 'dry_run') return false
+  if (job.target_date) {
+    const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD local
+    return job.target_date >= today
+  }
+  return isThisWeekUTC(job.last_success_at)
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function NowScreen({ appState, selectedJobId, loading, error, refresh }: NowScreenProps) {
@@ -169,7 +203,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
   const cfg      = PHASE_CONFIG[phase]
   const countdown = useCountdown(bookingOpenMs)
   const stepIdx  = PHASE_STEP[phase]
-  const isBooked = job?.last_result === 'booked' || job?.last_result === 'dry_run'
+  const isBooked = isBookingCurrentCycle(job)
+  const isStaleBooking =
+    (job?.last_result === 'booked' || job?.last_result === 'dry_run') && !isBooked
+
+  const [resetting, setResetting] = useState(false)
 
   const handlePauseResume = async () => {
     try {
@@ -177,6 +215,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
       else await api.pauseScheduler()
       refresh()
     } catch { /* ignored */ }
+  }
+
+  const handleBookAgain = async () => {
+    if (!job || resetting) return
+    setResetting(true)
+    try {
+      await api.resetBooking(job.id)
+      refresh()
+    } catch { /* ignored */ } finally {
+      setResetting(false)
+    }
   }
 
   if (loading) {
@@ -317,6 +366,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh }: 
         <SecondaryButton onClick={handlePauseResume} className="w-full">
           {appState.schedulerPaused ? 'Resume Scheduler' : 'Pause Scheduler'}
         </SecondaryButton>
+
+        {isStaleBooking && job && (
+          <SecondaryButton
+            onClick={handleBookAgain}
+            disabled={resetting}
+            className="w-full"
+          >
+            {resetting ? 'Resetting…' : 'Book again'}
+          </SecondaryButton>
+        )}
 
         {/* ── Booking Window ─────────────────────────────────────── */}
         {bookingOpenMs && (

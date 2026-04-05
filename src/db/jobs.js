@@ -83,4 +83,27 @@ function setJobActive(id, isActive) {
   db.prepare('UPDATE jobs SET is_active = ? WHERE id = ?').run(isActive ? 1 : 0, id);
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive };
+// Clears the booking run state so the scheduler will attempt to book again.
+// If target_date is set and is already in the past, advances it by 7 days
+// (repeating until future) so the bot targets the correct upcoming class.
+function clearLastRun(id) {
+  const db  = openDb();
+  const job = db.prepare('SELECT target_date FROM jobs WHERE id = ?').get(id);
+  if (job && job.target_date) {
+    const today   = new Date().toISOString().slice(0, 10);
+    if (job.target_date < today) {
+      const d = new Date(job.target_date + 'T12:00:00Z');
+      while (d.toISOString().slice(0, 10) < today) d.setDate(d.getDate() + 7);
+      db.prepare('UPDATE jobs SET target_date = ? WHERE id = ?')
+        .run(d.toISOString().slice(0, 10), id);
+    }
+  }
+  db.prepare(`
+    UPDATE jobs
+    SET last_run_at = NULL, last_result = NULL,
+        last_error_message = NULL, last_success_at = NULL
+    WHERE id = ?
+  `).run(id);
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun };

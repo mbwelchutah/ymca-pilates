@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
 const { runBookingJob } = require('../bot/register-pilates');
 const { scrapeSchedule } = require('../bot/scrape-schedule');
@@ -3997,6 +3997,23 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('ok');
       }
+    });
+
+  } else if (req.method === 'POST' && path === '/reset-booking') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      let id;
+      try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      if (!id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Invalid job ID' }));
+        return;
+      }
+      clearLastRun(id);
+      console.log(`Reset booking state for job #${id}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
     });
 
   } else if (req.method === 'POST' && path === '/add-job') {
