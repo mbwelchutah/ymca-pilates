@@ -3968,6 +3968,48 @@ const server = http.createServer((req, res) => {
       })();
     });
 
+  } else if (req.method === 'POST' && path === '/api/dry-run') {
+    // Runs the full booking pipeline with dryRun=true — goes all the way to
+    // the Register/Waitlist button but never clicks it.  Safe to run any time.
+    // Uses the selected job; returns a human-readable outcome.
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      (async () => {
+        try {
+          const { jobId } = JSON.parse(body || '{}');
+          const db = openDb();
+          const dbJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+          if (!dbJob) { json({ success: false, message: 'Job not found' }); return; }
+
+          const result = await runBookingJob({
+            id:         dbJob.id,
+            className:  dbJob.class_name,
+            dayOfWeek:  dbJob.day_of_week,
+            targetDate: dbJob.target_date || null,
+            maxAttempts: 1,
+          }, { dryRun: true });
+
+          // Map raw bot status to a user-readable label and color.
+          const label =
+            result.status === 'success'      ? 'Would register'    :
+            result.status === 'waitlist_only'? 'Would join waitlist':
+            result.status === 'found_not_open_yet' ? 'Not open yet' :
+            result.status === 'not_found'    ? 'Class not found'   :
+            'Run failed';
+          const color =
+            result.status === 'success'      ? 'green' :
+            result.status === 'waitlist_only'? 'amber' :
+            'red';
+
+          json({ success: result.status === 'success', status: result.status, message: result.message, label, color });
+        } catch (err) {
+          console.error('[dry-run] error:', err.message);
+          json({ success: false, status: 'error', message: err.message, label: 'Run failed', color: 'red' });
+        }
+      })();
+    });
+
   } else if (req.method === 'GET' && path === '/api/session-status') {
     // Returns the persisted result of the last session check (fast, no browser).
     // Also derives per-provider status from sniper-state.json (no browser launched).

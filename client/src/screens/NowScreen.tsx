@@ -503,7 +503,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   // Result badge shown after Verify Session completes — cleared on next check.
   type VerifyResult = { label: string; color: 'green' | 'amber' | 'red'; detail: string }
-  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null)
+  const [verifyResult,    setVerifyResult]    = useState<VerifyResult | null>(null)
+  const [dryRunRunning,   setDryRunRunning]   = useState(false)
+  const [dryRunResult,    setDryRunResult]    = useState<VerifyResult | null>(null)
 
   useEffect(() => {
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
@@ -535,6 +537,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     } catch {
       setVerifyResult({ label: 'Verification failed', color: 'red', detail: 'Check failed — try again' })
     } finally { setSessionChecking(false) }
+  }
+
+  const handleRunDryRun = async () => {
+    if (!job || dryRunRunning || (sessionStatus?.locked ?? false)) return
+    setDryRunRunning(true)
+    setDryRunResult(null)
+    try {
+      const r = await api.runDryRun(job.id)
+      setDryRunResult({ label: r.label, color: r.color, detail: r.message ?? '' })
+      // Refresh sniper-state so Tools timeline updates.
+      api.getSniperState().then(setSniperRunState).catch(() => {})
+    } catch {
+      setDryRunResult({ label: 'Dry run failed', color: 'red', detail: 'An error occurred — check Tools for details' })
+    } finally { setDryRunRunning(false) }
   }
 
   const bundle  = sniperRunState?.bundle
@@ -848,24 +864,61 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 {preflightRunning ? 'Checking…' : 'Check Now'}
               </button>
 
-              {/* Verify Session — secondary action, fast auth-only check */}
+              {/* Secondary actions row: Dry Run + Refresh Session */}
               {!(sessionStatus?.locked ?? false) && !preflightRunning && (
-                <button
-                  onClick={handleVerifySession}
-                  disabled={sessionChecking}
-                  className="mt-2 w-full text-center text-[13px] text-text-muted active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
-                >
-                  {sessionChecking && (
-                    <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                  )}
-                  {sessionChecking ? 'Verifying…' : 'Verify Session'}
-                </button>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={handleRunDryRun}
+                    disabled={dryRunRunning || sessionChecking}
+                    className="flex-1 py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  >
+                    {dryRunRunning && (
+                      <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                    )}
+                    {dryRunRunning ? 'Running…' : 'Dry Run'}
+                  </button>
+                  <button
+                    onClick={handleVerifySession}
+                    disabled={sessionChecking || dryRunRunning}
+                    className="flex-1 py-2 rounded-xl text-[13px] font-medium border border-divider text-text-secondary active:opacity-60 disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  >
+                    {sessionChecking && (
+                      <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                    )}
+                    {sessionChecking ? 'Refreshing…' : 'Refresh Session'}
+                  </button>
+                </div>
               )}
 
-              {/* Verify Session result badge — shown after check completes */}
+              {/* Dry Run result badge */}
+              {dryRunResult && !dryRunRunning && !preflightRunning && (
+                <div className={`mt-2 rounded-xl px-3.5 py-2.5
+                  ${dryRunResult.color === 'green' ? 'bg-accent-green/10' :
+                    dryRunResult.color === 'amber' ? 'bg-accent-amber/10' :
+                    'bg-accent-red/10'}
+                `}>
+                  <div className="flex items-center gap-2">
+                    <StatusDot color={dryRunResult.color} />
+                    <span className={`text-[14px] font-semibold
+                      ${dryRunResult.color === 'green' ? 'text-accent-green' :
+                        dryRunResult.color === 'amber' ? 'text-accent-amber' :
+                        'text-accent-red'}
+                    `}>
+                      {dryRunResult.label}
+                    </span>
+                    <span className="ml-auto text-[11px] text-text-muted">Dry run</span>
+                  </div>
+                  <p className="text-[12px] text-text-muted mt-0.5 ml-5 line-clamp-2">{dryRunResult.detail}</p>
+                </div>
+              )}
+
+              {/* Refresh Session result badge — shown after check completes */}
               {verifyResult && !sessionChecking && !preflightRunning && (
                 <div className={`mt-2 rounded-xl px-3.5 py-2.5
                   ${verifyResult.color === 'green' ? 'bg-accent-green/10' :

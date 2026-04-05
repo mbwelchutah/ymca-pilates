@@ -86,6 +86,13 @@ export const api = {
   forceRunJob: (id: number): Promise<{ success: boolean; message: string }> =>
     apiFetch(`/force-run-job?id=${id}`, { method: 'POST' }),
 
+  runDryRun: (jobId: number): Promise<{ success: boolean; status: string; message: string; label: string; color: 'green' | 'amber' | 'red' }> =>
+    apiFetch('/api/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    }),
+
   runSchedulerOnce: (): Promise<{ success: boolean; message: string }> =>
     apiFetch('/run-scheduler-once', { method: 'POST' }),
 
