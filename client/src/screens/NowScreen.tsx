@@ -1276,11 +1276,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {(() => {
                 const autoCheckActive = sniperArmed?.autoCheckActive ?? false
                 const autoRetry       = sniperArmed?.autoRetry       ?? false
-                // Show if: scheduler is watching, there's an armed state, or we have a last-checked time.
-                // This surfaces auto-check status even before the first background check has run.
-                const shouldShow = !preflightRunning && isReadinessForSelectedJob &&
-                  (sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
+                // Stage 8: always show during a manual check (preflightRunning) so the
+                // trust line — not the button — communicates that work is happening.
+                // Also show when: scheduler is watching, armed state exists, or last-checked time.
+                const shouldShow = isReadinessForSelectedJob &&
+                  (preflightRunning || sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
                 if (!shouldShow) return null
+                // Stage 8: while a manual check is running, show a simple "Checking…"
+                // state in the trust line rather than hiding the line entirely.
+                if (preflightRunning) {
+                  return (
+                    <div className="mb-2 flex items-center justify-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-text-muted/40 flex-shrink-0 animate-pulse" />
+                      <span className="text-[12px] text-text-muted">Checking…</span>
+                    </div>
+                  )
+                }
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
                     {/* Dot: pulsing green when scheduler is active, otherwise armed-state colour */}
@@ -1337,14 +1348,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   </button>
                 </div>
 
-                {/* Verify now — quiet right-aligned action */}
+                {/* Verify — secondary reassurance action (Stage 8: demoted from primary) */}
                 <button
                   onClick={handleCheckNow}
                   disabled={preflightRunning || (sessionStatus?.locked ?? false)}
-                  className={`flex items-center gap-1.5 text-[12px] font-medium transition-opacity
+                  className={`flex items-center gap-1.5 text-[12px] font-normal transition-opacity
                     ${preflightRunning || (sessionStatus?.locked ?? false)
                       ? 'text-text-muted opacity-50 cursor-not-allowed'
-                      : 'text-accent-blue active:opacity-50'
+                      : 'text-text-secondary active:opacity-50'
                     }`}
                 >
                   {preflightRunning && (
@@ -1353,7 +1364,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
                   )}
-                  {preflightRunning ? 'Checking…' : (isReadinessForSelectedJob && bgReadiness?.lastCheckedAt) ? 'Check again' : 'Run check'}
+                  {preflightRunning ? 'Checking…' : 'Verify'}
                 </button>
               </div>
 
