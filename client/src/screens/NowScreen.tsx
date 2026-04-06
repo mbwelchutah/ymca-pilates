@@ -1233,13 +1233,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             if (sp === 'firing' && phase === 'sniper') return null
             if (sp === 'confirming' && execPhase === 'confirming') return null
             const info = SNIPER_PHASE_INFO[sp]
-            // Countdown phase includes a live time remaining suffix
-            const label = sp === 'countdown' && countdown
-              ? `Countdown: ${countdown}`
-              : info.label
-            const dotStyle = info.pulse
-              ? 'animate-pulse'
-              : ''
+
+            // ── Stage 3: Countdown — stronger emphasis when window is near ──────
+            if (sp === 'countdown') {
+              return (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green animate-pulse" />
+                  <span className="text-[13px] text-text-secondary font-medium">
+                    {'Firing in '}
+                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
+                  </span>
+                </div>
+              )
+            }
+
+            // ── All other phases — calm single-line bar ──────────────────────────
+            const dotStyle = info.pulse ? 'animate-pulse' : ''
             const dotColor: Record<typeof info.dotColor, string> = {
               green: 'bg-accent-green',
               amber: 'bg-accent-amber',
@@ -1249,7 +1258,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             return (
               <div className="mt-2 flex items-center gap-2">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${dotStyle}`} />
-                <span className="text-[13px] text-text-secondary font-medium">{label}</span>
+                <span className="text-[13px] text-text-secondary font-medium">{info.label}</span>
               </div>
             )
           })()}
