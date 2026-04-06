@@ -1041,6 +1041,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 Booking in progress…
               </span>
             </div>
+          ) : bgReadiness?.executionTiming?.phase === 'confirming' ? (
+            // Stage 10E — window has opened, a live booking attempt is in flight,
+            // and the bot is waiting for the page to confirm the registration.
+            // Client-side phase would be 'late' at this point; the server-computed
+            // executionTiming.phase overrides that to show the correct state.
+            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              <StatusDot color="blue" />
+              <span className="text-[17px] font-semibold text-accent-blue">
+                Confirming registration…
+              </span>
+            </div>
           ) : phase === 'late' ? (
             <div className="bg-surface rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="gray" />

@@ -4766,7 +4766,11 @@ const server = http.createServer((req, res) => {
     if (job) {
       try {
         executionTiming = computeExecutionTiming(job, {
-          isConfirming: false, // Stage 10E will supply this from live run state
+          // Stage 10E — isConfirming: true while a booking run is active after opensAt.
+          // The timing function gates on now >= opensAt, so passing jobState.active
+          // pre-window has no effect; it only promotes the phase to 'confirming' once
+          // the window has opened and a live attempt is in flight.
+          isConfirming: jobState.active,
         });
       } catch (_) { /* non-fatal — job shape may be incomplete */ }
     }
