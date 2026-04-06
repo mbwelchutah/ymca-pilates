@@ -7,6 +7,8 @@ import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import type { AppState, Job, Phase, ScrapedClass } from '../types'
 import { api } from '../lib/api'
+import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
+import type { SniperPhase } from '../lib/sniperPhase'
 
 interface PlanScreenProps {
   appState: AppState
@@ -85,6 +87,40 @@ function timeToMinutes(t: string): number {
   return h * 60 + min
 }
 
+// ── Stage 7: Countdown hook — ticks every second, matches NowScreen ───────────
+
+function useCountdown(targetMs: number | null): string {
+  const [display, setDisplay] = useState('')
+  useEffect(() => {
+    if (!targetMs) { setDisplay(''); return }
+    const tick = () => {
+      const diff = targetMs - Date.now()
+      if (diff <= 0) { setDisplay(''); return }
+      const d = Math.floor(diff / 86_400_000)
+      const h = Math.floor((diff % 86_400_000) / 3_600_000)
+      const mn = Math.floor((diff % 3_600_000) / 60_000)
+      const s  = Math.floor((diff % 60_000)   / 1_000)
+      if (d > 0)      setDisplay(`${d}d ${h}h ${mn}m`)
+      else if (h > 0) setDisplay(`${h}h ${mn}m ${s}s`)
+      else            setDisplay(`${mn}m ${s}s`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [targetMs])
+  return display
+}
+
+// ── Stage 7: Sniper row data passed to the watched JobCard ────────────────────
+
+interface SniperRowData {
+  phase:     SniperPhase
+  sessOk:    boolean
+  classOk:   boolean
+  modalOk:   boolean
+  countdown: string
+}
+
 interface JobCardProps {
   job: Job
   isWatching: boolean
@@ -92,9 +128,10 @@ interface JobCardProps {
   onDelete: () => Promise<void>
   onEdit: () => void
   onSelect: () => void
+  sniperRow?: SniperRowData
 }
 
-function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobCardProps) {
+function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniperRow }: JobCardProps) {
   const [toggling, setToggling]     = useState(false)
   const [toggleErr, setToggleErr]   = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -193,6 +230,90 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect }: JobC
               </span>
             </div>
           )}
+
+          {/* ── Stage 7: Sniper phase row — watched card only ────────────── */}
+          {isWatching && sniperRow && (() => {
+            const { phase: sp, sessOk, classOk, modalOk, countdown } = sniperRow
+
+            if (sp === 'monitoring') {
+              const anyOk = sessOk || classOk || modalOk
+              const sig = (ok: boolean, label: string) => ok
+                ? <span key={label} className="text-accent-green">{label} ✓</span>
+                : <span key={label} className="text-text-muted/70">{label} —</span>
+              return (
+                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
+                  {anyOk ? (
+                    <span className="text-[12px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
+                      <span>Monitoring</span>
+                      <span className="text-text-muted/40">·</span>
+                      {sig(sessOk, 'Session')}
+                      <span className="text-text-muted/40">·</span>
+                      {sig(classOk, 'Class')}
+                      <span className="text-text-muted/40">·</span>
+                      {sig(modalOk, 'Modal')}
+                    </span>
+                  ) : (
+                    <span className="text-[12px] text-text-secondary font-medium">Monitoring</span>
+                  )}
+                </div>
+              )
+            }
+
+            if (sp === 'locked') {
+              return (
+                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
+                  <span className="text-[12px] text-text-secondary font-medium">
+                    {'Locked on '}
+                    <span className="text-accent-amber font-semibold">{job.class_title}</span>
+                  </span>
+                </div>
+              )
+            }
+
+            if (sp === 'armed') {
+              return (
+                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
+                  <span className="text-[12px] text-text-secondary font-medium">
+                    {'Armed · '}
+                    <span className="text-accent-green">Class</span>
+                    {' · '}
+                    <span className="text-accent-green">Session</span>
+                    {' · '}
+                    <span className="text-accent-green">Modal</span>
+                  </span>
+                </div>
+              )
+            }
+
+            if (sp === 'countdown') {
+              return (
+                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green animate-pulse" />
+                  <span className="text-[12px] text-text-secondary font-medium">
+                    {'Firing in '}
+                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
+                  </span>
+                </div>
+              )
+            }
+
+            const info     = SNIPER_PHASE_INFO[sp]
+            const dotColor: Record<typeof info.dotColor, string> = {
+              green: 'bg-accent-green',
+              amber: 'bg-accent-amber',
+              gray:  'bg-text-muted/50',
+              blue:  'bg-accent-blue',
+            }
+            return (
+              <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${info.pulse ? 'animate-pulse' : ''}`} />
+                <span className="text-[12px] text-text-secondary font-medium">{info.label}</span>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Active toggle — stop propagation so it doesn't also select the job */}
@@ -578,6 +699,46 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
   const [editingJob, setEditingJob]   = useState<Job | null>(null)
 
+  // ── Stage 7: bgReadiness polling for the watched job ──────────────────────
+  const [bgReadiness, setBgReadiness] = useState<Awaited<ReturnType<typeof api.getReadiness>> | null>(null)
+
+  useEffect(() => {
+    if (selectedJobId == null) return
+    api.getReadiness().then(setBgReadiness).catch(() => {})
+    const id = setInterval(() => api.getReadiness().then(setBgReadiness).catch(() => {}), 30_000)
+    return () => clearInterval(id)
+  }, [selectedJobId])
+
+  // Guard: only use readiness data when it belongs to the currently selected job.
+  const isReadinessForSelectedJob = bgReadiness?.jobId == null || bgReadiness?.jobId === selectedJobId
+
+  // Watched job reference and its booking window timestamp
+  const watchedJob  = appState.jobs.find(j => j.id === selectedJobId) ?? null
+  const watchedPhase = (watchedJob?.phase ?? 'unknown') as Phase
+  const watchedCountdown = useCountdown(watchedJob?.bookingOpenMs ?? null)
+
+  // Compute sniper row data for the watched card.
+  // Absent when job is inactive, scheduler is paused, or window has closed.
+  const watchedSniperRow: SniperRowData | undefined = (() => {
+    if (!watchedJob || !watchedJob.is_active || appState.schedulerPaused || watchedPhase === 'late') return undefined
+    const bgRdy        = isReadinessForSelectedJob ? bgReadiness : null
+    const armedState   = bgReadiness?.armed?.state ?? null
+    const bookingActive = bgReadiness?.armed?.state === 'booking'
+    const sp = deriveSniperPhase({
+      armedState,
+      clientPhase:   watchedPhase,
+      execPhase:     null,
+      bookingActive,
+    })
+    return {
+      phase:     sp,
+      sessOk:    bgRdy?.session   === 'ready',
+      classOk:   bgRdy?.discovery === 'found',
+      modalOk:   bgRdy?.modal      === 'reachable',
+      countdown: watchedCountdown,
+    }
+  })()
+
   const handleToggle = async (job: Job) => {
     await api.toggleActive(job.id)
     await refresh()
@@ -700,6 +861,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
                 onDelete={() => handleDelete(job)}
                 onEdit={() => handleEdit(job)}
                 onSelect={() => onSelectJob(job.id)}
+                sniperRow={job.id === selectedJobId ? watchedSniperRow : undefined}
               />
             ))}
           </div>
