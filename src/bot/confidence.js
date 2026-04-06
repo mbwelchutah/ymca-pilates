@@ -4,11 +4,11 @@
 // readiness object (Stage 9B shape). Unknown fields receive partial credit
 // because "not tested" is not the same as "broken".
 //
-// Scoring table:
+// Scoring table (per spec):
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   20
-//   schedule  |          15           |           0           |    —     |    —     |    0
+//   session   |          25           |           0           |    —     |    —     |   12
+//   schedule  |          15           |           0           |    —     |    —     |    8
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
@@ -26,13 +26,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 20,
+  unknown: 12,
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  0,
+  unknown:  8,
 };
 
 const DISCOVERY_SCORE = {
@@ -68,6 +68,7 @@ function scoreToLabel(score) {
 
 /**
  * Compute a confidence score for a normalized readiness object.
+ * Score is clamped to [0, 100] to guarantee range contract.
  *
  * @param {object} readiness  Normalized readiness object from readiness-state.js
  * @returns {{ score: number, label: string }}
