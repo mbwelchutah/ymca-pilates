@@ -7,15 +7,17 @@
 //
 // Shape written to src/data/readiness-state.json:
 // {
-//   lastCheckedAt : ISO string,
-//   jobId         : number,
-//   classTitle    : string,
-//   session       : "ready" | "error" | "unknown",
-//   schedule      : "ready" | "error" | "unknown",
-//   discovery     : "found" | "missing" | "unknown",
-//   modal         : "reachable" | "blocked" | "unknown",
-//   action        : "ready" | "not_open" | "blocked" | "waitlist" | "unknown",
-//   source        : "background" | "manual" | "keepalive"
+//   lastCheckedAt   : ISO string,
+//   jobId           : number,
+//   classTitle      : string,
+//   session         : "ready" | "error" | "unknown",
+//   schedule        : "ready" | "error" | "unknown",
+//   discovery       : "found" | "missing" | "unknown",
+//   modal           : "reachable" | "blocked" | "unknown",
+//   action          : "ready" | "not_open" | "blocked" | "waitlist" | "unknown",
+//   source          : "background" | "manual" | "keepalive",
+//   confidenceScore : integer 0–100   (Stage 9C),
+//   confidenceLabel : "Ready" | "Almost ready" | "Needs attention" | "At risk"
 // }
 //
 // Writers:
@@ -26,8 +28,9 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { loadState }  = require('./sniper-readiness');
-const { loadStatus } = require('./session-check');
+const { loadState }       = require('./sniper-readiness');
+const { loadStatus }      = require('./session-check');
+const { computeConfidence } = require('./confidence');
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'readiness-state.json');
@@ -111,7 +114,7 @@ function computeReadiness({ jobId, classTitle, source }) {
   const bundle        = sniperState?.bundle ?? {};
   const fwStatus      = readFwStatus();
 
-  return {
+  const record = {
     lastCheckedAt: new Date().toISOString(),
     jobId:         jobId  ?? sniperState?.jobId  ?? null,
     classTitle:    classTitle ?? sniperState?.classTitle ?? null,
@@ -122,6 +125,12 @@ function computeReadiness({ jobId, classTitle, source }) {
     action:        normalizeAction(bundle.action),
     source:        source ?? 'unknown',
   };
+
+  const { score, label } = computeConfidence(record);
+  record.confidenceScore = score;
+  record.confidenceLabel = label;
+
+  return record;
 }
 
 // ── Convenience: compute + save in one call ───────────────────────────────────
