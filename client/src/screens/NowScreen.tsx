@@ -675,6 +675,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Live relative label — auto-refreshes every 30 s
   const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
 
+  // Guard: only treat bgReadiness data as valid for the currently selected job.
+  // bgReadiness.jobId === null means legacy / not yet tagged — treat as applicable.
+  const isReadinessForSelectedJob =
+    bgReadiness?.jobId == null || bgReadiness?.jobId === selectedJobId
+
   // ── Clear stale readiness data when the selected job changes OR is edited ─────
   // Sniper state is global (last-run-wins on the server).  Two triggers require
   // a wipe + fresh fetch:
@@ -729,6 +734,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setPreflightStatus(null)
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
+    api.getReadiness().then(setBgReadiness).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobId, jobFingerprint])
 
@@ -1125,7 +1131,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="mt-3 pt-3 border-t border-divider">
 
               {/* Step 4 — Single calm trust line: armed · confidence · last checked */}
-              {!preflightRunning && (bgReadiness?.armed?.state || lastCheckedLabel) && (
+              {!preflightRunning && isReadinessForSelectedJob && (bgReadiness?.armed?.state || lastCheckedLabel) && (
                 <div className="mb-2 flex items-center justify-center gap-1.5">
                   {/* Dot: pulsing if auto-check running, otherwise armed-state colour */}
                   {!appState.schedulerPaused && lastCheckedLabel
@@ -1165,7 +1171,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   showComposite,
                   locked: sessionStatus?.locked ?? false,
                   lastPreflightAt,
-                  bgArmedState: bgReadiness?.armed?.state ?? null,
+                  bgArmedState: isReadinessForSelectedJob ? (bgReadiness?.armed?.state ?? null) : null,
                 })
                 const bgClass =
                   result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
@@ -1248,7 +1254,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
                   )}
-                  {preflightRunning ? 'Checking…' : bgReadiness?.lastCheckedAt ? 'Check again' : 'Run check'}
+                  {preflightRunning ? 'Checking…' : (isReadinessForSelectedJob && bgReadiness?.lastCheckedAt) ? 'Check again' : 'Run check'}
                 </button>
               </div>
 
