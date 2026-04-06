@@ -20,6 +20,7 @@ import type { ConfidenceLabel } from '../lib/confidence'
 import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib/sniperArmed'
 import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
+import type { SniperPhase } from '../lib/sniperPhase'
 
 interface NowScreenProps {
   appState: AppState
@@ -1237,7 +1238,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               armed:      { filled: 3, color: 'bg-accent-green',  fireAnim: false },
               countdown:  { filled: 4, color: 'bg-accent-green',  fireAnim: false },
               firing:     { filled: 5, color: 'bg-accent-green',  fireAnim: true  },
-              confirming: { filled: 5, color: 'bg-accent-blue',   fireAnim: true  },
+              confirming: { filled: 5, color: 'bg-accent-green', fireAnim: true  },
             }
             const { filled, color, fireAnim } = STRIP[sp]
 
