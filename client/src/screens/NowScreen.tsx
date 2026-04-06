@@ -790,7 +790,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
   const [checkStep,    setCheckStep]    = useState<string | null>(null)
-  const [checkElapsed, setCheckElapsed] = useState<number>(0)
+  const [checkElapsed,         setCheckElapsed]         = useState<number>(0)
+  const [showReadinessDetails, setShowReadinessDetails] = useState(false)
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Time-gated step labels — each activates once the elapsed seconds threshold is crossed.
@@ -1330,129 +1331,142 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )
             })()}
 
-            {/* Session */}
-            {sessionStatus && (() => {
-              const s  = daxkoToLabel(sessionStatus.daxko)
-              const lv = sessionStatus.lastVerified
-                ? `Last checked: ${formatPreflightTime(sessionStatus.lastVerified)}`
-                : undefined
-              const authD =
-                authDetail?.verdict === 'login_required'
-                  ? (authDetail.detail ?? 'Credentials rejected — re-enter in Settings')
-                  : authDetail?.verdict === 'ready'
-                  ? 'Login confirmed'
-                  : lv
-              return (
-                <CompactRow
-                  label="Session"
-                  value={s.label}
-                  dotColor={s.dotColor}
-                  detail={authD}
-                />
-              )
-            })()}
+            {/* ── Toggle — expand/collapse detail rows (Step 2) ─────────────── */}
+            <button
+              onClick={() => setShowReadinessDetails(v => !v)}
+              className="w-full text-center text-[11px] text-text-muted active:opacity-50 py-2 border-b border-divider"
+            >
+              {showReadinessDetails ? 'Hide details ↑' : 'Show details ↓'}
+            </button>
 
-            {/* Schedule (FamilyWorks) */}
-            {sessionStatus && (() => {
-              const fw = fwToLabel(sessionStatus.familyworks)
-              const fwD =
-                authDetail?.verdict === 'session_expired'
-                  ? (authDetail.detail ?? 'Re-login required — use Settings → Log in now')
-                  : authDetail?.verdict === 'ready'
-                  ? 'Schedule access confirmed'
-                  : undefined
-              return (
-                <CompactRow
-                  label="Schedule"
-                  value={fw.label}
-                  dotColor={fw.dotColor}
-                  detail={fwD}
-                />
-              )
-            })()}
-
-            {/* Discovery — only when bundle has tested it */}
-            {bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
-              <CompactRow
-                label="Discovery"
-                value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
-                dotColor={readinessDotColor(bundle.discovery)}
-                detail={(() => {
-                  if (!discoveryDetail) return undefined
-                  if (discoveryDetail.found) {
-                    const parts: string[] = []
-                    if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
-                    if (discoveryDetail.score) parts.push(`score ${discoveryDetail.score}`)
-                    return parts.join(' · ') || undefined
-                  }
-                  return discoveryDetail.nearMisses
-                    ? `Near: ${discoveryDetail.nearMisses}`
-                    : 'Not visible on this day\'s schedule'
+            {/* ── Detail rows — hidden by default (Step 2) ──────────────────── */}
+            {showReadinessDetails && (
+              <>
+                {/* Session */}
+                {sessionStatus && (() => {
+                  const s  = daxkoToLabel(sessionStatus.daxko)
+                  const lv = sessionStatus.lastVerified
+                    ? `Last checked: ${formatPreflightTime(sessionStatus.lastVerified)}`
+                    : undefined
+                  const authD =
+                    authDetail?.verdict === 'login_required'
+                      ? (authDetail.detail ?? 'Credentials rejected — re-enter in Settings')
+                      : authDetail?.verdict === 'ready'
+                      ? 'Login confirmed'
+                      : lv
+                  return (
+                    <CompactRow
+                      label="Session"
+                      value={s.label}
+                      dotColor={s.dotColor}
+                      detail={authD}
+                    />
+                  )
                 })()}
-              />
-            )}
 
-            {/* Modal — only when tested */}
-            {bundle && bundle.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED' && (
-              <CompactRow
-                label="Modal"
-                value={MODAL_LABEL[bundle.modal] ?? bundle.modal}
-                dotColor={readinessDotColor(bundle.modal)}
-                detail={(() => {
-                  if (!modalDetail) return undefined
-                  if (modalDetail.verdict === 'reachable') {
-                    const btns = Array.isArray(modalDetail.buttonsVisible)
-                      ? modalDetail.buttonsVisible.join(', ')
-                      : null
-                    return btns ? `Buttons: ${btns}` : 'Opened and verified'
-                  }
-                  if (modalDetail.verdict === 'login_required') return 'Login to Register shown'
-                  return modalDetail.detail ? `Could not open: ${modalDetail.detail}` : undefined
+                {/* Schedule (FamilyWorks) */}
+                {sessionStatus && (() => {
+                  const fw = fwToLabel(sessionStatus.familyworks)
+                  const fwD =
+                    authDetail?.verdict === 'session_expired'
+                      ? (authDetail.detail ?? 'Re-login required — use Settings → Log in now')
+                      : authDetail?.verdict === 'ready'
+                      ? 'Schedule access confirmed'
+                      : undefined
+                  return (
+                    <CompactRow
+                      label="Schedule"
+                      value={fw.label}
+                      dotColor={fw.dotColor}
+                      detail={fwD}
+                    />
+                  )
                 })()}
-              />
+
+                {/* Discovery — only when bundle has tested it */}
+                {bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+                  <CompactRow
+                    label="Discovery"
+                    value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
+                    dotColor={readinessDotColor(bundle.discovery)}
+                    detail={(() => {
+                      if (!discoveryDetail) return undefined
+                      if (discoveryDetail.found) {
+                        const parts: string[] = []
+                        if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
+                        if (discoveryDetail.score) parts.push(`score ${discoveryDetail.score}`)
+                        return parts.join(' · ') || undefined
+                      }
+                      return discoveryDetail.nearMisses
+                        ? `Near: ${discoveryDetail.nearMisses}`
+                        : 'Not visible on this day\'s schedule'
+                    })()}
+                  />
+                )}
+
+                {/* Modal — only when tested */}
+                {bundle && bundle.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED' && (
+                  <CompactRow
+                    label="Modal"
+                    value={MODAL_LABEL[bundle.modal] ?? bundle.modal}
+                    dotColor={readinessDotColor(bundle.modal)}
+                    detail={(() => {
+                      if (!modalDetail) return undefined
+                      if (modalDetail.verdict === 'reachable') {
+                        const btns = Array.isArray(modalDetail.buttonsVisible)
+                          ? modalDetail.buttonsVisible.join(', ')
+                          : null
+                        return btns ? `Buttons: ${btns}` : 'Opened and verified'
+                      }
+                      if (modalDetail.verdict === 'login_required') return 'Login to Register shown'
+                      return modalDetail.detail ? `Could not open: ${modalDetail.detail}` : undefined
+                    })()}
+                  />
+                )}
+
+                {/* Action — only when tested */}
+                {bundle && bundle.action !== 'ACTION_NOT_TESTED' && (
+                  <CompactRow
+                    label="Action"
+                    value={ACTION_LABEL[bundle.action] ?? bundle.action}
+                    dotColor={readinessDotColor(bundle.action)}
+                    detail={(() => {
+                      if (!actionDetail) return undefined
+                      switch (actionDetail.verdict) {
+                        case 'ready': {
+                          const btn = Array.isArray(actionDetail.buttonsVisible)
+                            ? actionDetail.buttonsVisible.find(b => /register|reserve/i.test(b)) ?? 'Register'
+                            : 'Register'
+                          return `"${btn}" button visible`
+                        }
+                        case 'waitlist_only': return 'Waitlist available — class is full'
+                        case 'login_required': return 'Login to Register shown'
+                        case 'full':
+                          return actionDetail.actionState === 'CANCEL_ONLY'
+                            ? 'Cancel button visible — may already be registered'
+                            : 'Register button not showing yet'
+                        default: return undefined
+                      }
+                    })()}
+                  />
+                )}
+
+                {/* Last run timestamp — quiet footer row */}
+                {job?.last_run_at && (
+                  <div className="px-4 py-2 border-b border-divider last:border-0 flex items-center justify-between">
+                    <span className="text-[11px] text-text-muted">Last run</span>
+                    <span className="text-[11px] text-text-muted tabular-nums">
+                      {new Date(job.last_run_at).toLocaleString([], {
+                        month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Action — only when tested */}
-            {bundle && bundle.action !== 'ACTION_NOT_TESTED' && (
-              <CompactRow
-                label="Action"
-                value={ACTION_LABEL[bundle.action] ?? bundle.action}
-                dotColor={readinessDotColor(bundle.action)}
-                detail={(() => {
-                  if (!actionDetail) return undefined
-                  switch (actionDetail.verdict) {
-                    case 'ready': {
-                      const btn = Array.isArray(actionDetail.buttonsVisible)
-                        ? actionDetail.buttonsVisible.find(b => /register|reserve/i.test(b)) ?? 'Register'
-                        : 'Register'
-                      return `"${btn}" button visible`
-                    }
-                    case 'waitlist_only': return 'Waitlist available — class is full'
-                    case 'login_required': return 'Login to Register shown'
-                    case 'full':
-                      return actionDetail.actionState === 'CANCEL_ONLY'
-                        ? 'Cancel button visible — may already be registered'
-                        : 'Register button not showing yet'
-                    default: return undefined
-                  }
-                })()}
-              />
-            )}
-
-            {/* Last run timestamp — quiet footer row */}
-            {job?.last_run_at && (
-              <div className="px-4 py-2 border-b border-divider last:border-0 flex items-center justify-between">
-                <span className="text-[11px] text-text-muted">Last run</span>
-                <span className="text-[11px] text-text-muted tabular-nums">
-                  {new Date(job.last_run_at).toLocaleString([], {
-                    month: 'short', day: 'numeric',
-                    hour: 'numeric', minute: '2-digit',
-                  })}
-                </span>
-              </div>
-            )}
-
-            {/* Tools link — footer of the details card */}
+            {/* Tools link — always accessible at the bottom of the card */}
             {onGoToTools && (
               <button
                 onClick={onGoToTools}
