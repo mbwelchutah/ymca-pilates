@@ -17,6 +17,8 @@ import {
 import type { CompositeReadiness } from '../lib/readinessResolver'
 import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence'
 import type { ConfidenceLabel } from '../lib/confidence'
+import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib/sniperArmed'
+import type { ArmedModel } from '../lib/sniperArmed'
 
 interface NowScreenProps {
   appState: AppState
@@ -420,23 +422,6 @@ function readinessDotColor(value: string): DotColor {
   return 'gray'
 }
 
-// ── Armed-state helpers (Stage 9G) ─────────────────────────────────────────────
-
-const ARMED_STATE_LABEL: Record<string, string> = {
-  armed:           'Armed',
-  almost_ready:    'Almost ready',
-  waiting:         'Waiting for window',
-  booking:         'Booking now',
-  needs_attention: 'Needs attention',
-}
-
-function armedStateDotColor(state: string): DotColor {
-  if (state === 'armed'   || state === 'booking')      return 'green'
-  if (state === 'almost_ready' || state === 'waiting') return 'amber'
-  if (state === 'needs_attention')                     return 'red'
-  return 'gray'
-}
-
 // Derives a single concise string that describes the current blocker (if any).
 function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
   // Suppress auth messages when a booking/auth operation is actively running —
@@ -694,6 +679,26 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // bgReadiness.jobId === null means legacy / not yet tagged — treat as applicable.
   const isReadinessForSelectedJob =
     bgReadiness?.jobId == null || bgReadiness?.jobId === selectedJobId
+
+  // Stage 6 — Sniper armed model (Layer C).
+  // Computed client-side from the 5 normalized readiness fields so the model is
+  // independently typed and doesn't require the server's `armed` sub-object to
+  // be present.  The server's `armed.nextWindow`, `watchingActive`, `autoRetry`
+  // are still used as context inputs since the client can't compute them locally.
+  const sniperArmed: ArmedModel | null = (() => {
+    if (!isReadinessForSelectedJob || !bgReadiness) return null
+    const { session, schedule, discovery, modal } = bgReadiness
+    return computeArmedModel({
+      session,
+      schedule,
+      discovery,
+      modal,
+      bookingActive:   sessionStatus?.locked ?? bgReadiness.armed?.state === 'booking',
+      nextWindow:      bgReadiness.armed?.nextWindow      ?? null,
+      autoCheckActive: bgReadiness.armed?.watchingActive  ?? false,
+      autoRetry:       bgReadiness.armed?.autoRetry       ?? false,
+    })
+  })()
 
   // ── Clear stale readiness data when the selected job changes OR is edited ─────
   // Sniper state is global (last-run-wins on the server).  Two triggers require
@@ -1041,7 +1046,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     showComposite,
     locked: sessionStatus?.locked ?? false,
     lastPreflightAt,
-    bgArmedState: isReadinessForSelectedJob ? (bgReadiness?.armed?.state ?? null) : null,
+    bgArmedState: sniperArmed?.state ?? null,
   }) : null
 
   // Hysteresis effect — runs whenever the derived state or severity changes.
@@ -1224,28 +1229,28 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
 
-              {/* Stage 5 — Trust line: armed · confidence · auto-check status */}
+              {/* Stage 5–6 — Trust line: armed (Layer C) · confidence (Layer B) · auto-check */}
               {(() => {
-                const watchingActive = bgReadiness?.armed?.watchingActive ?? false
-                const autoRetry      = bgReadiness?.armed?.autoRetry      ?? false
+                const autoCheckActive = sniperArmed?.autoCheckActive ?? false
+                const autoRetry       = sniperArmed?.autoRetry       ?? false
                 // Show if: scheduler is watching, there's an armed state, or we have a last-checked time.
-                // This surfaces auto-check status even before the first check has run.
+                // This surfaces auto-check status even before the first background check has run.
                 const shouldShow = !preflightRunning && isReadinessForSelectedJob &&
-                  (bgReadiness?.armed?.state || lastCheckedText || (watchingActive && autoRetry))
+                  (sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
                 if (!shouldShow) return null
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
-                    {/* Dot: pulsing green when auto-checking, otherwise armed-state colour */}
-                    {watchingActive && autoRetry && lastCheckedText
+                    {/* Dot: pulsing green when scheduler is active, otherwise state colour */}
+                    {autoCheckActive && autoRetry && lastCheckedText
                       ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                      : bgReadiness?.armed?.state
-                        ? <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
+                      : sniperArmed?.state
+                        ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
                         : <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
                     }
                     <span className="text-[12px] text-text-secondary">
-                      {bgReadiness?.armed?.state && (
+                      {sniperArmed?.state && (
                         <span className="font-medium">
-                          {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
+                          {ARMED_STATE_LABEL[sniperArmed.state]}
                         </span>
                       )}
                       {confidenceLabel != null && (
@@ -1253,7 +1258,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       )}
                       {lastCheckedText
                         ? <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
-                        : (watchingActive && autoRetry)
+                        : (autoCheckActive && autoRetry)
                           ? <span className="text-text-muted font-normal"> · Auto-checking</span>
                           : null
                       }
