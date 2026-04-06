@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { ReplaySummary, ReplayEventType } from '../lib/replayEvent'
+import type { ReplaySummary, ReplayRunMeta, ReplayEventType } from '../lib/replayEvent'
 import { REPLAY_ICON, REPLAY_TERMINAL_TYPES } from '../lib/replayEvent'
 import { api } from '../lib/api'
 
@@ -27,6 +27,16 @@ function absTime(iso: string): string {
   } catch { return '—' }
 }
 
+/** Short chip label: "Apr 6, 10:20 AM" */
+function chipTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(new Date(iso))
+  } catch { return '?' }
+}
+
 type DotTone = 'green' | 'amber' | 'red' | 'blue' | 'gray'
 
 function eventTone(type: ReplayEventType): DotTone {
@@ -42,6 +52,13 @@ function eventTone(type: ReplayEventType): DotTone {
     case 'action_attempt':  return 'blue'
     default:                return 'gray'
   }
+}
+
+function outcomeTone(outcome: string): DotTone {
+  if (outcome === 'success')  return 'green'
+  if (outcome === 'waitlist') return 'amber'
+  if (outcome === 'failure')  return 'red'
+  return 'gray'
 }
 
 const TONE_TEXT: Record<DotTone, string> = {
@@ -60,6 +77,14 @@ const TONE_BG: Record<DotTone, string> = {
   gray:  'bg-surface',
 }
 
+const TONE_BORDER: Record<DotTone, string> = {
+  green: 'border-accent-green/40',
+  amber: 'border-accent-amber/40',
+  red:   'border-accent-red/40',
+  blue:  'border-accent-blue/40',
+  gray:  'border-divider',
+}
+
 const OUTCOME_LABEL: Record<string, { text: string; tone: DotTone }> = {
   success: { text: 'Booked',   tone: 'green' },
   waitlist:{ text: 'Waitlist', tone: 'amber' },
@@ -68,13 +93,14 @@ const OUTCOME_LABEL: Record<string, { text: string; tone: DotTone }> = {
 }
 
 const LIVE_POLL_MS = 3_000
+const HISTORY_CHIPS = 5   // max past-run chips to show in the picker
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ReplayTimelineProps {
   jobId:            number | null
-  runKey?:          string | null  // changes when a run finishes → auto-expand + re-fetch
-  isBookingActive?: boolean        // true while a booking attempt is in flight
+  runKey?:          string | null
+  isBookingActive?: boolean
 }
 
 // ── RefreshIcon ───────────────────────────────────────────────────────────────
@@ -92,26 +118,80 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   )
 }
 
+// ── HistoryPicker ─────────────────────────────────────────────────────────────
+// Horizontal row of chips for past runs. Only rendered when ≥2 runs exist.
+
+function HistoryPicker({
+  runs,
+  selectedId,
+  onSelect,
+}: {
+  runs:       ReplayRunMeta[]
+  selectedId: string | null   // null = "latest" / most recent
+  onSelect:   (runId: string | null) => void
+}) {
+  if (runs.length < 2) return null
+
+  const visible = runs.slice(0, HISTORY_CHIPS)
+
+  return (
+    <div className="border-b border-divider px-4 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <span className="text-[10px] text-text-muted shrink-0 uppercase tracking-wide">Past runs</span>
+      <div className="flex items-center gap-1.5 flex-nowrap">
+        {visible.map((run, i) => {
+          const isSelected = selectedId === run.runId || (selectedId === null && i === 0)
+          const tone       = outcomeTone(run.outcome)
+          return (
+            <button
+              key={run.runId}
+              onClick={() => onSelect(i === 0 ? null : run.runId)}
+              className={[
+                'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] shrink-0 transition-colors',
+                isSelected
+                  ? `${TONE_BG[tone]} ${TONE_BORDER[tone]} ${TONE_TEXT[tone]} font-semibold`
+                  : 'bg-surface border-divider text-text-muted',
+              ].join(' ')}
+            >
+              {/* Outcome dot */}
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                tone === 'green' ? 'bg-accent-green' :
+                tone === 'amber' ? 'bg-accent-amber' :
+                tone === 'red'   ? 'bg-accent-red'   : 'bg-text-muted/40'
+              }`} />
+              {chipTime(run.capturedAt)}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: ReplayTimelineProps) {
-  const [open,    setOpen]    = useState(false)
-  const [replay,  setReplay]  = useState<ReplaySummary | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [fetched, setFetched] = useState(false)
-  const [tick,    setTick]    = useState(0)
+  const [open,        setOpen]        = useState(false)
+  const [replay,      setReplay]      = useState<ReplaySummary | null>(null)
+  const [history,     setHistory]     = useState<ReplayRunMeta[]>([])
+  // null = show latest run; string = show that specific runId
+  const [selectedId,  setSelectedId]  = useState<string | null>(null)
+  const [loading,     setLoading]     = useState(false)
+  const [fetched,     setFetched]     = useState(false)
+  const [tick,        setTick]        = useState(0)
 
   const containerRef  = useRef<HTMLDivElement>(null)
   const prevActiveRef = useRef(isBookingActive)
   const prevRunKeyRef = useRef(runKey)
   const prevOpenRef   = useRef(false)
 
-  // ── Core fetch ──────────────────────────────────────────────────────────────
-  const fetchReplay = useCallback(async (showSpinner = true) => {
+  // ── Fetch the selected run ──────────────────────────────────────────────────
+  const fetchReplay = useCallback(async (showSpinner = true, runId: string | null = null) => {
     if (!jobId) return
     if (showSpinner) setLoading(true)
     try {
-      const data = await api.fetchReplay(jobId)
+      const data = runId
+        ? await api.fetchReplayRun(jobId, runId)
+        : await api.fetchReplay(jobId)
       setReplay(data)
     } finally {
       if (showSpinner) setLoading(false)
@@ -119,10 +199,27 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
     }
   }, [jobId])
 
-  // ── Fetch on open / runKey / jobId change ───────────────────────────────────
+  // ── Fetch history index ─────────────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
+    if (!jobId) return
+    const { runs } = await api.fetchReplayHistory(jobId)
+    setHistory(runs)
+  }, [jobId])
+
+  // ── When selectedId changes, load that specific run ─────────────────────────
+  useEffect(() => {
+    if (!open || !fetched) return
+    fetchReplay(true, selectedId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
+
+  // ── On open (or runKey/jobId change): fetch latest + history ───────────────
   useEffect(() => {
     if (!open) return
-    fetchReplay(true)
+    // Reset to latest when switching jobs or a new run key arrives
+    setSelectedId(null)
+    fetchReplay(true, null)
+    fetchHistory()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, runKey, jobId])
 
@@ -131,50 +228,54 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
     if (open) return
     setFetched(false)
     setReplay(null)
+    setHistory([])
+    setSelectedId(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runKey, jobId])
 
-  // ── Live polling during active run ──────────────────────────────────────────
+  // ── Live polling during active run (latest only) ────────────────────────────
   useEffect(() => {
-    if (!open || !isBookingActive) return
-    const id = setInterval(() => fetchReplay(false), LIVE_POLL_MS)
+    if (!open || !isBookingActive || selectedId !== null) return
+    const id = setInterval(() => fetchReplay(false, null), LIVE_POLL_MS)
     return () => clearInterval(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isBookingActive])
+  }, [open, isBookingActive, selectedId])
 
-  // ── Auto-expand: booking just started (false → true) ───────────────────────
+  // ── Auto-expand: booking started ────────────────────────────────────────────
   useEffect(() => {
     const wasActive = prevActiveRef.current
     prevActiveRef.current = isBookingActive
 
     if (isBookingActive && !wasActive) {
-      // Run just kicked off — open the panel so the user sees live events
+      setSelectedId(null)  // always show the live run
       setOpen(true)
       return
     }
 
     if (wasActive && !isBookingActive && open) {
-      // Run just finished — eager fetch to capture the terminal event
-      const id = setTimeout(() => fetchReplay(false), 600)
+      // Run finished — eager terminal fetch + refresh history
+      const id = setTimeout(() => {
+        fetchReplay(false, null)
+        fetchHistory()
+      }, 600)
       return () => clearTimeout(id)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBookingActive])
 
-  // ── Auto-expand: new run finished (runKey changed to a new non-null value) ──
+  // ── Auto-expand: new run finished ───────────────────────────────────────────
   useEffect(() => {
     const prev = prevRunKeyRef.current
     prevRunKeyRef.current = runKey
-    // Only auto-expand when a *completed* run arrives (prev existed, key changed)
     if (runKey && runKey !== prev && prev !== undefined) {
+      setSelectedId(null)
       setOpen(true)
     }
   }, [runKey])
 
-  // ── Scroll into view whenever the panel transitions closed → open ───────────
+  // ── Scroll into view on open ────────────────────────────────────────────────
   useEffect(() => {
     if (open && !prevOpenRef.current) {
-      // rAF so the DOM has painted before we measure scroll position
       requestAnimationFrame(() => {
         containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       })
@@ -182,7 +283,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
     prevOpenRef.current = open
   }, [open])
 
-  // ── Timestamp tick — 1 s while open ────────────────────────────────────────
+  // ── Timestamp tick ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return
     const id = setInterval(() => setTick(t => t + 1), 1_000)
@@ -191,7 +292,9 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
 
   if (!jobId) return null
 
-  const outcome = replay ? OUTCOME_LABEL[replay.outcome] ?? OUTCOME_LABEL.unknown : null
+  const outcome   = replay ? OUTCOME_LABEL[replay.outcome] ?? OUTCOME_LABEL.unknown : null
+  // True when viewing the live/latest run (not a historical one)
+  const isLatest  = selectedId === null
 
   return (
     <div ref={containerRef} className="rounded-2xl overflow-hidden border border-divider bg-background">
@@ -205,7 +308,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
           <span className="text-[13px] font-medium text-text-secondary">Last booking run</span>
 
           {/* Live pulse */}
-          {isBookingActive && (
+          {isBookingActive && isLatest && (
             <span className="flex items-center gap-1 text-[11px] text-accent-blue font-medium">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-blue opacity-60" />
@@ -216,13 +319,19 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
           )}
 
           {/* Outcome badge */}
-          {outcome && !isBookingActive && !loading && (
+          {outcome && !(isBookingActive && isLatest) && !loading && (
             <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${TONE_TEXT[outcome.tone]} ${TONE_BG[outcome.tone]}`}>
               {outcome.text}
             </span>
           )}
 
-          {/* Initial-load spinner */}
+          {/* History run count badge */}
+          {!open && history.length >= 2 && !isBookingActive && (
+            <span className="text-[10px] text-text-muted">
+              {history.length} run{history.length !== 1 ? 's' : ''}
+            </span>
+          )}
+
           {loading && (
             <svg className="animate-spin h-3 w-3 text-text-muted" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -232,14 +341,12 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
         </div>
 
         <div className="flex items-center gap-2">
-          {!open && !isBookingActive && replay?.capturedAt && (
+          {!open && !(isBookingActive && isLatest) && replay?.capturedAt && (
             <span className="text-[11px] text-text-muted tabular-nums">
               {absTime(replay.capturedAt)}
             </span>
           )}
-          <span className="text-[11px] text-text-muted select-none">
-            {open ? '↑' : '↓'}
-          </span>
+          <span className="text-[11px] text-text-muted select-none">{open ? '↑' : '↓'}</span>
         </div>
       </button>
 
@@ -247,8 +354,17 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
       {open && (
         <div className="border-t border-divider">
 
-          {/* In-progress: booking active, no events captured yet */}
-          {isBookingActive && fetched && (!replay || replay.events.length === 0) && (
+          {/* ── History picker ──────────────────────────────────────────── */}
+          <HistoryPicker
+            runs={history}
+            selectedId={selectedId}
+            onSelect={id => {
+              setSelectedId(id)
+            }}
+          />
+
+          {/* In-progress: booking active, no events yet */}
+          {isBookingActive && isLatest && fetched && (!replay || replay.events.length === 0) && (
             <div className="px-4 py-4 flex items-center gap-2.5">
               <svg className="animate-spin h-3.5 w-3.5 text-accent-blue flex-shrink-0" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -258,7 +374,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Empty: idle, nothing recorded yet */}
+          {/* Empty: idle, no data */}
           {!isBookingActive && fetched && !replay && (
             <div className="px-4 py-5 text-center">
               <p className="text-[13px] text-text-muted">No run recorded yet</p>
@@ -271,10 +387,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
           {/* Event list */}
           {replay && replay.events.length > 0 && (
             <div className="relative">
-              <div
-                className="absolute left-[27px] top-0 bottom-0 w-px bg-divider"
-                aria-hidden="true"
-              />
+              <div className="absolute left-[27px] top-0 bottom-0 w-px bg-divider" aria-hidden="true" />
 
               {replay.events.map((evt, idx) => {
                 const tone       = eventTone(evt.type)
@@ -292,10 +405,8 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                     ].filter(Boolean).join(' ')}
                   >
                     <div className="relative z-10 flex-shrink-0 mt-0.5">
-                      <span
-                        className={`flex items-center justify-center w-7 h-7 rounded-full text-[13px]
-                          ${isTerminal ? TONE_BG[tone] : 'bg-background'} border border-divider`}
-                      >
+                      <span className={`flex items-center justify-center w-7 h-7 rounded-full text-[13px]
+                        ${isTerminal ? TONE_BG[tone] : 'bg-background'} border border-divider`}>
                         {icon}
                       </span>
                     </div>
@@ -320,7 +431,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
               })}
 
               {/* Trailing live indicator */}
-              {isBookingActive && (
+              {isBookingActive && isLatest && (
                 <div className="relative flex items-center gap-3 px-4 py-2.5">
                   <div className="relative z-10 flex-shrink-0">
                     <span className="flex items-center justify-center w-7 h-7 rounded-full bg-background border border-divider">
@@ -336,24 +447,22 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Footer — metadata + manual refresh (idle only) */}
-          {!isBookingActive && fetched && (
+          {/* Footer — metadata + refresh */}
+          {!(isBookingActive && isLatest) && fetched && (
             <div className="flex items-center justify-between px-4 py-2.5 border-t border-divider bg-surface/50">
               <span className="text-[11px] text-text-muted">
                 {replay
                   ? `${replay.events.length} event${replay.events.length !== 1 ? 's' : ''}`
                   : 'No data'}
               </span>
-
               <div className="flex items-center gap-3">
                 {replay?.capturedAt && (
                   <span className="text-[11px] text-text-muted tabular-nums">
                     {absTime(replay.capturedAt)}
                   </span>
                 )}
-                {/* Manual refresh */}
                 <button
-                  onClick={e => { e.stopPropagation(); fetchReplay(true) }}
+                  onClick={e => { e.stopPropagation(); fetchReplay(true, selectedId) }}
                   disabled={loading}
                   title="Refresh"
                   className="text-text-muted active:opacity-50 disabled:opacity-30 transition-opacity"

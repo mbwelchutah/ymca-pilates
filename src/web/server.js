@@ -4862,16 +4862,31 @@ const server = http.createServer((req, res) => {
 
     json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends });
 
-  } else if (req.method === 'GET' && path.startsWith('/api/replay/')) {
-    const jobId = path.split('/api/replay/')[1];
+  } else if (req.method === 'GET' && path.startsWith('/api/replay-history/')) {
+    const jobId = path.split('/api/replay-history/')[1];
     if (!jobId) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Missing jobId' }));
     } else {
-      const replay = replayStore.getLastReplay(jobId);
+      json({ runs: replayStore.getReplayList(jobId) });
+    }
+
+  } else if (req.method === 'GET' && path.startsWith('/api/replay/')) {
+    // Handles both /api/replay/:jobId and /api/replay/:jobId/:runId
+    const parts = path.split('/api/replay/')[1]?.split('/') ?? [];
+    const jobId = parts[0];
+    const runId = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+    if (!jobId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing jobId' }));
+    } else {
+      const replay = runId
+        ? replayStore.getReplayById(jobId, runId)
+        : replayStore.getLastReplay(jobId);
       if (!replay) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No replay found for this job' }));
+        res.end(JSON.stringify({ error: 'No replay found' }));
       } else {
         json(replay);
       }

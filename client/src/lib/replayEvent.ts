@@ -48,6 +48,14 @@ export interface ReplaySummary {
   capturedAt: string          // ISO 8601 — when the run finished / was saved
 }
 
+/** Lightweight metadata entry in the per-job run index (Stage 6). */
+export interface ReplayRunMeta {
+  runId:      string
+  outcome:    ReplayOutcome
+  capturedAt: string          // ISO 8601
+  eventCount: number
+}
+
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 /** One-word icon hint for each event type — used by the timeline UI. */

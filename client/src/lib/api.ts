@@ -316,4 +316,10 @@ export const api = {
 
   fetchReplay: (jobId: number | string): Promise<import('./replayEvent').ReplaySummary | null> =>
     apiFetch(`/api/replay/${jobId}`).catch(() => null),
+
+  fetchReplayRun: (jobId: number | string, runId: string): Promise<import('./replayEvent').ReplaySummary | null> =>
+    apiFetch(`/api/replay/${jobId}/${encodeURIComponent(runId)}`).catch(() => null),
+
+  fetchReplayHistory: (jobId: number | string): Promise<{ runs: import('./replayEvent').ReplayRunMeta[] }> =>
+    apiFetch(`/api/replay-history/${jobId}`).catch(() => ({ runs: [] })),
 }
