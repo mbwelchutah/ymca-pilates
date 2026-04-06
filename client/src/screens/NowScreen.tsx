@@ -713,11 +713,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const bundle  = isReadinessForCurrentJob ? sniperRunState?.bundle : undefined
   const blocked = isReadinessForCurrentJob ? blockedReason(sniperRunState, sessionStatus) : null
 
-  // Auth issues show amber; discovery/action blocks show red.
-  const blockedIsAuthWarn =
-    sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'            ||
-    sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
-    (isReadinessForCurrentJob && sniperRunState?.sniperState === 'SNIPER_BLOCKED_AUTH')
 
   // True only when there's useful readiness data for the current job.
   const hasReadinessData = isReadinessForCurrentJob && bundle && (
@@ -1010,10 +1005,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Inline blocked callout — suppressed when job is inactive (not scheduled) */}
-          {blocked && !isInactive && (
-            <div className={`mt-3 rounded-xl px-3.5 py-2.5 ${blockedIsAuthWarn ? 'bg-accent-amber/10' : 'bg-accent-red/10'}`}>
-              <p className={`text-[13px] font-medium ${blockedIsAuthWarn ? 'text-accent-amber' : 'text-accent-red'}`}>
+          {/* Inline blocked callout — suppressed when the primary result card below
+               already communicates the same failure (Stage 7: one main truth).
+               Auth failures are covered by derivePrimaryResult step 5 (sessionStatus).
+               Composite red failures are covered by step 6 (composite card). */}
+          {blocked && !isInactive &&
+           !(sessionStatus?.overall === 'AUTH_NEEDS_LOGIN') &&
+           !(sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') &&
+           !(showComposite && composite.color === 'red') && (
+            <div className="mt-3 rounded-xl px-3.5 py-2.5 bg-accent-red/10">
+              <p className="text-[13px] font-medium text-accent-red">
                 {blocked}
               </p>
             </div>
