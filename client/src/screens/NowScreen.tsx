@@ -1249,7 +1249,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 : <span key={label} className="text-text-muted/70">{label} —</span>
 
               return (
-                <div className="mt-2 flex items-center gap-2">
+                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
                   {anyOk ? (
                     <span className="text-[13px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
@@ -1272,7 +1272,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             // locked: class identified — show exact target in amber
             if (sp === 'locked') {
               return (
-                <div className="mt-2 flex items-center gap-2">
+                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Locked on '}
@@ -1285,7 +1285,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             // armed: all three signals confirmed — show all-green checklist
             if (sp === 'armed') {
               return (
-                <div className="mt-2 flex items-center gap-2">
+                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Armed · '}
@@ -1302,7 +1302,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             // ── Stage 3: Countdown — stronger emphasis when window is near ──────
             if (sp === 'countdown') {
               return (
-                <div className="mt-2 flex items-center gap-2">
+                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green animate-pulse" />
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Firing in '}
@@ -1321,7 +1321,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               blue:  'bg-accent-blue',
             }
             return (
-              <div className="mt-2 flex items-center gap-2">
+              <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${dotStyle}`} />
                 <span className="text-[13px] text-text-secondary font-medium">{info.label}</span>
               </div>
