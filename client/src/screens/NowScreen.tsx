@@ -390,6 +390,23 @@ function readinessDotColor(value: string): DotColor {
   return 'gray'
 }
 
+// ── Armed-state helpers (Stage 9G) ─────────────────────────────────────────────
+
+const ARMED_STATE_LABEL: Record<string, string> = {
+  armed:           'Armed',
+  almost_ready:    'Almost ready',
+  waiting:         'Waiting for window',
+  booking:         'Booking now',
+  needs_attention: 'Needs attention',
+}
+
+function armedStateDotColor(state: string): DotColor {
+  if (state === 'armed'   || state === 'booking')      return 'green'
+  if (state === 'almost_ready' || state === 'waiting') return 'amber'
+  if (state === 'needs_attention')                     return 'red'
+  return 'gray'
+}
+
 // Derives a single concise string that describes the current blocker (if any).
 function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
   // Suppress auth messages when a booking/auth operation is actively running —
@@ -1112,6 +1129,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 <p className="mt-2 text-center text-[12px] text-text-muted">
                   {checkStep}
                 </p>
+              )}
+
+              {/* Stage 9G — Sniper armed state + confidence */}
+              {!preflightRunning && bgReadiness?.armed?.state && (
+                <div className="mt-2 flex items-center justify-center gap-1.5">
+                  <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
+                  <span className="text-[12px] font-medium text-text-secondary">
+                    {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
+                    {bgReadiness.confidenceScore != null && (
+                      <> — {bgReadiness.confidenceScore}%</>
+                    )}
+                  </span>
+                </div>
               )}
 
               {/* Stage 9F — Auto-check status + last checked time */}
