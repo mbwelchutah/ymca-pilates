@@ -85,6 +85,15 @@ const TONE_BORDER: Record<DotTone, string> = {
   gray:  'border-divider',
 }
 
+/** Resolved CSS custom-property values for inline border-left-color on terminal rows. */
+const TONE_ACCENT: Record<DotTone, string> = {
+  green: 'var(--color-accent-green)',
+  amber: 'var(--color-accent-amber)',
+  red:   'var(--color-accent-red)',
+  blue:  'var(--color-accent-blue)',
+  gray:  'transparent',
+}
+
 const OUTCOME_LABEL: Record<string, { text: string; tone: DotTone }> = {
   success: { text: 'Booked',   tone: 'green' },
   waitlist:{ text: 'Waitlist', tone: 'amber' },
@@ -210,34 +219,40 @@ function HistoryPicker({
   const visible = runs.slice(0, HISTORY_CHIPS)
 
   return (
-    <div className="border-b border-divider px-4 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
-      <span className="text-[10px] text-text-muted shrink-0 uppercase tracking-wide">Past runs</span>
-      <div className="flex items-center gap-1.5 flex-nowrap">
-        {visible.map((run, i) => {
-          const isSelected = selectedId === run.runId || (selectedId === null && i === 0)
-          const tone       = outcomeTone(run.outcome)
-          return (
-            <button
-              key={run.runId}
-              onClick={() => onSelect(i === 0 ? null : run.runId)}
-              className={[
-                'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] shrink-0 transition-colors',
-                isSelected
-                  ? `${TONE_BG[tone]} ${TONE_BORDER[tone]} ${TONE_TEXT[tone]} font-semibold`
-                  : 'bg-surface border-divider text-text-muted',
-              ].join(' ')}
-            >
-              {/* Outcome dot */}
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                tone === 'green' ? 'bg-accent-green' :
-                tone === 'amber' ? 'bg-accent-amber' :
-                tone === 'red'   ? 'bg-accent-red'   : 'bg-text-muted/40'
-              }`} />
-              {chipTime(run.capturedAt)}
-            </button>
-          )
-        })}
+    <div className="relative border-b border-divider">
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar px-4 py-2.5">
+        <span className="text-[10px] text-text-muted shrink-0 uppercase tracking-wide">Past runs</span>
+        <div className="flex items-center gap-1.5 flex-nowrap">
+          {visible.map((run, i) => {
+            const isSelected = selectedId === run.runId || (selectedId === null && i === 0)
+            const tone       = outcomeTone(run.outcome)
+            return (
+              <button
+                key={run.runId}
+                onClick={() => onSelect(i === 0 ? null : run.runId)}
+                className={[
+                  'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] shrink-0 transition-colors',
+                  isSelected
+                    ? `${TONE_BG[tone]} ${TONE_BORDER[tone]} ${TONE_TEXT[tone]} font-semibold`
+                    : 'bg-surface border-divider text-text-muted',
+                ].join(' ')}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  tone === 'green' ? 'bg-accent-green' :
+                  tone === 'amber' ? 'bg-accent-amber' :
+                  tone === 'red'   ? 'bg-accent-red'   : 'bg-text-muted/40'
+                }`} />
+                {chipTime(run.capturedAt)}
+              </button>
+            )
+          })}
+        </div>
       </div>
+      {/* Right-edge fade to hint at scrollable overflow */}
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent"
+        aria-hidden="true"
+      />
     </div>
   )
 }
@@ -377,6 +392,8 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
       {/* ── Header toggle ────────────────────────────────────────────────── */}
       <button
         onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-controls="replay-timeline-body"
         className="w-full flex items-center justify-between px-4 py-3 active:opacity-60 transition-opacity"
       >
         <div className="flex items-center gap-2">
@@ -426,12 +443,26 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
           {!open && fetched && !replay && !isBookingActive && history.length === 0 && (
             <span className="text-[11px] text-text-muted/50 italic">no runs yet</span>
           )}
-          <span className="text-[11px] text-text-muted select-none">{open ? '↑' : '↓'}</span>
+          <svg
+            className={`w-4 h-4 text-text-muted transition-transform duration-[260ms] ${open ? 'rotate-180' : ''}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </div>
       </button>
 
-      {/* ── Body ─────────────────────────────────────────────────────────── */}
-      {open && (
+      {/* ── Body — always rendered; height animated via CSS grid trick ───── */}
+      <div
+        id="replay-timeline-body"
+        style={{
+          display: 'grid',
+          gridTemplateRows: open ? '1fr' : '0fr',
+          transition: 'grid-template-rows 260ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <div style={{ overflow: 'hidden' }}>
         <div className="border-t border-divider">
 
           {/* ── History picker ──────────────────────────────────────────── */}
@@ -482,10 +513,13 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                   <div
                     key={idx}
                     className={[
-                      'relative flex items-start gap-3 px-4 py-2.5',
-                      isTerminal ? TONE_BG[tone] : '',
+                      'relative flex items-start gap-3 py-2.5 border-l-[3px]',
+                      isTerminal ? `${TONE_BG[tone]} pl-[13px] pr-4` : 'pl-[13px] pr-4',
                       !isLast    ? 'border-b border-divider/50' : '',
                     ].filter(Boolean).join(' ')}
+                    style={{
+                      borderLeftColor: isTerminal ? TONE_ACCENT[tone] : 'transparent',
+                    }}
                   >
                     <div className="relative z-10 flex-shrink-0 mt-0.5">
                       <span className={`flex items-center justify-center w-7 h-7 rounded-full text-[13px]
@@ -515,7 +549,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
 
               {/* Trailing live indicator */}
               {isBookingActive && isLatest && (
-                <div className="relative flex items-center gap-3 px-4 py-2.5">
+                <div className="relative flex items-center gap-3 pl-[13px] pr-4 py-2.5 border-l-[3px] border-transparent">
                   <div className="relative z-10 flex-shrink-0">
                     <span className="flex items-center justify-center w-7 h-7 rounded-full bg-background border border-divider">
                       <span className="relative flex h-2 w-2">
@@ -567,8 +601,9 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
               </button>
             </div>
           )}
-        </div>
-      )}
+        </div>{/* /.border-t */}
+        </div>{/* /.overflow-hidden */}
+      </div>{/* /.grid-animation */}
     </div>
   )
 }
