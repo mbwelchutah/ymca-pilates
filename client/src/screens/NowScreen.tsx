@@ -1439,33 +1439,36 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
               // ── Class chip (discovery) ─────────────────────────────────────
               // Labels: Found / Missing / Monitoring
-              // Bundle data (when tested) takes priority; bgRdy fills in otherwise.
-              const classBundleTested = bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED'
-              const classFound   = classBundleTested
-                ? bundle.discovery === 'DISCOVERY_READY'
-                : bgRdy?.discovery === 'found'
-              const classMissing = classBundleTested
-                ? bundle.discovery === 'DISCOVERY_FAILED'
-                : bgRdy?.discovery === 'missing'
+              // bgRdy is fresher (updated by background loops); bundle is fallback.
+              // Pre-window (too_early): only bg signal — don't surface stale bundle failure.
+              const bgClassFound   = bgRdy?.discovery === 'found'
+              const bgClassMissing = bgRdy?.discovery === 'missing'
+              const classFound   = bgClassFound ||
+                                   (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_READY')
+              const classMissing = phase !== 'too_early' &&
+                                   (bgClassMissing ||
+                                    (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_FAILED'))
               const classDot:   DotColor = classFound ? 'green' : classMissing ? 'red' : 'gray'
               const classValue           = classFound ? 'Found' : classMissing ? 'Missing' : 'Monitoring'
 
               // ── Modal chip ─────────────────────────────────────────────────
               // Labels: Reachable / Blocked / Monitoring
-              // "Login req." and "Not reachable" both collapse into "Blocked".
-              const modalBundleTested = bundle?.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED'
-              const modalOk  = modalBundleTested
-                ? bundle.modal === 'MODAL_READY'
-                : bgRdy?.modal === 'reachable'
-              const modalBad = modalBundleTested
-                ? (bundle.modal === 'MODAL_BLOCKED' || bundle.modal === 'MODAL_LOGIN_REQUIRED')
-                : bgRdy?.modal === 'blocked'
+              // bgRdy first; bundle fallback. Pre-window: bg only, no stale Blocked.
+              const bgModalOk  = bgRdy?.modal === 'reachable'
+              const bgModalBad = bgRdy?.modal === 'blocked'
+              const modalOk  = bgModalOk ||
+                               (!bgModalOk && !bgModalBad && bundle?.modal === 'MODAL_READY')
+              const modalBad = phase !== 'too_early' &&
+                               (bgModalBad ||
+                                (!bgModalOk && !bgModalBad &&
+                                 (bundle?.modal === 'MODAL_BLOCKED' || bundle?.modal === 'MODAL_LOGIN_REQUIRED')))
               const modalDot:  DotColor = modalOk ? 'green' : modalBad ? 'red' : 'gray'
               const modalValue           = modalOk ? 'Reachable' : modalBad ? 'Blocked' : 'Monitoring'
 
               // ── Action chip ────────────────────────────────────────────────
               // Labels: Not open yet / Ready / Waitlist / Unavailable / Monitoring
               // Stage 5: before window always shows "Not open yet" (gray, expected).
+              // Post-window: bgRdy first, bundle fallback.
               const isWaitlist = effectivePreflightStatus === 'waitlist_only'
               let actionDot: DotColor
               let actionValue: string
@@ -1473,14 +1476,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 actionDot   = 'gray'
                 actionValue = 'Not open yet'
               } else {
-                // Bundle data first; bgRdy as fallback.
-                const actionBundleTested = bundle && bundle.action !== 'ACTION_NOT_TESTED'
-                const actionSignal = actionBundleTested ? bundle.action : null
                 const bgAction     = bgRdy?.action ?? 'unknown'
+                const bundleAction = bundle?.action !== 'ACTION_NOT_TESTED' ? bundle?.action : null
 
-                const actionReady   = actionSignal === 'ACTION_READY'   || (!actionSignal && bgAction === 'ready')
+                const actionReady   = bgAction === 'ready' ||
+                                      (bgAction === 'unknown' && bundleAction === 'ACTION_READY')
                 const actionUnavail = !isWaitlist && (
-                  actionSignal === 'ACTION_BLOCKED' || (!actionSignal && (bgAction === 'blocked' || bgAction === 'not_open'))
+                  bgAction === 'blocked' || bgAction === 'not_open' ||
+                  (bgAction === 'unknown' && bundleAction === 'ACTION_BLOCKED')
                 )
 
                 if (actionReady) {
