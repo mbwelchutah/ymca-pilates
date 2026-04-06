@@ -21,6 +21,7 @@ import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib
 import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
+import { ReplayTimeline } from '../components/ReplayTimeline'
 
 interface NowScreenProps {
   appState: AppState
@@ -1772,6 +1773,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </button>
             )}
           </Card>
+        )}
+
+        {/* ── Replay Timeline ──────────────────────────────────────── */}
+        {job && (
+          <ReplayTimeline
+            jobId={selectedJobId}
+            runKey={job.last_run_at ?? null}
+          />
         )}
 
         {/* ── Contextual action: Book again ───────────────────────── */}
