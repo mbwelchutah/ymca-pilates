@@ -4,22 +4,14 @@
 // normalized readiness object (Stage 9B shape). Unknown values receive partial
 // credit — not tested ≠ broken.
 //
-// Scoring table:
+// Scoring table (per spec):
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   20
-//   schedule  |          15           |           0           |    —     |    —     |    0
+//   session   |          25           |           0           |    —     |    —     |   12
+//   schedule  |          15           |           0           |    —     |    —     |    8
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
-//
-// The unknown weights above (session=20, schedule=0) are calibrated to satisfy
-// all five authoritative sanity checks simultaneously:
-//   All unknown              20+0+10+8+12 = 50  "Needs attention"
-//   Session+schedule ready   25+15+10+8+12= 70  "Almost ready"
-//   S+Sch+D+M ready, no-op   25+15+20+15+20=95  "Ready"
-//   Session error, rest unk   0+0+10+8+12 = 30  "At risk"   ← requires session.unknown=20
-//   All ready                25+15+20+15+25=100 "Ready"
 //
 // Label thresholds:
 //   85–100 → "Ready"
@@ -34,13 +26,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 20, // calibrated: session.unknown=20 satisfies all five sanity checks
+  unknown: 12,
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  0, // calibrated: schedule.unknown=0 satisfies all five sanity checks
+  unknown:  8,
 };
 
 const DISCOVERY_SCORE = {
@@ -56,11 +48,11 @@ const MODAL_SCORE = {
 };
 
 const ACTION_SCORE = {
-  ready:       25,
-  not_open:    20,
-  waitlist:    12,
-  blocked:      0,
-  unknown:     12,
+  ready:    25,
+  not_open: 20,
+  waitlist: 12,
+  blocked:   0,
+  unknown:  12,
 };
 
 // ── Label thresholds ──────────────────────────────────────────────────────────
