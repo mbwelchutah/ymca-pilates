@@ -129,7 +129,7 @@ export const ACTION_LABEL: Record<ActionReadiness, string> = {
 export const MODAL_LABEL: Record<ModalReadiness, string> = {
   MODAL_READY:           'Reachable',
   MODAL_NOT_TESTED:      'Not tested',
-  MODAL_BLOCKED:         'Blocked',
+  MODAL_BLOCKED:         'Not reachable',
   MODAL_LOGIN_REQUIRED:  'Login required',
 }
 

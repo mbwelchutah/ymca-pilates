@@ -1193,7 +1193,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 : modalState === 'MODAL_LOGIN_REQUIRED'
                 ? 'Login req.'
                 : modalFailed
-                ? 'Failed'
+                ? 'Not reachable'
                 : modalTested ? 'Unknown' : 'Not checked'
 
               // Action milestone
@@ -1329,8 +1329,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     case 'login_required': return 'Login to Register shown'
                     case 'full':
                       return actionDetail.actionState === 'CANCEL_ONLY'
-                        ? 'Only Cancel visible — may already be registered'
-                        : 'No booking button — class may be full'
+                        ? 'Cancel button visible — may already be registered'
+                        : 'Register button not showing yet'
                     default: return undefined
                   }
                 })()}
