@@ -626,14 +626,29 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }, [])
 
   // ── Stage 9F — Background readiness state (auto-check status + last checked) ─
+  // Stage 10H — Adaptive polling: 1 s during armed/warmup/sniper/confirming,
+  //             30 s otherwise so the UI reacts within 1 s of any booking event.
   type BgReadiness = Awaited<ReturnType<typeof api.getReadiness>>
   const [bgReadiness, setBgReadiness] = useState<BgReadiness | null>(null)
 
+  // Derive the current execution phase from the most recent server response.
+  // We use the server-computed executionTiming.phase (authoritative) when
+  // available, falling back to the client-side phase.
+  const execPhase = bgReadiness?.executionTiming?.phase ?? null
+  const isHotPhase =
+    phase === 'sniper' ||
+    execPhase === 'armed' ||
+    execPhase === 'warmup' ||
+    execPhase === 'confirming'
+  const readinessPollMs = isHotPhase ? 1_000 : 30_000
+
+  // The effect re-runs whenever readinessPollMs changes so the interval is
+  // always in sync with the current execution phase.
   useEffect(() => {
     api.getReadiness().then(setBgReadiness).catch(() => {})
-    const id = setInterval(() => api.getReadiness().then(setBgReadiness).catch(() => {}), 30_000)
+    const id = setInterval(() => api.getReadiness().then(setBgReadiness).catch(() => {}), readinessPollMs)
     return () => clearInterval(id)
-  }, [])
+  }, [readinessPollMs])
 
   // Live relative label — auto-refreshes every 30 s
   const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
@@ -1057,6 +1072,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="gray" />
               <span className="text-[16px] text-text-secondary">Booking window has closed</span>
             </div>
+          ) : execPhase === 'armed' ? (
+            // Stage 10H — Armed phase: window opens in ≤45 s.
+            // Show an amber pulsing indicator instead of the generic countdown.
+            // The existing useCountdown hook already ticks every second so the
+            // number is always fresh; the readiness poll is now 1 s so the
+            // transition to "Booking in progress" is near-instantaneous.
+            <div className="bg-accent-amber/10 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2.5 mb-1">
+                <StatusDot color="amber" />
+                <span className="text-[17px] font-semibold text-accent-amber">Armed — opening in</span>
+              </div>
+              <div className="ml-[22px]">
+                <span className="text-[36px] font-bold text-accent-amber tabular-nums leading-none tracking-tighter">
+                  {countdown || '—'}
+                </span>
+              </div>
+            </div>
           ) : (
             <div className="bg-surface rounded-xl px-4 py-3">
               <div className="flex items-baseline gap-2">
@@ -1067,7 +1099,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </div>
               {bookingOpenMs != null && (
                 <p className="text-[12px] text-text-muted mt-1">
-                  Opens {fmt(bookingOpenMs)}
+                  {execPhase === 'warmup'
+                    ? `Opening soon · ${fmt(bookingOpenMs)}`
+                    : `Opens ${fmt(bookingOpenMs)}`}
                 </p>
               )}
             </div>

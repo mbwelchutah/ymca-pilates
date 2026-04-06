@@ -288,6 +288,21 @@ export const api = {
       autoRetry:      boolean
       watchingActive: boolean
     }
+    executionTiming: {
+      opensAt:       string        // ISO — when the booking window opens
+      warmupAt:      string        // ISO — when warmup phase begins (3 min before)
+      armedAt:       string        // ISO — when armed phase begins (45 s before)
+      phase:         'waiting' | 'warmup' | 'armed' | 'executing' | 'confirming'
+      msUntilOpen:   number        // negative when window is already open
+      msUntilWarmup: number
+      msUntilArmed:  number
+    } | null
+    learnedTiming: {
+      learnedOffsetMs:  number
+      adjustedArmedMs:  number
+      adjustedWarmupMs: number
+      observationCount: number
+    } | null
     escalation: {
       jobId:          number
       classTitle:     string | null
