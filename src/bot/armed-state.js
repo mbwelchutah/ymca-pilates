@@ -69,7 +69,7 @@ function computeArmedState({
 
   // ── Derived flags ──────────────────────────────────────────────────────────
   const watchingActive = !schedulerPaused;
-  const autoRetry      = watchingActive && (job?.is_active === 1 || job?.is_active === true);
+  const autoRetry      = watchingActive && job?.is_active === 1;
 
   // ── State machine ──────────────────────────────────────────────────────────
   let state;
