@@ -1418,45 +1418,81 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         )}
 
         {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
-        {(sessionStatus || hasReadinessData) && (
+        {(sessionStatus || hasReadinessData || (isReadinessForSelectedJob && bgReadiness)) && (
           <Card padding="none">
             {/* ── Readiness milestones — 4-column strip (Session | Class | Modal | Action) ─── */}
             {(() => {
-              // Session milestone
-              const sessReady   = sessionStatus?.daxko === 'DAXKO_READY'
-              const sessBlocked = sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'
+              // bgRdy: background readiness normalized fields (job-gated).
+              // Used as a sticky fallback when no explicit preflight bundle exists.
+              const bgRdy = isReadinessForSelectedJob ? bgReadiness : null
+
+              // ── Session chip ───────────────────────────────────────────────
+              // Labels: Ready / Needs login / Monitoring
+              // Primary: sessionStatus (live check). Fallback: bgRdy.session.
+              const sessReady   = sessionStatus?.daxko === 'DAXKO_READY' ||
+                                  (!sessionStatus && bgRdy?.session === 'ready')
+              const sessBlocked = sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'   ||
+                                  sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
+                                  (!sessionStatus && bgRdy?.session === 'error')
               const sessDot:   DotColor = sessReady ? 'green' : sessBlocked ? 'red' : 'gray'
-              const sessValue = sessReady ? 'Ready' : sessBlocked ? 'Login needed' : 'Unknown'
+              const sessValue            = sessReady ? 'Ready' : sessBlocked ? 'Needs login' : 'Monitoring'
 
-              // Class (discovery) milestone
-              const classReady   = bundle?.discovery === 'DISCOVERY_READY'
-              const classFailed  = bundle?.discovery === 'DISCOVERY_FAILED'
-              const classTested  = classReady || classFailed
-              const classDot:   DotColor = classReady ? 'green' : classFailed ? 'red' : 'gray'
-              const classValue = classReady ? 'Found' : classFailed ? 'Not found' : classTested ? 'Unknown' : 'Not checked'
+              // ── Class chip (discovery) ─────────────────────────────────────
+              // Labels: Found / Missing / Monitoring
+              // Bundle data (when tested) takes priority; bgRdy fills in otherwise.
+              const classBundleTested = bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED'
+              const classFound   = classBundleTested
+                ? bundle.discovery === 'DISCOVERY_READY'
+                : bgRdy?.discovery === 'found'
+              const classMissing = classBundleTested
+                ? bundle.discovery === 'DISCOVERY_FAILED'
+                : bgRdy?.discovery === 'missing'
+              const classDot:   DotColor = classFound ? 'green' : classMissing ? 'red' : 'gray'
+              const classValue           = classFound ? 'Found' : classMissing ? 'Missing' : 'Monitoring'
 
-              // Modal milestone (Stage 2 — persist step results)
-              const modalState  = bundle?.modal
-              const modalReady  = modalState === 'MODAL_READY'
-              const modalFailed = modalState === 'MODAL_BLOCKED' || modalState === 'MODAL_LOGIN_REQUIRED'
-              const modalTested = modalReady || modalFailed
-              const modalDot: DotColor = modalReady ? 'green' : modalFailed ? 'red' : 'gray'
-              const modalValue = modalReady
-                ? 'Reachable'
-                : modalState === 'MODAL_LOGIN_REQUIRED'
-                ? 'Login req.'
-                : modalFailed
-                ? 'Not reachable'
-                : modalTested ? 'Unknown' : 'Not checked'
+              // ── Modal chip ─────────────────────────────────────────────────
+              // Labels: Reachable / Blocked / Monitoring
+              // "Login req." and "Not reachable" both collapse into "Blocked".
+              const modalBundleTested = bundle?.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED'
+              const modalOk  = modalBundleTested
+                ? bundle.modal === 'MODAL_READY'
+                : bgRdy?.modal === 'reachable'
+              const modalBad = modalBundleTested
+                ? (bundle.modal === 'MODAL_BLOCKED' || bundle.modal === 'MODAL_LOGIN_REQUIRED')
+                : bgRdy?.modal === 'blocked'
+              const modalDot:  DotColor = modalOk ? 'green' : modalBad ? 'red' : 'gray'
+              const modalValue           = modalOk ? 'Reachable' : modalBad ? 'Blocked' : 'Monitoring'
 
-              // Action milestone
-              const actionReady   = bundle?.action === 'ACTION_READY'
-              const actionBlocked = bundle?.action === 'ACTION_BLOCKED'
-              const actionTested  = actionReady || actionBlocked
-              const isWaitlist    = effectivePreflightStatus === 'waitlist_only'
-              // "Not open yet" is amber (expected state); only real failures use red
-              const actionDot: DotColor = actionReady ? 'green' : isWaitlist ? 'amber' : actionBlocked ? 'amber' : 'gray'
-              const actionValue = actionReady ? 'Reachable' : isWaitlist ? 'Waitlist' : actionBlocked ? 'Not open yet' : actionTested ? 'Unknown' : 'Not checked'
+              // ── Action chip ────────────────────────────────────────────────
+              // Labels: Not open yet / Ready / Waitlist / Unavailable / Monitoring
+              // Stage 5: before window always shows "Not open yet" (gray, expected).
+              const isWaitlist = effectivePreflightStatus === 'waitlist_only'
+              let actionDot: DotColor
+              let actionValue: string
+              if (phase === 'too_early') {
+                actionDot   = 'gray'
+                actionValue = 'Not open yet'
+              } else {
+                // Bundle data first; bgRdy as fallback.
+                const actionBundleTested = bundle && bundle.action !== 'ACTION_NOT_TESTED'
+                const actionSignal = actionBundleTested ? bundle.action : null
+                const bgAction     = bgRdy?.action ?? 'unknown'
+
+                const actionReady   = actionSignal === 'ACTION_READY'   || (!actionSignal && bgAction === 'ready')
+                const actionUnavail = !isWaitlist && (
+                  actionSignal === 'ACTION_BLOCKED' || (!actionSignal && (bgAction === 'blocked' || bgAction === 'not_open'))
+                )
+
+                if (actionReady) {
+                  actionDot = 'green'; actionValue = 'Ready'
+                } else if (isWaitlist) {
+                  actionDot = 'amber'; actionValue = 'Waitlist'
+                } else if (actionUnavail) {
+                  actionDot = 'amber'; actionValue = 'Unavailable'
+                } else {
+                  actionDot = 'gray'; actionValue = 'Monitoring'
+                }
+              }
 
               const milestones = [
                 { label: 'Session', dot: sessDot,   value: sessValue   },
@@ -1540,16 +1576,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
                     dotColor={readinessDotColor(bundle.discovery)}
                     detail={(() => {
-                      if (!discoveryDetail) return undefined
-                      if (discoveryDetail.found) {
-                        const parts: string[] = []
-                        if (discoveryDetail.matched) parts.push(discoveryDetail.matched)
-                        if (discoveryDetail.score) parts.push(`score ${discoveryDetail.score}`)
-                        return parts.join(' · ') || undefined
+                      if (discoveryDetail?.found) {
+                        const matched = discoveryDetail.matched
+                          ? `Class found — ${discoveryDetail.matched}`
+                          : 'Class found on schedule'
+                        return matched
                       }
-                      return discoveryDetail.nearMisses
-                        ? `Near: ${discoveryDetail.nearMisses}`
-                        : 'Not visible on this day\'s schedule'
+                      if (discoveryDetail && !discoveryDetail.found) {
+                        return discoveryDetail.nearMisses
+                          ? `Not found — closest: ${discoveryDetail.nearMisses}`
+                          : 'Class not found on this day\'s schedule'
+                      }
+                      return undefined
                     })()}
                   />
                 )}
@@ -1562,14 +1600,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     dotColor={readinessDotColor(bundle.modal)}
                     detail={(() => {
                       if (!modalDetail) return undefined
-                      if (modalDetail.verdict === 'reachable') {
-                        const btns = Array.isArray(modalDetail.buttonsVisible)
-                          ? modalDetail.buttonsVisible.join(', ')
-                          : null
-                        return btns ? `Buttons: ${btns}` : 'Opened and verified'
-                      }
-                      if (modalDetail.verdict === 'login_required') return 'Login to Register shown'
-                      return modalDetail.detail ? `Could not open: ${modalDetail.detail}` : undefined
+                      if (modalDetail.verdict === 'reachable') return 'Modal reachable'
+                      if (modalDetail.verdict === 'login_required') return 'Login wall shown — re-login may be needed'
+                      return modalDetail.detail
+                        ? `Could not open modal: ${modalDetail.detail}`
+                        : 'Could not open modal'
                     })()}
                   />
                 )}
@@ -1581,20 +1616,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     value={ACTION_LABEL[bundle.action] ?? bundle.action}
                     dotColor={readinessDotColor(bundle.action)}
                     detail={(() => {
-                      if (!actionDetail) return undefined
-                      switch (actionDetail.verdict) {
-                        case 'ready': {
-                          const btn = Array.isArray(actionDetail.buttonsVisible)
-                            ? actionDetail.buttonsVisible.find(b => /register|reserve/i.test(b)) ?? 'Register'
-                            : 'Register'
-                          return `"${btn}" button visible`
+                      if (!actionDetail) {
+                        if (bundle.action === 'ACTION_BLOCKED' && phase === 'too_early') {
+                          return 'Registration not open yet — will recheck when window opens'
                         }
+                        return undefined
+                      }
+                      switch (actionDetail.verdict) {
+                        case 'ready':     return 'Register button ready'
                         case 'waitlist_only': return 'Waitlist available — class is full'
                         case 'login_required': return 'Login to Register shown'
                         case 'full':
                           return actionDetail.actionState === 'CANCEL_ONLY'
-                            ? 'Cancel button visible — may already be registered'
-                            : 'Register button not showing yet'
+                            ? 'Already registered (Cancel button visible)'
+                            : 'Registration not open yet'
                         default: return undefined
                       }
                     })()}
