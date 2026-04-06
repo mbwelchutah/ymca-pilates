@@ -4735,6 +4735,32 @@ const server = http.createServer((req, res) => {
       lastPreflightSnapshot: null,
     });
 
+  } else if (req.method === 'GET' && path === '/api/readiness') {
+    // Stage 9E — Normalized readiness + confidence + armed state.
+    // Returns the persisted readiness snapshot (Stage 9B, enriched by 9C) plus
+    // the armed state computed fresh on every request (Stage 9D).
+    const { loadReadiness }    = require('../bot/readiness-state');
+    const { computeArmedState } = require('../bot/armed-state');
+
+    const readiness = loadReadiness();
+
+    // Resolve the job for nextWindow computation.
+    // Use readiness.jobId when available, else fall back to the first active job.
+    let job = null;
+    try {
+      const jid = readiness?.jobId ?? null;
+      job = jid ? getJobById(Number(jid)) : (getAllJobs().find(j => j.is_active === 1) || null);
+    } catch (_) { /* non-fatal */ }
+
+    const armed = computeArmedState({
+      readiness:       readiness || {},
+      job,
+      bookingActive:   jobState.active,
+      schedulerPaused: isSchedulerPaused(),
+    });
+
+    json({ ...(readiness || {}), armed });
+
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
     // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.

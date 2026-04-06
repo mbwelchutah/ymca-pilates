@@ -268,4 +268,25 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId }),
     }),
+
+  getReadiness: (): Promise<{
+    lastCheckedAt:   string | null
+    jobId:           number | null
+    classTitle:      string | null
+    session:         'ready' | 'error' | 'unknown'
+    schedule:        'ready' | 'error' | 'unknown'
+    discovery:       'found' | 'missing' | 'unknown'
+    modal:           'reachable' | 'blocked' | 'unknown'
+    action:          'ready' | 'not_open' | 'blocked' | 'waitlist' | 'unknown'
+    source:          string | null
+    confidenceScore: number | null
+    confidenceLabel: 'Ready' | 'Almost ready' | 'Needs attention' | 'At risk' | null
+    armed: {
+      armed:          boolean
+      state:          'waiting' | 'almost_ready' | 'armed' | 'booking' | 'needs_attention'
+      nextWindow:     string | null
+      autoRetry:      boolean
+      watchingActive: boolean
+    }
+  }> => apiFetch('/api/readiness'),
 }
