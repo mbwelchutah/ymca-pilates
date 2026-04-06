@@ -352,7 +352,8 @@ type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
 
 function readinessDotColor(value: string): DotColor {
   if (value.endsWith('_READY'))    return 'green'
-  if (value === 'SESSION_EXPIRED') return 'amber'
+  // SESSION_EXPIRED is a true problem requiring re-login — same severity as red failures.
+  if (value === 'SESSION_EXPIRED') return 'red'
   // ACTION_BLOCKED means "not open yet" — an expected state, not a failure.
   // Use amber rather than red so it doesn't read as an error.
   if (value === 'ACTION_BLOCKED')  return 'amber'
@@ -451,8 +452,9 @@ function daxkoToLabel(s: SessionStatus['daxko'] | undefined): { label: string; d
 function fwToLabel(s: SessionStatus['familyworks'] | undefined): { label: string; dotColor: DotColor } {
   switch (s) {
     case 'FAMILYWORKS_READY':           return { label: 'Ready',   dotColor: 'green' }
-    case 'FAMILYWORKS_SESSION_MISSING': return { label: 'Missing', dotColor: 'amber' }
-    case 'FAMILYWORKS_SESSION_EXPIRED': return { label: 'Expired', dotColor: 'amber' }
+    // Missing/expired schedule access requires re-login — treat as red (true problem).
+    case 'FAMILYWORKS_SESSION_MISSING': return { label: 'Missing', dotColor: 'red'   }
+    case 'FAMILYWORKS_SESSION_EXPIRED': return { label: 'Expired', dotColor: 'red'   }
     default:                            return { label: 'Unknown', dotColor: 'gray'  }
   }
 }
