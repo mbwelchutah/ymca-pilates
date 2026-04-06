@@ -1234,6 +1234,40 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             if (sp === 'confirming' && execPhase === 'confirming') return null
             const info = SNIPER_PHASE_INFO[sp]
 
+            // ── Stage 5: Monitoring progress signals ────────────────────────────
+            // monitoring: show which of the three signals are already confirmed
+            // so the user can see partial progress rather than a static label.
+            if (sp === 'monitoring') {
+              const bgRdy   = isReadinessForSelectedJob ? bgReadiness : null
+              const sessOk  = bgRdy?.session   === 'ready'
+              const classOk = bgRdy?.discovery === 'found'
+              const modalOk = bgRdy?.modal      === 'reachable'
+              const anyOk   = sessOk || classOk || modalOk
+
+              const sig = (ok: boolean, label: string) => ok
+                ? <span key={label} className="text-accent-green">{label} ✓</span>
+                : <span key={label} className="text-text-muted/70">{label} —</span>
+
+              return (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
+                  {anyOk ? (
+                    <span className="text-[13px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
+                      <span>Monitoring</span>
+                      <span className="text-text-muted/40">·</span>
+                      {sig(sessOk, 'Session')}
+                      <span className="text-text-muted/40">·</span>
+                      {sig(classOk, 'Class')}
+                      <span className="text-text-muted/40">·</span>
+                      {sig(modalOk, 'Modal')}
+                    </span>
+                  ) : (
+                    <span className="text-[13px] text-text-secondary font-medium">Monitoring</span>
+                  )}
+                </div>
+              )
+            }
+
             // ── Stage 4: Target Lock Indicator ──────────────────────────────────
             // locked: class identified — show exact target in amber
             if (sp === 'locked') {
