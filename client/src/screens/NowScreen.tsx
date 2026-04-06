@@ -15,7 +15,8 @@ import {
   DEFAULT_READINESS, computeCompositeReadiness,
 } from '../lib/readinessResolver'
 import type { CompositeReadiness } from '../lib/readinessResolver'
-import { computeConfidence } from '../lib/confidence'
+import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence'
+import type { ConfidenceLabel } from '../lib/confidence'
 
 interface NowScreenProps {
   appState: AppState
@@ -739,7 +740,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setModalDetail(null)
     setActionDetail(null)
     setPreflightStatus(null)
-    setStableResult(null)  // Stage 2: reset hysteresis on job switch
+    setStableResult(null)          // Stage 2: reset hysteresis on job switch
+    setStableConfidenceLabel(null) // Stage 4: reset label hysteresis on job switch
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
     api.getReadiness().then(setBgReadiness).catch(() => {})
@@ -830,6 +832,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [showReadinessDetails, setShowReadinessDetails] = useState(false)
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
   const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
+  // Stage 4: stable confidence label — separate hysteresis for the label so it
+  // doesn't oscillate from small score changes.
+  const [stableConfidenceLabel, setStableConfidenceLabel] = useState<ConfidenceLabel | null>(null)
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Time-gated step labels — each activates once the elapsed seconds threshold is crossed.
@@ -995,6 +1000,24 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return computeConfidence({ session, schedule, discovery, modal, action }).score
   })()
 
+  // ── Stage 4: Contradiction-safe confidence label ────────────────────────────
+  // Reads stableConfidenceLabel (updated via hysteresis effect) then clamps it
+  // against the top-level state to prevent logical contradictions:
+  //   success state  → never show "At risk" or "Uncertain"
+  //   issue (error)  → never show "High confidence"
+  const confidenceLabel: ConfidenceLabel | null = (() => {
+    if (!stableConfidenceLabel) return null
+    const topState = stableResult?.state
+    const severity = stableResult?.severity
+    if (topState === 'success') {
+      if (stableConfidenceLabel === 'At risk' || stableConfidenceLabel === 'Uncertain') return 'Likely'
+    }
+    if (topState === 'issue' && severity === 'error') {
+      if (stableConfidenceLabel === 'High confidence') return 'Likely'
+    }
+    return stableConfidenceLabel
+  })()
+
   // ── Stage 2: Compute current result + apply hysteresis ─────────────────────
   // currentResult is the raw derived value from this render's data.
   // stableResult is what the card actually displays — transitions are gated.
@@ -1026,6 +1049,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentResult?.state, currentResult?.severity])
+
+  // Stage 4: Label hysteresis effect — only updates stableConfidenceLabel when
+  // the score change is large enough to cross a grace-zone boundary.
+  useEffect(() => {
+    if (confidenceScore == null) return
+    setStableConfidenceLabel(prev => scoreToLabelWithHysteresis(confidenceScore, prev))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confidenceScore])
 
   if (loading) {
     return (
@@ -1202,8 +1233,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
                       </span>
                     )}
-                    {confidenceScore != null && (
-                      <span className="text-text-muted font-normal"> · {confidenceScore}%</span>
+                    {confidenceLabel != null && (
+                      <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
                     )}
                     {lastCheckedLabel && (
                       <span className="text-text-muted font-normal"> · {lastCheckedLabel}</span>

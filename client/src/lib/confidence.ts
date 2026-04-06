@@ -14,10 +14,10 @@
  *   modal     |          15           |           0           |    —     |    —     |    8
  *   action    |          25           |           0           |   20     |   12     |   12
  *
- * Label thresholds:
- *   85–100 → "Ready"
- *   65–84  → "Almost ready"
- *   40–64  → "Needs attention"
+ * Label thresholds (Stage 4):
+ *   80–100 → "High confidence"
+ *   60–79  → "Likely"
+ *   40–59  → "Uncertain"
  *   0–39   → "At risk"
  */
 
@@ -29,11 +29,6 @@ export interface ConfidenceInput {
   discovery: 'found' | 'missing' | 'unknown'
   modal:     'reachable' | 'blocked' | 'unknown'
   action:    'ready' | 'not_open' | 'waitlist' | 'blocked' | 'unknown'
-}
-
-export interface ConfidenceResult {
-  score:  number   // 0-100, integer
-  label:  'Ready' | 'Almost ready' | 'Needs attention' | 'At risk'
 }
 
 // ── Per-field score maps ───────────────────────────────────────────────────────
@@ -70,13 +65,61 @@ const ACTION_SCORE: Record<string, number> = {
   unknown:  12,
 }
 
-// ── Label thresholds ──────────────────────────────────────────────────────────
+// ── Stage 4: Label thresholds (80 / 60 / 40) ─────────────────────────────────
 
-function scoreToLabel(score: number): ConfidenceResult['label'] {
-  if (score >= 85) return 'Ready'
-  if (score >= 65) return 'Almost ready'
-  if (score >= 40) return 'Needs attention'
+export type ConfidenceLabel = 'High confidence' | 'Likely' | 'Uncertain' | 'At risk'
+
+export interface ConfidenceResult {
+  score: number          // 0-100, integer
+  label: ConfidenceLabel
+}
+
+export function scoreToLabel(score: number): ConfidenceLabel {
+  if (score >= 80) return 'High confidence'
+  if (score >= 60) return 'Likely'
+  if (score >= 40) return 'Uncertain'
   return 'At risk'
+}
+
+// ── Stage 4: Label hysteresis ─────────────────────────────────────────────────
+// Upgrades (better label) are always accepted immediately.
+// Downgrades are only accepted once the score crosses a grace-zone lower bound,
+// preventing rapid label oscillation from small score fluctuations.
+//
+// Grace-zone lower bounds (score must fall BELOW to accept the downgrade):
+//   High confidence → Likely    requires score < 75 (not just < 80)
+//   Likely          → Uncertain requires score < 55 (not just < 60)
+//   Uncertain       → At risk   requires score < 35 (not just < 40)
+
+const LABELS: ConfidenceLabel[] = ['High confidence', 'Likely', 'Uncertain', 'At risk']
+
+const DOWNGRADE_FLOOR: Partial<Record<ConfidenceLabel, number>> = {
+  'High confidence': 75,
+  'Likely':          55,
+  'Uncertain':       35,
+}
+
+export function scoreToLabelWithHysteresis(
+  score: number,
+  current: ConfidenceLabel | null,
+): ConfidenceLabel {
+  const fresh = scoreToLabel(score)
+  if (!current) return fresh
+
+  const currentIdx = LABELS.indexOf(current)
+  const freshIdx   = LABELS.indexOf(fresh)
+
+  // Upgrade (lower index = better) — always accept immediately
+  if (freshIdx < currentIdx) return fresh
+
+  // Same label — no change
+  if (freshIdx === currentIdx) return current
+
+  // Downgrade — only accept if score is below the grace-zone floor
+  const floor = DOWNGRADE_FLOOR[current]
+  if (floor !== undefined && score >= floor) return current  // hold
+
+  return fresh
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
