@@ -1277,6 +1277,45 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             )
           })()}
 
+          {/* ── Confidence Ring ───────────────────────────────────────────────────
+               Stage 1: circular SVG ring, placed between sniper strip and actions.
+               Shown whenever there is an active, non-booked, non-inactive job.      */}
+          {job && !isBooked && !isInactive && (() => {
+            const R    = 16
+            const circ = 2 * Math.PI * R   // ≈ 100.53
+            const frac = 0.6               // Stage 1 placeholder — wired in Stage 4
+            const offset = circ * (1 - frac)
+            return (
+              <div className="mt-3 flex justify-center">
+                <svg
+                  width="44" height="44" viewBox="0 0 40 40"
+                  className="-rotate-90"
+                  aria-hidden="true"
+                >
+                  {/* Track */}
+                  <circle
+                    cx="20" cy="20" r={R}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    className="text-divider"
+                  />
+                  {/* Arc */}
+                  <circle
+                    cx="20" cy="20" r={R}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    className="text-accent-green"
+                    strokeDasharray={circ}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+            )
+          })()}
+
           {/* Inline blocked callout — suppressed when the primary result card below
                already communicates the same failure (Stage 7: one main truth).
                Auth failures are covered by derivePrimaryResult step 5 (sessionStatus).
