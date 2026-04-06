@@ -1278,17 +1278,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           })()}
 
           {/* ── Confidence Ring ───────────────────────────────────────────────────
-               Stage 2: score→fill mapping + smooth CSS transition.
+               Stage 4: wired to real confidenceScore (0-100 or null).
                Fill formula: frac = score / 100  (continuous, 0–1 range).
                Thresholds used for colour/label only — the arc itself is linear.
                Arc animates via stroke-dashoffset CSS transition (0.6s ease).
-               Stage 4 will wire confidenceScore; placeholder used until then. */}
-          {job && !isBooked && !isInactive && (() => {
+               Hidden entirely when confidenceScore is null (no data yet).    */}
+          {job && !isBooked && !isInactive && confidenceScore != null && (() => {
             const R    = 16
             const circ = 2 * Math.PI * R   // ≈ 100.53
 
-            // Stage 4 will replace this with: confidenceScore != null ? confidenceScore / 100 : 0
-            const score = 60               // Stage 2 placeholder
+            const score = confidenceScore   // live value from readiness poller
             const frac  = Math.max(0, Math.min(1, score / 100))
             const offset = circ * (1 - frac)
 
