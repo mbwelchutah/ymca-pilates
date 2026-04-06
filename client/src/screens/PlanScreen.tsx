@@ -221,16 +221,6 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             </div>
           )}
 
-          {/* Last booking result */}
-          {job.last_result && RESULT_SHOW.has(job.last_result) && (
-            <div className="flex items-center gap-1.5 mt-1">
-              <StatusDot color={RESULT_DOT[job.last_result] ?? 'gray'} size="sm" />
-              <span className="text-[12px] text-text-muted">
-                Last: {RESULT_LABEL[job.last_result] ?? job.last_result}
-              </span>
-            </div>
-          )}
-
           {/* ── Stage 7: Sniper phase row — watched card only ────────────── */}
           {isWatching && sniperRow && (() => {
             const { phase: sp, sessOk, classOk, modalOk, countdown } = sniperRow
@@ -314,6 +304,16 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
               </div>
             )
           })()}
+
+          {/* Last booking result */}
+          {job.last_result && RESULT_SHOW.has(job.last_result) && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <StatusDot color={RESULT_DOT[job.last_result] ?? 'gray'} size="sm" />
+              <span className="text-[12px] text-text-muted">
+                Last: {RESULT_LABEL[job.last_result] ?? job.last_result}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Active toggle — stop propagation so it doesn't also select the job */}
