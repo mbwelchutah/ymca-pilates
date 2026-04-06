@@ -1183,36 +1183,38 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* Mode selector: Test / Live */}
-              <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2">
-                <button
-                  onClick={() => handleDryRun(false)}
-                  disabled={preflightRunning}
-                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
-                    ${!appState.dryRun
-                      ? 'bg-card shadow-card text-text-primary'
-                      : 'text-text-muted'}`}
-                >
-                  Live
-                </button>
-                <button
-                  onClick={() => handleDryRun(true)}
-                  disabled={preflightRunning}
-                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
-                    ${appState.dryRun
-                      ? 'bg-card shadow-card text-text-primary'
-                      : 'text-text-muted'}`}
-                >
-                  Test
-                </button>
-              </div>
+              {/* Step 3 — Compact utility row: inline mode toggle + verify button */}
+              <div className="flex items-center justify-between mt-1 pt-2 border-t border-divider">
+                {/* Inline Live / Test toggle — subdued, no heavy background */}
+                <div className="flex items-center gap-0.5 text-[12px]">
+                  <button
+                    onClick={() => handleDryRun(false)}
+                    disabled={preflightRunning}
+                    className={`px-2 py-1 rounded-md transition-all disabled:opacity-40
+                      ${!appState.dryRun
+                        ? 'bg-surface font-semibold text-text-primary'
+                        : 'text-text-muted'}`}
+                  >
+                    Live
+                  </button>
+                  <span className="text-text-muted opacity-30 select-none">/</span>
+                  <button
+                    onClick={() => handleDryRun(true)}
+                    disabled={preflightRunning}
+                    className={`px-2 py-1 rounded-md transition-all disabled:opacity-40
+                      ${appState.dryRun
+                        ? 'bg-surface font-semibold text-text-primary'
+                        : 'text-text-muted'}`}
+                  >
+                    Test
+                  </button>
+                </div>
 
-              {/* Stage 9H — Manual check: demoted to secondary text-link action */}
-              <div className="flex flex-col items-center gap-1">
+                {/* Verify now — quiet right-aligned action */}
                 <button
                   onClick={handleCheckNow}
                   disabled={preflightRunning || (sessionStatus?.locked ?? false)}
-                  className={`flex items-center gap-1.5 text-[13px] font-medium transition-opacity
+                  className={`flex items-center gap-1.5 text-[12px] font-medium transition-opacity
                     ${preflightRunning || (sessionStatus?.locked ?? false)
                       ? 'text-text-muted opacity-50 cursor-not-allowed'
                       : 'text-accent-blue active:opacity-50'
@@ -1224,21 +1226,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
                   )}
-                  {preflightRunning
-                    ? 'Checking…'
-                    : bgReadiness?.lastCheckedAt
-                    ? 'Check again'
-                    : 'Run Check'}
+                  {preflightRunning ? 'Checking…' : 'Verify now'}
                 </button>
-
-                {/* Step progress text — shown while preflight is running */}
-                {preflightRunning && checkStep && (
-                  <p className="text-[12px] text-text-muted">
-                    {checkStep}
-                    <span className="opacity-50"> · {checkElapsed}s</span>
-                  </p>
-                )}
               </div>
+
+              {/* Step progress text — shown while preflight is running */}
+              {preflightRunning && checkStep && (
+                <p className="text-center text-[11px] text-text-muted mt-1">
+                  {checkStep}
+                  <span className="opacity-50"> · {checkElapsed}s</span>
+                </p>
+              )}
 
             </div>
           )}
