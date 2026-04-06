@@ -729,11 +729,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   // ── Dedicated session check state ──────────────────────────────────────────
   const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
-  const [sessionChecking, setSessionChecking] = useState(false)
-
-  // Result badge shown after Verify Session completes — cleared on next check.
-  type VerifyResult = { label: string; color: 'green' | 'amber' | 'red'; detail: string }
-  const [verifyResult,    setVerifyResult]    = useState<VerifyResult | null>(null)
 
   useEffect(() => {
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
@@ -746,33 +741,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     }
   }, [])
 
-  const handleVerifySession = async () => {
-    if (sessionChecking) return
-    setSessionChecking(true)
-    setVerifyResult(null)
-    try {
-      const checkResult = await api.checkSession()
-      // Re-fetch full status so overall/lastVerified fields are populated
-      const full = await api.getSessionStatus()
-      setSessionStatus(full)
-
-      // Derive the result badge from the enriched check response.
-      // Fall back to reading full status if the enriched label is missing.
-      if (checkResult.valid === null) {
-        setVerifyResult({ label: 'Bot busy', color: 'amber', detail: 'Try again when the booking run finishes' })
-      } else if (checkResult.daxko === 'AUTH_NEEDS_LOGIN' || checkResult.valid === false) {
-        setVerifyResult({ label: 'Login required', color: 'red', detail: checkResult.detail ?? 'Credentials rejected — re-enter in Settings' })
-      } else if (checkResult.familyworks === 'FAMILYWORKS_SESSION_MISSING') {
-        setVerifyResult({ label: 'Schedule access missing', color: 'amber', detail: 'Daxko OK — use Settings → Log in now to restore schedule access' })
-      } else if (full.overall === 'DAXKO_READY' && full.familyworks === 'FAMILYWORKS_READY') {
-        setVerifyResult({ label: 'Session ready', color: 'green', detail: 'Daxko and schedule access both confirmed' })
-      } else {
-        setVerifyResult({ label: checkResult.label ?? 'Session ready', color: 'green', detail: 'Daxko confirmed — tap Run Check for full readiness' })
-      }
-    } catch {
-      setVerifyResult({ label: 'Verification failed', color: 'red', detail: 'Check failed — try again' })
-    } finally { setSessionChecking(false) }
-  }
 
   // Sniper state is global (last-run-wins).  Only treat it as applicable to the
   // current view when its jobId matches the selected job, or when the server
@@ -1157,7 +1125,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2">
                 <button
                   onClick={() => handleDryRun(true)}
-                  disabled={preflightRunning || sessionChecking}
+                  disabled={preflightRunning}
                   className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
                     ${appState.dryRun
                       ? 'bg-card shadow-card text-text-primary'
@@ -1167,7 +1135,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </button>
                 <button
                   onClick={() => handleDryRun(false)}
-                  disabled={preflightRunning || sessionChecking}
+                  disabled={preflightRunning}
                   className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
                     ${!appState.dryRun
                       ? 'bg-card shadow-card text-text-primary'
@@ -1208,37 +1176,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   </p>
                 )}
               </div>
-
-              {/* Secondary action: Refresh Session — quiet text link (Stage 6) */}
-              {!(sessionStatus?.locked ?? false) && !preflightRunning && (
-                <div className="mt-2.5 flex flex-col items-center gap-1">
-                  <button
-                    onClick={handleVerifySession}
-                    disabled={sessionChecking}
-                    className="flex items-center gap-1.5 text-[12px] text-text-muted active:opacity-50 disabled:opacity-40"
-                  >
-                    {sessionChecking && (
-                      <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                      </svg>
-                    )}
-                    {sessionChecking ? 'Refreshing session…' : 'Refresh session'}
-                  </button>
-
-                  {/* Inline result — single quiet line, no colored box (Stage 6) */}
-                  {verifyResult && !sessionChecking && (
-                    <span className={`text-[11px] ${
-                      verifyResult.color === 'green' ? 'text-accent-green' :
-                      verifyResult.color === 'amber' ? 'text-accent-amber' :
-                      'text-accent-red'
-                    }`}>
-                      {verifyResult.label}
-                      {verifyResult.detail ? ` · ${verifyResult.detail}` : ''}
-                    </span>
-                  )}
-                </div>
-              )}
 
             </div>
           )}
@@ -1404,8 +1341,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               return (
                 <CompactRow
                   label="Session"
-                  value={sessionChecking ? 'Checking…' : s.label}
-                  dotColor={sessionChecking ? 'gray' : s.dotColor}
+                  value={s.label}
+                  dotColor={s.dotColor}
                   detail={authD}
                 />
               )
@@ -1423,8 +1360,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               return (
                 <CompactRow
                   label="Schedule"
-                  value={sessionChecking ? '—' : fw.label}
-                  dotColor={sessionChecking ? 'gray' : fw.dotColor}
+                  value={fw.label}
+                  dotColor={fw.dotColor}
                   detail={fwD}
                 />
               )
