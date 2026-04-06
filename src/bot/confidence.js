@@ -1,14 +1,14 @@
 // Confidence score engine (Stage 9C)
 //
-// Derives a deterministic 0–100 confidence score and matching label from a
-// normalized readiness object (Stage 9B shape). Unknown values receive partial
-// credit — not tested ≠ broken.
+// Derives a deterministic 0–100 confidence score and label from a normalized
+// readiness object (Stage 9B shape). Unknown fields receive partial credit
+// because "not tested" is not the same as "broken".
 //
-// Scoring table (per spec):
+// Scoring table:
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   12
-//   schedule  |          15           |           0           |    —     |    —     |    8
+//   session   |          25           |           0           |    —     |    —     |   20
+//   schedule  |          15           |           0           |    —     |    —     |    0
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
@@ -26,13 +26,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 12,
+  unknown: 20,
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  8,
+  unknown:  0,
 };
 
 const DISCOVERY_SCORE = {
