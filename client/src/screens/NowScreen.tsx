@@ -222,20 +222,24 @@ function derivePrimaryResult(opts: {
   composite:        CompositeReadiness
   compositeDetail:  string
   showComposite:    boolean
-  locked:           boolean
+  bookingActive:    boolean
   lastPreflightAt:  string | null
   bgArmedState:     string | null
 }): PrimaryResult {
   const {
     isBooked, isInactive, job,
+    phase,
     sessionStatus,
     composite, compositeDetail, showComposite,
-    locked, lastPreflightAt, bgArmedState,
+    bookingActive, lastPreflightAt, bgArmedState,
   } = opts
 
   // ── STATE: booking ─────────────────────────────────────────────────────────
   // Active booking attempt is in progress right now.
-  if (locked) {
+  // Stage 1: only trigger on real booking runs (jobState.active via armed.state),
+  //          never on preflight, verify, or background checks.
+  // Stage 2: window must be open (phase === 'sniper') — no booking before open time.
+  if (bookingActive && phase === 'sniper') {
     return {
       state:    'booking',
       label:    'Booking',
@@ -308,7 +312,10 @@ function derivePrimaryResult(opts: {
 
   // ── STATE: ready ───────────────────────────────────────────────────────────
   // All checks passed — system will fire automatically at window open.
-  if (showComposite && composite.color === 'green') {
+  // Stage 2: suppress 'ready' card before the window opens (phase too_early).
+  // Readiness info is visible in the confidence chips; the top-level card stays
+  // as 'waiting' to avoid confusion about what is actually happening right now.
+  if (showComposite && composite.color === 'green' && phase !== 'too_early') {
     return {
       state:    'ready',
       label:    'Ready',
@@ -329,19 +336,24 @@ function derivePrimaryResult(opts: {
   }
 }
 
-// ── Stage 2: State hysteresis — allowed transition table ──────────────────────
-// Prevents confusing downgrades caused by transient background signals.
-// The stable displayed state can only change when a transition is explicitly allowed.
+// ── Stage 2 / Stage 5: State hysteresis — allowed transition table ────────────
+// Prevents confusing state flicker caused by transient background signals.
+// The stable displayed state only changes when a transition is explicitly allowed.
+//
+// Stage 5 additions:
+//   • from==='booking' always releases — booking run has concluded, accept next state.
+//     Prevents stuck-at-booking when a run ends with warning/issue/waiting.
+//   • to==='booking' still gated upstream in derivePrimaryResult (phase+bookingActive).
 function isTransitionAllowed(from: TopLevelState, to: TopLevelState, severity: ResultSeverity): boolean {
   if (from === to) return true               // same state: always accept (detail may update)
-  if (to === 'booking') return true          // active booking overrides anything
+  if (from === 'booking') return true        // booking concluded — always release to next state
+  if (to === 'booking') return true          // active booking overrides anything (gated upstream)
   if (to === 'success') return true          // confirmed booking always wins
   if (to === 'issue' && severity === 'error') return true  // hard blockers always surface
   if (to === 'issue' && from === 'waiting') return true    // first issue from idle is fine
   if (to === 'ready' && (from === 'waiting' || from === 'issue')) return true  // promotion
   if (to === 'waiting' && (from === 'issue' || from === 'success')) return true // resolution
-  // Blocked: ready→waiting (bg noise), booking→waiting (transient retry),
-  //          booking→ready (regression), ready→issue(warning) (premature alarm)
+  // Blocked: ready→waiting (bg noise), ready→issue(warning) (premature alarm)
   return false
 }
 
@@ -773,7 +785,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       schedule,
       discovery,
       modal,
-      bookingActive:   sessionStatus?.locked ?? bgReadiness.armed?.state === 'booking',
+      bookingActive:   bgReadiness.armed?.state === 'booking',
       nextWindow:      bgReadiness.armed?.nextWindow      ?? null,
       autoCheckActive: bgReadiness.armed?.watchingActive  ?? false,
       autoRetry:       bgReadiness.armed?.autoRetry       ?? false,
@@ -894,7 +906,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
 
   const handleCheckNow = async () => {
-    if (!job || preflightRunning || sessionStatus?.locked) return
+    if (!job || preflightRunning || bgReadiness?.armed?.state === 'booking') return
     setPreflightRunning(true)
 
     // ── Step progress timer ───────────────────────────────────────────────────
@@ -1044,7 +1056,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     composite,
     compositeDetail,
     showComposite,
-    locked: sessionStatus?.locked ?? false,
+    bookingActive: bgReadiness?.armed?.state === 'booking',
     lastPreflightAt,
     bgArmedState: sniperArmed?.state ?? null,
   }) : null
@@ -1353,9 +1365,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 {/* Verify — secondary reassurance action (Stage 8: demoted from primary) */}
                 <button
                   onClick={handleCheckNow}
-                  disabled={preflightRunning || (sessionStatus?.locked ?? false)}
+                  disabled={preflightRunning || bgReadiness?.armed?.state === 'booking'}
                   className={`flex items-center gap-1.5 text-[12px] font-normal transition-opacity
-                    ${preflightRunning || (sessionStatus?.locked ?? false)
+                    ${preflightRunning || bgReadiness?.armed?.state === 'booking'
                       ? 'text-text-muted opacity-50 cursor-not-allowed'
                       : 'text-text-secondary active:opacity-50'
                     }`}
