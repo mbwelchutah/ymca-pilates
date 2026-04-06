@@ -680,26 +680,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const isReadinessForSelectedJob =
     bgReadiness?.jobId == null || bgReadiness?.jobId === selectedJobId
 
-  // Stage 6 — Sniper armed model (Layer C).
-  // Computed client-side from the 5 normalized readiness fields so the model is
-  // independently typed and doesn't require the server's `armed` sub-object to
-  // be present.  The server's `armed.nextWindow`, `watchingActive`, `autoRetry`
-  // are still used as context inputs since the client can't compute them locally.
-  const sniperArmed: ArmedModel | null = (() => {
-    if (!isReadinessForSelectedJob || !bgReadiness) return null
-    const { session, schedule, discovery, modal } = bgReadiness
-    return computeArmedModel({
-      session,
-      schedule,
-      discovery,
-      modal,
-      bookingActive:   sessionStatus?.locked ?? bgReadiness.armed?.state === 'booking',
-      nextWindow:      bgReadiness.armed?.nextWindow      ?? null,
-      autoCheckActive: bgReadiness.armed?.watchingActive  ?? false,
-      autoRetry:       bgReadiness.armed?.autoRetry       ?? false,
-    })
-  })()
-
   // ── Clear stale readiness data when the selected job changes OR is edited ─────
   // Sniper state is global (last-run-wins on the server).  Two triggers require
   // a wipe + fresh fetch:
@@ -779,6 +759,26 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   // ── Dedicated session check state ──────────────────────────────────────────
   const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
+
+  // Stage 6 — Sniper armed model (Layer C).
+  // Computed client-side from the 5 normalized readiness fields so the model is
+  // independently typed and doesn't require the server's `armed` sub-object to
+  // be present.  The server's `armed.nextWindow`, `watchingActive`, `autoRetry`
+  // are still used as context inputs since the client can't compute them locally.
+  const sniperArmed: ArmedModel | null = (() => {
+    if (!isReadinessForSelectedJob || !bgReadiness) return null
+    const { session, schedule, discovery, modal } = bgReadiness
+    return computeArmedModel({
+      session,
+      schedule,
+      discovery,
+      modal,
+      bookingActive:   sessionStatus?.locked ?? bgReadiness.armed?.state === 'booking',
+      nextWindow:      bgReadiness.armed?.nextWindow      ?? null,
+      autoCheckActive: bgReadiness.armed?.watchingActive  ?? false,
+      autoRetry:       bgReadiness.armed?.autoRetry       ?? false,
+    })
+  })()
 
   useEffect(() => {
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
