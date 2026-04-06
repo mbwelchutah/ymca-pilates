@@ -1,0 +1,222 @@
+You are adding a Sniper Replay system to the YMCA Booker app.
+
+PRIMARY GOAL
+
+After each booking attempt, show a clean, human-readable replay of what happened.
+
+This should:
+- build trust
+- remove ambiguity
+- explain success or failure
+- avoid raw logs
+
+Do NOT show raw Playwright logs.
+Do NOT expose internal noise.
+Translate system events into human-readable timeline entries.
+
+---
+
+STRICT RULES
+
+- Do not break booking logic
+- Do not slow execution
+- Replay is read-only (post-event)
+- Keep mobile-first UI
+- Stop after each stage and summarize
+
+---
+
+================================
+STAGE 1 — DEFINE REPLAY EVENT MODEL
+================================
+
+Create structured replay events:
+
+Each event:
+
+{
+  timestamp,
+  type,
+  label,
+  detail
+}
+
+Allowed types:
+
+- window_open
+- target_acquired
+- modal_opened
+- action_attempt
+- retry
+- success
+- waitlist
+- failure
+- confirm
+
+Example:
+
+{
+  timestamp: 6:30:02,
+  type: "action_attempt",
+  label: "Clicked Register",
+  detail: "Attempt 1"
+}
+
+STOP + summarize event model
+
+---
+
+================================
+STAGE 2 — CAPTURE EVENTS DURING EXECUTION
+================================
+
+Hook into existing code:
+
+Capture events at:
+
+- window open detected
+- class found / identity verified
+- modal opened
+- register click attempt
+- retry
+- confirmation success
+- waitlist detection
+- failure
+
+Store in memory or DB per job run
+
+IMPORTANT:
+Do not change booking flow — only observe
+
+STOP + summarize capture points
+
+---
+
+================================
+STAGE 3 — BUILD REPLAY TIMELINE UI
+================================
+
+Create a simple vertical timeline:
+
+Example:
+
+6:30:00  Window opened  
+6:30:01  Target acquired  
+6:30:02  Clicked Register  
+6:30:03  Booking confirmed ✅  
+
+Rules:
+
+- chronological
+- clean spacing
+- no technical jargon
+- icons optional but subtle
+
+STOP + summarize UI
+
+---
+
+================================
+STAGE 4 — ADD OUTCOME SUMMARY CARD
+================================
+
+Above timeline, show:
+
+Success:
+"Booked successfully"
+
+Waitlist:
+"Joined waitlist"
+
+Failure:
+"Booking not completed"
+
+Add small supporting line:
+- "Attempted 3 times"
+- "Window opened at 6:30 AM"
+
+STOP + summarize
+
+---
+
+================================
+STAGE 5 — ADD INSIGHT LAYER (VERY IMPORTANT)
+================================
+
+Translate replay into human insight:
+
+Examples:
+
+Success:
+"Booked within 2 seconds of opening"
+
+Waitlist:
+"Class filled quickly — joined waitlist"
+
+Failure:
+"Session expired before booking"
+"Class not found at execution time"
+
+Rules:
+- no technical language
+- one sentence max
+
+STOP + summarize
+
+---
+
+================================
+STAGE 6 — ADD REPLAY ACCESS POINT
+================================
+
+Add entry point:
+
+- "View last attempt"
+- or tap on status card
+
+Replay should:
+- not clutter main screen
+- be easy to access
+
+STOP + summarize
+
+---
+
+================================
+STAGE 7 — ADD CONFIDENCE LEARNING HOOK
+================================
+
+Feed replay into system:
+
+- if success → boost confidence
+- if failure → reduce confidence
+- if late success → adjust timing
+
+Store:
+- success rate
+- avg attempt timing
+
+Do NOT overfit — keep simple
+
+STOP + summarize
+
+---
+
+================================
+STAGE 8 — FINAL POLISH
+================================
+
+Ensure replay feels:
+
+- calm
+- factual
+- trustworthy
+
+Avoid:
+- blame language
+- error-heavy tone
+
+Make it feel like:
+"Here’s what happened"
+
+STOP + summarize final UX
