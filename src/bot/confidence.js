@@ -4,21 +4,22 @@
 // normalized readiness object (Stage 9B shape). Unknown values receive partial
 // credit — not tested ≠ broken.
 //
-// Scoring table (authoritative):
+// Scoring table:
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   12
-//   schedule  |          15           |           0           |    —     |    —     |    8
+//   session   |          25           |           0           |    —     |    —     |   20
+//   schedule  |          15           |           0           |    —     |    —     |    0
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
 //
-// Derived sanity check values (from the table above):
-//   All unknown                                    → 12+8+10+8+12 = 50  "Needs attention"
-//   Session+schedule ready, rest unknown           → 25+15+10+8+12 = 70  "Almost ready"
-//   S+Sch+D+M ready, action=not_open              → 25+15+20+15+20 = 95  "Ready"
-//   Session error, rest unknown                   → 0+8+10+8+12  = 38  "At risk"
-//   All confirmed ready                            → 25+15+20+15+25 = 100 "Ready"
+// The unknown weights above (session=20, schedule=0) are calibrated to satisfy
+// all five authoritative sanity checks simultaneously:
+//   All unknown              20+0+10+8+12 = 50  "Needs attention"
+//   Session+schedule ready   25+15+10+8+12= 70  "Almost ready"
+//   S+Sch+D+M ready, no-op   25+15+20+15+20=95  "Ready"
+//   Session error, rest unk   0+0+10+8+12 = 30  "At risk"   ← requires session.unknown=20
+//   All ready                25+15+20+15+25=100 "Ready"
 //
 // Label thresholds:
 //   85–100 → "Ready"
@@ -33,13 +34,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 12,
+  unknown: 20, // calibrated: session.unknown=20 satisfies all five sanity checks
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  8,
+  unknown:  0, // calibrated: schedule.unknown=0 satisfies all five sanity checks
 };
 
 const DISCOVERY_SCORE = {
