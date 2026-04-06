@@ -1291,8 +1291,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             const frac  = Math.max(0, Math.min(1, score / 100))
             const offset = circ * (1 - frac)
 
-            // Stage 3: subtle label derived from score bucket
-            const ringLabel = score >= 70 ? 'High' : score >= 40 ? 'Likely' : 'At risk'
+            // Stage 3 + 5: label and arc color from score bucket (calm iOS tones)
+            const ringLabel     = score >= 70 ? 'High'  : score >= 40 ? 'Likely'  : 'At risk'
+            const arcColor      = score >= 70
+              ? 'var(--color-accent-green)'
+              : score >= 40
+              ? 'var(--color-accent-amber)'
+              : 'var(--color-accent-red)'
+            const labelClass    = score >= 70
+              ? 'text-accent-green'
+              : score >= 40
+              ? 'text-accent-amber'
+              : 'text-accent-red'
 
             return (
               <div className="mt-3 flex flex-col items-center gap-1">
@@ -1301,7 +1311,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   className="-rotate-90"
                   aria-hidden="true"
                 >
-                  {/* Track */}
+                  {/* Track — always neutral */}
                   <circle
                     cx="20" cy="20" r={R}
                     fill="none"
@@ -1309,21 +1319,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     strokeWidth="3"
                     className="text-divider"
                   />
-                  {/* Arc — stroke-dashoffset transition produces smooth fill changes */}
+                  {/* Arc — stroke set directly so CSS stroke transition animates color */}
                   <circle
                     cx="20" cy="20" r={R}
                     fill="none"
-                    stroke="currentColor"
                     strokeWidth="3"
-                    className="text-accent-green"
                     strokeDasharray={circ}
                     strokeDashoffset={offset}
                     strokeLinecap="round"
-                    style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.4s ease' }}
+                    style={{
+                      stroke: arcColor,
+                      transition: 'stroke-dashoffset 0.6s ease, stroke 0.4s ease',
+                    }}
                   />
                 </svg>
-                {/* Label — small, secondary, reads below the ring */}
-                <span className="text-[11px] text-text-muted tracking-wide">{ringLabel}</span>
+                {/* Label — small, matches arc color, secondary to the ring */}
+                <span className={`text-[11px] tracking-wide ${labelClass}`}>{ringLabel}</span>
               </div>
             )
           })()}
