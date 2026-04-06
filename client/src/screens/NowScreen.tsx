@@ -238,8 +238,8 @@ function derivePrimaryResult(opts: {
   if (locked) {
     return {
       state:    'booking',
-      label:    'Booking now',
-      detail:   'Attempting registration — this will complete in a moment.',
+      label:    'Booking',
+      detail:   'Attempting registration now',
       severity: 'info',
     }
   }
@@ -292,7 +292,7 @@ function derivePrimaryResult(opts: {
     return {
       state:    'issue',
       label:    'Needs attention',
-      detail:   'Auto-check flagged a problem — tap Check again for details.',
+      detail:   'Auto-check detected a problem. A new check will run automatically.',
       severity: 'warning',
     }
   }
@@ -1229,45 +1229,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
 
-              {/* Stage 5–6 — Trust line: armed (Layer C) · confidence (Layer B) · auto-check */}
-              {(() => {
-                const autoCheckActive = sniperArmed?.autoCheckActive ?? false
-                const autoRetry       = sniperArmed?.autoRetry       ?? false
-                // Show if: scheduler is watching, there's an armed state, or we have a last-checked time.
-                // This surfaces auto-check status even before the first background check has run.
-                const shouldShow = !preflightRunning && isReadinessForSelectedJob &&
-                  (sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
-                if (!shouldShow) return null
-                return (
-                  <div className="mb-2 flex items-center justify-center gap-1.5">
-                    {/* Dot: pulsing green when scheduler is active, otherwise state colour */}
-                    {autoCheckActive && autoRetry && lastCheckedText
-                      ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                      : sniperArmed?.state
-                        ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
-                        : <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                    }
-                    <span className="text-[12px] text-text-secondary">
-                      {sniperArmed?.state && (
-                        <span className="font-medium">
-                          {ARMED_STATE_LABEL[sniperArmed.state]}
-                        </span>
-                      )}
-                      {confidenceLabel != null && (
-                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
-                      )}
-                      {lastCheckedText
-                        ? <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
-                        : (autoCheckActive && autoRetry)
-                          ? <span className="text-text-muted font-normal"> · Auto-checking</span>
-                          : null
-                      }
-                    </span>
-                  </div>
-                )
-              })()}
-
-              {/* ── Primary result — Stage 1 state machine, Stage 2 hysteresis ── */}
+              {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
               {job && (() => {
                 const result = stableResult ?? currentResult
                 if (!result) return null
@@ -1305,6 +1267,45 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     <p className="text-[12px] text-text-secondary leading-snug ml-5">
                       {result.detail}
                     </p>
+                  </div>
+                )
+              })()}
+
+              {/* ── Layer B+C — Trust line: armed state · confidence · auto-check ── */}
+              {/* Appears below the primary card as supporting reassurance, not primary signal */}
+              {(() => {
+                const autoCheckActive = sniperArmed?.autoCheckActive ?? false
+                const autoRetry       = sniperArmed?.autoRetry       ?? false
+                // Show if: scheduler is watching, there's an armed state, or we have a last-checked time.
+                // This surfaces auto-check status even before the first background check has run.
+                const shouldShow = !preflightRunning && isReadinessForSelectedJob &&
+                  (sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
+                if (!shouldShow) return null
+                return (
+                  <div className="mb-2 flex items-center justify-center gap-1.5">
+                    {/* Dot: pulsing green when scheduler is active, otherwise armed-state colour */}
+                    {autoCheckActive && autoRetry && lastCheckedText
+                      ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                      : sniperArmed?.state
+                        ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
+                        : <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                    }
+                    <span className="text-[12px] text-text-secondary">
+                      {sniperArmed?.state && (
+                        <span className="font-medium">
+                          {ARMED_STATE_LABEL[sniperArmed.state]}
+                        </span>
+                      )}
+                      {confidenceLabel != null && (
+                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                      )}
+                      {lastCheckedText
+                        ? <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                        : (autoCheckActive && autoRetry)
+                          ? <span className="text-text-muted font-normal"> · Auto-checking</span>
+                          : null
+                      }
+                    </span>
                   </div>
                 )
               })()}
