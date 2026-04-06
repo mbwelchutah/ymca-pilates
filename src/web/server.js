@@ -3955,6 +3955,10 @@ const server = http.createServer((req, res) => {
           savePreflightSnapshot(result.status, { authDetail, discoveryDetail, modalDetail, actionDetail });
           const stateAfterSnapshot = loadState();
 
+          // Stage 9B — update the normalized persisted readiness state.
+          const { refreshReadiness } = require('../bot/readiness-state');
+          refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'manual' });
+
           json({
             success:         result.status === 'success',
             status:          result.status,

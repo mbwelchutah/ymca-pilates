@@ -28,13 +28,14 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { getAllJobs }     = require('../db/jobs');
-const { getPhase }       = require('./booking-window');
-const { runBookingJob }  = require('../bot/register-pilates');
-const { getDryRun }      = require('../bot/dry-run-state');
-const { loadState }      = require('../bot/sniper-readiness');
-const { loadStatus }     = require('../bot/session-check');
-const { isLocked }       = require('../bot/auth-lock');
+const { getAllJobs }       = require('../db/jobs');
+const { getPhase }         = require('./booking-window');
+const { runBookingJob }    = require('../bot/register-pilates');
+const { getDryRun }        = require('../bot/dry-run-state');
+const { loadState }        = require('../bot/sniper-readiness');
+const { loadStatus }       = require('../bot/session-check');
+const { isLocked }         = require('../bot/auth-lock');
+const { refreshReadiness } = require('../bot/readiness-state');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -180,6 +181,8 @@ async function runPreflightLoop({ isActive = false } = {}) {
       const outcome = result.status === 'success' ? 'pass' : 'fail';
       console.log(`[preflight-loop] Done — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
+      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+
       saveLoopState({
         lastCheckedAt: startedAt,
         jobId:         dbJob.id,
@@ -192,6 +195,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
 
     } catch (err) {
       console.error(`[preflight-loop] Error — Job #${dbJob.id}:`, err.message);
+      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
       saveLoopState({
         lastCheckedAt: startedAt,
         jobId:         dbJob.id,

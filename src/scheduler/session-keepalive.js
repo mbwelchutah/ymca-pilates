@@ -15,6 +15,7 @@ const path = require('path');
 const { runSessionCheck }  = require('../bot/session-check');
 const { recordFailure }    = require('../db/failures');
 const { getAllJobs }        = require('../db/jobs');
+const { refreshReadiness } = require('../bot/readiness-state');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
@@ -125,6 +126,13 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
       screenshot: result.screenshot ?? null,
     };
     appendLog(entry);
+
+    // Stage 9B — refresh normalized readiness after every keepalive check.
+    try {
+      const jobs    = getAllJobs().filter(j => j.is_active === 1);
+      const topJob  = jobs[0] ?? null;
+      refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
+    } catch (_) { /* non-fatal */ }
 
     if (!result.valid) {
       // Record in the failures DB so the confidence score is penalised.
