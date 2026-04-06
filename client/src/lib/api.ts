@@ -288,5 +288,14 @@ export const api = {
       autoRetry:      boolean
       watchingActive: boolean
     }
+    escalation: {
+      jobId:          number
+      classTitle:     string | null
+      classTime:      string | null
+      reason:         string
+      escalatedAt:    string
+      executionPhase: string
+      attemptNumber:  number
+    } | null
   }> => apiFetch('/api/readiness'),
 }

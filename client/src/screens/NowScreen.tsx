@@ -1199,6 +1199,36 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           )}
         </Card>
 
+        {/* Stage 10D — Escalation banner: click_failed alert ─────────── */}
+        {bgReadiness?.escalation && (
+          <div className="rounded-2xl bg-accent-amber/10 border border-accent-amber/30 px-4 py-3.5">
+            <div className="flex items-start gap-2.5">
+              <svg className="w-4 h-4 flex-shrink-0 mt-0.5 text-accent-amber" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-accent-amber leading-snug">
+                  Registration attempted — outcome unknown
+                </p>
+                <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+                  Please check the YMCA app to confirm whether you're registered
+                  {bgReadiness.escalation.classTitle ? ` for ${bgReadiness.escalation.classTitle}` : ''}.
+                </p>
+                <p className="text-[11px] text-text-muted mt-1">
+                  Attempted at {(() => {
+                    try {
+                      return new Intl.DateTimeFormat('en-US', {
+                        hour: 'numeric', minute: '2-digit', hour12: true,
+                        month: 'short', day: 'numeric',
+                      }).format(new Date(bgReadiness.escalation.escalatedAt))
+                    } catch { return bgReadiness.escalation.escalatedAt }
+                  })()}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Primary result card (Stage 3) ──────────────────────── */}
         {(() => {
           const result = derivePrimaryResult({

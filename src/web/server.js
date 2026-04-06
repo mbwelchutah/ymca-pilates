@@ -4738,9 +4738,11 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'GET' && path === '/api/readiness') {
     // Stage 9E — Normalized readiness + confidence + armed state.
     // Stage 10A — Execution timing phase appended to response.
-    const { loadReadiness }         = require('../bot/readiness-state');
-    const { computeArmedState }     = require('../bot/armed-state');
+    // Stage 10D — Escalation record appended when click_failed has fired.
+    const { loadReadiness }          = require('../bot/readiness-state');
+    const { computeArmedState }      = require('../bot/armed-state');
     const { computeExecutionTiming } = require('../scheduler/execution-timing');
+    const { loadEscalations }        = require('../scheduler/escalation');
 
     const readiness = loadReadiness();
 
@@ -4769,7 +4771,15 @@ const server = http.createServer((req, res) => {
       } catch (_) { /* non-fatal — job shape may be incomplete */ }
     }
 
-    json({ ...(readiness || {}), armed, executionTiming });
+    // Stage 10D: include any active escalation for the current job (null when clear).
+    let escalation = null;
+    try {
+      const allEscalations = loadEscalations();
+      const jobId = job?.id ?? readiness?.jobId ?? null;
+      if (jobId != null) escalation = allEscalations[String(jobId)] ?? null;
+    } catch (_) { /* non-fatal */ }
+
+    json({ ...(readiness || {}), armed, executionTiming, escalation });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.

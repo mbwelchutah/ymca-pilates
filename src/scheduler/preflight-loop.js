@@ -38,6 +38,7 @@ const { isLocked }             = require('../bot/auth-lock');
 const { refreshReadiness }     = require('../bot/readiness-state');
 const { computeExecutionTiming } = require('./execution-timing');
 const { classifyFailure, computeRetry } = require('./retry-strategy');
+const { setEscalation, clearEscalation } = require('./escalation');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -230,6 +231,8 @@ async function runBurstCheck(dbJob) {
       resetBurst(dbJob.id);
       retryCount[dbJob.id]  = 0;
       nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+      // Stage 10D — clear any pending escalation on success.
+      clearEscalation(dbJob.id);
     } else {
       // Not available yet — schedule next burst if within limits.
       const decision = computeRetry({
@@ -237,7 +240,19 @@ async function runBurstCheck(dbJob) {
         executionPhase: execTiming.phase,
         attemptNumber:  runNum,
       });
-      if (decision.shouldRetry && runNum < MAX_BURST_RUNS) {
+
+      // Stage 10D — escalate on click_failed; do not burst-retry.
+      if (failureType === 'click_failed') {
+        setEscalation(dbJob.id, {
+          classTitle:     dbJob.class_title,
+          classTime:      dbJob.class_time  ?? null,
+          reason:         'click_failed',
+          executionPhase: execTiming.phase,
+          attemptNumber:  runNum,
+        });
+        console.log(`[preflight-loop] burst:escalate — Job #${dbJob.id} click_failed; stopping burst.`);
+        resetBurst(dbJob.id);
+      } else if (decision.shouldRetry && runNum < MAX_BURST_RUNS) {
         scheduleBurst(dbJob, decision.retryDelayMs);
       } else {
         console.log(`[preflight-loop] burst:stop — Job #${dbJob.id} max runs or shouldRetry=false.`);
@@ -431,10 +446,23 @@ async function runPreflightLoop({ isActive = false } = {}) {
           `retryIn=${Math.round(decision.retryDelayMs / 1000)}s ` +
           `(${decision.note})`
         );
+
+        // Stage 10D — escalate on click_failed (blind retry suppressed; user must verify).
+        if (failureType === 'click_failed') {
+          setEscalation(dbJob.id, {
+            classTitle:     dbJob.class_title,
+            classTime:      dbJob.class_time  ?? null,
+            reason:         'click_failed',
+            executionPhase: execPhase,
+            attemptNumber:  retryCount[dbJob.id],
+          });
+        }
       } else {
         // Success: reset consecutive failure count; next run at normal cadence.
         retryCount[dbJob.id]  = 0;
         nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+        // Stage 10D — clear any pending escalation now that the action succeeded.
+        clearEscalation(dbJob.id);
       }
 
       saveLoopState({
