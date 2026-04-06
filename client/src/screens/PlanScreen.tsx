@@ -721,13 +721,15 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   // Absent when job is inactive, scheduler is paused, or window has closed.
   const watchedSniperRow: SniperRowData | undefined = (() => {
     if (!watchedJob || !watchedJob.is_active || appState.schedulerPaused || watchedPhase === 'late') return undefined
+    // Gate all readiness-driven inputs so stale cross-job data never bleeds through.
     const bgRdy        = isReadinessForSelectedJob ? bgReadiness : null
-    const armedState   = bgReadiness?.armed?.state ?? null
-    const bookingActive = bgReadiness?.armed?.state === 'booking'
+    const armedState   = bgRdy?.armed?.state ?? null
+    const bookingActive = bgRdy?.armed?.state === 'booking'
+    const execPhase    = bgRdy?.executionTiming?.phase ?? null
     const sp = deriveSniperPhase({
       armedState,
       clientPhase:   watchedPhase,
-      execPhase:     null,
+      execPhase,
       bookingActive,
     })
     return {
