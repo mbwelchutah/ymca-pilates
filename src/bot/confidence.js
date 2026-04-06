@@ -4,19 +4,21 @@
 // normalized readiness object (Stage 9B shape). Unknown values receive partial
 // credit — not tested ≠ broken.
 //
-// Scoring table:
+// Scoring table (authoritative):
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   20
-//   schedule  |          15           |           0           |    —     |    —     |    0
+//   session   |          25           |           0           |    —     |    —     |   12
+//   schedule  |          15           |           0           |    —     |    —     |    8
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
 //
-// Note: session.unknown=20 and schedule.unknown=0 are the values that satisfy
-// all five required sanity checks simultaneously (the session check dominates:
-// session-error shifts score by 20 vs all-unknown baseline, so session-unknown
-// must carry 20 pts; schedule-unknown absorbs the remaining allocation of 0).
+// Derived sanity check values (from the table above):
+//   All unknown                                    → 12+8+10+8+12 = 50  "Needs attention"
+//   Session+schedule ready, rest unknown           → 25+15+10+8+12 = 70  "Almost ready"
+//   S+Sch+D+M ready, action=not_open              → 25+15+20+15+20 = 95  "Ready"
+//   Session error, rest unknown                   → 0+8+10+8+12  = 38  "At risk"
+//   All confirmed ready                            → 25+15+20+15+25 = 100 "Ready"
 //
 // Label thresholds:
 //   85–100 → "Ready"
@@ -31,13 +33,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 20, // must be 20 to satisfy all five spec sanity checks
+  unknown: 12,
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  0, // must be 0 to satisfy all five spec sanity checks
+  unknown:  8,
 };
 
 const DISCOVERY_SCORE = {
