@@ -1479,17 +1479,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 const bgAction     = bgRdy?.action ?? 'unknown'
                 const bundleAction = bundle?.action !== 'ACTION_NOT_TESTED' ? bundle?.action : null
 
-                const actionReady   = bgAction === 'ready' ||
-                                      (bgAction === 'unknown' && bundleAction === 'ACTION_READY')
+                const actionReady   = !isWaitlist && (
+                  bgAction === 'ready' ||
+                  (bgAction === 'unknown' && bundleAction === 'ACTION_READY')
+                )
                 const actionUnavail = !isWaitlist && (
                   bgAction === 'blocked' || bgAction === 'not_open' ||
                   (bgAction === 'unknown' && bundleAction === 'ACTION_BLOCKED')
                 )
 
-                if (actionReady) {
-                  actionDot = 'green'; actionValue = 'Ready'
-                } else if (isWaitlist) {
+                if (isWaitlist) {
                   actionDot = 'amber'; actionValue = 'Waitlist'
+                } else if (actionReady) {
+                  actionDot = 'green'; actionValue = 'Ready'
                 } else if (actionUnavail) {
                   actionDot = 'amber'; actionValue = 'Unavailable'
                 } else {
