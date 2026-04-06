@@ -37,6 +37,7 @@ const { loadStatus }       = require('../bot/session-check');
 const { isLocked }             = require('../bot/auth-lock');
 const { refreshReadiness }     = require('../bot/readiness-state');
 const { computeExecutionTiming } = require('./execution-timing');
+const { classifyFailure, computeRetry } = require('./retry-strategy');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,14 @@ let running = false;
 // Survives within a server session; resets on restart (acceptable — first run
 // after restart will find lastCheckedAt in STATE_FILE for display purposes).
 const lastRunAt = {};
+
+// Stage 10B — Phase-aware retry tracking (in-memory, per job).
+// nextRetryAt[jobId] : epoch ms — earliest time the next preflight may run.
+//   Overrides MIN_INTERVAL_MS when a retry strategy has been computed.
+//   Defaults to lastRunAt + MIN_INTERVAL_MS when not set.
+// retryCount[jobId]  : consecutive failure count since last success.
+const nextRetryAt = {};
+const retryCount  = {};
 
 // ── State file ────────────────────────────────────────────────────────────────
 
@@ -145,9 +154,11 @@ async function runPreflightLoop({ isActive = false } = {}) {
     if (msUntilOpen > ACTIVE_HORIZON_MS)      continue; // too far away — session-keepalive covers auth
     if (msUntilOpen <= AUTO_PREFLIGHT_OWNS_MS) continue; // auto-preflight owns inside 30 min
 
-    // ── Interval gate ───────────────────────────────────────────────────────
-    const last = lastRunAt[dbJob.id] ?? 0;
-    if (Date.now() - last < MIN_INTERVAL_MS) continue;
+    // ── Interval gate (Stage 10B: phase-aware) ──────────────────────────────
+    // Use nextRetryAt[jobId] when a retry strategy has set it; fall back to
+    // the fixed MIN_INTERVAL_MS so first-boot behaviour is unchanged.
+    const retryGate = nextRetryAt[dbJob.id] ?? ((lastRunAt[dbJob.id] ?? 0) + MIN_INTERVAL_MS);
+    if (Date.now() < retryGate) continue;
 
     // ── Auth-block gate ─────────────────────────────────────────────────────
     if (isLocked()) {
@@ -215,6 +226,40 @@ async function runPreflightLoop({ isActive = false } = {}) {
 
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
+      // Stage 10B — compute phase-aware retry context from outcome.
+      const failureType = classifyFailure(result);
+      let retryContext  = null;
+
+      if (failureType) {
+        // Failure: update consecutive count and plan next retry.
+        retryCount[dbJob.id] = (retryCount[dbJob.id] ?? 0) + 1;
+        const decision = computeRetry({
+          failureType,
+          executionPhase: execPhase,
+          attemptNumber:  retryCount[dbJob.id],
+        });
+        nextRetryAt[dbJob.id] = Date.now() + decision.retryDelayMs;
+        retryContext = {
+          failureType,
+          attemptNumber:  retryCount[dbJob.id],
+          retryDelayMs:   decision.retryDelayMs,
+          phase:          execPhase,
+          shouldRetry:    decision.shouldRetry,
+          note:           decision.note,
+        };
+        console.log(
+          `[preflight-loop] retry:plan — Job #${dbJob.id} ` +
+          `failureType=${failureType} phase=${execPhase} ` +
+          `attempt=${retryCount[dbJob.id]} ` +
+          `retryIn=${Math.round(decision.retryDelayMs / 1000)}s ` +
+          `(${decision.note})`
+        );
+      } else {
+        // Success: reset consecutive failure count; next run at normal cadence.
+        retryCount[dbJob.id]  = 0;
+        nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+      }
+
       saveLoopState({
         lastCheckedAt: startedAt,
         jobId:         dbJob.id,
@@ -223,11 +268,27 @@ async function runPreflightLoop({ isActive = false } = {}) {
         status:        result.status,
         message:       result.message,
         minsUntilOpen,
+        retryContext,
       });
 
     } catch (err) {
       console.error(`[preflight-loop] run:error — Job #${dbJob.id}:`, err.message);
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+
+      // Timeout / unexpected error — treat as ambiguous, plan a retry.
+      retryCount[dbJob.id] = (retryCount[dbJob.id] ?? 0) + 1;
+      const errDecision = computeRetry({
+        failureType:   'ambiguous',
+        executionPhase: execPhase,
+        attemptNumber:  retryCount[dbJob.id],
+      });
+      nextRetryAt[dbJob.id] = Date.now() + errDecision.retryDelayMs;
+      console.log(
+        `[preflight-loop] retry:plan — Job #${dbJob.id} ` +
+        `failureType=ambiguous (error/timeout) phase=${execPhase} ` +
+        `retryIn=${Math.round(errDecision.retryDelayMs / 1000)}s`
+      );
+
       saveLoopState({
         lastCheckedAt: startedAt,
         jobId:         dbJob.id,
@@ -236,6 +297,14 @@ async function runPreflightLoop({ isActive = false } = {}) {
         status:        'error',
         message:       err.message,
         minsUntilOpen,
+        retryContext: {
+          failureType:   'ambiguous',
+          attemptNumber: retryCount[dbJob.id],
+          retryDelayMs:  errDecision.retryDelayMs,
+          phase:         execPhase,
+          shouldRetry:   errDecision.shouldRetry,
+          note:          'error/timeout — ambiguous retry',
+        },
       });
     } finally {
       running = false;
