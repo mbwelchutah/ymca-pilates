@@ -352,6 +352,9 @@ type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
 function readinessDotColor(value: string): DotColor {
   if (value.endsWith('_READY'))    return 'green'
   if (value === 'SESSION_EXPIRED') return 'amber'
+  // ACTION_BLOCKED means "not open yet" — an expected state, not a failure.
+  // Use amber rather than red so it doesn't read as an error.
+  if (value === 'ACTION_BLOCKED')  return 'amber'
   if (
     value.endsWith('_FAILED')   ||
     value.endsWith('_BLOCKED')  ||
@@ -372,7 +375,9 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   switch (s.sniperState) {
     case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
     case 'SNIPER_BLOCKED_DISCOVERY': return 'Class not found on schedule'
-    case 'SNIPER_BLOCKED_ACTION':    return 'Booking action unavailable'
+    // SNIPER_BLOCKED_ACTION = "not open yet" — primary result card already shows
+    // reassurance; suppress this callout to avoid conflicting red messaging.
+    case 'SNIPER_BLOCKED_ACTION':    return null
     default: return null
   }
 }
