@@ -4737,14 +4737,14 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'GET' && path === '/api/readiness') {
     // Stage 9E — Normalized readiness + confidence + armed state.
-    // Returns the persisted readiness snapshot (Stage 9B, enriched by 9C) plus
-    // the armed state computed fresh on every request (Stage 9D).
-    const { loadReadiness }    = require('../bot/readiness-state');
-    const { computeArmedState } = require('../bot/armed-state');
+    // Stage 10A — Execution timing phase appended to response.
+    const { loadReadiness }         = require('../bot/readiness-state');
+    const { computeArmedState }     = require('../bot/armed-state');
+    const { computeExecutionTiming } = require('../scheduler/execution-timing');
 
     const readiness = loadReadiness();
 
-    // Resolve the job for nextWindow computation.
+    // Resolve the job for nextWindow + timing computation.
     // Use readiness.jobId when available, else fall back to the first active job.
     let job = null;
     try {
@@ -4759,7 +4759,17 @@ const server = http.createServer((req, res) => {
       schedulerPaused: isSchedulerPaused(),
     });
 
-    json({ ...(readiness || {}), armed });
+    // Stage 10A: compute execution timing fresh (never stale — derived from clock + job).
+    let executionTiming = null;
+    if (job) {
+      try {
+        executionTiming = computeExecutionTiming(job, {
+          isConfirming: false, // Stage 10E will supply this from live run state
+        });
+      } catch (_) { /* non-fatal — job shape may be incomplete */ }
+    }
+
+    json({ ...(readiness || {}), armed, executionTiming });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.

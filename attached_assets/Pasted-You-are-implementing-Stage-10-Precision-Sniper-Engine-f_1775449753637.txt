@@ -1,0 +1,390 @@
+You are implementing Stage 10 — Precision Sniper Engine for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Upgrade the autonomous sniper (Stage 9) into a precision execution system that:
+- fires at the right moment
+- retries intelligently
+- adapts to real-world timing
+- confirms outcomes reliably
+
+This stage improves real booking success rate.
+
+----------------------------------------
+CORE OUTCOMES
+----------------------------------------
+
+By the end of Stage 10, the system should:
+
+1. track precise timing phases (waiting → warmup → armed → executing → confirming)
+2. retry differently based on failure type
+3. increase check frequency near booking open
+4. escalate action strategy safely when needed
+5. confirm booking results reliably
+6. learn small timing improvements per class over time
+7. expose clean execution state on Now (not technical noise)
+
+----------------------------------------
+STRICT RULES
+----------------------------------------
+
+- Keep app runnable after every stage
+- Do not break working auth flow (OAuth fix must remain intact)
+- Do not break scheduler or Stage 9 systems
+- Do not redesign UI — only enhance behavior + light state display
+- Do not create aggressive loops far from booking window
+- Do not add noisy logs to Now screen
+- Stop after each stage and summarize
+
+----------------------------------------
+STAGE 10A — TIMING MODEL
+----------------------------------------
+
+Goal:
+Introduce structured execution timing phases.
+
+Tasks:
+1. Add timing state to each job:
+
+{
+  opensAt,
+  warmupAt,
+  armedAt,
+  phase: "waiting" | "warmup" | "armed" | "executing" | "confirming"
+}
+
+2. Compute:
+- warmupAt = opensAt minus small offset (e.g. 2–5 min)
+- armedAt = closer to opensAt (e.g. 30–60 sec)
+
+3. Update phase dynamically based on current time
+
+4. Ensure:
+- no tight loops far from window
+- timing logic integrates with existing scheduler
+
+After Stage 10A:
+Stop and summarize:
+- how phases are computed
+- how phase changes over time
+- how this integrates with existing scheduler
+
+----------------------------------------
+STAGE 10B — PHASE-AWARE RETRY STRATEGY
+----------------------------------------
+
+Goal:
+Replace generic retries with smarter behavior.
+
+Tasks:
+1. Add retry logic based on failure type:
+
+Failure types:
+- auth failure
+- class not found
+- modal not reachable
+- action not open yet
+- click failed
+- ambiguous result
+
+2. Define behavior:
+- auth failure → quick recovery attempt, then stop
+- class missing near open → short retry burst
+- action not open → retry more frequently near open
+- click failure → try fallback strategy (later stage)
+- ambiguous → short confirmation loop
+
+3. Track retry context:
+
+{
+  attemptNumber,
+  failureType,
+  retryDelayMs,
+  phase
+}
+
+After Stage 10B:
+Stop and summarize:
+- what retry types exist
+- how retry behavior differs by failure
+- how retry timing adapts by phase
+
+----------------------------------------
+STAGE 10C — MICRO-BURST EXECUTION WINDOW
+----------------------------------------
+
+Goal:
+Increase responsiveness at booking open.
+
+Tasks:
+1. Near opensAt (final seconds):
+- temporarily increase check frequency
+- repeatedly check action availability
+
+2. When action becomes available:
+- fire immediately
+
+3. Keep burst:
+- short
+- controlled
+- limited to execution window
+
+4. Do NOT:
+- run high-frequency loops far from open
+- overload page or browser
+
+After Stage 10C:
+Stop and summarize:
+- when burst activates
+- how frequently checks run
+- how system exits burst mode
+
+----------------------------------------
+STAGE 10D — ACTION FALLBACK STRATEGY
+----------------------------------------
+
+Goal:
+Improve resilience of clicking/registering.
+
+Tasks:
+1. Add ordered action strategies:
+
+- normal click
+- safe force click
+- alternate selector
+- reopen modal and retry
+
+2. Only escalate if previous attempt clearly failed
+
+3. Track strategy used:
+
+{
+  actionStrategy: "normal" | "force" | "alternate" | "reopen"
+}
+
+4. Keep safe:
+- no blind force clicking
+- no infinite escalation
+
+After Stage 10D:
+Stop and summarize:
+- fallback sequence
+- when escalation happens
+- how safety is enforced
+
+----------------------------------------
+STAGE 10E — STRONG CONFIRMATION SYSTEM
+----------------------------------------
+
+Goal:
+Know with high confidence whether booking succeeded.
+
+Tasks:
+1. After click:
+- verify outcome explicitly
+
+2. Detect:
+- booked (unregister / cancel button appears)
+- waitlisted
+- still open (no effect)
+- ambiguous
+
+3. If ambiguous:
+- run short re-check loop (few seconds)
+
+4. Store:
+
+{
+  finalOutcome: "booked" | "waitlisted" | "failed" | "ambiguous",
+  confirmationSignals: [...]
+}
+
+After Stage 10E:
+Stop and summarize:
+- how success is detected
+- what signals are used
+- how ambiguity is handled
+
+----------------------------------------
+STAGE 10F — PER-JOB LEARNING
+----------------------------------------
+
+Goal:
+Improve timing slightly over time.
+
+Tasks:
+1. Track per-job metrics:
+- success rate
+- recent outcomes
+- small timing offsets
+
+2. Learn:
+- slight warmup offset adjustments
+- retry cadence tweaks
+- minor open-time lag patterns
+
+3. Keep:
+- simple
+- safe
+- bounded
+
+Example:
+
+{
+  learnedWarmupOffsetMs,
+  learnedRetryDelayMs,
+  successRate
+}
+
+Do NOT:
+- overfit to single run
+- create complex ML logic
+
+After Stage 10F:
+Stop and summarize:
+- what is learned
+- how it influences behavior
+- how risk is controlled
+
+----------------------------------------
+STAGE 10G — EXECUTION TELEMETRY
+----------------------------------------
+
+Goal:
+Make execution debuggable without cluttering UI.
+
+Tasks:
+1. Add structured logs:
+
+[timing]
+[retry]
+[action]
+[confirm]
+[learn]
+
+2. Record:
+- phase transitions
+- retry decisions
+- action attempts
+- confirmation outcomes
+
+3. Keep logs:
+- structured
+- visible in Tools
+- not pushed to Now screen
+
+After Stage 10G:
+Stop and summarize:
+- what logs were added
+- where they appear
+- how they help debugging
+
+----------------------------------------
+STAGE 10H — NOW SCREEN STATE UPGRADE
+----------------------------------------
+
+Goal:
+Reflect execution state clearly without noise.
+
+Tasks:
+1. Show concise states:
+- Waiting
+- Opening soon
+- Armed
+- Booking
+- Confirming
+- Booked
+- Waitlisted
+- Needs attention
+
+2. Optional subtext:
+- “Watching window”
+- “Ready to fire”
+- “Confirming result”
+
+3. Do NOT show:
+- retry internals
+- raw logs
+- timing math
+
+After Stage 10H:
+Stop and summarize:
+- what new states are visible
+- how Now improved
+- what was intentionally hidden
+
+----------------------------------------
+STAGE 10I — SAFETY GUARDRAILS
+----------------------------------------
+
+Goal:
+Ensure aggressive behavior remains stable.
+
+Tasks:
+1. Prevent:
+- duplicate clicks after success
+- overlapping execution bursts
+- runaway retry loops
+
+2. Add limits:
+- max retries
+- max confirmation attempts
+- max burst duration
+
+3. Respect:
+- session validity
+- browser locks
+
+4. Fail safely:
+- stop when clearly broken
+- surface "Needs attention"
+
+After Stage 10I:
+Stop and summarize:
+- what guardrails exist
+- how instability is prevented
+- how failures degrade safely
+
+----------------------------------------
+FINAL SUCCESS CRITERIA
+----------------------------------------
+
+System should:
+
+- arm before booking window
+- increase responsiveness near open
+- retry intelligently based on failure type
+- escalate safely when needed
+- confirm booking reliably
+- improve slightly over time
+- remain stable and debuggable
+
+----------------------------------------
+DO NOT BREAK
+----------------------------------------
+
+Do not break:
+- OAuth login flow (critical fix)
+- Stage 9 autonomous preflight
+- confidence score
+- sniper armed state
+- scheduler
+
+Only enhance execution precision.
+
+----------------------------------------
+OUTPUT REQUIREMENT
+----------------------------------------
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize:
+   - what changed
+   - what improved
+   - what remains
+   - any risks
+4. Stop and wait
+
+Start with STAGE 10A only.
+Do not jump ahead.

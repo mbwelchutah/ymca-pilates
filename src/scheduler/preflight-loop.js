@@ -34,8 +34,9 @@ const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState }        = require('../bot/sniper-readiness');
 const { loadStatus }       = require('../bot/session-check');
-const { isLocked }         = require('../bot/auth-lock');
-const { refreshReadiness } = require('../bot/readiness-state');
+const { isLocked }             = require('../bot/auth-lock');
+const { refreshReadiness }     = require('../bot/readiness-state');
+const { computeExecutionTiming } = require('./execution-timing');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -180,9 +181,17 @@ async function runPreflightLoop({ isActive = false } = {}) {
     lastRunAt[dbJob.id] = Date.now();
 
     const minsUntilOpen = Math.round(msUntilOpen / 60000);
+
+    // Stage 10A — log execution timing phase alongside the scheduler phase.
+    let execPhase = 'unknown';
+    try {
+      const et = computeExecutionTiming(dbJob);
+      execPhase = et.phase;
+    } catch (_) {}
+
     console.log(
       `[preflight-loop] run:start — Job #${dbJob.id} (${dbJob.class_title}), ` +
-      `${minsUntilOpen} min until window opens.`
+      `${minsUntilOpen} min until window opens, execution phase: ${execPhase}.`
     );
 
     const startedAt = new Date().toISOString();
