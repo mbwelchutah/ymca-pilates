@@ -16,9 +16,8 @@
  *
  * Label thresholds (Stage 4):
  *   80–100 → "High confidence"
- *   60–79  → "Likely"
- *   40–59  → "Uncertain"
- *   0–39   → "At risk"
+ *   60–79  → "Medium confidence"
+ *   0–59   → "Low confidence"
  */
 
 // ── Input shape (matches GET /api/readiness normalized fields) ────────────────
@@ -67,7 +66,7 @@ const ACTION_SCORE: Record<string, number> = {
 
 // ── Stage 4: Label thresholds (80 / 60 / 40) ─────────────────────────────────
 
-export type ConfidenceLabel = 'High confidence' | 'Likely' | 'Uncertain' | 'At risk'
+export type ConfidenceLabel = 'High confidence' | 'Medium confidence' | 'Low confidence'
 
 export interface ConfidenceResult {
   score: number          // 0-100, integer
@@ -76,9 +75,8 @@ export interface ConfidenceResult {
 
 export function scoreToLabel(score: number): ConfidenceLabel {
   if (score >= 80) return 'High confidence'
-  if (score >= 60) return 'Likely'
-  if (score >= 40) return 'Uncertain'
-  return 'At risk'
+  if (score >= 60) return 'Medium confidence'
+  return 'Low confidence'
 }
 
 // ── Stage 4: Label hysteresis ─────────────────────────────────────────────────
@@ -87,16 +85,14 @@ export function scoreToLabel(score: number): ConfidenceLabel {
 // preventing rapid label oscillation from small score fluctuations.
 //
 // Grace-zone lower bounds (score must fall BELOW to accept the downgrade):
-//   High confidence → Likely    requires score < 75 (not just < 80)
-//   Likely          → Uncertain requires score < 55 (not just < 60)
-//   Uncertain       → At risk   requires score < 35 (not just < 40)
+//   High confidence   → Medium confidence  requires score < 75 (not just < 80)
+//   Medium confidence → Low confidence     requires score < 55 (not just < 60)
 
-const LABELS: ConfidenceLabel[] = ['High confidence', 'Likely', 'Uncertain', 'At risk']
+const LABELS: ConfidenceLabel[] = ['High confidence', 'Medium confidence', 'Low confidence']
 
 const DOWNGRADE_FLOOR: Partial<Record<ConfidenceLabel, number>> = {
-  'High confidence': 75,
-  'Likely':          55,
-  'Uncertain':       35,
+  'High confidence':   75,
+  'Medium confidence': 55,
 }
 
 export function scoreToLabelWithHysteresis(

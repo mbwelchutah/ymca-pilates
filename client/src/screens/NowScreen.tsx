@@ -680,12 +680,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Live relative label — auto-refreshes every 30 s
   const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
 
-  // Stage 5: annotate whether the last check was autonomous (background loop)
-  // or user-initiated (manual preflight).  "Auto-checked" makes the autonomy
-  // of the system legible at a glance.
-  const lastCheckedText = lastCheckedLabel
-    ? (bgReadiness?.source === 'background' ? `Auto-checked ${lastCheckedLabel}` : lastCheckedLabel)
-    : null
+  // Stage 5: freshness — always "checked just now" / "checked N min ago"
+  const lastCheckedText = lastCheckedLabel ? `checked ${lastCheckedLabel}` : null
 
   // Guard: only treat bgReadiness data as valid for the currently selected job.
   // bgReadiness.jobId === null means legacy / not yet tagged — treat as applicable.
@@ -1027,17 +1023,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // ── Stage 4: Contradiction-safe confidence label ────────────────────────────
   // Reads stableConfidenceLabel (updated via hysteresis effect) then clamps it
   // against the top-level state to prevent logical contradictions:
-  //   success state  → never show "At risk" or "Uncertain"
+  //   success state  → never show "Low confidence"
   //   issue (error)  → never show "High confidence"
   const confidenceLabel: ConfidenceLabel | null = (() => {
     if (!stableConfidenceLabel) return null
     const topState = stableResult?.state
     const severity = stableResult?.severity
     if (topState === 'success') {
-      if (stableConfidenceLabel === 'At risk' || stableConfidenceLabel === 'Uncertain') return 'Likely'
+      if (stableConfidenceLabel === 'Low confidence') return 'Medium confidence'
     }
     if (topState === 'issue' && severity === 'error') {
-      if (stableConfidenceLabel === 'High confidence') return 'Likely'
+      if (stableConfidenceLabel === 'High confidence') return 'Medium confidence'
     }
     return stableConfidenceLabel
   })()
@@ -1284,20 +1280,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* ── Layer B+C — Trust line: armed state · confidence · auto-check ── */}
-              {/* Appears below the primary card as supporting reassurance, not primary signal */}
-              {/* Stage 9: also suppressed when the banner is complete */}
+              {/* ── Trust line: State · Confidence · Freshness ── */}
+              {/* Calm reassurance summary — suppressed when banner already shows full state */}
               {!bannerIsComplete && (() => {
-                const autoCheckActive = sniperArmed?.autoCheckActive ?? false
-                const autoRetry       = sniperArmed?.autoRetry       ?? false
-                // Stage 8: always show during a manual check (preflightRunning) so the
-                // trust line — not the button — communicates that work is happening.
-                // Also show when: scheduler is watching, armed state exists, or last-checked time.
                 const shouldShow = isReadinessForSelectedJob &&
-                  (preflightRunning || sniperArmed?.state || lastCheckedText || (autoCheckActive && autoRetry))
+                  (preflightRunning || sniperArmed?.state || lastCheckedText)
                 if (!shouldShow) return null
-                // Stage 8: while a manual check is running, show a simple "Checking…"
-                // state in the trust line rather than hiding the line entirely.
                 if (preflightRunning) {
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
@@ -1308,12 +1296,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 }
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
-                    {/* Dot: pulsing green when scheduler is active, otherwise armed-state colour */}
-                    {autoCheckActive && autoRetry && lastCheckedText
-                      ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                      : sniperArmed?.state
-                        ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
-                        : <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                    {sniperArmed?.state
+                      ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
+                      : <span className="w-1.5 h-1.5 rounded-full bg-text-muted/40 flex-shrink-0" />
                     }
                     <span className="text-[12px] text-text-secondary">
                       {sniperArmed?.state && (
@@ -1324,12 +1309,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {confidenceLabel != null && (
                         <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
                       )}
-                      {lastCheckedText
-                        ? <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
-                        : (autoCheckActive && autoRetry)
-                          ? <span className="text-text-muted font-normal"> · Auto-checking</span>
-                          : null
-                      }
+                      {lastCheckedText && (
+                        <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                      )}
                     </span>
                   </div>
                 )

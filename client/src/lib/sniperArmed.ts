@@ -92,9 +92,9 @@ export function computeArmedModel(input: ArmedInput): ArmedModel {
 
 export const ARMED_STATE_LABEL: Record<SniperArmedState, string> = {
   armed:           'Armed',
-  almost_ready:    'Almost ready',
-  waiting:         'Waiting for window',
-  booking:         'Booking now',
+  almost_ready:    'Waiting',
+  waiting:         'Waiting',
+  booking:         'Booking',
   needs_attention: 'Needs attention',
 }
 
