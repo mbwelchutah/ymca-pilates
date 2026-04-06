@@ -47,6 +47,14 @@ const AUTO_PREFLIGHT_OWNS_MS = 30 * 60 * 1000;  // auto-preflight owns inside 30
 const AUTH_BLOCK_STALE_MS    = 20 * 60 * 1000;  // mirror of auto-preflight / tick.js
 const PREFLIGHT_TIMEOUT_MS   = 90 * 1000;        // max wall-time for one preflight run
 
+// Stage 10C — Micro-burst constants.
+// The burst activates when a job enters execution `warmup` or `armed` phase
+// (inside the AUTO_PREFLIGHT_OWNS zone — within 3 min of opensAt).  It
+// fires short-interval preflight checks independently of the 60 s scheduler
+// tick so the system detects action availability within seconds, not minutes.
+const MAX_BURST_RUNS       = 8;              // hard cap on consecutive burst checks
+const BURST_WINDOW_AFTER_MS = 90 * 1000;    // stop bursting 90 s after opensAt
+
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'preflight-loop-state.json');
 
@@ -66,6 +74,12 @@ const lastRunAt = {};
 // retryCount[jobId]  : consecutive failure count since last success.
 const nextRetryAt = {};
 const retryCount  = {};
+
+// Stage 10C — Micro-burst state (in-memory, per job).
+// burstTimers[jobId] : active setTimeout handle for the next burst check.
+// burstCount[jobId]  : number of burst checks fired this activation cycle.
+const burstTimers = {};
+const burstCount  = {};
 
 // ── State file ────────────────────────────────────────────────────────────────
 
@@ -101,6 +115,145 @@ function withTimeout(promise, ms, label) {
   });
 }
 
+// ── Stage 10C — Micro-burst helpers ──────────────────────────────────────────
+//
+// The burst activates when a job's execution phase is `warmup` or `armed`
+// (within 3 min of opensAt).  It fires a short-interval self-scheduling loop
+// that calls runBookingJob({preflightOnly:true}) every ~20 s so the system
+// detects action availability within seconds rather than waiting for the next
+// 60 s scheduler tick.
+//
+// Safety bounds:
+//   - max MAX_BURST_RUNS consecutive checks per activation cycle
+//   - stops automatically BURST_WINDOW_AFTER_MS (90 s) after opensAt
+//   - stops when execution phase exits warmup/armed (opensAt passed)
+//   - guards: running flag + isLocked() prevent overlap with main loop or auth
+
+function resetBurst(jobId) {
+  if (burstTimers[jobId]) {
+    clearTimeout(burstTimers[jobId]);
+    delete burstTimers[jobId];
+  }
+  burstCount[jobId] = 0;
+}
+
+function scheduleBurst(dbJob, delayMs) {
+  // Cancel any pending timer for this job before setting a new one.
+  if (burstTimers[dbJob.id]) {
+    clearTimeout(burstTimers[dbJob.id]);
+    delete burstTimers[dbJob.id];
+  }
+
+  if ((burstCount[dbJob.id] ?? 0) >= MAX_BURST_RUNS) {
+    console.log(`[preflight-loop] burst:limit — Job #${dbJob.id} reached ${MAX_BURST_RUNS} burst checks.`);
+    resetBurst(dbJob.id);
+    return;
+  }
+
+  console.log(`[preflight-loop] burst:schedule — Job #${dbJob.id} next check in ${Math.round(delayMs / 1000)}s.`);
+  burstTimers[dbJob.id] = setTimeout(() => {
+    delete burstTimers[dbJob.id];
+    runBurstCheck(dbJob).catch(e =>
+      console.error(`[preflight-loop] burst:error — Job #${dbJob.id}:`, e.message)
+    );
+  }, delayMs);
+}
+
+async function runBurstCheck(dbJob) {
+  // ── Guards ─────────────────────────────────────────────────────────────────
+  if (running) {
+    console.log(`[preflight-loop] burst:skip — Job #${dbJob.id} loop busy, will retry next activation.`);
+    return;
+  }
+  if (isLocked()) {
+    console.log(`[preflight-loop] burst:skip — Job #${dbJob.id} auth lock held.`);
+    return;
+  }
+
+  // ── Window check ───────────────────────────────────────────────────────────
+  let execTiming;
+  try { execTiming = computeExecutionTiming(dbJob); } catch (_) { return; }
+
+  const opensAtMs    = new Date(execTiming.opensAt).getTime();
+  const pastBurstEnd = Date.now() > opensAtMs + BURST_WINDOW_AFTER_MS;
+
+  if (pastBurstEnd) {
+    console.log(`[preflight-loop] burst:expired — Job #${dbJob.id} past burst window; stopping.`);
+    resetBurst(dbJob.id);
+    return;
+  }
+
+  // Stop burst once the window has opened and tick.js takes over.
+  if (execTiming.msUntilOpen < 0) {
+    console.log(`[preflight-loop] burst:yield — Job #${dbJob.id} opensAt passed; yielding to scheduler.`);
+    resetBurst(dbJob.id);
+    return;
+  }
+
+  // ── Run preflight ──────────────────────────────────────────────────────────
+  running = true;
+  burstCount[dbJob.id] = (burstCount[dbJob.id] ?? 0) + 1;
+  const runNum = burstCount[dbJob.id];
+
+  console.log(
+    `[preflight-loop] burst:check — Job #${dbJob.id} ` +
+    `run ${runNum}/${MAX_BURST_RUNS} ` +
+    `phase:${execTiming.phase} ` +
+    `${Math.round(execTiming.msUntilOpen / 1000)}s until open.`
+  );
+
+  try {
+    const result = await withTimeout(
+      runBookingJob({
+        id:          dbJob.id,
+        classTitle:  dbJob.class_title,
+        classTime:   dbJob.class_time,
+        instructor:  dbJob.instructor  || null,
+        dayOfWeek:   dbJob.day_of_week,
+        targetDate:  dbJob.target_date || null,
+        maxAttempts: 1,
+      }, { preflightOnly: true, dryRun: getDryRun() }),
+      PREFLIGHT_TIMEOUT_MS,
+      `Job #${dbJob.id} burst`
+    );
+
+    refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+
+    const failureType = classifyFailure(result);
+
+    if (!failureType) {
+      // Action is available — burst complete, tick.js will fire the booking.
+      console.log(
+        `[preflight-loop] burst:ready — Job #${dbJob.id} action available ` +
+        `(${result.status}); burst complete.`
+      );
+      resetBurst(dbJob.id);
+      retryCount[dbJob.id]  = 0;
+      nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+    } else {
+      // Not available yet — schedule next burst if within limits.
+      const decision = computeRetry({
+        failureType,
+        executionPhase: execTiming.phase,
+        attemptNumber:  runNum,
+      });
+      if (decision.shouldRetry && runNum < MAX_BURST_RUNS) {
+        scheduleBurst(dbJob, decision.retryDelayMs);
+      } else {
+        console.log(`[preflight-loop] burst:stop — Job #${dbJob.id} max runs or shouldRetry=false.`);
+        resetBurst(dbJob.id);
+      }
+    }
+
+  } catch (err) {
+    console.error(`[preflight-loop] burst:error — Job #${dbJob.id}:`, err.message);
+    // Don't retry on error — let the next scheduler tick try.
+    resetBurst(dbJob.id);
+  } finally {
+    running = false;
+  }
+}
+
 // ── Public helpers ────────────────────────────────────────────────────────────
 
 function isRunning() { return running; }
@@ -129,6 +282,30 @@ async function runPreflightLoop({ isActive = false } = {}) {
   if (jobs.length === 0) return;
 
   console.log(`[preflight-loop] tick:start — ${jobs.length} active job(s).`);
+
+  // Stage 10C — Burst activation scan.
+  // Jobs in the warmup or armed execution phase (within 3 min of opensAt) are
+  // outside the main loop's AUTO_PREFLIGHT_OWNS_MS gate but still need frequent
+  // preflight checks.  If no burst is already active for a job in that window,
+  // kick one off here.  The burst then self-schedules independently of the tick.
+  if (!running && !isLocked()) {
+    for (const dbJob of jobs) {
+      if (burstTimers[dbJob.id]) continue; // burst already active
+      let et;
+      try { et = computeExecutionTiming(dbJob); } catch (_) { continue; }
+      if (et.phase === 'warmup' || et.phase === 'armed') {
+        console.log(
+          `[preflight-loop] burst:activate — Job #${dbJob.id} ` +
+          `entering execution phase "${et.phase}" ` +
+          `(${Math.round(et.msUntilOpen / 1000)}s until open).`
+        );
+        burstCount[dbJob.id] = 0;
+        runBurstCheck(dbJob).catch(e =>
+          console.error(`[preflight-loop] burst:error — Job #${dbJob.id}:`, e.message)
+        );
+      }
+    }
+  }
 
   // Load auth state once — shared across all jobs this tick.
   const sniperState   = loadState();
