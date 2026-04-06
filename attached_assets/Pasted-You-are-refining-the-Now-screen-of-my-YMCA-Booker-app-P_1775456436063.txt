@@ -1,0 +1,175 @@
+You are refining the Now screen of my YMCA Booker app.
+
+PRIMARY GOAL
+
+Keep the information that truly adds reassurance and value, while removing duplication and reducing visual competition.
+
+The Now screen should clearly answer:
+1. What class is targeted?
+2. When will it fire?
+3. Is it truly ready?
+4. Do I need to do anything?
+
+Current problem:
+The screen now has useful information, but too many layers repeat the same story:
+- Armed / confidence
+- main result card
+- readiness chips
+- detailed readiness rows
+- Check again / mode controls
+
+This makes the screen feel heavier than it needs to.
+
+STRICT RULES
+
+- Keep the app runnable after every step
+- Do not redesign the whole app
+- Do not remove useful reassurance
+- Do not remove Tools diagnostics
+- Do not break auto-check or Run Check logic
+- Stop after each step and summarize what changed
+- Do not jump ahead
+
+================================
+STEP 1 — DEFINE A CLEAR INFORMATION HIERARCHY
+================================
+
+Goal:
+Make the top of the Now screen feel like a single trust story instead of stacked competing elements.
+
+Tasks:
+1. Keep these as the top information hierarchy:
+   - active class title
+   - class date/time/instructor
+   - opening time / countdown
+   - Armed state
+   - confidence
+   - auto-check active
+   - last checked time
+   - one main result card
+
+2. Ensure the main result card is the primary message:
+   Example:
+   - Not open yet
+   - Everything is working — just waiting for the window to open
+
+3. Make sure other supporting elements do not visually compete with that main result
+
+After Step 1:
+Stop and summarize:
+- what was kept in the main hierarchy
+- what became the primary message
+- what still remains to be simplified
+
+================================
+STEP 2 — COLLAPSE DUPLICATED DETAIL BY DEFAULT
+================================
+
+Goal:
+Reduce duplication between summary chips and the full detailed readiness rows.
+
+Tasks:
+1. Keep the compact readiness chips visible:
+   - Session ready
+   - Class found
+   - Modal reachable
+   - Action not open yet
+
+2. Hide the longer detailed readiness rows by default behind:
+   - Show details
+   - or View latest check
+   - or similar expandable label
+
+3. Only show the detailed rows when expanded
+4. Keep the details accessible, but not always open
+5. Preserve the link/path to Tools for deeper evidence
+
+After Step 2:
+Stop and summarize:
+- what was collapsed
+- what remains visible by default
+- how the details are accessed now
+
+================================
+STEP 3 — DEMOTE SECONDARY CONTROLS
+================================
+
+Goal:
+Make the system feel autonomous, not like the user must constantly drive it.
+
+Tasks:
+1. Demote “Check again” from a primary action to a secondary reassurance action
+   - consider renaming to “Verify now”
+2. Keep auto-check as the primary behavior
+3. Reduce visual dominance of the Live/Test mode selector
+   - keep it available
+   - but do not let it compete with readiness/status
+4. Keep Refresh Session secondary as well
+5. Ensure the main focus stays on trust state, not tool controls
+
+After Step 3:
+Stop and summarize:
+- how action controls were demoted
+- what the new primary trust signal is
+- whether wording changed
+
+================================
+STEP 4 — FINAL TRUST / ASSURANCE POLISH
+================================
+
+Goal:
+Make the screen feel calm, confident, and easy to trust.
+
+Tasks:
+1. Make “Armed” the primary trust label and confidence a supporting detail
+   Example:
+   - Armed
+   - Confidence 80%
+
+2. Ensure the main result card wording stays calm and human
+   Example:
+   - Not open yet
+   - Everything is working — just waiting for the window to open
+
+3. Remove any remaining duplicate or competing status language
+4. Keep the final screen focused on:
+   - class
+   - open time
+   - armed state
+   - confidence
+   - current result
+   - compact readiness chips
+   - optional details
+5. Keep the screen mobile-first and uncluttered
+
+After Step 4:
+Stop and summarize:
+- what was simplified
+- how the final hierarchy works
+- why the screen now feels more reassuring
+
+FINAL RULES
+
+Do not:
+- remove useful readiness data entirely
+- turn the Now screen into a debug wall
+- keep both summary and detail at equal prominence
+- make the user feel they must constantly press buttons
+
+Do:
+- prioritize trust
+- collapse duplication
+- emphasize autonomy
+- keep details available but secondary
+
+OUTPUT STYLE REQUIRED
+
+At each step:
+1. Implement only that step
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STEP 1 only.
+Do not jump ahead.

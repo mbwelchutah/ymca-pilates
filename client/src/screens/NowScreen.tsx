@@ -1128,6 +1128,60 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
               )}
 
+              {/* ── Primary result — elevated into trust hierarchy (Step 1) ── */}
+              {job && (() => {
+                const result = derivePrimaryResult({
+                  isBooked,
+                  isInactive,
+                  isStaleBooking,
+                  job,
+                  phase,
+                  sessionStatus,
+                  sniperRunState,
+                  composite,
+                  compositeDetail,
+                  showComposite,
+                  locked: sessionStatus?.locked ?? false,
+                  lastPreflightAt,
+                })
+                const bgClass =
+                  result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
+                  result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
+                  result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
+                  result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
+                  'bg-surface border border-divider'
+                const labelClass =
+                  result.severity === 'success' ? 'text-accent-green' :
+                  result.severity === 'warning' ? 'text-accent-amber' :
+                  result.severity === 'error'   ? 'text-accent-red'   :
+                  result.severity === 'info'    ? 'text-accent-blue'  :
+                  'text-text-secondary'
+                const dotColor: DotColor =
+                  result.severity === 'success' ? 'green' :
+                  result.severity === 'warning' ? 'amber' :
+                  result.severity === 'error'   ? 'red'   :
+                  result.severity === 'info'    ? 'blue'  :
+                  'gray'
+                return (
+                  <div className={`rounded-xl px-3.5 py-3 mt-2 mb-2 ${bgClass}`}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <StatusDot color={dotColor} />
+                      <span className={`text-[15px] font-semibold ${labelClass}`}>
+                        {result.label}
+                      </span>
+                      {result.ts && (
+                        <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
+                          {formatPreflightTime(result.ts)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-text-secondary leading-snug ml-5">
+                      {result.detail}
+                    </p>
+                  </div>
+                )
+              })()}
+
               {/* Mode selector: Test / Live */}
               <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2">
                 <button
@@ -1211,64 +1265,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           </div>
         )}
-
-        {/* ── Primary result card (Stage 3) ──────────────────────── */}
-        {(() => {
-          const result = derivePrimaryResult({
-            isBooked,
-            isInactive,
-            isStaleBooking,
-            job,
-            phase,
-            sessionStatus,
-            sniperRunState,
-            composite,
-            compositeDetail,
-            showComposite,
-            locked: sessionStatus?.locked ?? false,
-            lastPreflightAt,
-          })
-
-          const bgClass =
-            result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
-            result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
-            result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
-            result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
-            'bg-surface border border-divider'
-
-          const labelClass =
-            result.severity === 'success' ? 'text-accent-green' :
-            result.severity === 'warning' ? 'text-accent-amber' :
-            result.severity === 'error'   ? 'text-accent-red'   :
-            result.severity === 'info'    ? 'text-accent-blue'  :
-            'text-text-secondary'
-
-          const dotColor: DotColor =
-            result.severity === 'success' ? 'green' :
-            result.severity === 'warning' ? 'amber' :
-            result.severity === 'error'   ? 'red'   :
-            result.severity === 'info'    ? 'blue'  :
-            'gray'
-
-          return (
-            <div className={`rounded-2xl px-4 py-4 ${bgClass}`}>
-              <div className="flex items-center gap-2 mb-1">
-                <StatusDot color={dotColor} />
-                <span className={`text-[17px] font-semibold ${labelClass}`}>
-                  {result.label}
-                </span>
-                {result.ts && (
-                  <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
-                    {formatPreflightTime(result.ts)}
-                  </span>
-                )}
-              </div>
-              <p className="text-[13px] text-text-secondary leading-snug ml-5">
-                {result.detail}
-              </p>
-            </div>
-          )
-        })()}
 
         {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
         {(sessionStatus || hasReadinessData) && (
