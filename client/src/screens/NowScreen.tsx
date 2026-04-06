@@ -213,12 +213,13 @@ function derivePrimaryResult(opts: {
   showComposite:    boolean
   locked:           boolean
   lastPreflightAt:  string | null
+  bgArmedState:     string | null
 }): PrimaryResult {
   const {
     isBooked, isInactive, isStaleBooking, job,
     phase, sessionStatus, sniperRunState,
     composite, compositeDetail, showComposite,
-    locked, lastPreflightAt,
+    locked, lastPreflightAt, bgArmedState,
   } = opts
 
   // 1. Actively booking right now
@@ -274,6 +275,18 @@ function derivePrimaryResult(opts: {
 
   // 6. Composite result from preflight/sniper — if we have one
   if (showComposite) {
+    // When composite has no preflight data yet but the auto-check armed state exists,
+    // the "Not tested" label contradicts the armed signal. Show an honest waiting message instead.
+    if (composite.status === 'COMPOSITE_NOT_TESTED' && bgArmedState) {
+      const detail = bgArmedState === 'needs_attention'
+        ? 'Auto-check flagged a possible issue — tap Verify now for details.'
+        : 'Session is confirmed. Class discovery runs when the booking window opens.'
+      return {
+        label:    'Checked — waiting for window',
+        detail,
+        severity: 'muted',
+      }
+    }
     const severityMap: Record<CompositeReadiness['color'], ResultSeverity> = {
       green: 'success', amber: 'warning', red: 'error', gray: 'muted',
     }
@@ -1143,6 +1156,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   showComposite,
                   locked: sessionStatus?.locked ?? false,
                   lastPreflightAt,
+                  bgArmedState: bgReadiness?.armed?.state ?? null,
                 })
                 const bgClass =
                   result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
