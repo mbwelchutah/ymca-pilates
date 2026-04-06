@@ -19,6 +19,7 @@ import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence
 import type { ConfidenceLabel } from '../lib/confidence'
 import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib/sniperArmed'
 import type { ArmedModel } from '../lib/sniperArmed'
+import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
 
 interface NowScreenProps {
   appState: AppState
@@ -1217,6 +1218,41 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )}
             </div>
           )}
+
+          {/* ── Sniper Status Bar — Stage 2 ────────────────────────────────── */}
+          {/* Single-line phase indicator beneath the timer.                    */}
+          {/* Suppressed when the main banner already owns the full state.       */}
+          {job && !isBooked && !isInactive && phase !== 'late' && (() => {
+            const sp = deriveSniperPhase({
+              armedState:    sniperArmed?.state ?? null,
+              clientPhase:   phase,
+              execPhase:     execPhase ?? null,
+              bookingActive: bgReadiness?.armed?.state === 'booking',
+            })
+            // Don't duplicate the main banner's firing/confirming messages
+            if (sp === 'firing' && phase === 'sniper') return null
+            if (sp === 'confirming' && execPhase === 'confirming') return null
+            const info = SNIPER_PHASE_INFO[sp]
+            // Countdown phase includes a live time remaining suffix
+            const label = sp === 'countdown' && countdown
+              ? `Countdown: ${countdown}`
+              : info.label
+            const dotStyle = info.pulse
+              ? 'animate-pulse'
+              : ''
+            const dotColor: Record<typeof info.dotColor, string> = {
+              green: 'bg-accent-green',
+              amber: 'bg-accent-amber',
+              gray:  'bg-text-muted/50',
+              blue:  'bg-accent-blue',
+            }
+            return (
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${dotStyle}`} />
+                <span className="text-[13px] text-text-secondary font-medium">{label}</span>
+              </div>
+            )
+          })()}
 
           {/* Inline blocked callout — suppressed when the primary result card below
                already communicates the same failure (Stage 7: one main truth).
