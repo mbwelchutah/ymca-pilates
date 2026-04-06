@@ -118,6 +118,81 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   )
 }
 
+// ── Empty states ──────────────────────────────────────────────────────────────
+
+/** Shown when no booking runs have ever been recorded for this job. */
+function EmptyNoRuns() {
+  return (
+    <div className="px-6 py-8 flex flex-col items-center gap-3">
+      {/* Timeline illustration — dashed line with three empty circles */}
+      <svg width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden="true"
+           className="text-text-muted/30">
+        {/* Dashed vertical spine */}
+        <line x1="13" y1="7" x2="13" y2="37"
+              stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.5 2.5" strokeLinecap="round" />
+        {/* Three event circles */}
+        <circle cx="13" cy="9"  r="3.5" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="13" cy="22" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="13" cy="35" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+        {/* Short label lines */}
+        <line x1="20" y1="9"  x2="36" y2="9"  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="20" y1="22" x2="32" y2="22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="20" y1="35" x2="28" y2="35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <div className="text-center">
+        <p className="text-[13px] font-medium text-text-secondary">No runs yet</p>
+        <p className="text-[11px] text-text-muted mt-1 leading-relaxed max-w-[220px]">
+          The timeline fills in automatically after the first booking attempt.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Shown when a specific historical run was selected but its data is no longer available. */
+function EmptyRunMissing({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="px-6 py-7 flex flex-col items-center gap-3">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+           className="text-text-muted/40" stroke="currentColor" strokeWidth="1.5"
+           strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v4" />
+        <circle cx="12" cy="16" r=".5" fill="currentColor" />
+      </svg>
+      <div className="text-center">
+        <p className="text-[13px] font-medium text-text-secondary">Run not available</p>
+        <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+          This run's data has been removed (older runs are kept for up to 10 attempts).
+        </p>
+      </div>
+      <button
+        onClick={onReset}
+        className="text-[11px] text-accent-blue font-medium active:opacity-60"
+      >
+        Show latest run
+      </button>
+    </div>
+  )
+}
+
+/** Pulse skeleton while the initial fetch is in progress. */
+function LoadingSkeleton() {
+  return (
+    <div className="px-4 py-4 space-y-3 animate-pulse" aria-label="Loading replay…">
+      {[80, 60, 72].map((w, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-divider flex-shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-2.5 rounded-full bg-divider" style={{ width: `${w}%` }} />
+            <div className="h-2 rounded-full bg-divider/60" style={{ width: `${w * 0.6}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── HistoryPicker ─────────────────────────────────────────────────────────────
 // Horizontal row of chips for past runs. Only rendered when ≥2 runs exist.
 
@@ -341,10 +416,15 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Timestamp when collapsed and data exists */}
           {!open && !(isBookingActive && isLatest) && replay?.capturedAt && (
             <span className="text-[11px] text-text-muted tabular-nums">
               {absTime(replay.capturedAt)}
             </span>
+          )}
+          {/* "No runs" hint when collapsed, fetched, and truly empty */}
+          {!open && fetched && !replay && !isBookingActive && history.length === 0 && (
+            <span className="text-[11px] text-text-muted/50 italic">no runs yet</span>
           )}
           <span className="text-[11px] text-text-muted select-none">{open ? '↑' : '↓'}</span>
         </div>
@@ -363,8 +443,11 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             }}
           />
 
-          {/* In-progress: booking active, no events yet */}
-          {isBookingActive && isLatest && fetched && (!replay || replay.events.length === 0) && (
+          {/* Loading skeleton — initial fetch in progress */}
+          {loading && !fetched && <LoadingSkeleton />}
+
+          {/* In-progress: booking active, no events captured yet */}
+          {!loading && isBookingActive && isLatest && fetched && (!replay || replay.events.length === 0) && (
             <div className="px-4 py-4 flex items-center gap-2.5">
               <svg className="animate-spin h-3.5 w-3.5 text-accent-blue flex-shrink-0" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -374,14 +457,14 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Empty: idle, no data */}
-          {!isBookingActive && fetched && !replay && (
-            <div className="px-4 py-5 text-center">
-              <p className="text-[13px] text-text-muted">No run recorded yet</p>
-              <p className="text-[11px] text-text-muted mt-1 opacity-70">
-                A replay will appear after the first automatic booking attempt.
-              </p>
-            </div>
+          {/* Empty: idle, no runs have ever been recorded */}
+          {!loading && !isBookingActive && fetched && !replay && isLatest && (
+            <EmptyNoRuns />
+          )}
+
+          {/* Empty: a historical run was selected but its file is gone */}
+          {!loading && fetched && !replay && !isLatest && (
+            <EmptyRunMissing onReset={() => setSelectedId(null)} />
           )}
 
           {/* Event list */}
@@ -447,16 +530,14 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Footer — metadata + refresh */}
-          {!(isBookingActive && isLatest) && fetched && (
+          {/* Footer — only shown when replay data is present */}
+          {!(isBookingActive && isLatest) && fetched && replay && (
             <div className="flex items-center justify-between px-4 py-2.5 border-t border-divider bg-surface/50">
               <span className="text-[11px] text-text-muted">
-                {replay
-                  ? `${replay.events.length} event${replay.events.length !== 1 ? 's' : ''}`
-                  : 'No data'}
+                {replay.events.length} event{replay.events.length !== 1 ? 's' : ''}
               </span>
               <div className="flex items-center gap-3">
-                {replay?.capturedAt && (
+                {replay.capturedAt && (
                   <span className="text-[11px] text-text-muted tabular-nums">
                     {absTime(replay.capturedAt)}
                   </span>
@@ -470,6 +551,20 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                   <RefreshIcon spinning={loading} />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Footer — no-data: just a refresh button so user isn't stuck */}
+          {!(isBookingActive && isLatest) && fetched && !replay && !loading && (
+            <div className="flex items-center justify-end px-4 py-2.5 border-t border-divider bg-surface/50">
+              <button
+                onClick={e => { e.stopPropagation(); fetchReplay(true, selectedId) }}
+                disabled={loading}
+                title="Refresh"
+                className="text-text-muted active:opacity-50 disabled:opacity-30 transition-opacity"
+              >
+                <RefreshIcon spinning={loading} />
+              </button>
             </div>
           )}
         </div>
