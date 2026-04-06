@@ -1281,37 +1281,38 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               })()}
 
               {/* ── Trust line: State · Confidence · Freshness ── */}
-              {/* Calm reassurance summary — suppressed when banner already shows full state */}
+              {/* Calm reassurance summary — suppressed when banner already shows full state.    */}
+              {/* Always rendered as a strict 3-part line; hidden when any part is unavailable. */}
               {!bannerIsComplete && (() => {
-                const shouldShow = isReadinessForSelectedJob &&
-                  (preflightRunning || sniperArmed?.state || lastCheckedText)
-                if (!shouldShow) return null
+                if (!isReadinessForSelectedJob) return null
+
+                // Running: show "Confirming · [confidence] · checking now"
                 if (preflightRunning) {
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-text-muted/40 flex-shrink-0 animate-pulse" />
-                      <span className="text-[12px] text-text-muted">Checking…</span>
+                      <StatusDot color="gray" size="sm" />
+                      <span className="text-[12px] text-text-secondary">
+                        <span className="font-medium">Confirming</span>
+                        {confidenceLabel != null && (
+                          <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                        )}
+                        <span className="text-text-muted font-normal"> · checking now</span>
+                      </span>
                     </div>
                   )
                 }
+
+                // Steady state: require all 3 parts — hide rather than show partial line
+                const stateLabel = sniperArmed?.state ? ARMED_STATE_LABEL[sniperArmed.state] : null
+                if (!stateLabel || confidenceLabel == null || !lastCheckedText) return null
+
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
-                    {sniperArmed?.state
-                      ? <StatusDot color={armedStateDotColor(sniperArmed.state)} size="sm" />
-                      : <span className="w-1.5 h-1.5 rounded-full bg-text-muted/40 flex-shrink-0" />
-                    }
+                    <StatusDot color={armedStateDotColor(sniperArmed!.state)} size="sm" />
                     <span className="text-[12px] text-text-secondary">
-                      {sniperArmed?.state && (
-                        <span className="font-medium">
-                          {ARMED_STATE_LABEL[sniperArmed.state]}
-                        </span>
-                      )}
-                      {confidenceLabel != null && (
-                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
-                      )}
-                      {lastCheckedText && (
-                        <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
-                      )}
+                      <span className="font-medium">{stateLabel}</span>
+                      <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                      <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
                     </span>
                   </div>
                 )
