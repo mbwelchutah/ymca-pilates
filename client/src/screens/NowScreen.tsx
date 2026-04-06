@@ -697,7 +697,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       } else if (full.overall === 'DAXKO_READY' && full.familyworks === 'FAMILYWORKS_READY') {
         setVerifyResult({ label: 'Session ready', color: 'green', detail: 'Daxko and schedule access both confirmed' })
       } else {
-        setVerifyResult({ label: checkResult.label ?? 'Session ready', color: 'green', detail: 'Daxko confirmed — run Check Now for full readiness' })
+        setVerifyResult({ label: checkResult.label ?? 'Session ready', color: 'green', detail: 'Daxko confirmed — tap Run Check for full readiness' })
       }
     } catch {
       setVerifyResult({ label: 'Verification failed', color: 'red', detail: 'Check failed — try again' })
@@ -1170,7 +1170,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
         {(sessionStatus || hasReadinessData) && (
           <Card padding="none">
-            {/* ── Readiness milestones (Stage 5) — 3-column strip ─── */}
+            {/* ── Readiness milestones — 4-column strip (Session | Class | Modal | Action) ─── */}
             {(() => {
               // Session milestone
               const sessReady   = sessionStatus?.daxko === 'DAXKO_READY'

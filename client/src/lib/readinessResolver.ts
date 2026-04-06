@@ -238,6 +238,6 @@ export function computeCompositeReadiness(
     status: 'COMPOSITE_NOT_TESTED',
     label:  'Not tested',
     color:  'gray',
-    detail: 'Tap Check Now to verify readiness',
+    detail: 'Run Check to verify readiness',
   }
 }
