@@ -1267,10 +1267,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   })}
                 </div>
                 {/* Countdown phase: show "Firing in X" text inline */}
-                {sp === 'countdown' && countdown && (
+                {sp === 'countdown' && (
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Firing in '}
-                    <span className="text-accent-green font-semibold tabular-nums">{countdown}</span>
+                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
                   </span>
                 )}
               </div>
