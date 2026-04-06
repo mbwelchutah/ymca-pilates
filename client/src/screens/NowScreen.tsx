@@ -1077,12 +1077,39 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Run Check action + mode selector + secondary actions */}
+          {/* Actions section */}
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
 
+              {/* Stage 9G — Sniper armed state + confidence (PRIMARY trust signal) */}
+              {!preflightRunning && bgReadiness?.armed?.state && (
+                <div className="mb-2 flex items-center justify-center gap-1.5">
+                  <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
+                  <span className="text-[12px] font-medium text-text-secondary">
+                    {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
+                    {bgReadiness.confidenceScore != null && (
+                      <> — {bgReadiness.confidenceScore}%</>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Stage 9F — Auto-check status + last checked time */}
+              {!preflightRunning && lastCheckedLabel && (
+                <div className="mb-2 flex items-center justify-center gap-1.5">
+                  {!appState.schedulerPaused && (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                      <span className="text-[11px] text-text-muted">Auto-check active</span>
+                      <span className="text-[11px] text-text-muted">·</span>
+                    </>
+                  )}
+                  <span className="text-[11px] text-text-muted">Last checked {lastCheckedLabel}</span>
+                </div>
+              )}
+
               {/* Mode selector: Test / Live */}
-              <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2.5">
+              <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2">
                 <button
                   onClick={() => handleDryRun(true)}
                   disabled={preflightRunning || sessionChecking}
@@ -1105,58 +1132,37 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </button>
               </div>
 
-              {/* Primary action */}
-              <button
-                onClick={handleCheckNow}
-                disabled={preflightRunning || (sessionStatus?.locked ?? false)}
-                className={`w-full py-2.5 rounded-xl text-[15px] font-semibold transition-opacity flex items-center justify-center gap-2
-                  ${preflightRunning || (sessionStatus?.locked ?? false)
-                    ? 'bg-divider text-text-muted opacity-60'
-                    : 'bg-accent-blue/10 text-accent-blue active:opacity-70'
-                  }`}
-              >
-                {preflightRunning && (
-                  <svg className="animate-spin h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                )}
-                {preflightRunning ? 'Checking…' : 'Run Check'}
-              </button>
-
-              {/* Step progress text — shown while preflight is running (Stage 1 + 6) */}
-              {preflightRunning && checkStep && (
-                <p className="mt-2 text-center text-[12px] text-text-muted">
-                  {checkStep}
-                </p>
-              )}
-
-              {/* Stage 9G — Sniper armed state + confidence */}
-              {!preflightRunning && bgReadiness?.armed?.state && (
-                <div className="mt-2 flex items-center justify-center gap-1.5">
-                  <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
-                  <span className="text-[12px] font-medium text-text-secondary">
-                    {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
-                    {bgReadiness.confidenceScore != null && (
-                      <> — {bgReadiness.confidenceScore}%</>
-                    )}
-                  </span>
-                </div>
-              )}
-
-              {/* Stage 9F — Auto-check status + last checked time */}
-              {!preflightRunning && lastCheckedLabel && (
-                <div className="mt-2 flex items-center justify-center gap-1.5">
-                  {!appState.schedulerPaused && (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                      <span className="text-[11px] text-text-muted">Auto-check active</span>
-                      <span className="text-[11px] text-text-muted">·</span>
-                    </>
+              {/* Stage 9H — Manual check: demoted to secondary text-link action */}
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  onClick={handleCheckNow}
+                  disabled={preflightRunning || (sessionStatus?.locked ?? false)}
+                  className={`flex items-center gap-1.5 text-[13px] font-medium transition-opacity
+                    ${preflightRunning || (sessionStatus?.locked ?? false)
+                      ? 'text-text-muted opacity-50 cursor-not-allowed'
+                      : 'text-accent-blue active:opacity-50'
+                    }`}
+                >
+                  {preflightRunning && (
+                    <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
                   )}
-                  <span className="text-[11px] text-text-muted">Last checked {lastCheckedLabel}</span>
-                </div>
-              )}
+                  {preflightRunning
+                    ? 'Checking…'
+                    : bgReadiness?.lastCheckedAt
+                    ? 'Check again'
+                    : 'Run Check'}
+                </button>
+
+                {/* Step progress text — shown while preflight is running (Stage 1 + 6) */}
+                {preflightRunning && checkStep && (
+                  <p className="text-[12px] text-text-muted">
+                    {checkStep}
+                  </p>
+                )}
+              </div>
 
               {/* Secondary action: Refresh Session — quiet text link (Stage 6) */}
               {!(sessionStatus?.locked ?? false) && !preflightRunning && (
