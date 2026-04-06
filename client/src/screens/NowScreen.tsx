@@ -1102,30 +1102,29 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
 
-              {/* Stage 9G — Sniper armed state + confidence (PRIMARY trust signal) */}
-              {!preflightRunning && bgReadiness?.armed?.state && (
+              {/* Step 4 — Single calm trust line: armed · confidence · last checked */}
+              {!preflightRunning && (bgReadiness?.armed?.state || lastCheckedLabel) && (
                 <div className="mb-2 flex items-center justify-center gap-1.5">
-                  <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
-                  <span className="text-[12px] font-medium text-text-secondary">
-                    {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
-                    {bgReadiness.confidenceScore != null && (
-                      <> — {bgReadiness.confidenceScore}%</>
+                  {/* Dot: pulsing if auto-check running, otherwise armed-state colour */}
+                  {!appState.schedulerPaused && lastCheckedLabel
+                    ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                    : bgReadiness?.armed?.state
+                      ? <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
+                      : null
+                  }
+                  <span className="text-[12px] text-text-secondary">
+                    {bgReadiness?.armed?.state && (
+                      <span className="font-medium">
+                        {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
+                      </span>
+                    )}
+                    {bgReadiness?.confidenceScore != null && (
+                      <span className="text-text-muted font-normal"> · {bgReadiness.confidenceScore}%</span>
+                    )}
+                    {lastCheckedLabel && (
+                      <span className="text-text-muted font-normal"> · {lastCheckedLabel}</span>
                     )}
                   </span>
-                </div>
-              )}
-
-              {/* Stage 9F — Auto-check status + last checked time */}
-              {!preflightRunning && lastCheckedLabel && (
-                <div className="mb-2 flex items-center justify-center gap-1.5">
-                  {!appState.schedulerPaused && (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                      <span className="text-[11px] text-text-muted">Auto-check active</span>
-                      <span className="text-[11px] text-text-muted">·</span>
-                    </>
-                  )}
-                  <span className="text-[11px] text-text-muted">Last checked {lastCheckedLabel}</span>
                 </div>
               )}
 
