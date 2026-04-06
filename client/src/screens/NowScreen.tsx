@@ -1286,21 +1286,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {!bannerIsComplete && (() => {
                 if (!isReadinessForSelectedJob) return null
 
-                // Running: show "Confirming · [confidence] · checking now"
-                if (preflightRunning) {
+                // Running: "Confirming · <confidence> · checked just now"
+                // Requires confidence to maintain strict 3-part format; hide otherwise.
+                if (preflightRunning && confidenceLabel != null) {
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
                       <StatusDot color="gray" size="sm" />
                       <span className="text-[12px] text-text-secondary">
                         <span className="font-medium">Confirming</span>
-                        {confidenceLabel != null && (
-                          <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
-                        )}
-                        <span className="text-text-muted font-normal"> · checking now</span>
+                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                        <span className="text-text-muted font-normal"> · checked just now</span>
                       </span>
                     </div>
                   )
                 }
+                if (preflightRunning) return null
 
                 // Steady state: require all 3 parts — hide rather than show partial line
                 const stateLabel = sniperArmed?.state ? ARMED_STATE_LABEL[sniperArmed.state] : null
