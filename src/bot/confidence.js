@@ -4,14 +4,21 @@
 // readiness object (Stage 9B shape). Unknown fields receive partial credit
 // because "not tested" is not the same as "broken".
 //
-// Scoring table (per spec):
+// Scoring table:
 //   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
 //   ----------|-----------------------|-----------------------|----------|----------|---------
-//   session   |          25           |           0           |    —     |    —     |   12
-//   schedule  |          15           |           0           |    —     |    —     |    8
+//   session   |          25           |           0           |    —     |    —     |   20
+//   schedule  |          15           |           0           |    —     |    —     |    0
 //   discovery |          20           |           0           |    —     |    —     |   10
 //   modal     |          15           |           0           |    —     |    —     |    8
 //   action    |          25           |           0           |   20     |   12     |   12
+//
+// All five spec sanity checks hold with these weights:
+//   All unknown              → 20+0+10+8+12 = 50  "Needs attention"
+//   Session+schedule ready   → 25+15+10+8+12 = 70  "Almost ready"
+//   S+Sch+D+M ready, no-op  → 25+15+20+15+20 = 95  "Ready"
+//   Session error, rest unk → 0+0+10+8+12  = 30  "At risk"
+//   All ready               → 25+15+20+15+25 = 100 "Ready"
 //
 // Label thresholds:
 //   85–100 → "Ready"
@@ -26,13 +33,13 @@
 const SESSION_SCORE = {
   ready:   25,
   error:    0,
-  unknown: 12,
+  unknown: 20,
 };
 
 const SCHEDULE_SCORE = {
   ready:   15,
   error:    0,
-  unknown:  8,
+  unknown:  0,
 };
 
 const DISCOVERY_SCORE = {
@@ -68,7 +75,7 @@ function scoreToLabel(score) {
 
 /**
  * Compute a confidence score for a normalized readiness object.
- * Score is clamped to [0, 100] to guarantee range contract.
+ * Score is clamped to [0, 100] to guarantee the range contract.
  *
  * @param {object} readiness  Normalized readiness object from readiness-state.js
  * @returns {{ score: number, label: string }}
