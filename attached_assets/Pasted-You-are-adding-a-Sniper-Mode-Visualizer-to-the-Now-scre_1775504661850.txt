@@ -1,0 +1,242 @@
+You are adding a Sniper Mode Visualizer to the Now screen.
+
+PRIMARY GOAL
+
+Make the system feel:
+- precise
+- automatic
+- trustworthy
+- inevitable
+
+User should feel:
+"This will fire at exactly the right moment."
+
+---
+
+STRICT RULES
+
+- Do not break existing booking logic
+- Do not modify scheduler timing
+- This is a UI + state representation layer only
+- Keep mobile-first, clean iOS feel
+- Stop after each stage and summarize
+
+---
+
+================================
+STAGE 1 — DEFINE SNIPER PHASES
+================================
+
+Create a visual phase model:
+
+1. Monitoring
+2. Locked
+3. Armed
+4. Countdown
+5. Firing
+6. Confirming
+
+Map existing system signals into these phases
+
+Rules:
+
+- Monitoring = background checks running
+- Locked = class + modal confirmed
+- Armed = everything ready, waiting for time
+- Countdown = within X minutes of window
+- Firing = booking attempt running
+- Confirming = verifying success
+
+DO NOT change actual logic — only map states
+
+STOP + summarize phases + mapping
+
+---
+
+================================
+STAGE 2 — ADD SNIPER STATUS BAR
+================================
+
+Add a small visual bar under the timer:
+
+Examples:
+
+- ● Monitoring
+- ● Locked on class
+- ● Armed and ready
+- ● Countdown: 2m 14s
+- ● Firing now
+- ● Confirming result
+
+Rules:
+
+- single line
+- calm language
+- no technical terms
+- must not contradict main state
+
+STOP + summarize UI + states
+
+---
+
+================================
+STAGE 3 — ADD COUNTDOWN ACTIVATION WINDOW
+================================
+
+When within a threshold (ex: 10 minutes before open):
+
+Switch from:
+"Waiting"
+
+To:
+"Countdown"
+
+Display:
+- live seconds countdown
+- stronger visual emphasis
+
+Example:
+
+"Firing in 2m 12s"
+
+Rules:
+
+- do NOT trigger booking early
+- purely visual
+- only activates near window
+
+STOP + summarize trigger logic
+
+---
+
+================================
+STAGE 4 — ADD TARGET LOCK INDICATOR
+================================
+
+Show when system has fully identified the class:
+
+Examples:
+- Locked on Core Pilates
+- Target acquired
+
+Trigger when:
+- class found
+- modal reachable
+- identity verified
+
+Rules:
+- subtle visual indicator (dot / badge)
+- not flashy
+
+STOP + summarize logic
+
+---
+
+================================
+STAGE 5 — ADD CONFIDENCE PROGRESSION
+================================
+
+Make confidence feel alive (not static %)
+
+Examples:
+
+- Low → Monitoring
+- Medium → Locked
+- High → Armed
+- Very High → Countdown
+
+Optional:
+smooth progression (not jumpy)
+
+Rules:
+- tie confidence to real signals
+- no fake animation
+
+STOP + summarize mapping
+
+---
+
+================================
+STAGE 6 — FIRING MOMENT VISUAL
+================================
+
+When booking begins:
+
+Replace card with:
+
+"Firing"
+"Attempting registration now"
+
+Optional:
+- subtle pulse
+- short-lived state
+
+Rules:
+- only when real booking attempt starts
+- no pre-trigger
+
+STOP + summarize behavior
+
+---
+
+================================
+STAGE 7 — CONFIRMATION STATE
+================================
+
+After firing:
+
+Show:
+
+"Confirming…"
+"Verifying registration"
+
+Then transition to:
+- Success
+- Waitlist
+- Issue
+
+STOP + summarize
+
+---
+
+================================
+STAGE 8 — CALM VISUAL POLISH
+================================
+
+Ensure visual tone:
+
+- no aggressive colors
+- no flashing
+- Apple-like calm system
+- confidence > excitement
+
+Avoid:
+- alarms
+- warning red unless real issue
+
+STOP + summarize final UX
+
+---
+
+FINAL RULES
+
+Do NOT:
+- trigger booking early
+- confuse readiness with execution
+- show "Firing" unless actually firing
+
+Do:
+- show progression
+- make timing visible
+- build confidence
+
+OUTPUT STYLE
+
+At each stage:
+- implement only that stage
+- keep app runnable
+- summarize clearly
+- stop
+
+Start with STAGE 1 only.
+Do not jump ahead.
