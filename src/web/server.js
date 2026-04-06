@@ -22,6 +22,10 @@ const {
   saveSettings:      saveKeepaliveSettings,
   getKeepaliveConfig,
 } = require('../scheduler/session-keepalive');
+const {
+  runPreflightLoop,
+  loadLoopState: loadPreflightLoopState,
+} = require('../scheduler/preflight-loop');
 const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
 
 const PORT = process.env.PORT || 5000;
@@ -4883,6 +4887,10 @@ function schedulerTick() {
   // Session keep-alive: periodic low-frequency check (default every 4 h).
   checkSessionKeepalive({ isActive: jobState.active })
     .catch(err => console.error('[session-keepalive] tick error:', err.message));
+  // Background preflight loop: continuous check for jobs within 24 h of their
+  // booking window (outside the 30-min zone auto-preflight already owns).
+  runPreflightLoop({ isActive: jobState.active })
+    .catch(err => console.error('[preflight-loop] tick error:', err.message));
 }
 // Delay first tick 30 s so the server is fully warm before the first run.
 setTimeout(() => {

@@ -1,0 +1,339 @@
+You are implementing Stage 9 — Autonomous Sniper Mode for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Move the app from a manual “Run Check” tool to an autonomous readiness system that verifies itself in the background and clearly tells the user whether the sniper is ready.
+
+The user should not need to manually check the app constantly.
+The app should continuously verify readiness and surface trust clearly on the Now screen.
+
+CORE OUTCOMES
+
+By the end of Stage 9, the system should:
+
+1. automatically run background preflight checks
+2. store the latest readiness state
+3. compute a confidence score
+4. compute and expose a sniper “armed” state
+5. show the user:
+   - last checked time
+   - confidence
+   - whether the sniper is armed
+   - whether the system is simply waiting for the booking window
+
+IMPORTANT PRODUCT DIRECTION
+
+Now = trust and mission control
+Tools = diagnostics and evidence
+Settings = configuration
+Do not turn Now into a debug terminal
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not redesign the whole app
+- Do not break current booking flow
+- Do not remove Run Check yet unless explicitly instructed later
+- Do not remove existing preflight logic
+- Do not add raw logs to Now
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+================================
+STAGE 9A — BACKGROUND PREFLIGHT ENGINE
+================================
+
+Goal:
+Create an automatic background readiness loop.
+
+Tasks:
+1. Add a background preflight runner for active jobs
+2. Run at a safe interval, such as every 2–5 minutes
+3. For each active job, perform safe readiness checks:
+   - verify session
+   - verify schedule access
+   - verify class discovery
+   - verify modal reachability if safe
+   - evaluate action availability if safe
+4. Skip the loop if a real booking attempt is currently running
+5. Avoid browser/session lock conflicts
+6. Store latest result in shared state
+7. Add structured logs with prefix:
+   - [preflight-loop]
+
+Do NOT trigger real booking in this stage.
+
+After Stage 9A:
+Stop and summarize:
+- how the background loop runs
+- what it checks
+- where the state is stored
+- how conflicts with live booking are prevented
+
+================================
+STAGE 9B — PERSISTED READINESS STATE
+================================
+
+Goal:
+Store the latest known readiness status for the active class/job.
+
+Tasks:
+1. Create a persisted readiness object containing:
+   - lastCheckedAt
+   - session state
+   - schedule state
+   - discovery state
+   - modal state
+   - action state
+2. Ensure this state updates after:
+   - background preflight
+   - manual Run Check
+   - relevant auth/session refreshes
+3. Keep the data model stable and easy to reuse in UI and diagnostics
+
+Suggested example structure:
+{
+  lastCheckedAt,
+  session: "ready" | "error" | "unknown",
+  schedule: "ready" | "error" | "unknown",
+  discovery: "found" | "missing" | "unknown",
+  modal: "reachable" | "blocked" | "unknown",
+  action: "ready" | "not_open" | "blocked" | "waitlist" | "unknown"
+}
+
+After Stage 9B:
+Stop and summarize:
+- what readiness object was added
+- how it is updated
+- which existing flows now write to it
+
+================================
+STAGE 9C — CONFIDENCE SCORE ENGINE
+================================
+
+Goal:
+Turn multiple readiness signals into one trust score.
+
+Tasks:
+1. Add a confidence score (0–100)
+2. Derive it from:
+   - session readiness
+   - schedule access
+   - discovery success
+   - modal reachability
+   - action state
+3. Support confidence labels such as:
+   - Ready
+   - Almost ready
+   - Needs attention
+   - At risk
+4. Store:
+   - confidenceScore
+   - confidenceLabel
+5. Keep the scoring logic simple and deterministic for now
+
+Suggested weighting example:
+- session ready = strong positive
+- schedule ready = positive
+- class found = positive
+- modal reachable = positive
+- action ready = highest positive
+- action not open yet = still positive, but less than ready
+- blocked/error states reduce score
+
+After Stage 9C:
+Stop and summarize:
+- how confidence is calculated
+- what labels exist
+- where score and label are stored
+
+================================
+STAGE 9D — SNIPER ARMED STATE
+================================
+
+Goal:
+Expose whether the system is truly armed and watching.
+
+Tasks:
+1. Add computed sniper state based on readiness
+2. Support states such as:
+   - Waiting
+   - Almost ready
+   - Armed
+   - Booking
+   - Confirming
+   - Needs attention
+3. For the armed state, require at least:
+   - session ready
+   - class found
+   - modal reachable or equivalent readiness
+4. Include metadata such as:
+   - next booking window
+   - auto-retry enabled
+   - watching active
+
+Suggested shape:
+{
+  armed: boolean,
+  state: "waiting" | "armed" | "booking" | "confirming" | "needs_attention",
+  nextWindow,
+  autoRetry
+}
+
+After Stage 9D:
+Stop and summarize:
+- how the armed state is computed
+- what conditions are required
+- how it differs from confidence score
+
+================================
+STAGE 9E — API EXPOSURE
+================================
+
+Goal:
+Expose background readiness and sniper state cleanly to the frontend.
+
+Tasks:
+1. Add or extend an API endpoint such as:
+   - /api/preflight-status
+   - or /api/sniper-status
+2. Return:
+   - lastCheckedAt
+   - readiness state
+   - confidenceScore
+   - confidenceLabel
+   - sniper armed state
+3. Keep the API response stable and frontend-friendly
+4. Do not expose raw internal implementation details unnecessarily
+
+After Stage 9E:
+Stop and summarize:
+- what endpoint was added/updated
+- what it returns
+- how frontend can consume it
+
+================================
+STAGE 9F — NOW SCREEN: AUTO-CHECK + LAST CHECKED
+================================
+
+Goal:
+Make Now feel alive without requiring manual checking.
+
+Tasks:
+1. On the Now screen, show:
+   - Auto-check active
+   - Last checked time
+2. Use the background readiness state from Stage 9
+3. Keep this compact and calm
+4. Do not remove the existing Run Check button yet
+
+Examples:
+- Auto-check active
+- Last checked 2 min ago
+
+After Stage 9F:
+Stop and summarize:
+- what Now now shows
+- where it appears
+- how it updates
+
+================================
+STAGE 9G — NOW SCREEN: CONFIDENCE + ARMED STATE
+================================
+
+Goal:
+Surface the core trust signals clearly on Now.
+
+Tasks:
+1. Add confidence display to Now:
+   - numeric or compact label
+   - example: Ready to book — 92%
+2. Add sniper state display:
+   - Armed
+   - Waiting for window
+   - Needs attention
+3. Keep this concise and non-technical
+4. Make it clear that:
+   - “Not open yet” can still mean the system is working properly
+   - “Armed” means the sniper is ready to act when the window opens
+
+After Stage 9G:
+Stop and summarize:
+- how confidence is shown
+- how armed state is shown
+- how the Now screen communicates trust better
+
+================================
+STAGE 9H — REDUCE BUTTON DEPENDENCY
+================================
+
+Goal:
+Shift user behavior from manual checking to trust in auto-checking.
+
+Tasks:
+1. Keep Run Check available, but visually demote it to a secondary reassurance action
+2. Make the primary message on Now come from:
+   - auto-check state
+   - confidence
+   - sniper armed state
+3. If appropriate, rename Run Check to:
+   - Verify now
+   - Check again
+4. Do not fully remove manual checking yet
+
+After Stage 9H:
+Stop and summarize:
+- how Run Check was demoted
+- what the new primary trust signal is
+- whether wording changed
+
+================================
+STAGE 9I — SAFETY + STABILITY
+================================
+
+Goal:
+Make the autonomous system safe and stable.
+
+Tasks:
+1. Prevent background checks during active booking attempts
+2. Prevent overlapping preflight runs
+3. Add safe timeouts for background checks
+4. Fail gracefully if partial checks fail
+5. Ensure UI can still show partial readiness data if one part fails
+6. Add structured logs for:
+   - loop start
+   - loop result
+   - skip due to live booking
+   - errors
+
+After Stage 9I:
+Stop and summarize:
+- what safety guardrails were added
+- how overlapping work is prevented
+- how partial failures are handled
+
+FINAL RULES
+
+Do not:
+- break the current booking flow
+- replace manual Run Check too early
+- flood the UI with technical detail
+- add raw diagnostics to Now
+
+Do:
+- build continuous trust
+- let the system verify itself
+- keep Now calm and useful
+- keep Tools detailed
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 9A only.
+Do not jump ahead.
