@@ -12,6 +12,7 @@ const {
 } = require('./sniper-readiness');
 const { saveStatus: saveSessionStatus } = require('./session-check');
 const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
+const replayStore = require('./replay-store');
 
 // ── Session-file helpers ──────────────────────────────────────────────────────
 // Write to familyworks-session.json from the booking/preflight pipeline so that
@@ -278,6 +279,11 @@ async function runBookingJob(job, opts = {}) {
   // ── Readiness state for this run (taxonomy integration) ─────────────────────
   const _state = createRunState(job.id || job.jobId || null);
 
+  // ── Replay capture — observer variables (Stage 2) ────────────────────────────
+  const _jobId = String(job.id || job.jobId || 0);
+  let _replayAction = null;  // 'register' | 'waitlist' | null
+  if (!PREFLIGHT_ONLY) replayStore.startRun(_jobId, new Date().toISOString());
+
   // ── Timing capture — filled in during the sniper poll and action phases ──────
   // Written to _state.timing at the end of the run so it persists to the UI.
   const _tc = {
@@ -360,6 +366,16 @@ async function runBookingJob(job, opts = {}) {
         context:    result.context   || null,
       });
     }
+
+    // ── Replay: finish run — outcome derived from result status + action taken ──
+    if (!PREFLIGHT_ONLY) {
+      const replayOutcome =
+        result.status === 'success' && _replayAction === 'waitlist' ? 'waitlist' :
+        result.status === 'success'                                  ? 'success'  :
+        'failure';
+      replayStore.finishRun(_jobId, replayOutcome);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     return result;
   }
@@ -1146,6 +1162,8 @@ async function runBookingJob(job, opts = {}) {
 
           // At or past opening time: re-click the tab and scan
           _tc.pollAttemptsPostOpen++;
+          // Replay: window_open fires once on the first post-open poll
+          if (_tc.pollAttemptsPostOpen === 1) replayStore.addEvent(_jobId, 'window_open', 'Window opened', `Booking window opened at ${openStr}`);
           console.log(`  [poll #${attempt}] Clicking "${pollTabText}" tab (${msLeft > 0 ? Math.round(msLeft / 1000) + 's before open' : Math.round(-msLeft / 1000) + 's after open'})...`);
           try {
             await dayTabs.nth(pollTabIndex).click();
@@ -1195,6 +1213,8 @@ async function runBookingJob(job, opts = {}) {
         ...(_lastSecondText ? { second: _lastSecondText.slice(0, 80) } : {}),
       }
     });
+    // Replay: class card identified and verified
+    if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'target_acquired', 'Class identified', classTitle);
 
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
     // Scrolls the card into view, clicks its interactive child (button/link/
@@ -1353,6 +1373,8 @@ async function runBookingJob(job, opts = {}) {
         console.log(`✅ Modal verified (${candidateLabel}) — proceeding to booking.`);
         // Card found, session valid, class discovered and identity confirmed
         emitEvent(_state, 'VERIFY', null, `Modal verified (${candidateLabel})`, { evidence: { verifyTime, verifyInst } });
+        // Replay: booking form is open and identity confirmed
+        if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'modal_opened', 'Booking form opened', classTitle);
         _state.bundle.session   = 'SESSION_READY';
         _state.bundle.discovery = 'DISCOVERY_READY';
         _state.sniperState      = 'SNIPER_BOOKING';
@@ -1590,6 +1612,8 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         }
+        _replayAction = 'register';
+        replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
         console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'}`);
@@ -1597,6 +1621,7 @@ async function runBookingJob(job, opts = {}) {
         await page.waitForTimeout(1500);
         const postRegBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
         const hasRegConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to/i.test(postRegBody);
+        if (hasRegConfirm) replayStore.addEvent(_jobId, 'confirm', 'Registration confirmed');
         if (!hasRegConfirm) {
           console.log('⚠️ Post-register: no obvious confirmation text — state may be unclear.');
           await snap('post-click-unclear');
@@ -1620,6 +1645,8 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         }
+        _replayAction = 'waitlist';
+        replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
         console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
@@ -1627,6 +1654,7 @@ async function runBookingJob(job, opts = {}) {
         await page.waitForTimeout(1500);
         const postWlBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
         const hasWlConfirm = /waitlist|confirmed|success|you.?re on|enrolled|added to/i.test(postWlBody);
+        if (hasWlConfirm) replayStore.addEvent(_jobId, 'confirm', 'Waitlist enrollment confirmed');
         if (!hasWlConfirm) {
           console.log('⚠️ Post-waitlist: no obvious confirmation text — state may be unclear.');
           await snap('post-click-unclear');
@@ -1684,6 +1712,7 @@ async function runBookingJob(job, opts = {}) {
           // Within 15-min sniper window — keep polling quickly.
           console.log(`Attempt 1: No register/waitlist button. Booking window opens in ${Math.round(msUntilBwOpen / 1000)}s — polling every 5s...`);
         } else {
+          if (attempt > 1) replayStore.addEvent(_jobId, 'retry', 'Retrying — no button yet', `Attempt ${attempt}`);
           console.log(`Attempt ${attempt}: No register/waitlist button.` + (DRY_RUN ? ' (dry run — pausing 10s)' : ' Retrying in 5s...'));
         }
         if (DRY_RUN) { await page.waitForTimeout(10000); break; }
@@ -1797,12 +1826,21 @@ async function runBookingJob(job, opts = {}) {
       ? `DRY RUN complete for ${classTitle}`
       : `Registered for ${classTitle} with Stephanie`;
     await snap();
+    // Replay: terminal outcome event
+    if (!PREFLIGHT_ONLY) {
+      if (_replayAction === 'waitlist') {
+        replayStore.addEvent(_jobId, 'waitlist', 'Joined waitlist', classTitle);
+      } else {
+        replayStore.addEvent(_jobId, 'success', 'Booking confirmed', classTitle);
+      }
+    }
     emitSuccess(_state);
     _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Booking completed successfully — FamilyWorks session confirmed active' });
     return logRunSummary({ status: 'success', message: successMsg, screenshotPath });
 
   } catch (err) {
     console.error('❌ Error:', err.message);
+    if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'failure', 'Booking failed', err.message.split('\n')[0]);
     return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
     // ── Compute and persist timing deltas ────────────────────────────────────

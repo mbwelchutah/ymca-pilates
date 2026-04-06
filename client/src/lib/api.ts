@@ -313,4 +313,7 @@ export const api = {
       attemptNumber:  number
     } | null
   }> => apiFetch('/api/readiness'),
+
+  fetchReplay: (jobId: number | string): Promise<import('./replayEvent').ReplaySummary | null> =>
+    apiFetch(`/api/replay/${jobId}`).catch(() => null),
 }

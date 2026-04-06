@@ -29,6 +29,7 @@ const {
   loadLoopState: loadPreflightLoopState,
 } = require('../scheduler/preflight-loop');
 const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
+const replayStore = require('../bot/replay-store');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -4860,6 +4861,21 @@ const server = http.createServer((req, res) => {
     }
 
     json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends });
+
+  } else if (req.method === 'GET' && path.startsWith('/api/replay/')) {
+    const jobId = path.split('/api/replay/')[1];
+    if (!jobId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing jobId' }));
+    } else {
+      const replay = replayStore.getLastReplay(jobId);
+      if (!replay) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No replay found for this job' }));
+      } else {
+        json(replay);
+      }
+    }
 
   } else if (req.method === 'GET' && path === '/api/scraped-classes') {
     const db   = openDb();
