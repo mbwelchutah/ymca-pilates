@@ -31,9 +31,41 @@ export interface SniperRunState {
   } | null
 }
 
+function friendlyHttpError(status: number): string {
+  if (status === 502 || status === 503 || status === 504)
+    return 'Server is temporarily unavailable — it may be restarting. Try again in a moment.'
+  if (status === 404)
+    return 'API endpoint not found — the app may still be starting up.'
+  if (status >= 500)
+    return `Server error (${status}). Please try again.`
+  if (status === 401 || status === 403)
+    return `Not authorised (${status}).`
+  return `Request failed (${status}).`
+}
+
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options)
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`)
+  let res: Response
+  try {
+    res = await fetch(url, options)
+  } catch {
+    throw new Error('Could not reach the server — check your connection.')
+  }
+
+  if (!res.ok) {
+    // Only try to read JSON error details from our own API responses
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const body = await res.json()
+        const msg = body?.error ?? body?.message
+        if (msg) throw new Error(String(msg))
+      } catch (e) {
+        if (e instanceof Error && e.message) throw e
+      }
+    }
+    // HTML error pages (Replit 502, 404, etc.) — show a clean message
+    throw new Error(friendlyHttpError(res.status))
+  }
   return res.json() as Promise<T>
 }
 
