@@ -10,6 +10,8 @@ const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
+// Stage 10G — Booking bridge: lets burst-to-booking handoff update jobState.
+const { setBridgeCallbacks } = require('../scheduler/booking-bridge');
 const {
   checkAutoPreflights,
   loadSettings:      loadAutoPreflightSettings,
@@ -3758,6 +3760,13 @@ function esc(str) {
 // Background job state
 // ---------------------------------------------------------------------------
 let jobState = { active: false, log: 'No job run yet.', success: null };
+
+// Stage 10G — wire booking-bridge so the burst-to-booking handoff can set
+// jobState.active (needed for isConfirming in Stage 10E and concurrency guards).
+setBridgeCallbacks({
+  isActive:  () => jobState.active,
+  setActive: (v) => { jobState = { ...jobState, active: v }; },
+});
 
 function runInBackground(job) {
   jobState = { active: true, log: 'Logging in...', success: null };

@@ -41,6 +41,8 @@ const { classifyFailure, computeRetry } = require('./retry-strategy');
 const { setEscalation, clearEscalation } = require('./escalation');
 // Stage 10F — Learned timing adjustments.
 const { recordObservation, getLearnedOffsets } = require('./timing-learner');
+// Stage 10G — Direct burst-to-booking handoff (bypasses up-to-60s tick delay).
+const { triggerBookingFromBurst } = require('./booking-bridge');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -232,10 +234,14 @@ async function runBurstCheck(dbJob) {
     const failureType = classifyFailure(result);
 
     if (!failureType) {
-      // Action is available — burst complete, tick.js will fire the booking.
+      // Stage 10G — Burst-to-booking direct handoff.
+      // The action is available right now.  Instead of resetting and waiting up
+      // to 60 s for the scheduler tick to notice, immediately fire a full
+      // booking run via the bridge (same runTick() path, all existing guards
+      // applied: booked-this-week, concurrency, cooldown, auth-block).
       console.log(
         `[preflight-loop] burst:ready — Job #${dbJob.id} action available ` +
-        `(${result.status}); burst complete.`
+        `(${result.status}); handing off to booking run immediately.`
       );
       resetBurst(dbJob.id);
       retryCount[dbJob.id]  = 0;
@@ -243,8 +249,6 @@ async function runBurstCheck(dbJob) {
       // Stage 10D — clear any pending escalation on success.
       clearEscalation(dbJob.id);
       // Stage 10F — record when the action became available relative to opensAt.
-      // This observation feeds the timing learner so future armed/warmup windows
-      // can be adjusted toward the actual open moment.
       if (execTiming?.opensAt) {
         recordObservation(dbJob.id, {
           expectedOpensAtMs: new Date(execTiming.opensAt).getTime(),
@@ -252,6 +256,14 @@ async function runBurstCheck(dbJob) {
           classTitle:        dbJob.class_title ?? null,
         });
       }
+      // Fire the booking.  triggerBookingFromBurst is fire-and-forget; errors
+      // are logged inside the bridge.  running=false (set in finally below)
+      // BEFORE this is called so tick.js's runningJobs guard is not blocked.
+      // We explicitly do NOT await this — the finally block must release
+      // `running` before the booking's browser launch starts.
+      triggerBookingFromBurst(dbJob.id).catch(e =>
+        console.error(`[preflight-loop] burst:handoff-error — Job #${dbJob.id}:`, e.message)
+      );
     } else {
       // Not available yet — schedule next burst if within limits.
       const decision = computeRetry({
