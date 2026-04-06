@@ -67,30 +67,46 @@ const OUTCOME_LABEL: Record<string, { text: string; tone: DotTone }> = {
   unknown: { text: 'Unknown',  tone: 'gray'  },
 }
 
-// ── Live-poll interval while a booking is in flight ───────────────────────────
 const LIVE_POLL_MS = 3_000
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ReplayTimelineProps {
-  jobId:           number | null
-  runKey?:         string | null   // changes when a run finishes → triggers re-fetch
+  jobId:            number | null
+  runKey?:          string | null  // changes when a run finishes → auto-expand + re-fetch
   isBookingActive?: boolean        // true while a booking attempt is in flight
+}
+
+// ── RefreshIcon ───────────────────────────────────────────────────────────────
+
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      className={`w-3.5 h-3.5 ${spinning ? 'animate-spin' : ''}`}
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+      strokeLinecap="round" strokeLinejoin="round"
+    >
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: ReplayTimelineProps) {
-  const [open,          setOpen]          = useState(false)
-  const [replay,        setReplay]        = useState<ReplaySummary | null>(null)
-  const [loading,       setLoading]       = useState(false)
-  const [fetched,       setFetched]       = useState(false)
-  // Tick counter — increments every second while open to keep relative timestamps live
-  const [tick,          setTick]          = useState(0)
-  // Track previous isBookingActive to detect the active→idle transition
-  const prevActiveRef = useRef(isBookingActive)
+  const [open,    setOpen]    = useState(false)
+  const [replay,  setReplay]  = useState<ReplaySummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+  const [tick,    setTick]    = useState(0)
 
-  // ── Core fetch (background-safe: only shows spinner on first load) ──────────
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const prevActiveRef = useRef(isBookingActive)
+  const prevRunKeyRef = useRef(runKey)
+  const prevOpenRef   = useRef(false)
+
+  // ── Core fetch ──────────────────────────────────────────────────────────────
   const fetchReplay = useCallback(async (showSpinner = true) => {
     if (!jobId) return
     if (showSpinner) setLoading(true)
@@ -103,14 +119,14 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
     }
   }, [jobId])
 
-  // ── Fetch on open / runKey change / jobId change ────────────────────────────
+  // ── Fetch on open / runKey / jobId change ───────────────────────────────────
   useEffect(() => {
     if (!open) return
     fetchReplay(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, runKey, jobId])
 
-  // ── Clear stale data when key changes while closed ──────────────────────────
+  // ── Clear stale data while closed ──────────────────────────────────────────
   useEffect(() => {
     if (open) return
     setFetched(false)
@@ -118,7 +134,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runKey, jobId])
 
-  // ── Live polling — 3 s interval while open AND booking is active ────────────
+  // ── Live polling during active run ──────────────────────────────────────────
   useEffect(() => {
     if (!open || !isBookingActive) return
     const id = setInterval(() => fetchReplay(false), LIVE_POLL_MS)
@@ -126,21 +142,47 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isBookingActive])
 
-  // ── Eager terminal fetch — fires the moment booking transitions to idle ──────
-  // Captures the terminal event (success/waitlist/failure) immediately instead
-  // of waiting for the next runKey change or manual re-open.
+  // ── Auto-expand: booking just started (false → true) ───────────────────────
   useEffect(() => {
     const wasActive = prevActiveRef.current
     prevActiveRef.current = isBookingActive
+
+    if (isBookingActive && !wasActive) {
+      // Run just kicked off — open the panel so the user sees live events
+      setOpen(true)
+      return
+    }
+
     if (wasActive && !isBookingActive && open) {
-      // Small delay so the server has time to write finishRun to disk
+      // Run just finished — eager fetch to capture the terminal event
       const id = setTimeout(() => fetchReplay(false), 600)
       return () => clearTimeout(id)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBookingActive])
 
-  // ── Relative-timestamp tick — every 1 s while open ─────────────────────────
+  // ── Auto-expand: new run finished (runKey changed to a new non-null value) ──
+  useEffect(() => {
+    const prev = prevRunKeyRef.current
+    prevRunKeyRef.current = runKey
+    // Only auto-expand when a *completed* run arrives (prev existed, key changed)
+    if (runKey && runKey !== prev && prev !== undefined) {
+      setOpen(true)
+    }
+  }, [runKey])
+
+  // ── Scroll into view whenever the panel transitions closed → open ───────────
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      // rAF so the DOM has painted before we measure scroll position
+      requestAnimationFrame(() => {
+        containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
+    }
+    prevOpenRef.current = open
+  }, [open])
+
+  // ── Timestamp tick — 1 s while open ────────────────────────────────────────
   useEffect(() => {
     if (!open) return
     const id = setInterval(() => setTick(t => t + 1), 1_000)
@@ -152,7 +194,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
   const outcome = replay ? OUTCOME_LABEL[replay.outcome] ?? OUTCOME_LABEL.unknown : null
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-divider bg-background">
+    <div ref={containerRef} className="rounded-2xl overflow-hidden border border-divider bg-background">
 
       {/* ── Header toggle ────────────────────────────────────────────────── */}
       <button
@@ -162,7 +204,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
         <div className="flex items-center gap-2">
           <span className="text-[13px] font-medium text-text-secondary">Last booking run</span>
 
-          {/* Live-polling pulse — visible when a booking is in flight */}
+          {/* Live pulse */}
           {isBookingActive && (
             <span className="flex items-center gap-1 text-[11px] text-accent-blue font-medium">
               <span className="relative flex h-2 w-2">
@@ -173,14 +215,14 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </span>
           )}
 
-          {/* Outcome badge — shown when idle and data exists */}
+          {/* Outcome badge */}
           {outcome && !isBookingActive && !loading && (
             <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${TONE_TEXT[outcome.tone]} ${TONE_BG[outcome.tone]}`}>
               {outcome.text}
             </span>
           )}
 
-          {/* Spinner — only during initial load */}
+          {/* Initial-load spinner */}
           {loading && (
             <svg className="animate-spin h-3 w-3 text-text-muted" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -190,7 +232,6 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Capture time — shown when collapsed and idle */}
           {!open && !isBookingActive && replay?.capturedAt && (
             <span className="text-[11px] text-text-muted tabular-nums">
               {absTime(replay.capturedAt)}
@@ -202,11 +243,11 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
         </div>
       </button>
 
-      {/* ── Timeline body ─────────────────────────────────────────────────── */}
+      {/* ── Body ─────────────────────────────────────────────────────────── */}
       {open && (
         <div className="border-t border-divider">
 
-          {/* In-progress placeholder — shown while booking is active and no events yet */}
+          {/* In-progress: booking active, no events captured yet */}
           {isBookingActive && fetched && (!replay || replay.events.length === 0) && (
             <div className="px-4 py-4 flex items-center gap-2.5">
               <svg className="animate-spin h-3.5 w-3.5 text-accent-blue flex-shrink-0" viewBox="0 0 24 24" fill="none">
@@ -217,7 +258,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Empty state — idle, no data */}
+          {/* Empty: idle, nothing recorded yet */}
           {!isBookingActive && fetched && !replay && (
             <div className="px-4 py-5 text-center">
               <p className="text-[13px] text-text-muted">No run recorded yet</p>
@@ -230,7 +271,6 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
           {/* Event list */}
           {replay && replay.events.length > 0 && (
             <div className="relative">
-              {/* Vertical connector line */}
               <div
                 className="absolute left-[27px] top-0 bottom-0 w-px bg-divider"
                 aria-hidden="true"
@@ -251,7 +291,6 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                       !isLast    ? 'border-b border-divider/50' : '',
                     ].filter(Boolean).join(' ')}
                   >
-                    {/* Icon dot */}
                     <div className="relative z-10 flex-shrink-0 mt-0.5">
                       <span
                         className={`flex items-center justify-center w-7 h-7 rounded-full text-[13px]
@@ -261,7 +300,6 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                       </span>
                     </div>
 
-                    {/* Text */}
                     <div className="flex-1 min-w-0 pt-0.5">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className={`text-[13px] font-medium leading-snug ${isTerminal ? TONE_TEXT[tone] : 'text-text-primary'}`}>
@@ -281,7 +319,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
                 )
               })}
 
-              {/* Trailing live indicator — shown after all events while still booking */}
+              {/* Trailing live indicator */}
               {isBookingActive && (
                 <div className="relative flex items-center gap-3 px-4 py-2.5">
                   <div className="relative z-10 flex-shrink-0">
@@ -298,15 +336,31 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
             </div>
           )}
 
-          {/* Footer — run metadata (only when idle and data exists) */}
-          {!isBookingActive && replay && (
+          {/* Footer — metadata + manual refresh (idle only) */}
+          {!isBookingActive && fetched && (
             <div className="flex items-center justify-between px-4 py-2.5 border-t border-divider bg-surface/50">
               <span className="text-[11px] text-text-muted">
-                {replay.events.length} event{replay.events.length !== 1 ? 's' : ''}
+                {replay
+                  ? `${replay.events.length} event${replay.events.length !== 1 ? 's' : ''}`
+                  : 'No data'}
               </span>
-              <span className="text-[11px] text-text-muted tabular-nums">
-                {absTime(replay.capturedAt)}
-              </span>
+
+              <div className="flex items-center gap-3">
+                {replay?.capturedAt && (
+                  <span className="text-[11px] text-text-muted tabular-nums">
+                    {absTime(replay.capturedAt)}
+                  </span>
+                )}
+                {/* Manual refresh */}
+                <button
+                  onClick={e => { e.stopPropagation(); fetchReplay(true) }}
+                  disabled={loading}
+                  title="Refresh"
+                  className="text-text-muted active:opacity-50 disabled:opacity-30 transition-opacity"
+                >
+                  <RefreshIcon spinning={loading} />
+                </button>
+              </div>
             </div>
           )}
         </div>
