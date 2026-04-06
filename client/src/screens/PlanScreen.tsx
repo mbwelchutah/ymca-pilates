@@ -281,7 +281,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             if (sp === 'countdown') {
               return (
                 <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
                   <span className="text-[12px] text-text-secondary font-medium">
                     {'Firing in '}
                     <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>

@@ -1193,7 +1193,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="bg-accent-amber/10 rounded-xl px-4 py-3">
               <div className="flex items-center gap-2.5 mb-1">
                 <StatusDot color="amber" />
-                <span className="text-[17px] font-semibold text-accent-amber">Armed — opening in</span>
+                <span className="text-[17px] font-semibold text-accent-amber">Opening in</span>
               </div>
               <div className="ml-[22px]">
                 <span className="text-[36px] font-bold text-accent-amber tabular-nums leading-none tracking-tighter">
@@ -1303,7 +1303,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             if (sp === 'countdown') {
               return (
                 <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Firing in '}
                     <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>

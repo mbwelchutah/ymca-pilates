@@ -98,7 +98,7 @@ export const SNIPER_PHASE_INFO: Record<SniperPhase, SniperPhaseInfo> = {
     label:       'Countdown',
     description: 'Window opening soon — standing by',
     dotColor:    'green',
-    pulse:       true,
+    pulse:       false,
   },
   firing: {
     label:       'Firing now',

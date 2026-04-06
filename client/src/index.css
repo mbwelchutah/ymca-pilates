@@ -52,7 +52,7 @@
 
 @layer utilities {
   .animate-sniper-phase {
-    animation: sniper-phase-in 0.2s ease-out both;
+    animation: sniper-phase-in 0.35s ease-out both;
   }
 
   .safe-top {
