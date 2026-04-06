@@ -19,7 +19,7 @@ import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence
 import type { ConfidenceLabel } from '../lib/confidence'
 import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib/sniperArmed'
 import type { ArmedModel } from '../lib/sniperArmed'
-import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
+import { deriveSniperPhase } from '../lib/sniperPhase'
 
 interface NowScreenProps {
   appState: AppState
@@ -1219,9 +1219,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* ── Sniper Status Bar — Stage 2 ────────────────────────────────── */}
-          {/* Single-line phase indicator beneath the timer.                    */}
-          {/* Suppressed when the main banner already owns the full state.       */}
+          {/* ── Sniper Timeline Strip — 5-segment progress bar ───────────── */}
+          {/* Replaces the single-dot status bar. Shown for all phases        */}
+          {/* including firing/confirming (full bar reinforces completion).   */}
           {job && !isBooked && !isInactive && phase !== 'late' && (() => {
             const sp = deriveSniperPhase({
               armedState:    sniperArmed?.state ?? null,
@@ -1229,101 +1229,49 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               execPhase:     execPhase ?? null,
               bookingActive: bgReadiness?.armed?.state === 'booking',
             })
-            // Don't duplicate the main banner's firing/confirming messages
-            if (sp === 'firing' && phase === 'sniper') return null
-            if (sp === 'confirming' && execPhase === 'confirming') return null
-            const info = SNIPER_PHASE_INFO[sp]
 
-            // ── Stage 5: Monitoring progress signals ────────────────────────────
-            // monitoring: show which of the three signals are already confirmed
-            // so the user can see partial progress rather than a static label.
-            if (sp === 'monitoring') {
-              const bgRdy   = isReadinessForSelectedJob ? bgReadiness : null
-              const sessOk  = bgRdy?.session   === 'ready'
-              const classOk = bgRdy?.discovery === 'found'
-              const modalOk = bgRdy?.modal      === 'reachable'
-              const anyOk   = sessOk || classOk || modalOk
-
-              const sig = (ok: boolean, label: string) => ok
-                ? <span key={label} className="text-accent-green">{label} ✓</span>
-                : <span key={label} className="text-text-muted/70">{label} —</span>
-
-              return (
-                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
-                  {anyOk ? (
-                    <span className="text-[13px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
-                      <span>Monitoring</span>
-                      <span className="text-text-muted/40">·</span>
-                      {sig(sessOk, 'Session')}
-                      <span className="text-text-muted/40">·</span>
-                      {sig(classOk, 'Class')}
-                      <span className="text-text-muted/40">·</span>
-                      {sig(modalOk, 'Modal')}
-                    </span>
-                  ) : (
-                    <span className="text-[13px] text-text-secondary font-medium">Monitoring</span>
-                  )}
-                </div>
-              )
+            // Phase → fill count, filled-segment colour, fire animation flag
+            const STRIP: Record<SniperPhase, { filled: number; color: string; fireAnim: boolean }> = {
+              monitoring: { filled: 1, color: 'bg-text-muted/50', fireAnim: false },
+              locked:     { filled: 2, color: 'bg-accent-amber',  fireAnim: false },
+              armed:      { filled: 3, color: 'bg-accent-green',  fireAnim: false },
+              countdown:  { filled: 4, color: 'bg-accent-green',  fireAnim: false },
+              firing:     { filled: 5, color: 'bg-accent-green',  fireAnim: true  },
+              confirming: { filled: 5, color: 'bg-accent-blue',   fireAnim: true  },
             }
+            const { filled, color, fireAnim } = STRIP[sp]
 
-            // ── Stage 4: Target Lock Indicator ──────────────────────────────────
-            // locked: class identified — show exact target in amber
-            if (sp === 'locked') {
-              return (
-                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
-                  <span className="text-[13px] text-text-secondary font-medium">
-                    {'Locked on '}
-                    <span className="text-accent-amber font-semibold">{job.class_title}</span>
-                  </span>
+            return (
+              <div key={sp} className="mt-2 flex items-center gap-3 animate-sniper-phase">
+                {/* 5 segment dots */}
+                <div className="flex items-center gap-1.5">
+                  {[0, 1, 2, 3, 4].map(i => {
+                    const isFilled   = i < filled
+                    // Countdown: the 4th dot (index 3) is the active frontier —
+                    // render it slightly larger to signal it's the leading edge.
+                    const isFrontier = sp === 'countdown' && i === 3
+                    // Fire moment: 5th dot (index 4) gets the scale-pop animation.
+                    const isFireDot  = fireAnim && i === 4
+                    return (
+                      <span
+                        key={i}
+                        className={[
+                          'rounded-full flex-shrink-0',
+                          isFrontier ? 'w-2.5 h-2.5' : 'w-2 h-2',
+                          isFilled ? color : 'bg-divider',
+                          isFireDot ? 'animate-sniper-fire' : '',
+                        ].filter(Boolean).join(' ')}
+                      />
+                    )
+                  })}
                 </div>
-              )
-            }
-
-            // armed: all three signals confirmed — show all-green checklist
-            if (sp === 'armed') {
-              return (
-                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
-                  <span className="text-[13px] text-text-secondary font-medium">
-                    {'Armed · '}
-                    <span className="text-accent-green">Class</span>
-                    {' · '}
-                    <span className="text-accent-green">Session</span>
-                    {' · '}
-                    <span className="text-accent-green">Modal</span>
-                  </span>
-                </div>
-              )
-            }
-
-            // ── Stage 3: Countdown — stronger emphasis when window is near ──────
-            if (sp === 'countdown') {
-              return (
-                <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
+                {/* Countdown phase: show "Firing in X" text inline */}
+                {sp === 'countdown' && countdown && (
                   <span className="text-[13px] text-text-secondary font-medium">
                     {'Firing in '}
-                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
+                    <span className="text-accent-green font-semibold tabular-nums">{countdown}</span>
                   </span>
-                </div>
-              )
-            }
-
-            // ── All other phases — calm single-line bar ──────────────────────────
-            const dotStyle = info.pulse ? 'animate-pulse' : ''
-            const dotColor: Record<typeof info.dotColor, string> = {
-              green: 'bg-accent-green',
-              amber: 'bg-accent-amber',
-              gray:  'bg-text-muted/50',
-              blue:  'bg-accent-blue',
-            }
-            return (
-              <div key={sp} className="mt-2 flex items-center gap-2 animate-sniper-phase">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${dotStyle}`} />
-                <span className="text-[13px] text-text-secondary font-medium">{info.label}</span>
+                )}
               </div>
             )
           })()}
