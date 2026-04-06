@@ -36,9 +36,11 @@ const { loadState }        = require('../bot/sniper-readiness');
 const { loadStatus }       = require('../bot/session-check');
 const { isLocked }             = require('../bot/auth-lock');
 const { refreshReadiness }     = require('../bot/readiness-state');
-const { computeExecutionTiming } = require('./execution-timing');
+const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('./execution-timing');
 const { classifyFailure, computeRetry } = require('./retry-strategy');
 const { setEscalation, clearEscalation } = require('./escalation');
+// Stage 10F — Learned timing adjustments.
+const { recordObservation, getLearnedOffsets } = require('./timing-learner');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -172,8 +174,15 @@ async function runBurstCheck(dbJob) {
   }
 
   // ── Window check ───────────────────────────────────────────────────────────
+  // Stage 10F — apply any learned timing adjustments before computing phase.
+  const burstLearned = getLearnedOffsets(dbJob.id, { WARMUP_OFFSET_MS, ARMED_OFFSET_MS });
   let execTiming;
-  try { execTiming = computeExecutionTiming(dbJob); } catch (_) { return; }
+  try {
+    execTiming = computeExecutionTiming(dbJob, {
+      warmupOffsetOverrideMs: burstLearned?.adjustedWarmupOffsetMs ?? null,
+      armedOffsetOverrideMs:  burstLearned?.adjustedArmedOffsetMs  ?? null,
+    });
+  } catch (_) { return; }
 
   const opensAtMs    = new Date(execTiming.opensAt).getTime();
   const pastBurstEnd = Date.now() > opensAtMs + BURST_WINDOW_AFTER_MS;
@@ -233,6 +242,16 @@ async function runBurstCheck(dbJob) {
       nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
       // Stage 10D — clear any pending escalation on success.
       clearEscalation(dbJob.id);
+      // Stage 10F — record when the action became available relative to opensAt.
+      // This observation feeds the timing learner so future armed/warmup windows
+      // can be adjusted toward the actual open moment.
+      if (execTiming?.opensAt) {
+        recordObservation(dbJob.id, {
+          expectedOpensAtMs: new Date(execTiming.opensAt).getTime(),
+          observedReadyAtMs: Date.now(),
+          classTitle:        dbJob.class_title ?? null,
+        });
+      }
     } else {
       // Not available yet — schedule next burst if within limits.
       const decision = computeRetry({
@@ -306,8 +325,15 @@ async function runPreflightLoop({ isActive = false } = {}) {
   if (!running && !isLocked()) {
     for (const dbJob of jobs) {
       if (burstTimers[dbJob.id]) continue; // burst already active
+      // Stage 10F — apply learned offsets so burst activates at the adjusted phase boundary.
+      const scanLearned = getLearnedOffsets(dbJob.id, { WARMUP_OFFSET_MS, ARMED_OFFSET_MS });
       let et;
-      try { et = computeExecutionTiming(dbJob); } catch (_) { continue; }
+      try {
+        et = computeExecutionTiming(dbJob, {
+          warmupOffsetOverrideMs: scanLearned?.adjustedWarmupOffsetMs ?? null,
+          armedOffsetOverrideMs:  scanLearned?.adjustedArmedOffsetMs  ?? null,
+        });
+      } catch (_) { continue; }
       if (et.phase === 'warmup' || et.phase === 'armed') {
         console.log(
           `[preflight-loop] burst:activate — Job #${dbJob.id} ` +

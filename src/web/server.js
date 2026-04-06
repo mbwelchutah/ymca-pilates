@@ -4741,8 +4741,10 @@ const server = http.createServer((req, res) => {
     // Stage 10D — Escalation record appended when click_failed has fired.
     const { loadReadiness }          = require('../bot/readiness-state');
     const { computeArmedState }      = require('../bot/armed-state');
-    const { computeExecutionTiming } = require('../scheduler/execution-timing');
+    const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('../scheduler/execution-timing');
     const { loadEscalations }        = require('../scheduler/escalation');
+    // Stage 10F — Learned timing adjustments.
+    const { getLearnedOffsets, loadLearnerSummary } = require('../scheduler/timing-learner');
 
     const readiness = loadReadiness();
 
@@ -4762,15 +4764,27 @@ const server = http.createServer((req, res) => {
     });
 
     // Stage 10A: compute execution timing fresh (never stale — derived from clock + job).
+    // Stage 10F: apply learned timing adjustments when sufficient observations exist.
     let executionTiming = null;
+    let learnedTiming   = null;
     if (job) {
       try {
+        // Stage 10F — look up per-job learned offsets (null < MIN_OBS observations).
+        const learned = getLearnedOffsets(job.id, { WARMUP_OFFSET_MS, ARMED_OFFSET_MS });
+        if (learned) {
+          learnedTiming = {
+            learnedOffsetMs:      learned.learnedOffsetMs,
+            adjustedArmedMs:      learned.adjustedArmedOffsetMs,
+            adjustedWarmupMs:     learned.adjustedWarmupOffsetMs,
+            observationCount:     learned.observationCount,
+          };
+        }
         executionTiming = computeExecutionTiming(job, {
           // Stage 10E — isConfirming: true while a booking run is active after opensAt.
-          // The timing function gates on now >= opensAt, so passing jobState.active
-          // pre-window has no effect; it only promotes the phase to 'confirming' once
-          // the window has opened and a live attempt is in flight.
           isConfirming: jobState.active,
+          // Stage 10F — apply learned offsets when available (null = use defaults).
+          warmupOffsetOverrideMs: learned?.adjustedWarmupOffsetMs ?? null,
+          armedOffsetOverrideMs:  learned?.adjustedArmedOffsetMs  ?? null,
         });
       } catch (_) { /* non-fatal — job shape may be incomplete */ }
     }
@@ -4783,7 +4797,7 @@ const server = http.createServer((req, res) => {
       if (jobId != null) escalation = allEscalations[String(jobId)] ?? null;
     } catch (_) { /* non-fatal */ }
 
-    json({ ...(readiness || {}), armed, executionTiming, escalation });
+    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, escalation });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
