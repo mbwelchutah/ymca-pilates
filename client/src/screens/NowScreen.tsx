@@ -683,6 +683,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Live relative label — auto-refreshes every 30 s
   const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
 
+  // Stage 5: annotate whether the last check was autonomous (background loop)
+  // or user-initiated (manual preflight).  "Auto-checked" makes the autonomy
+  // of the system legible at a glance.
+  const lastCheckedText = lastCheckedLabel
+    ? (bgReadiness?.source === 'background' ? `Auto-checked ${lastCheckedLabel}` : lastCheckedLabel)
+    : null
+
   // Guard: only treat bgReadiness data as valid for the currently selected job.
   // bgReadiness.jobId === null means legacy / not yet tagged — treat as applicable.
   const isReadinessForSelectedJob =
@@ -1217,31 +1224,43 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {job && (
             <div className="mt-3 pt-3 border-t border-divider">
 
-              {/* Step 4 — Single calm trust line: armed · confidence · last checked */}
-              {!preflightRunning && isReadinessForSelectedJob && (bgReadiness?.armed?.state || lastCheckedLabel) && (
-                <div className="mb-2 flex items-center justify-center gap-1.5">
-                  {/* Dot: pulsing if auto-check running, otherwise armed-state colour */}
-                  {!appState.schedulerPaused && lastCheckedLabel
-                    ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
-                    : bgReadiness?.armed?.state
-                      ? <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
-                      : null
-                  }
-                  <span className="text-[12px] text-text-secondary">
-                    {bgReadiness?.armed?.state && (
-                      <span className="font-medium">
-                        {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
-                      </span>
-                    )}
-                    {confidenceLabel != null && (
-                      <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
-                    )}
-                    {lastCheckedLabel && (
-                      <span className="text-text-muted font-normal"> · {lastCheckedLabel}</span>
-                    )}
-                  </span>
-                </div>
-              )}
+              {/* Stage 5 — Trust line: armed · confidence · auto-check status */}
+              {(() => {
+                const watchingActive = bgReadiness?.armed?.watchingActive ?? false
+                const autoRetry      = bgReadiness?.armed?.autoRetry      ?? false
+                // Show if: scheduler is watching, there's an armed state, or we have a last-checked time.
+                // This surfaces auto-check status even before the first check has run.
+                const shouldShow = !preflightRunning && isReadinessForSelectedJob &&
+                  (bgReadiness?.armed?.state || lastCheckedText || (watchingActive && autoRetry))
+                if (!shouldShow) return null
+                return (
+                  <div className="mb-2 flex items-center justify-center gap-1.5">
+                    {/* Dot: pulsing green when auto-checking, otherwise armed-state colour */}
+                    {watchingActive && autoRetry && lastCheckedText
+                      ? <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                      : bgReadiness?.armed?.state
+                        ? <StatusDot color={armedStateDotColor(bgReadiness.armed.state)} size="sm" />
+                        : <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                    }
+                    <span className="text-[12px] text-text-secondary">
+                      {bgReadiness?.armed?.state && (
+                        <span className="font-medium">
+                          {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
+                        </span>
+                      )}
+                      {confidenceLabel != null && (
+                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                      )}
+                      {lastCheckedText
+                        ? <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                        : (watchingActive && autoRetry)
+                          ? <span className="text-text-muted font-normal"> · Auto-checking</span>
+                          : null
+                      }
+                    </span>
+                  </div>
+                )
+              })()}
 
               {/* ── Primary result — Stage 1 state machine, Stage 2 hysteresis ── */}
               {job && (() => {
