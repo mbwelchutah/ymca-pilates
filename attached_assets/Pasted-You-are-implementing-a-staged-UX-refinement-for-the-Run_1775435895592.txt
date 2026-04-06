@@ -1,0 +1,282 @@
+You are implementing a staged UX refinement for the Run Check experience on the Now screen of my YMCA Booker app.
+
+PRIMARY GOAL
+
+Make Run Check feel:
+- continuous
+- calm
+- trustworthy
+- informative
+
+Right now the logic works, but the experience feels too abrupt:
+- it jumps from “Checking…” to a red failure-like card
+- the wording feels harsher than the situation
+- the user cannot see progress unfolding step by step
+
+This should be improved without redesigning the whole app.
+
+IMPORTANT PRODUCT DIRECTION
+
+Most Run Check outcomes are not true failures.
+Very often the app is working correctly, but registration is simply not open yet.
+
+The UI should communicate:
+- progress while checking
+- the difference between “working but not open” and “actually broken”
+- confidence and reassurance
+
+STRICT RULES
+
+- Keep the app runnable after every stage
+- Do not redesign the whole Now screen
+- Do not remove existing logic
+- Do not remove detailed diagnostics from Tools
+- Do not add raw logs to Now
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+================================
+STAGE 1 — STEP-BY-STEP CHECK PROGRESS
+================================
+
+Goal:
+Replace the single generic “Checking…” state with a sequence of visible check steps.
+
+Tasks:
+1. During Run Check, show meaningful progress text instead of just “Checking…”
+2. Use a step sequence such as:
+   - Checking session…
+   - Checking schedule…
+   - Finding class…
+   - Opening booking…
+   - Checking availability…
+3. Update the Now screen as each step runs
+4. Keep the UI calm and simple
+5. Do not add debug detail or raw technical traces
+
+Important:
+The user should feel that the system is actively working through the check, not just hanging.
+
+After Stage 1:
+Stop and summarize:
+- what check steps are shown
+- where they appear
+- how they update during a run
+
+================================
+STAGE 2 — PERSIST STEP RESULTS VISUALLY
+================================
+
+Goal:
+Show the outcome of each major step after the check completes.
+
+Tasks:
+1. When Run Check completes, keep simple user-facing results for major steps such as:
+   - Session: Ready
+   - Class: Found
+   - Modal: Reachable
+   - Action: Not open yet / Ready / Waitlist only
+2. Use concise human-readable wording
+3. Keep this in the current compact readiness/details area if possible
+4. Do not turn the screen into a debug dashboard
+
+Important:
+The user should be able to see that the system succeeded at several steps even if the final action is not yet available.
+
+After Stage 2:
+Stop and summarize:
+- what step results persist after the run
+- where they appear
+- how this differs from the old binary result
+
+================================
+STAGE 3 — SOFTEN HARSH WORDING
+================================
+
+Goal:
+Replace unnecessarily harsh or failure-like wording with calmer, more accurate language.
+
+Tasks:
+1. Replace harsh phrases such as:
+   - “Action blocked”
+   - “Booking action unavailable”
+   - “No booking button visible”
+2. Use calmer, more accurate alternatives such as:
+   - “Not open yet”
+   - “Booking not available yet”
+   - “Registration hasn’t opened yet”
+3. Keep real error language only for real failures:
+   - login failure
+   - session expired
+   - class not found
+   - unexpected modal failure
+4. Make sure the wording matches the actual state
+
+Important:
+If the system is working and the class simply is not open yet, the message should feel expected, not alarming.
+
+After Stage 3:
+Stop and summarize:
+- what phrases were changed
+- what the new user-facing wording is
+- how true failures are still distinguished
+
+================================
+STAGE 4 — FIX COLOR SEMANTICS
+================================
+
+Goal:
+Use color to reflect actual severity more accurately.
+
+Tasks:
+1. Reserve red for true problems such as:
+   - login required
+   - session expired
+   - class not found
+   - unexpected failure
+2. Use a more neutral or warning treatment for:
+   - not open yet
+   - waitlist only
+   - action not available yet
+3. Keep green for successful/ready states
+4. Make sure the main result card visually matches the meaning of the message
+
+Important:
+“Not open yet” should not look like a system failure.
+
+After Stage 4:
+Stop and summarize:
+- how color meaning changed
+- which states are red vs neutral vs green
+- how the result card now feels less harsh
+
+================================
+STAGE 5 — ADD REASSURANCE LINE
+================================
+
+Goal:
+Reduce anxiety by explicitly telling the user when things are working.
+
+Tasks:
+1. For cases where the check is successful but registration is not open yet, add a short reassurance line such as:
+   - “Everything is working — just waiting for the window to open”
+2. Keep this subtle and secondary
+3. Do not add extra large banners or clutter
+4. Show it only when appropriate
+
+Important:
+This should increase trust without making the interface wordy.
+
+After Stage 5:
+Stop and summarize:
+- what reassurance text was added
+- when it appears
+- how it helps distinguish “working” from “broken”
+
+================================
+STAGE 6 — ADD MINIMUM STEP VISIBILITY
+================================
+
+Goal:
+Prevent the checking flow from feeling too abrupt or flickery.
+
+Tasks:
+1. Ensure each check step is visible briefly during Run Check
+2. Prevent the UI from jumping too fast from:
+   - Checking…
+   directly to
+   - final result
+3. Keep this lightweight:
+   - do not add artificial long delays
+   - do not slow the system excessively
+4. Aim for a smoother, more intentional-feeling sequence
+
+Important:
+The user should perceive progress, not flashes.
+
+After Stage 6:
+Stop and summarize:
+- how step timing was adjusted
+- how flicker was reduced
+- whether the check still feels fast
+
+================================
+STAGE 7 — UNIFY FINAL RESULT CARD
+================================
+
+Goal:
+Make the final result card feel like a calm summary, not a harsh alert.
+
+Tasks:
+1. Refine the main result card so it summarizes the Run Check outcome clearly
+2. Example outcomes:
+   - Ready to book
+   - Not open yet
+   - Waitlist only
+   - Login required
+   - Class not found
+3. Keep the card concise
+4. Let step-by-step results support the main card, rather than competing with it
+5. Avoid stacked competing alert cards
+
+Important:
+There should be one main truth, supported by simpler step results.
+
+After Stage 7:
+Stop and summarize:
+- what the final result card now communicates
+- how it relates to the step results
+- how the overall experience is calmer
+
+================================
+STAGE 8 — FINAL POLISH
+================================
+
+Goal:
+Make the Run Check experience feel intentional and polished.
+
+Tasks:
+1. Review the full flow:
+   - tap Run Check
+   - see step-by-step progress
+   - view final result
+   - understand whether the system is ready or simply waiting
+2. Clean up spacing and hierarchy where needed
+3. Remove any remaining redundant or conflicting messaging
+4. Keep the Now screen clean and operational
+
+Important:
+Do not redesign unrelated parts of the app.
+This is a polish pass for trust and usability.
+
+After Stage 8:
+Stop and summarize:
+- what was cleaned up
+- how the final Run Check experience now feels
+- what remains for future refinement
+
+FINAL RULES
+
+Do not:
+- turn the Now screen into a debug terminal
+- use red for normal “not open yet” states
+- add excessive new UI components
+- break the underlying check logic
+
+Do:
+- make the experience continuous
+- make the language calmer
+- help the user feel the system is working
+- keep detailed evidence in Tools
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

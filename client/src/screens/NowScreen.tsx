@@ -1182,6 +1182,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               const classDot:   DotColor = classReady ? 'green' : classFailed ? 'red' : 'gray'
               const classValue = classReady ? 'Found' : classFailed ? 'Not found' : classTested ? 'Unknown' : 'Not checked'
 
+              // Modal milestone (Stage 2 — persist step results)
+              const modalState  = bundle?.modal
+              const modalReady  = modalState === 'MODAL_READY'
+              const modalFailed = modalState === 'MODAL_BLOCKED' || modalState === 'MODAL_LOGIN_REQUIRED'
+              const modalTested = modalReady || modalFailed
+              const modalDot: DotColor = modalReady ? 'green' : modalFailed ? 'red' : 'gray'
+              const modalValue = modalReady
+                ? 'Reachable'
+                : modalState === 'MODAL_LOGIN_REQUIRED'
+                ? 'Login req.'
+                : modalFailed
+                ? 'Failed'
+                : modalTested ? 'Unknown' : 'Not checked'
+
               // Action milestone
               const actionReady   = bundle?.action === 'ACTION_READY'
               const actionBlocked = bundle?.action === 'ACTION_BLOCKED'
@@ -1194,6 +1208,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               const milestones = [
                 { label: 'Session', dot: sessDot,   value: sessValue   },
                 { label: 'Class',   dot: classDot,  value: classValue  },
+                { label: 'Modal',   dot: modalDot,  value: modalValue  },
                 { label: 'Action',  dot: actionDot, value: actionValue },
               ]
 
