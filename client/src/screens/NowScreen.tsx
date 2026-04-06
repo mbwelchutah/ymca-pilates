@@ -1278,13 +1278,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           })()}
 
           {/* ── Confidence Ring ───────────────────────────────────────────────────
-               Stage 1: circular SVG ring, placed between sniper strip and actions.
-               Shown whenever there is an active, non-booked, non-inactive job.      */}
+               Stage 2: score→fill mapping + smooth CSS transition.
+               Fill formula: frac = score / 100  (continuous, 0–1 range).
+               Thresholds used for colour/label only — the arc itself is linear.
+               Arc animates via stroke-dashoffset CSS transition (0.6s ease).
+               Stage 4 will wire confidenceScore; placeholder used until then. */}
           {job && !isBooked && !isInactive && (() => {
             const R    = 16
             const circ = 2 * Math.PI * R   // ≈ 100.53
-            const frac = 0.6               // Stage 1 placeholder — wired in Stage 4
+
+            // Stage 4 will replace this with: confidenceScore != null ? confidenceScore / 100 : 0
+            const score = 60               // Stage 2 placeholder
+            const frac  = Math.max(0, Math.min(1, score / 100))
             const offset = circ * (1 - frac)
+
             return (
               <div className="mt-3 flex justify-center">
                 <svg
@@ -1300,7 +1307,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     strokeWidth="3"
                     className="text-divider"
                   />
-                  {/* Arc */}
+                  {/* Arc — stroke-dashoffset transition produces smooth fill changes */}
                   <circle
                     cx="20" cy="20" r={R}
                     fill="none"
@@ -1310,6 +1317,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     strokeDasharray={circ}
                     strokeDashoffset={offset}
                     strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.4s ease' }}
                   />
                 </svg>
               </div>
