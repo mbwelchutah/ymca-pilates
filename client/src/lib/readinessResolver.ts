@@ -219,7 +219,7 @@ export function computeCompositeReadiness(
       status: 'COMPOSITE_ACTION_BLOCKED',
       label:  'Not open yet',
       color:  'amber',
-      detail: 'Registration hasn\'t opened — everything else is working',
+      detail: 'Everything is working — just waiting for the window to open',
     }
   }
 

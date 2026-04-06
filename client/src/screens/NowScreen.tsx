@@ -874,7 +874,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       case 'COMPOSITE_WAITLIST': {
         const match = discoveryDetail?.matched
         const matchStr = match ? ` · ${match.length > 36 ? match.slice(0, 36) + '…' : match}` : ''
-        return `Class is full — waitlist is available${matchStr} · Session and class are ready`
+        return `Everything is working — class is full, waitlist is open${matchStr}`
       }
 
       case 'COMPOSITE_LOGIN_REQUIRED':
