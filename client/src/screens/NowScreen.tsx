@@ -325,6 +325,22 @@ function derivePrimaryResult(opts: {
   }
 }
 
+// ── Stage 2: State hysteresis — allowed transition table ──────────────────────
+// Prevents confusing downgrades caused by transient background signals.
+// The stable displayed state can only change when a transition is explicitly allowed.
+function isTransitionAllowed(from: TopLevelState, to: TopLevelState, severity: ResultSeverity): boolean {
+  if (from === to) return true               // same state: always accept (detail may update)
+  if (to === 'booking') return true          // active booking overrides anything
+  if (to === 'success') return true          // confirmed booking always wins
+  if (to === 'issue' && severity === 'error') return true  // hard blockers always surface
+  if (to === 'issue' && from === 'waiting') return true    // first issue from idle is fine
+  if (to === 'ready' && (from === 'waiting' || from === 'issue')) return true  // promotion
+  if (to === 'waiting' && (from === 'issue' || from === 'success')) return true // resolution
+  // Blocked: ready→waiting (bg noise), booking→waiting (transient retry),
+  //          booking→ready (regression), ready→issue(warning) (premature alarm)
+  return false
+}
+
 // ── Static config ──────────────────────────────────────────────────────────────
 
 const PHASE_CONFIG: Record<Phase, { label: string }> = {
@@ -722,6 +738,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setModalDetail(null)
     setActionDetail(null)
     setPreflightStatus(null)
+    setStableResult(null)  // Stage 2: reset hysteresis on job switch
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
     api.getReadiness().then(setBgReadiness).catch(() => {})
@@ -810,6 +827,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [checkStep,    setCheckStep]    = useState<string | null>(null)
   const [checkElapsed,         setCheckElapsed]         = useState<number>(0)
   const [showReadinessDetails, setShowReadinessDetails] = useState(false)
+  // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
+  const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Time-gated step labels — each activates once the elapsed seconds threshold is crossed.
@@ -960,6 +979,38 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         return composite.detail
     }
   })()
+
+  // ── Stage 2: Compute current result + apply hysteresis ─────────────────────
+  // currentResult is the raw derived value from this render's data.
+  // stableResult is what the card actually displays — transitions are gated.
+  const currentResult: PrimaryResult | null = job ? derivePrimaryResult({
+    isBooked,
+    isInactive,
+    isStaleBooking,
+    job,
+    phase,
+    sessionStatus,
+    sniperRunState,
+    composite,
+    compositeDetail,
+    showComposite,
+    locked: sessionStatus?.locked ?? false,
+    lastPreflightAt,
+    bgArmedState: isReadinessForSelectedJob ? (bgReadiness?.armed?.state ?? null) : null,
+  }) : null
+
+  // Hysteresis effect — runs whenever the derived state or severity changes.
+  // Uses functional setter so it reads the latest stableResult without being
+  // a dependency (avoids infinite loops).
+  useEffect(() => {
+    if (!currentResult) return
+    setStableResult(prev => {
+      if (!prev) return currentResult
+      if (!isTransitionAllowed(prev.state, currentResult.state, currentResult.severity)) return prev
+      return currentResult
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentResult?.state, currentResult?.severity])
 
   if (loading) {
     return (
@@ -1146,23 +1197,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
               )}
 
-              {/* ── Primary result — elevated into trust hierarchy (Step 1) ── */}
+              {/* ── Primary result — Stage 1 state machine, Stage 2 hysteresis ── */}
               {job && (() => {
-                const result = derivePrimaryResult({
-                  isBooked,
-                  isInactive,
-                  isStaleBooking,
-                  job,
-                  phase,
-                  sessionStatus,
-                  sniperRunState,
-                  composite,
-                  compositeDetail,
-                  showComposite,
-                  locked: sessionStatus?.locked ?? false,
-                  lastPreflightAt,
-                  bgArmedState: isReadinessForSelectedJob ? (bgReadiness?.armed?.state ?? null) : null,
-                })
+                const result = stableResult ?? currentResult
+                if (!result) return null
                 const bgClass =
                   result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
                   result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
