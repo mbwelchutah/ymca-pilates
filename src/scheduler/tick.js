@@ -46,9 +46,13 @@ const runningJobs = new Set();
 // Executes one scheduler tick: loads active jobs, filters by phase/cooldown/
 // booked status, and runs eligible ones.
 // Options:
-//   onlyJobId {number|null} — when set, only that job id is considered.
+//   onlyJobId    {number|null} — when set, only that job id is considered.
+//   skipCooldown {boolean}     — Stage 10I: skip per-job cooldown check.
+//     Only used by burst hot-retry attempts where the burst already verified
+//     the action was available and the booking failed transiently.  Never set
+//     for normal scheduler or manual invocations.
 // Returns an array of result objects: { jobId, phase, status, message }.
-async function runTick({ onlyJobId = null } = {}) {
+async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
   const label = onlyJobId ? `job #${onlyJobId} only` : 'all jobs';
   console.log(`\n[${nowLabel()}] --- Scheduler tick (${label}) ---`);
 
@@ -115,7 +119,8 @@ async function runTick({ onlyJobId = null } = {}) {
     // Sniper and late phases get a short 5-min cooldown so the bot can retry quickly
     // after a warmup miss (warmup runs 10 min before the window opens; if it fails because
     // the class isn't listed yet, sniper/late must retry within minutes of opening).
-    if (dbJob.last_run_at) {
+    // Stage 10I: skipCooldown bypasses this check for burst hot-retry attempts.
+    if (!skipCooldown && dbJob.last_run_at) {
       const msSinceRun  = Date.now() - new Date(dbJob.last_run_at).getTime();
       const cooldownFor = (phase === 'sniper' || phase === 'late') ? COOLDOWN_HOT_MS : COOLDOWN_MS;
       if (msSinceRun < cooldownFor) {

@@ -60,6 +60,12 @@ const PREFLIGHT_TIMEOUT_MS   = 90 * 1000;        // max wall-time for one prefli
 const MAX_BURST_RUNS       = 8;              // hard cap on consecutive burst checks
 const BURST_WINDOW_AFTER_MS = 90 * 1000;    // stop bursting 90 s after opensAt
 
+// Stage 10I — Hot-retry constants.
+// After a burst-triggered booking fails transiently (found_not_open_yet / error),
+// schedule up to MAX_HOT_RETRIES rapid re-attempts before giving up.
+const MAX_HOT_RETRIES    = 3;              // max re-attempts after burst-handoff failure
+const HOT_RETRY_DELAY_MS = 5_000;         // 5 s between hot-retry attempts
+
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'preflight-loop-state.json');
 
@@ -261,7 +267,16 @@ async function runBurstCheck(dbJob) {
       // BEFORE this is called so tick.js's runningJobs guard is not blocked.
       // We explicitly do NOT await this — the finally block must release
       // `running` before the booking's browser launch starts.
-      triggerBookingFromBurst(dbJob.id).catch(e =>
+      //
+      // Stage 10I — pass opensAtMs + onRetry so a transient failure at window
+      // open triggers a hot retry within HOT_RETRY_DELAY_MS instead of waiting
+      // for the 5-min tick cooldown.
+      const handoffOpensAtMs = execTiming?.opensAt
+        ? new Date(execTiming.opensAt).getTime()
+        : null;
+      triggerBookingFromBurst(dbJob.id, {
+        onRetry: (status) => scheduleHotRetry(dbJob, handoffOpensAtMs, 1, status),
+      }).catch(e =>
         console.error(`[preflight-loop] burst:handoff-error — Job #${dbJob.id}:`, e.message)
       );
     } else {
@@ -298,6 +313,71 @@ async function runBurstCheck(dbJob) {
   } finally {
     running = false;
   }
+}
+
+// ── Stage 10I — Hot-retry after burst-handoff failure ─────────────────────────
+//
+// When the burst-triggered booking attempt returns a retryable status
+// (found_not_open_yet / error), the bridge invokes this instead of waiting
+// for the 5-min tick cooldown.  Schedules up to MAX_HOT_RETRIES rapid
+// re-attempts (each with skipCooldown=true) within the BURST_WINDOW_AFTER_MS
+// window.  Self-terminates when the window closes, the cap is reached, or
+// a non-retryable outcome is returned.
+
+/**
+ * Schedule the next hot-retry for a burst-triggered booking that just failed.
+ *
+ * @param {object} dbJob        — the raw job row (id, class_title, …)
+ * @param {number|null} opensAtMs — epoch ms of the booking window open time
+ * @param {number} attemptNum   — 1-based attempt counter
+ * @param {string} reason       — the status that triggered this retry
+ */
+function scheduleHotRetry(dbJob, opensAtMs, attemptNum, reason) {
+  if (attemptNum > MAX_HOT_RETRIES) {
+    console.log(
+      `[preflight-loop] hot-retry:cap — Job #${dbJob.id} reached max ` +
+      `${MAX_HOT_RETRIES} hot retries (last reason: "${reason}"); giving up.`
+    );
+    return;
+  }
+
+  if (opensAtMs && Date.now() > opensAtMs + BURST_WINDOW_AFTER_MS) {
+    console.log(
+      `[preflight-loop] hot-retry:expired — Job #${dbJob.id} burst window ` +
+      `closed before attempt ${attemptNum} (reason: "${reason}").`
+    );
+    return;
+  }
+
+  console.log(
+    `[preflight-loop] hot-retry:schedule — Job #${dbJob.id} ` +
+    `attempt ${attemptNum}/${MAX_HOT_RETRIES} after "${reason}" ` +
+    `in ${HOT_RETRY_DELAY_MS / 1000}s.`
+  );
+
+  setTimeout(() => {
+    // Re-check window expiry at fire time (delay may have crossed the boundary).
+    if (opensAtMs && Date.now() > opensAtMs + BURST_WINDOW_AFTER_MS) {
+      console.log(
+        `[preflight-loop] hot-retry:expired — Job #${dbJob.id} burst window ` +
+        `closed at fire time for attempt ${attemptNum}.`
+      );
+      return;
+    }
+
+    // Re-use the bridge with skipCooldown=true so the 5-min tick cooldown is
+    // bypassed.  A new onRetry callback chains the next attempt if needed.
+    triggerBookingFromBurst(dbJob.id, {
+      skipCooldown: true,
+      onRetry: (nextStatus) =>
+        scheduleHotRetry(dbJob, opensAtMs, attemptNum + 1, nextStatus),
+    }).catch(e =>
+      console.error(
+        `[preflight-loop] hot-retry:error — Job #${dbJob.id} attempt ${attemptNum}:`,
+        e.message
+      )
+    );
+  }, HOT_RETRY_DELAY_MS);
 }
 
 // ── Public helpers ────────────────────────────────────────────────────────────

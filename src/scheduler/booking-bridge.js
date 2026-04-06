@@ -1,24 +1,17 @@
 // Stage 10G — Booking bridge
+// Stage 10I — Hot retry on transient failure
 //
 // Thin shared-state module that lets the preflight-loop burst trigger a real
 // booking run (via the same runTick path used by the scheduler) while keeping
 // server.js's jobState flag accurate.
 //
-// The bridge is deliberately minimal:
-//   - server.js calls setBridgeCallbacks() once at start-up, supplying two
-//     functions that read/write its private jobState.
-//   - preflight-loop.js calls triggerBookingFromBurst() when the burst detects
-//     ACTION_READY.  The bridge delegates to runTick (same path as the
-//     scheduler) and wraps the call with jobState signalling.
+// Stage 10G: direct handoff — burst detects ACTION_READY → runTick immediately,
+//   bypassing the up-to-60s scheduler tick delay.
 //
-// Why not just call runTick() directly from the burst?
-//   runTick does NOT update jobState.active.  That flag is maintained by
-//   server.js (originally only for manual /force-run-job requests).
-//   Stage 10E reads isConfirming from jobState.active, so it must be set
-//   whenever any booking run is in flight — including burst-triggered ones.
-//
-// Concurrency: triggerBookingFromBurst() refuses to fire if isJobActive()
-// returns true, so a burst can never double-launch over a running tick.
+// Stage 10I: hot-retry callback — after a transient failure at window open
+//   (found_not_open_yet or error), invoke onRetry() so the caller can schedule
+//   a rapid re-attempt rather than waiting through the 5-min cooldown.
+//   skipCooldown: true is passed on hot-retry invocations.
 //
 // Log prefix: [booking-bridge]
 
@@ -41,6 +34,14 @@ function setBridgeCallbacks({ isActive, setActive }) {
   _setActive = setActive;
 }
 
+// ── Hot-retry helpers ─────────────────────────────────────────────────────────
+
+// Statuses that warrant a hot retry (transient race conditions at window open).
+// 'found_not_open_yet' : burst saw ACTION_READY but booking opened before browser
+//                        finished loading — very common at exact window open.
+// 'error'              : generic transient failure (network, browser crash, etc.)
+const HOT_RETRYABLE = new Set(['found_not_open_yet', 'error']);
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -48,36 +49,51 @@ function setBridgeCallbacks({ isActive, setActive }) {
  * path as the scheduler.  Called by the burst when it detects ACTION_READY.
  *
  * Refuses to fire if a booking is already active (concurrency guard).
- * Returns immediately (fire-and-forget); the Promise is returned for the
- * caller to attach error handlers.
+ * Returns a Promise (fire-and-forget at the call site; caller attaches .catch).
  *
  * @param {number} jobId
- * @returns {Promise<void>}
+ * @param {{
+ *   skipCooldown?: boolean,       Stage 10I — bypass tick cooldown on hot retry
+ *   onRetry?:      (status: string) => void,   Stage 10I — called on retryable failure
+ * }} [opts]
  */
-async function triggerBookingFromBurst(jobId) {
+async function triggerBookingFromBurst(jobId, { skipCooldown = false, onRetry = null } = {}) {
   if (_isActive()) {
     console.log(
       `[booking-bridge] skip — Job #${jobId} booking already active; ` +
-      `burst-to-booking handoff cancelled.`
+      `${skipCooldown ? 'hot-retry' : 'burst-to-booking handoff'} cancelled.`
     );
     return;
   }
 
+  const label = skipCooldown ? 'hot-retry' : 'burst handoff';
   console.log(
-    `[booking-bridge] handoff — Job #${jobId} burst detected ACTION_READY; ` +
-    `firing booking run via tick (bypassing up-to-60s tick delay).`
+    `[booking-bridge] ${label} — Job #${jobId} ` +
+    `${skipCooldown ? 'retrying after transient failure' : 'burst detected ACTION_READY'}; ` +
+    `firing booking run via tick.`
   );
 
   _setActive(true);
   try {
-    const results = await runTick({ onlyJobId: Number(jobId) });
+    const results = await runTick({ onlyJobId: Number(jobId), skipCooldown });
     const r = results.find(x => x.jobId === Number(jobId));
     console.log(
       `[booking-bridge] done — Job #${jobId} tick finished: ` +
       `status=${r?.status ?? 'no-result'} msg="${r?.message ?? ''}".`
     );
+
+    // Stage 10I — invoke hot retry callback on retryable transient failure.
+    if (r && HOT_RETRYABLE.has(r.status) && onRetry) {
+      console.log(
+        `[booking-bridge] hot-retry:trigger — Job #${jobId} ` +
+        `status="${r.status}" is retryable; invoking onRetry callback.`
+      );
+      onRetry(r.status);
+    }
   } catch (err) {
     console.error(`[booking-bridge] error — Job #${jobId}:`, err.message);
+    // Treat caught errors as retryable too if a callback is registered.
+    if (onRetry) onRetry('error');
   } finally {
     _setActive(false);
   }
