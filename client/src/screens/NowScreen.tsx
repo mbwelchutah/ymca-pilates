@@ -318,10 +318,19 @@ function derivePrimaryResult(opts: {
     }
   }
 
-  // 9. Nothing checked yet — idle
+  // 9. Auto-check has run and armed state is persisted on the server —
+  // show "Checked" even when per-stage bundle data is absent (e.g. fresh page load).
+  if (bgArmedState) {
+    const detail = bgArmedState === 'needs_attention'
+      ? 'Auto-check flagged a possible issue — tap Check again for details.'
+      : 'Session is confirmed. Class discovery runs when the booking window opens.'
+    return { label: 'Checked — waiting for window', detail, severity: 'muted' }
+  }
+
+  // 10. Nothing checked yet — idle
   return {
     label:  'Not checked yet',
-    detail: job ? 'Run Check to verify session, class, and booking action.' : 'Select a class in the Plan tab.',
+    detail: job ? 'Run check to verify session, class, and booking action.' : 'Select a class in the Plan tab.',
     severity: 'muted',
   }
 }
