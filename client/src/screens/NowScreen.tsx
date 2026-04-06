@@ -1292,8 +1292,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             const frac  = Math.max(0, Math.min(1, score / 100))
             const offset = circ * (1 - frac)
 
+            // Stage 3: subtle label derived from score bucket
+            const ringLabel = score >= 70 ? 'High' : score >= 40 ? 'Likely' : 'At risk'
+
             return (
-              <div className="mt-3 flex justify-center">
+              <div className="mt-3 flex flex-col items-center gap-1">
                 <svg
                   width="44" height="44" viewBox="0 0 40 40"
                   className="-rotate-90"
@@ -1320,6 +1323,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.4s ease' }}
                   />
                 </svg>
+                {/* Label — small, secondary, reads below the ring */}
+                <span className="text-[11px] text-text-muted tracking-wide">{ringLabel}</span>
               </div>
             )
           })()}
