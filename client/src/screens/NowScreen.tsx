@@ -789,15 +789,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // waitlist_only from action_blocked (both use ACTION_BLOCKED in the bundle).
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
-  const [checkStep,        setCheckStep]        = useState<string | null>(null)
+  const [checkStep,    setCheckStep]    = useState<string | null>(null)
+  const [checkElapsed, setCheckElapsed] = useState<number>(0)
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const CHECK_STEPS = [
-    'Checking session…',
-    'Loading schedule…',
-    'Finding class…',
-    'Opening booking modal…',
-    'Checking availability…',
+  // Time-gated step labels — each activates once the elapsed seconds threshold is crossed.
+  // Thresholds are approximate real-world timings for the Playwright preflight pipeline.
+  const CHECK_STEPS: { label: string; atSec: number }[] = [
+    { label: 'Connecting…',       atSec: 0  },
+    { label: 'Checking login…',   atSec: 4  },
+    { label: 'Loading schedule…', atSec: 11 },
+    { label: 'Finding class…',    atSec: 23 },
+    { label: 'Opening modal…',    atSec: 36 },
   ]
 
   // Auth, Modal, and Discovery details — populated after Check Now; persist for the session.
@@ -838,16 +841,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (!job || preflightRunning || sessionStatus?.locked) return
     setPreflightRunning(true)
 
-    // ── Step progress timer (Stage 1 + 6) ────────────────────────────────────
-    // Cycles through CHECK_STEPS every 600 ms so the user sees meaningful
-    // progress text instead of a static "Checking…". Each step is visible
-    // for at least 600 ms (no flicker). Stays on last step once exhausted.
-    let stepIdx = 0
-    setCheckStep(CHECK_STEPS[0])
+    // ── Step progress timer ───────────────────────────────────────────────────
+    // Ticks every 1 s.  Elapsed count is shown live to the user.
+    // Step label advances only when the elapsed threshold for the next step
+    // is crossed — so each stage is visible for its realistic duration.
+    let elapsed = 0
+    setCheckElapsed(0)
+    setCheckStep(CHECK_STEPS[0].label)
     stepTimerRef.current = setInterval(() => {
-      stepIdx = Math.min(stepIdx + 1, CHECK_STEPS.length - 1)
-      setCheckStep(CHECK_STEPS[stepIdx])
-    }, 600)
+      elapsed += 1
+      setCheckElapsed(elapsed)
+      const current = [...CHECK_STEPS].reverse().find(s => elapsed >= s.atSec)
+      if (current) setCheckStep(current.label)
+    }, 1000)
 
     try {
       const result = await api.runPreflight(job.id)
@@ -866,6 +872,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     finally {
       if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
       setCheckStep(null)
+      setCheckElapsed(0)
       setPreflightRunning(false)
     }
   }
@@ -1169,10 +1176,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     : 'Run Check'}
                 </button>
 
-                {/* Step progress text — shown while preflight is running (Stage 1 + 6) */}
+                {/* Step progress text — shown while preflight is running */}
                 {preflightRunning && checkStep && (
                   <p className="text-[12px] text-text-muted">
                     {checkStep}
+                    <span className="opacity-50"> · {checkElapsed}s</span>
                   </p>
                 )}
               </div>
