@@ -666,6 +666,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
   }, [])
 
+  // Unmount cleanup: clear step timer if user navigates away during a Run Check.
+  useEffect(() => {
+    return () => {
+      if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
+    }
+  }, [])
+
   const handleVerifySession = async () => {
     if (sessionChecking) return
     setSessionChecking(true)
