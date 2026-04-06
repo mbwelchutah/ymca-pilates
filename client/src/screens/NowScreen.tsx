@@ -1124,16 +1124,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {/* Mode selector: Test / Live */}
               <div className="flex items-center bg-surface rounded-xl p-0.5 mb-2">
                 <button
-                  onClick={() => handleDryRun(true)}
-                  disabled={preflightRunning}
-                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
-                    ${appState.dryRun
-                      ? 'bg-card shadow-card text-text-primary'
-                      : 'text-text-muted'}`}
-                >
-                  Test
-                </button>
-                <button
                   onClick={() => handleDryRun(false)}
                   disabled={preflightRunning}
                   className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
@@ -1142,6 +1132,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       : 'text-text-muted'}`}
                 >
                   Live
+                </button>
+                <button
+                  onClick={() => handleDryRun(true)}
+                  disabled={preflightRunning}
+                  className={`flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all disabled:opacity-40
+                    ${appState.dryRun
+                      ? 'bg-card shadow-card text-text-primary'
+                      : 'text-text-muted'}`}
+                >
+                  Test
                 </button>
               </div>
 
