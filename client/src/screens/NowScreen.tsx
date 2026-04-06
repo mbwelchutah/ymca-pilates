@@ -1780,6 +1780,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           <ReplayTimeline
             jobId={selectedJobId}
             runKey={job.last_run_at ?? null}
+            isBookingActive={bgReadiness?.armed?.state === 'booking'}
           />
         )}
 
