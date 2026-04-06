@@ -179,7 +179,7 @@ export function computeCompositeReadiness(
     const detail = bundle.modal === 'MODAL_LOGIN_REQUIRED'
       ? 'Login required in the booking modal'
       : 'Session expired or missing — log in via Settings'
-    return { status: 'COMPOSITE_LOGIN_REQUIRED', label: 'Login required', color: 'amber', detail }
+    return { status: 'COMPOSITE_LOGIN_REQUIRED', label: 'Login required', color: 'red', detail }
   }
 
   // 2. Class not discovered

@@ -232,6 +232,7 @@ function derivePrimaryResult(opts: {
   }
 
   // 5. Auth / session problem (session status takes precedence over sniper signals)
+  // Auth failures are real blockers — use 'error' (red) so they stand out.
   if (
     sessionStatus?.overall === 'AUTH_NEEDS_LOGIN' ||
     sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING'
@@ -242,7 +243,7 @@ function derivePrimaryResult(opts: {
       detail:   isExpired
         ? 'Your schedule access has expired. Open Settings to log in again.'
         : 'Credentials needed. Open Settings to log in.',
-      severity: 'warning',
+      severity: 'error',
     }
   }
 
