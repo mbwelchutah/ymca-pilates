@@ -1234,6 +1234,37 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             if (sp === 'confirming' && execPhase === 'confirming') return null
             const info = SNIPER_PHASE_INFO[sp]
 
+            // ── Stage 4: Target Lock Indicator ──────────────────────────────────
+            // locked: class identified — show exact target in amber
+            if (sp === 'locked') {
+              return (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
+                  <span className="text-[13px] text-text-secondary font-medium">
+                    {'Locked on '}
+                    <span className="text-accent-amber font-semibold">{job.class_title}</span>
+                  </span>
+                </div>
+              )
+            }
+
+            // armed: all three signals confirmed — show all-green checklist
+            if (sp === 'armed') {
+              return (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
+                  <span className="text-[13px] text-text-secondary font-medium">
+                    {'Armed · '}
+                    <span className="text-accent-green">Class</span>
+                    {' · '}
+                    <span className="text-accent-green">Session</span>
+                    {' · '}
+                    <span className="text-accent-green">Modal</span>
+                  </span>
+                </div>
+              )
+            }
+
             // ── Stage 3: Countdown — stronger emphasis when window is near ──────
             if (sp === 'countdown') {
               return (
