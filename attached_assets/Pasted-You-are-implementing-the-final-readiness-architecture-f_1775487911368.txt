@@ -1,0 +1,382 @@
+You are implementing the final readiness architecture for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Unify the app’s Now-screen behavior around three layers:
+
+1. Top-level user state  
+2. Confidence score  
+3. Autonomous sniper mode
+
+The result should feel calm, trustworthy, and mobile-first.
+
+The user should not need to interpret many internal signals.
+The user should be able to glance at the app and understand:
+
+- what class is targeted
+- whether the system is ready
+- whether the sniper is armed
+- whether booking will happen automatically
+- whether any action is needed
+
+Do not redesign the whole app.
+Do not break the current working booking flow.
+Do not remove Tools diagnostics.
+Do not expose raw internal churn on the Now screen.
+
+----------------------------------------
+ARCHITECTURE OVERVIEW
+----------------------------------------
+
+Build 3 layers:
+
+LAYER A — USER-FACING STATE MACHINE
+Allowed top-level states only:
+- waiting
+- ready
+- booking
+- success
+- issue
+
+LAYER B — CONFIDENCE SCORE
+- score 0–100
+- human label
+- smoothed / anti-flicker
+
+LAYER C — AUTONOMOUS SNIPER MODE
+- background preflight loop
+- armed state
+- last checked
+- auto-check active
+- next window
+
+The Now screen must be driven by these layers, not by low-level transient events.
+
+----------------------------------------
+STRICT RULES
+----------------------------------------
+
+- Keep app runnable after every stage
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+- Do not remove existing booking logic
+- Do not break OAuth/session flow
+- Do not let internal retry/preflight signals directly control main UI
+- Do not show "not checked" or similar internal states as primary user truth
+- Do not use harsh error language when the system is simply waiting for the booking window
+
+----------------------------------------
+STAGE 1 — TOP-LEVEL STATE MACHINE
+----------------------------------------
+
+Goal:
+Create one stable user-facing state model for the Now screen.
+
+Tasks:
+1. Add a top-level state machine with only these user-facing states:
+   - waiting
+   - ready
+   - booking
+   - success
+   - issue
+
+2. Ensure the main Now-screen result card is controlled only by this state machine
+
+3. Map existing internal conditions into this model:
+   - booking window not open + no problem → waiting
+   - all readiness conditions satisfied near window → ready
+   - active booking attempt running → booking
+   - booked / waitlisted confirmed → success
+   - real failure requiring attention → issue
+
+4. Remove internal transient states from main UI control:
+   - not checked
+   - checking
+   - retry churn
+   - modal probe churn
+
+After Stage 1:
+Stop and summarize:
+- what state machine was added
+- what states exist
+- what now controls the main Now-screen state
+
+----------------------------------------
+STAGE 2 — STATE LOCKING / HYSTERESIS
+----------------------------------------
+
+Goal:
+Prevent top-level state flicker and confusing downgrades.
+
+Tasks:
+1. Add state locking / hysteresis so the top-level state does not change too easily
+2. Prevent examples like:
+   - waiting -> not checked
+   - booking -> waiting during transient retries
+   - ready -> weaker state during harmless background checks
+3. Allow only meaningful transitions:
+   - waiting -> ready
+   - ready -> booking
+   - booking -> success
+   - booking -> issue
+   - waiting/ready -> issue only for real failures
+4. Use either:
+   - minimum stable time
+   - confidence threshold
+   - or both
+
+After Stage 2:
+Stop and summarize:
+- how flicker is prevented
+- what downgrade rules exist
+- what transitions remain allowed
+
+----------------------------------------
+STAGE 3 — CONFIDENCE SCORE ENGINE
+----------------------------------------
+
+Goal:
+Aggregate multiple readiness signals into one trust score.
+
+Tasks:
+1. Add computeConfidence(state)
+2. Score range: 0–100
+3. Suggested factors:
+   Positives:
+   - session valid
+   - schedule access confirmed
+   - class found
+   - modal reachable
+   - action available or not-open-yet in an expected way
+   - recent success
+   Negatives:
+   - session invalid
+   - class not found
+   - modal unreachable
+   - repeated recent failures
+   - conflicting/unstable conditions
+4. Clamp 0–100
+5. Store:
+   - confidenceScore
+
+After Stage 3:
+Stop and summarize:
+- how confidence is calculated
+- what major factors are included
+- where score is stored
+
+----------------------------------------
+STAGE 4 — CONFIDENCE LABELS + ANTI-FLICKER
+----------------------------------------
+
+Goal:
+Make confidence human-readable and stable.
+
+Tasks:
+1. Map score to labels:
+   - 80–100 → High confidence
+   - 60–79 → Likely
+   - 40–59 → Uncertain
+   - below 40 → At risk
+
+2. Store:
+   - confidenceLabel
+
+3. Add anti-flicker:
+   - moving average or hysteresis
+   - label should not jump rapidly
+
+4. Ensure confidence does not contradict top-level state:
+   - success should not show at-risk
+   - issue should not show high confidence
+
+After Stage 4:
+Stop and summarize:
+- thresholds used
+- anti-flicker method
+- how contradictions are prevented
+
+----------------------------------------
+STAGE 5 — AUTONOMOUS BACKGROUND PREFLIGHT LOOP
+----------------------------------------
+
+Goal:
+Make the system verify readiness automatically.
+
+Tasks:
+1. Add a background preflight runner for active jobs
+2. Run every 2–5 minutes at a safe interval
+3. Perform safe checks:
+   - verify session
+   - verify schedule access
+   - verify class discovery
+   - verify modal reachability if safe
+   - evaluate action availability if safe
+4. Skip loop during active booking execution
+5. Avoid browser/session lock conflicts
+6. Store latest results in shared readiness state
+7. Add structured logs:
+   - [preflight-loop]
+
+Do not trigger real booking in this stage.
+
+After Stage 5:
+Stop and summarize:
+- how the loop runs
+- what it checks
+- how it avoids conflicts
+
+----------------------------------------
+STAGE 6 — SNIPER ARMED MODEL
+----------------------------------------
+
+Goal:
+Expose whether the system is truly armed and ready to fire automatically.
+
+Tasks:
+1. Add sniper state model:
+   {
+     armed: boolean,
+     state: "waiting" | "armed" | "booking" | "confirming" | "needs_attention",
+     nextWindow,
+     autoCheckActive,
+     autoRetry
+   }
+
+2. Compute armed state from readiness, for example requiring:
+   - session ready
+   - class found
+   - modal reachable or equivalent readiness
+
+3. Keep armed distinct from confidence:
+   - confidence = trust level
+   - armed = execution readiness
+
+After Stage 6:
+Stop and summarize:
+- how armed is computed
+- how it differs from confidence
+- what sniper states exist
+
+----------------------------------------
+STAGE 7 — NOW SCREEN INTEGRATION
+----------------------------------------
+
+Goal:
+Drive the Now screen from the new architecture.
+
+Tasks:
+1. Main result card uses only top-level state
+2. Show confidence as supporting reassurance
+3. Show sniper armed state as compact trust signal
+4. Show:
+   - Auto-check active
+   - Last checked
+5. Keep the hierarchy:
+   - class + countdown
+   - main result card
+   - armed/confidence/last checked
+   - compact readiness chips
+   - expandable details
+6. Keep Tools for deeper diagnostics
+
+Suggested top-level messaging:
+- waiting → "Waiting — booking will start automatically"
+- ready → "Ready — everything is set for the booking window"
+- booking → "Booking — attempting registration now"
+- success → "Booked" / "Waitlisted"
+- issue → "Needs attention"
+
+After Stage 7:
+Stop and summarize:
+- what changed on Now
+- how the three architecture layers now appear
+- what was removed from primary UI
+
+----------------------------------------
+STAGE 8 — DEMOTE MANUAL VERIFY / CHECK AGAIN
+----------------------------------------
+
+Goal:
+Make the system feel autonomous, not user-driven.
+
+Tasks:
+1. Keep manual verify/check-again as secondary reassurance only
+2. Do not let manual verify act like the primary way the app works
+3. Manual verify should not reset top-level state to weaker internal states
+4. Keep the app feeling like:
+   - system checks itself
+   - user can verify if desired
+
+After Stage 8:
+Stop and summarize:
+- how manual verify was demoted
+- how autonomy is communicated
+- how confusion was reduced
+
+----------------------------------------
+STAGE 9 — SAFETY + CONSISTENCY PASS
+----------------------------------------
+
+Goal:
+Make the full architecture stable and internally consistent.
+
+Tasks:
+1. Prevent overlapping background checks and booking attempts
+2. Ensure partial failures degrade gracefully
+3. Preserve supporting detail without letting it override top-level state
+4. Ensure Tools still contain:
+   - detailed signals
+   - logs
+   - evidence
+5. Clean up any remaining duplicate messaging
+6. Make sure the screen answers clearly:
+   - is it waiting?
+   - is it ready?
+   - is it booking?
+   - did it succeed?
+   - is there a real issue?
+
+After Stage 9:
+Stop and summarize:
+- what safety guardrails were added
+- what conflicting messaging was removed
+- why the final architecture is more trustworthy
+
+----------------------------------------
+FINAL SUCCESS CRITERIA
+----------------------------------------
+
+By the end, the app should feel like:
+
+- one stable user-facing state
+- one trust signal (confidence)
+- one execution-readiness signal (armed)
+- autonomous checking in the background
+- clear user reassurance without requiring manual interpretation
+
+The user should not need to mentally combine:
+- session
+- discovery
+- modal
+- action
+- retry
+- not checked
+- checking
+- armed
+
+The system should combine that complexity for them.
+
+----------------------------------------
+OUTPUT STYLE REQUIRED
+----------------------------------------
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

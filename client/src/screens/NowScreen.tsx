@@ -193,11 +193,18 @@ function fmtWithRelative(ms: number): string {
 
 type ResultSeverity = 'success' | 'warning' | 'error' | 'info' | 'muted'
 
+// ── Stage 1: Top-level user-facing state machine ───────────────────────────
+// Five states only. Internal signals (not checked, retry churn, modal probe,
+// composite sub-states) are hidden behind this layer — they feed INTO the
+// state derivation but never appear directly on the Now screen.
+type TopLevelState = 'waiting' | 'ready' | 'booking' | 'success' | 'issue'
+
 interface PrimaryResult {
+  state:    TopLevelState
   label:    string
   detail:   string
   severity: ResultSeverity
-  ts?:      string  // ISO timestamp for concise "checked X" label
+  ts?:      string
 }
 
 function derivePrimaryResult(opts: {
@@ -216,121 +223,104 @@ function derivePrimaryResult(opts: {
   bgArmedState:     string | null
 }): PrimaryResult {
   const {
-    isBooked, isInactive, isStaleBooking, job,
-    phase, sessionStatus, sniperRunState,
+    isBooked, isInactive, job,
+    sessionStatus,
     composite, compositeDetail, showComposite,
     locked, lastPreflightAt, bgArmedState,
   } = opts
 
-  // 1. Actively booking right now
+  // ── STATE: booking ─────────────────────────────────────────────────────────
+  // Active booking attempt is in progress right now.
   if (locked) {
-    return { label: 'Booking in progress', detail: 'The scheduler is actively attempting registration.', severity: 'info' }
+    return {
+      state:    'booking',
+      label:    'Booking now',
+      detail:   'Attempting registration — this will complete in a moment.',
+      severity: 'info',
+    }
   }
 
-  // 2. Already booked this cycle
+  // ── STATE: success ─────────────────────────────────────────────────────────
+  // Booking confirmed for this cycle.
   if (isBooked) {
     const isDryRun = job?.last_result === 'dry_run'
     return {
+      state:    'success',
       label:    isDryRun ? 'Test run complete' : 'Booked',
       detail:   isDryRun
-        ? 'Test mode — the class was found and the action verified. Switch to Live to actually register.'
+        ? 'Test mode — class found and action verified. Switch to Live to actually register.'
         : 'Registration confirmed for this class.',
       severity: 'success',
     }
   }
 
-  // 3. Job is turned off
-  if (isInactive) {
-    return {
-      label:  'Scheduling off',
-      detail: 'This class is disabled. Turn it on in the Plan tab to resume automatic booking.',
-      severity: 'muted',
-    }
-  }
+  // ── STATE: issue ───────────────────────────────────────────────────────────
+  // Real failures that require user attention before the system can proceed.
 
-  // 4. Stale booking (booked previously, now outside window)
-  if (isStaleBooking) {
-    return {
-      label:  'Previous booking recorded',
-      detail: 'The booking was for a past class. Use "Book again" to reset for the next occurrence.',
-      severity: 'muted',
-    }
-  }
-
-  // 5. Auth / session problem (session status takes precedence over sniper signals)
-  // Auth failures are real blockers — use 'error' (red) so they stand out.
+  // Auth / session failure — explicit blocker.
   if (
     sessionStatus?.overall === 'AUTH_NEEDS_LOGIN' ||
     sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING'
   ) {
     const isExpired = sessionStatus.overall === 'FAMILYWORKS_SESSION_MISSING'
     return {
-      label:    isExpired ? 'Session expired' : 'Login required',
+      state:    'issue',
+      label:    'Needs attention',
       detail:   isExpired
-        ? 'Your schedule access has expired. Open Settings to log in again.'
-        : 'Credentials needed. Open Settings to log in.',
+        ? 'Your session has expired. Open Settings to log in again.'
+        : 'Login required. Open Settings to connect your account.',
       severity: 'error',
     }
   }
 
-  // 6. Composite result from preflight/sniper — if we have one
-  if (showComposite) {
-    // When composite has no preflight data yet but the auto-check armed state exists,
-    // the "Not tested" label contradicts the armed signal. Show an honest waiting message instead.
-    if (composite.status === 'COMPOSITE_NOT_TESTED' && bgArmedState) {
-      const detail = bgArmedState === 'needs_attention'
-        ? 'Auto-check flagged a possible issue — tap Verify now for details.'
-        : 'Session is confirmed. Class discovery runs when the booking window opens.'
-      return {
-        label:    'Checked — waiting for window',
-        detail,
-        severity: 'muted',
-      }
-    }
-    const severityMap: Record<CompositeReadiness['color'], ResultSeverity> = {
-      green: 'success', amber: 'warning', red: 'error', gray: 'muted',
-    }
-    // Only show timestamp when we have a real result (not just "not tested" from stale snapshot)
-    const showTs = composite.status !== 'COMPOSITE_NOT_TESTED'
+  // Job disabled — user needs to re-enable it.
+  if (isInactive) {
     return {
-      label:    composite.label,
-      detail:   compositeDetail,
-      severity: severityMap[composite.color],
-      ts:       showTs ? (lastPreflightAt ?? undefined) : undefined,
-    }
-  }
-
-  // 7. Warmup — opening very soon
-  if (phase === 'warmup') {
-    return {
-      label:  'Opening soon',
-      detail: 'The booking window opens in under 10 minutes. Run Check to verify readiness.',
-      severity: 'info',
-    }
-  }
-
-  // 8. Window closed, nothing booked
-  if (phase === 'late') {
-    return {
-      label:  'Window closed',
-      detail: 'The booking window for this class has passed.',
+      state:    'issue',
+      label:    'Scheduling off',
+      detail:   'This class is disabled. Turn it on in the Plan tab to resume.',
       severity: 'muted',
     }
   }
 
-  // 9. Auto-check has run and armed state is persisted on the server —
-  // show "Checked" even when per-stage bundle data is absent (e.g. fresh page load).
-  if (bgArmedState) {
-    const detail = bgArmedState === 'needs_attention'
-      ? 'Auto-check flagged a possible issue — tap Check again for details.'
-      : 'Session is confirmed. Class discovery runs when the booking window opens.'
-    return { label: 'Checked — waiting for window', detail, severity: 'muted' }
+  // Auto-check or composite signals a real problem (red = blocking error).
+  if (bgArmedState === 'needs_attention') {
+    return {
+      state:    'issue',
+      label:    'Needs attention',
+      detail:   'Auto-check flagged a problem — tap Check again for details.',
+      severity: 'warning',
+    }
+  }
+  if (showComposite && composite.color === 'red') {
+    return {
+      state:    'issue',
+      label:    'Needs attention',
+      detail:   compositeDetail,
+      severity: 'error',
+      ts:       lastPreflightAt ?? undefined,
+    }
   }
 
-  // 10. Nothing checked yet — idle
+  // ── STATE: ready ───────────────────────────────────────────────────────────
+  // All checks passed — system will fire automatically at window open.
+  if (showComposite && composite.color === 'green') {
+    return {
+      state:    'ready',
+      label:    'Ready',
+      detail:   'Everything is set — the system will book automatically when the window opens.',
+      severity: 'success',
+      ts:       lastPreflightAt ?? undefined,
+    }
+  }
+
+  // ── STATE: waiting ─────────────────────────────────────────────────────────
+  // No problem detected. Window not open yet. System is monitoring.
+  // Consolidates: not checked, checked-waiting, warmup, late, stale, amber composite.
   return {
-    label:  'Not checked yet',
-    detail: job ? 'Run check to verify session, class, and booking action.' : 'Select a class in the Plan tab.',
+    state:    'waiting',
+    label:    'Waiting',
+    detail:   'Booking will start automatically when the window opens.',
     severity: 'muted',
   }
 }
