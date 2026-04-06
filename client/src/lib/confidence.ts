@@ -1,183 +1,99 @@
 /**
- * Stage 9.1 — Sniper Confidence Score
+ * Stage 3 — Confidence Score Engine
  *
- * Derives a 0-100 confidence score for booking readiness from data already
- * present in the sniper run-state and dedicated session check.  No new API
- * calls or server state are required.
+ * Derives a 0-100 confidence score from all available readiness signals.
+ * Mirrors the server-side confidence.js scoring table so client and server
+ * agree on what confidence means, while still allowing a client-only fallback
+ * when the server hasn't populated confidenceScore yet.
  *
- * Score anatomy (baseline):
- *   Session    0-40 pts   (primary gate; dedicated check preferred over bundle)
- *   Discovery  0-35 pts   (class locatability)
- *   Action     0-25 pts   (booking button reachability)
+ * Scoring table (matches src/bot/confidence.js):
+ *   Field     | ready/found/reachable | error/missing/blocked | not_open | waitlist | unknown
+ *   session   |          25           |           0           |    —     |    —     |   20
+ *   schedule  |          15           |           0           |    —     |    —     |    0
+ *   discovery |          20           |           0           |    —     |    —     |   10
+ *   modal     |          15           |           0           |    —     |    —     |    8
+ *   action    |          25           |           0           |   20     |   12     |   12
  *
- * Modifiers (applied to the 0-100 baseline):
- *   -5 per unique failure type in last 24 h, capped at -15
- *   -8  when all three dimensions are still "not tested / unknown"
- *   -10 when readiness data is older than 4 h and not fully green
+ * Label thresholds:
+ *   85–100 → "Ready"
+ *   65–84  → "Almost ready"
+ *   40–64  → "Needs attention"
+ *   0–39   → "At risk"
  */
 
-import type { ReadinessBundle } from './readinessTypes'
-import type { SniperEvent } from './failureTypes'
+// ── Input shape (matches GET /api/readiness normalized fields) ────────────────
 
-interface SessionCheckSnapshot {
-  valid:      boolean | null
-  checkedAt:  string  | null
+export interface ConfidenceInput {
+  session:   'ready' | 'error' | 'unknown'
+  schedule:  'ready' | 'error' | 'unknown'
+  discovery: 'found' | 'missing' | 'unknown'
+  modal:     'reachable' | 'blocked' | 'unknown'
+  action:    'ready' | 'not_open' | 'waitlist' | 'blocked' | 'unknown'
 }
 
 export interface ConfidenceResult {
-  score:       number   // 0-100, integer
-  explanation: string   // one compact line, e.g. "Session ready, class found, action reachable"
+  score:  number   // 0-100, integer
+  label:  'Ready' | 'Almost ready' | 'Needs attention' | 'At risk'
 }
 
-// ── Session score (0-40) ──────────────────────────────────────────────────────
+// ── Per-field score maps ───────────────────────────────────────────────────────
 
-function sessionScore(
-  bundle: ReadinessBundle,
-  sessionStatus: SessionCheckSnapshot | null,
-): number {
-  // Dedicated check is authoritative — use it first.
-  if (sessionStatus?.valid === true)  return 40
-  if (sessionStatus?.valid === false) return 0
-
-  // Fall back to the sniper bundle.
-  switch (bundle.session) {
-    case 'SESSION_READY':    return 35  // sniper saw it authenticated, but no explicit verify
-    case 'SESSION_UNKNOWN':  return 18  // indeterminate — haven't checked
-    case 'SESSION_EXPIRED':  return 0
-    case 'SESSION_REQUIRED': return 0
-    default:                 return 18
-  }
+const SESSION_SCORE: Record<string, number> = {
+  ready:   25,
+  error:    0,
+  unknown: 20,
 }
 
-// ── Discovery score (0-35) ────────────────────────────────────────────────────
-
-function discoveryScore(bundle: ReadinessBundle): number {
-  switch (bundle.discovery) {
-    case 'DISCOVERY_READY':      return 35
-    case 'DISCOVERY_NOT_TESTED': return 14  // unknown but not failed
-    case 'DISCOVERY_FAILED':     return 0
-    default:                     return 14
-  }
+const SCHEDULE_SCORE: Record<string, number> = {
+  ready:   15,
+  error:    0,
+  unknown:  0,
 }
 
-// ── Action score (0-25) ───────────────────────────────────────────────────────
-
-function actionScore(bundle: ReadinessBundle): number {
-  switch (bundle.action) {
-    case 'ACTION_READY':      return 25
-    case 'ACTION_NOT_TESTED': return 8   // depends on discovery passing
-    case 'ACTION_BLOCKED':    return 0
-    default:                  return 8
-  }
+const DISCOVERY_SCORE: Record<string, number> = {
+  found:   20,
+  missing:  0,
+  unknown: 10,
 }
 
-// ── Explanation ───────────────────────────────────────────────────────────────
+const MODAL_SCORE: Record<string, number> = {
+  reachable: 15,
+  blocked:    0,
+  unknown:    8,
+}
 
-function buildExplanation(
-  bundle: ReadinessBundle,
-  sessionStatus: SessionCheckSnapshot | null,
-  penaltyReasons: string[],
-): string {
-  const parts: string[] = []
+const ACTION_SCORE: Record<string, number> = {
+  ready:    25,
+  not_open: 20,
+  waitlist: 12,
+  blocked:   0,
+  unknown:  12,
+}
 
-  // Session
-  if (sessionStatus?.valid === true) {
-    parts.push('session verified')
-  } else if (sessionStatus?.valid === false) {
-    parts.push('login failed')
-  } else {
-    switch (bundle.session) {
-      case 'SESSION_READY':    parts.push('session ready');   break
-      case 'SESSION_UNKNOWN':  parts.push('session unknown'); break
-      case 'SESSION_EXPIRED':  parts.push('session expired'); break
-      case 'SESSION_REQUIRED': parts.push('login required');  break
-    }
-  }
+// ── Label thresholds ──────────────────────────────────────────────────────────
 
-  // Discovery
-  switch (bundle.discovery) {
-    case 'DISCOVERY_READY':      parts.push('class found');       break
-    case 'DISCOVERY_NOT_TESTED': parts.push('class not checked'); break
-    case 'DISCOVERY_FAILED':     parts.push('class not found');   break
-  }
-
-  // Action
-  switch (bundle.action) {
-    case 'ACTION_READY':      parts.push('action reachable');   break
-    case 'ACTION_NOT_TESTED': parts.push('action not checked'); break
-    case 'ACTION_BLOCKED':    parts.push('action blocked');     break
-  }
-
-  // Append failure penalty summary if any
-  if (penaltyReasons.length > 0) {
-    parts.push(`${penaltyReasons.length} recent failure${penaltyReasons.length > 1 ? 's' : ''}`)
-  }
-
-  // Capitalise the first word only
-  const joined = parts.join(', ')
-  return joined.charAt(0).toUpperCase() + joined.slice(1)
+function scoreToLabel(score: number): ConfidenceResult['label'] {
+  if (score >= 85) return 'Ready'
+  if (score >= 65) return 'Almost ready'
+  if (score >= 40) return 'Needs attention'
+  return 'At risk'
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-const FAILURE_PENALTY       = 5    // per unique failure type in last 24 h
-const MAX_FAILURE_PENALTY   = 15   // cap
-const NO_DATA_PENALTY       = 8    // all three dimensions untested / unknown
-const STALE_DATA_PENALTY    = 10   // data older than 4 h, not fully green
-const STALE_THRESHOLD_MS    = 4 * 60 * 60 * 1000  // 4 hours
+/**
+ * Compute a 0-100 confidence score from the normalized readiness signals.
+ * All five dimensions are used: session, schedule, discovery, modal, action.
+ * Unknown fields receive partial credit — "not tested" ≠ "broken".
+ */
+export function computeConfidence(input: ConfidenceInput): ConfidenceResult {
+  const raw =
+    (SESSION_SCORE[input.session]     ?? SESSION_SCORE.unknown)   +
+    (SCHEDULE_SCORE[input.schedule]   ?? SCHEDULE_SCORE.unknown)  +
+    (DISCOVERY_SCORE[input.discovery] ?? DISCOVERY_SCORE.unknown) +
+    (MODAL_SCORE[input.modal]         ?? MODAL_SCORE.unknown)     +
+    (ACTION_SCORE[input.action]       ?? ACTION_SCORE.unknown)
 
-export function computeConfidence(
-  bundle: ReadinessBundle,
-  sessionStatus: SessionCheckSnapshot | null,
-  events: SniperEvent[],
-  updatedAt: string | null,
-): ConfidenceResult {
-  // ── Baseline ───────────────────────────────────────────────────────────────
-  const base =
-    sessionScore(bundle, sessionStatus) +
-    discoveryScore(bundle) +
-    actionScore(bundle)
-
-  // ── Modifiers ──────────────────────────────────────────────────────────────
-  let penalty = 0
-
-  // 1. Recent failure history — unique failure types in last 24 h
-  const cutoff24h = Date.now() - 24 * 60 * 60 * 1000
-  const recentFailureTypes = new Set(
-    events
-      .filter(e => e.failureType && new Date(e.timestamp).getTime() >= cutoff24h)
-      .map(e => e.failureType as string),
-  )
-  const failurePenalty = Math.min(
-    recentFailureTypes.size * FAILURE_PENALTY,
-    MAX_FAILURE_PENALTY,
-  )
-  penalty += failurePenalty
-
-  // 2. No data at all — scheduler hasn't run yet
-  const isEntirelyUnknown =
-    bundle.session   === 'SESSION_UNKNOWN'      &&
-    bundle.discovery === 'DISCOVERY_NOT_TESTED' &&
-    bundle.action    === 'ACTION_NOT_TESTED'    &&
-    sessionStatus?.valid !== true
-  if (isEntirelyUnknown) penalty += NO_DATA_PENALTY
-
-  // 3. Data staleness — readiness result is old but not fully green
-  const isFullyGreen =
-    (sessionStatus?.valid === true || bundle.session === 'SESSION_READY') &&
-    bundle.discovery === 'DISCOVERY_READY' &&
-    bundle.action    === 'ACTION_READY'
-  if (!isFullyGreen && updatedAt) {
-    const age = Date.now() - new Date(updatedAt).getTime()
-    if (age > STALE_THRESHOLD_MS) penalty += STALE_DATA_PENALTY
-  }
-
-  // ── Final score ────────────────────────────────────────────────────────────
-  const score = Math.max(0, Math.min(100, Math.round(base - penalty)))
-
-  // ── Explanation ────────────────────────────────────────────────────────────
-  const penaltyReasons = Array.from(recentFailureTypes)
-  const explanation = buildExplanation(bundle, sessionStatus, penaltyReasons)
-
-  return { score, explanation }
+  const score = Math.max(0, Math.min(100, Math.round(raw)))
+  return { score, label: scoreToLabel(score) }
 }

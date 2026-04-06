@@ -15,6 +15,7 @@ import {
   DEFAULT_READINESS, computeCompositeReadiness,
 } from '../lib/readinessResolver'
 import type { CompositeReadiness } from '../lib/readinessResolver'
+import { computeConfidence } from '../lib/confidence'
 
 interface NowScreenProps {
   appState: AppState
@@ -980,6 +981,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     }
   })()
 
+  // ── Stage 3: Confidence score ───────────────────────────────────────────────
+  // Computed client-side from all 5 normalized readiness signals in bgReadiness.
+  // Falls back to the server-supplied score when bgReadiness isn't populated yet.
+  // Intentionally NOT inside PrimaryResult / stableResult so it always reflects
+  // the latest data regardless of hysteresis state.
+  const confidenceScore: number | null = (() => {
+    if (!isReadinessForSelectedJob || !bgReadiness) return null
+    const { session, schedule, discovery, modal, action } = bgReadiness
+    if (!session || !schedule || !discovery || !modal || !action) {
+      return bgReadiness.confidenceScore ?? null
+    }
+    return computeConfidence({ session, schedule, discovery, modal, action }).score
+  })()
+
   // ── Stage 2: Compute current result + apply hysteresis ─────────────────────
   // currentResult is the raw derived value from this render's data.
   // stableResult is what the card actually displays — transitions are gated.
@@ -1187,8 +1202,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         {ARMED_STATE_LABEL[bgReadiness.armed.state] ?? bgReadiness.armed.state}
                       </span>
                     )}
-                    {bgReadiness?.confidenceScore != null && (
-                      <span className="text-text-muted font-normal"> · {bgReadiness.confidenceScore}%</span>
+                    {confidenceScore != null && (
+                      <span className="text-text-muted font-normal"> · {confidenceScore}%</span>
                     )}
                     {lastCheckedLabel && (
                       <span className="text-text-muted font-normal"> · {lastCheckedLabel}</span>
