@@ -741,6 +741,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // waitlist_only from action_blocked (both use ACTION_BLOCKED in the bundle).
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
+  const [checkStep,        setCheckStep]        = useState<string | null>(null)
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const CHECK_STEPS = [
+    'Checking session…',
+    'Loading schedule…',
+    'Finding class…',
+    'Opening booking modal…',
+    'Checking availability…',
+  ]
 
   // Auth, Modal, and Discovery details — populated after Check Now; persist for the session.
   type AuthDetail = {
@@ -779,6 +789,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const handleCheckNow = async () => {
     if (!job || preflightRunning || sessionStatus?.locked) return
     setPreflightRunning(true)
+
+    // ── Step progress timer (Stage 1 + 6) ────────────────────────────────────
+    // Cycles through CHECK_STEPS every 600 ms so the user sees meaningful
+    // progress text instead of a static "Checking…". Each step is visible
+    // for at least 600 ms (no flicker). Stays on last step once exhausted.
+    let stepIdx = 0
+    setCheckStep(CHECK_STEPS[0])
+    stepTimerRef.current = setInterval(() => {
+      stepIdx = Math.min(stepIdx + 1, CHECK_STEPS.length - 1)
+      setCheckStep(CHECK_STEPS[stepIdx])
+    }, 600)
+
     try {
       const result = await api.runPreflight(job.id)
       if (result.sniperState) setSniperRunState(result.sniperState)
@@ -791,7 +813,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       // the auth outcome that was just written by the preflight pipeline.
       api.getSessionStatus().then(setSessionStatus).catch(() => {})
     } catch { setPreflightStatus('error') }
-    finally { setPreflightRunning(false) }
+    finally {
+      if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
+      setCheckStep(null)
+      setPreflightRunning(false)
+    }
   }
 
   // ── Composite readiness (Stage 10) ─────────────────────────────────────────
@@ -832,8 +858,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
       case 'COMPOSITE_WAITLIST': {
         const match = discoveryDetail?.matched
-        const suffix = match ? ` · ${match.length > 36 ? match.slice(0, 36) + '…' : match}` : ''
-        return `Waitlist available — class is full${suffix}`
+        const matchStr = match ? ` · ${match.length > 36 ? match.slice(0, 36) + '…' : match}` : ''
+        return `Class is full — waitlist is available${matchStr} · Session and class are ready`
       }
 
       case 'COMPOSITE_LOGIN_REQUIRED':
@@ -847,7 +873,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         return composite.detail
 
       case 'COMPOSITE_ACTION_BLOCKED':
-        return actionDetail?.detail ?? composite.detail
+        // Prefer the reassurance-forward composite message; fall back only if
+        // actionDetail provides something genuinely more useful.
+        return composite.detail
 
       case 'COMPOSITE_MODAL_ISSUE':
         return modalDetail?.detail ?? composite.detail
@@ -1023,6 +1051,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 {preflightRunning ? 'Checking…' : 'Run Check'}
               </button>
 
+              {/* Step progress text — shown while preflight is running (Stage 1 + 6) */}
+              {preflightRunning && checkStep && (
+                <p className="mt-2 text-center text-[12px] text-text-muted">
+                  {checkStep}
+                </p>
+              )}
+
               {/* Secondary action: Refresh Session — quiet text link (Stage 6) */}
               {!(sessionStatus?.locked ?? false) && !preflightRunning && (
                 <div className="mt-2.5 flex flex-col items-center gap-1">
@@ -1139,8 +1174,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               const actionBlocked = bundle?.action === 'ACTION_BLOCKED'
               const actionTested  = actionReady || actionBlocked
               const isWaitlist    = effectivePreflightStatus === 'waitlist_only'
-              const actionDot: DotColor = actionReady ? 'green' : isWaitlist ? 'amber' : actionBlocked ? 'red' : 'gray'
-              const actionValue = actionReady ? 'Reachable' : isWaitlist ? 'Waitlist' : actionBlocked ? 'Blocked' : actionTested ? 'Unknown' : 'Not checked'
+              // "Not open yet" is amber (expected state); only real failures use red
+              const actionDot: DotColor = actionReady ? 'green' : isWaitlist ? 'amber' : actionBlocked ? 'amber' : 'gray'
+              const actionValue = actionReady ? 'Reachable' : isWaitlist ? 'Waitlist' : actionBlocked ? 'Not open yet' : actionTested ? 'Unknown' : 'Not checked'
 
               const milestones = [
                 { label: 'Session', dot: sessDot,   value: sessValue   },

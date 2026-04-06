@@ -101,9 +101,9 @@ export const SNIPER_STATE_LABEL: Record<SniperState, string> = {
   SNIPER_ARMED:              'Armed',
   SNIPER_BOOKING:            'Booking…',
   SNIPER_CONFIRMING:         'Confirming…',
-  SNIPER_BLOCKED_AUTH:       'Blocked — login required',
-  SNIPER_BLOCKED_DISCOVERY:  'Blocked — class not found',
-  SNIPER_BLOCKED_ACTION:     'Blocked — action unavailable',
+  SNIPER_BLOCKED_AUTH:       'Login required',
+  SNIPER_BLOCKED_DISCOVERY:  'Class not found',
+  SNIPER_BLOCKED_ACTION:     'Not open yet',
   SNIPER_RECOVERY_ACTIVE:    'Recovering',
 }
 
@@ -123,7 +123,7 @@ export const DISCOVERY_LABEL: Record<DiscoveryReadiness, string> = {
 export const ACTION_LABEL: Record<ActionReadiness, string> = {
   ACTION_READY:      'Reachable',
   ACTION_NOT_TESTED: 'Not tested',
-  ACTION_BLOCKED:    'Blocked',
+  ACTION_BLOCKED:    'Not open yet',
 }
 
 export const MODAL_LABEL: Record<ModalReadiness, string> = {
@@ -213,13 +213,13 @@ export function computeCompositeReadiness(
     }
   }
 
-  // 5. Action explicitly blocked (cancel-only, unknown, or no button)
+  // 5. Action not available yet (cancel-only, unknown, or no register button)
   if (bundle.action === 'ACTION_BLOCKED' || preflightStatus === 'action_blocked') {
     return {
       status: 'COMPOSITE_ACTION_BLOCKED',
-      label:  'Action blocked',
-      color:  'red',
-      detail: 'No booking action available in the modal',
+      label:  'Not open yet',
+      color:  'amber',
+      detail: 'Registration hasn\'t opened — everything else is working',
     }
   }
 
