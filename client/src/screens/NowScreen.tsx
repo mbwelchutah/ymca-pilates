@@ -139,6 +139,31 @@ const fmt = (ms: number) =>
     hour: 'numeric', minute: '2-digit',
   })
 
+// Relative-time label for "last checked" display (Stage 9F).
+function relativeLabel(iso: string | null): string {
+  if (!iso) return ''
+  const diffMs = Date.now() - new Date(iso).getTime()
+  if (diffMs < 0)          return 'just now'
+  const mins  = Math.floor(diffMs / 60_000)
+  const hours = Math.floor(mins / 60)
+  if (mins  < 1)  return 'just now'
+  if (mins  < 60) return `${mins} min ago`
+  if (hours < 24) return `${hours}h ago`
+  return 'over a day ago'
+}
+
+// Hook: live relative timestamp — re-evaluates every 30 s so the label stays fresh.
+function useRelativeTime(iso: string | null): string {
+  const [label, setLabel] = useState(() => relativeLabel(iso))
+  useEffect(() => {
+    if (!iso) { setLabel(''); return }
+    setLabel(relativeLabel(iso))
+    const id = setInterval(() => setLabel(relativeLabel(iso)), 30_000)
+    return () => clearInterval(id)
+  }, [iso])
+  return label
+}
+
 // Formats a preflight snapshot ISO timestamp as "Apr 5, 7:14 AM".
 function formatPreflightTime(iso: string): string {
   try {
@@ -583,6 +608,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return () => clearInterval(id)
   }, [])
 
+  // ── Stage 9F — Background readiness state (auto-check status + last checked) ─
+  type BgReadiness = Awaited<ReturnType<typeof api.getReadiness>>
+  const [bgReadiness, setBgReadiness] = useState<BgReadiness | null>(null)
+
+  useEffect(() => {
+    api.getReadiness().then(setBgReadiness).catch(() => {})
+    const id = setInterval(() => api.getReadiness().then(setBgReadiness).catch(() => {}), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Live relative label — auto-refreshes every 30 s
+  const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
+
   // ── Clear stale readiness data when the selected job changes OR is edited ─────
   // Sniper state is global (last-run-wins on the server).  Two triggers require
   // a wipe + fresh fetch:
@@ -822,6 +860,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       // Re-fetch session-status.json so the Session/Schedule access rows reflect
       // the auth outcome that was just written by the preflight pipeline.
       api.getSessionStatus().then(setSessionStatus).catch(() => {})
+      // Refresh background readiness so "Last checked" updates immediately.
+      api.getReadiness().then(setBgReadiness).catch(() => {})
     } catch { setPreflightStatus('error') }
     finally {
       if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
@@ -1072,6 +1112,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 <p className="mt-2 text-center text-[12px] text-text-muted">
                   {checkStep}
                 </p>
+              )}
+
+              {/* Stage 9F — Auto-check status + last checked time */}
+              {!preflightRunning && lastCheckedLabel && (
+                <div className="mt-2 flex items-center justify-center gap-1.5">
+                  {!appState.schedulerPaused && (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0 animate-pulse" />
+                      <span className="text-[11px] text-text-muted">Auto-check active</span>
+                      <span className="text-[11px] text-text-muted">·</span>
+                    </>
+                  )}
+                  <span className="text-[11px] text-text-muted">Last checked {lastCheckedLabel}</span>
+                </div>
               )}
 
               {/* Secondary action: Refresh Session — quiet text link (Stage 6) */}
