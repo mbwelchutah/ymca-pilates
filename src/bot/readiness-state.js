@@ -109,10 +109,20 @@ function readFwStatus() {
 // ── Core: compute the normalized object from live state ───────────────────────
 
 function computeReadiness({ jobId, classTitle, source }) {
-  const sniperState   = loadState();
-  const sessionStatus = loadStatus();
-  const bundle        = sniperState?.bundle ?? {};
-  const fwStatus      = readFwStatus();
+  // Each source is loaded independently so a single failure produces partial
+  // (unknown) readiness rather than crashing the whole snapshot (Stage 9I).
+  let sniperState = null;
+  try { sniperState = loadState(); } catch (e) {
+    console.warn('[readiness-state] loadState failed (partial result):', e.message);
+  }
+
+  let sessionStatus = null;
+  try { sessionStatus = loadStatus(); } catch (e) {
+    console.warn('[readiness-state] loadStatus failed (partial result):', e.message);
+  }
+
+  const bundle   = sniperState?.bundle ?? {};
+  const fwStatus = readFwStatus();
 
   const record = {
     lastCheckedAt: new Date().toISOString(),

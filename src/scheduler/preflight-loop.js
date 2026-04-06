@@ -43,6 +43,7 @@ const MIN_INTERVAL_MS        = 3  * 60 * 1000;  // min time between runs per job
 const ACTIVE_HORIZON_MS      = 24 * 60 * 60 * 1000; // only run within 24 h of window
 const AUTO_PREFLIGHT_OWNS_MS = 30 * 60 * 1000;  // auto-preflight owns inside 30 min
 const AUTH_BLOCK_STALE_MS    = 20 * 60 * 1000;  // mirror of auto-preflight / tick.js
+const PREFLIGHT_TIMEOUT_MS   = 90 * 1000;        // max wall-time for one preflight run
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'preflight-loop-state.json');
@@ -74,6 +75,22 @@ function saveLoopState(record) {
   }
 }
 
+// ── Timeout helper ────────────────────────────────────────────────────────────
+// Rejects with a clear message if the wrapped promise does not settle in time.
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out after ${ms / 1000}s (${label})`)),
+      ms
+    );
+    promise.then(
+      v  => { clearTimeout(timer); resolve(v); },
+      e  => { clearTimeout(timer); reject(e);  }
+    );
+  });
+}
+
 // ── Public helpers ────────────────────────────────────────────────────────────
 
 function isRunning() { return running; }
@@ -84,11 +101,11 @@ function isRunning() { return running; }
 
 async function runPreflightLoop({ isActive = false } = {}) {
   if (running) {
-    console.log('[preflight-loop] Skipping tick — loop already in progress.');
+    console.log('[preflight-loop] skip:overlap — previous preflight still running.');
     return;
   }
   if (isActive) {
-    console.log('[preflight-loop] Skipping tick — booking job active.');
+    console.log('[preflight-loop] skip:booking — live booking in progress; background checks paused.');
     return;
   }
 
@@ -96,10 +113,12 @@ async function runPreflightLoop({ isActive = false } = {}) {
   try {
     jobs = getAllJobs().filter(j => j.is_active === 1);
   } catch (err) {
-    console.error('[preflight-loop] Could not load jobs:', err.message);
+    console.error('[preflight-loop] error:load-jobs —', err.message);
     return;
   }
   if (jobs.length === 0) return;
+
+  console.log(`[preflight-loop] tick:start — ${jobs.length} active job(s).`);
 
   // Load auth state once — shared across all jobs this tick.
   const sniperState   = loadState();
@@ -131,7 +150,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
 
     // ── Auth-block gate ─────────────────────────────────────────────────────
     if (isLocked()) {
-      console.log(`[preflight-loop] Job #${dbJob.id} skipped — auth lock held (concurrent operation in progress).`);
+      console.log(`[preflight-loop] skip:auth-lock — Job #${dbJob.id} (concurrent operation in progress).`);
       continue;
     }
 
@@ -141,7 +160,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
         const age = Date.now() - new Date(refTime).getTime();
         if (age < AUTH_BLOCK_STALE_MS) {
           const minAgo = Math.round(age / 60000);
-          console.log(`[preflight-loop] Job #${dbJob.id} skipped — SNIPER_BLOCKED_AUTH from ${minAgo} min ago.`);
+          console.log(`[preflight-loop] skip:auth-blocked — Job #${dbJob.id} (SNIPER_BLOCKED_AUTH ${minAgo} min ago).`);
           continue;
         }
       }
@@ -151,7 +170,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
       const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
       if (age < AUTH_BLOCK_STALE_MS) {
         const minAgo = Math.round(age / 60000);
-        console.log(`[preflight-loop] Job #${dbJob.id} skipped — session check failed ${minAgo} min ago.`);
+        console.log(`[preflight-loop] skip:session-failed — Job #${dbJob.id} (session check failed ${minAgo} min ago).`);
         continue;
       }
     }
@@ -162,24 +181,28 @@ async function runPreflightLoop({ isActive = false } = {}) {
 
     const minsUntilOpen = Math.round(msUntilOpen / 60000);
     console.log(
-      `[preflight-loop] Starting background preflight — ` +
-      `Job #${dbJob.id} (${dbJob.class_title}), ${minsUntilOpen} min until window opens.`
+      `[preflight-loop] run:start — Job #${dbJob.id} (${dbJob.class_title}), ` +
+      `${minsUntilOpen} min until window opens.`
     );
 
     const startedAt = new Date().toISOString();
     try {
-      const result = await runBookingJob({
-        id:          dbJob.id,
-        classTitle:  dbJob.class_title,
-        classTime:   dbJob.class_time,
-        instructor:  dbJob.instructor  || null,
-        dayOfWeek:   dbJob.day_of_week,
-        targetDate:  dbJob.target_date || null,
-        maxAttempts: 1,
-      }, { preflightOnly: true, dryRun: getDryRun() });
+      const result = await withTimeout(
+        runBookingJob({
+          id:          dbJob.id,
+          classTitle:  dbJob.class_title,
+          classTime:   dbJob.class_time,
+          instructor:  dbJob.instructor  || null,
+          dayOfWeek:   dbJob.day_of_week,
+          targetDate:  dbJob.target_date || null,
+          maxAttempts: 1,
+        }, { preflightOnly: true, dryRun: getDryRun() }),
+        PREFLIGHT_TIMEOUT_MS,
+        `Job #${dbJob.id} preflight`
+      );
 
       const outcome = result.status === 'success' ? 'pass' : 'fail';
-      console.log(`[preflight-loop] Done — Job #${dbJob.id} ${outcome}: ${result.message}`);
+      console.log(`[preflight-loop] run:result — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
@@ -194,7 +217,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
       });
 
     } catch (err) {
-      console.error(`[preflight-loop] Error — Job #${dbJob.id}:`, err.message);
+      console.error(`[preflight-loop] run:error — Job #${dbJob.id}:`, err.message);
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
       saveLoopState({
         lastCheckedAt: startedAt,
