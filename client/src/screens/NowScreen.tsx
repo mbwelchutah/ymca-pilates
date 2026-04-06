@@ -1215,14 +1215,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   {bgReadiness.escalation.classTitle ? ` for ${bgReadiness.escalation.classTitle}` : ''}.
                 </p>
                 <p className="text-[11px] text-text-muted mt-1">
-                  Attempted at {(() => {
-                    try {
-                      return new Intl.DateTimeFormat('en-US', {
-                        hour: 'numeric', minute: '2-digit', hour12: true,
-                        month: 'short', day: 'numeric',
-                      }).format(new Date(bgReadiness.escalation.escalatedAt))
-                    } catch { return bgReadiness.escalation.escalatedAt }
-                  })()}
+                  Attempted at {formatPreflightTime(bgReadiness.escalation.escalatedAt)}
                 </p>
               </div>
             </div>
