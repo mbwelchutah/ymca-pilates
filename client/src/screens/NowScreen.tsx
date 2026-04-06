@@ -350,21 +350,9 @@ function isTransitionAllowed(from: TopLevelState, to: TopLevelState, severity: R
 const PHASE_CONFIG: Record<Phase, { label: string }> = {
   too_early: { label: 'Waiting'       },
   warmup:    { label: 'Opening Soon'  },
-  sniper:    { label: 'Booking Now'   },
+  sniper:    { label: 'Booking'       },
   late:      { label: 'Window Closed' },
   unknown:   { label: 'Waiting'       },
-}
-
-const RESULT_CONFIG: Record<string, {
-  label: string
-  dotColor: 'gray' | 'green' | 'amber' | 'red' | 'blue'
-}> = {
-  booked:             { label: 'Booked',            dotColor: 'green' },
-  dry_run:            { label: 'Test run',            dotColor: 'blue'  },
-  found_not_open_yet: { label: 'Not Open Yet',       dotColor: 'amber' },
-  not_found:          { label: 'Class Not Found',    dotColor: 'red'   },
-  error:              { label: 'Error',              dotColor: 'red'   },
-  skipped:            { label: 'Skipped',            dotColor: 'gray'  },
 }
 
 function formatDayTime(job: Job) {
@@ -656,6 +644,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     execPhase === 'warmup' ||
     execPhase === 'confirming'
   const readinessPollMs = isHotPhase ? 1_000 : 30_000
+
+  // Stage 9 — banner-is-complete guard.
+  // When the status-banner block (countdown area) is already showing a definitive
+  // non-countdown state, the Stage 1 result card and trust line below it would be
+  // redundant.  Suppress both when this flag is true to avoid duplicate messaging.
+  // Conditions that make the banner a complete state display (not just a countdown):
+  //   isBooked          → banner shows "Booked"
+  //   isInactive        → banner shows "Scheduling off"
+  //   phase === 'sniper'         → banner shows "Booking in progress…"
+  //   execPhase === 'confirming' → banner shows "Confirming registration…"
+  const bannerIsComplete =
+    isBooked || isInactive || phase === 'sniper' || execPhase === 'confirming'
 
   // The effect re-runs whenever readinessPollMs changes so the interval is
   // always in sync with the current execution phase.
@@ -1230,7 +1230,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="mt-3 pt-3 border-t border-divider">
 
               {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
-              {job && (() => {
+              {/* Stage 9: suppressed when the status banner already shows a complete state */}
+              {!bannerIsComplete && job && (() => {
                 const result = stableResult ?? currentResult
                 if (!result) return null
                 const bgClass =
@@ -1273,7 +1274,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
               {/* ── Layer B+C — Trust line: armed state · confidence · auto-check ── */}
               {/* Appears below the primary card as supporting reassurance, not primary signal */}
-              {(() => {
+              {/* Stage 9: also suppressed when the banner is complete */}
+              {!bannerIsComplete && (() => {
                 const autoCheckActive = sniperArmed?.autoCheckActive ?? false
                 const autoRetry       = sniperArmed?.autoRetry       ?? false
                 // Stage 8: always show during a manual check (preflightRunning) so the
