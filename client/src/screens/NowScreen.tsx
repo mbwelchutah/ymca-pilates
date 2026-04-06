@@ -1443,8 +1443,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               // Pre-window (too_early): only bg signal — don't surface stale bundle failure.
               const bgClassFound   = bgRdy?.discovery === 'found'
               const bgClassMissing = bgRdy?.discovery === 'missing'
-              const classFound   = bgClassFound ||
-                                   (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_READY')
+              const classFound   = phase === 'too_early'
+                ? bgClassFound
+                : bgClassFound || (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_READY')
               const classMissing = phase !== 'too_early' &&
                                    (bgClassMissing ||
                                     (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_FAILED'))
@@ -1456,8 +1457,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               // bgRdy first; bundle fallback. Pre-window: bg only, no stale Blocked.
               const bgModalOk  = bgRdy?.modal === 'reachable'
               const bgModalBad = bgRdy?.modal === 'blocked'
-              const modalOk  = bgModalOk ||
-                               (!bgModalOk && !bgModalBad && bundle?.modal === 'MODAL_READY')
+              const modalOk  = phase === 'too_early'
+                ? bgModalOk
+                : bgModalOk || (!bgModalOk && !bgModalBad && bundle?.modal === 'MODAL_READY')
               const modalBad = phase !== 'too_early' &&
                                (bgModalBad ||
                                 (!bgModalOk && !bgModalBad &&
@@ -1634,7 +1636,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         case 'full':
                           return actionDetail.actionState === 'CANCEL_ONLY'
                             ? 'Already registered (Cancel button visible)'
-                            : 'Registration not open yet'
+                            : 'Class is full — registration unavailable'
                         default: return undefined
                       }
                     })()}
