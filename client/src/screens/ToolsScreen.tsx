@@ -998,158 +998,104 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         {/* ── 1d. Last Check Now (per-phase diagnostics) ──────── */}
         <LastCheckNowSection sniperRunState={sniperRunState} />
 
-        {/* ── Automation ───────────────────────────────────── */}
-        <SectionHeader title="Automation" />
+        {/* ── Automation Health ─────────────────────────────── */}
+        <SectionHeader title="Automation Health" />
         <Card padding="none">
-          {/* Enable / disable toggle row */}
-          <button
-            onClick={handleAutoPreflightToggle}
-            disabled={apfToggling || autoPreflightConfig === null}
-            className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
-          >
-            <div>
-              <p className="text-[15px] font-medium text-text-primary">
-                {apfToggling ? 'Updating…' : 'Auto Preflight'}
-              </p>
-              <p className="text-[12px] text-text-secondary mt-0.5">
-                Checks at 30 min, 10 min, 2 min before window
-              </p>
-            </div>
-            {/* Toggle pill */}
-            <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ml-4 ${
-              autoPreflightConfig?.enabled ? 'bg-accent-blue' : 'bg-divider'
-            }`}>
-              <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-                autoPreflightConfig?.enabled ? 'translate-x-5' : 'translate-x-0'
-              }`} />
-            </div>
-          </button>
 
-          {/* Last auto-preflight run */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-            <span className="text-[14px] text-text-secondary">Last run</span>
-            {autoPreflightConfig?.lastRun ? (
-              <div className="text-right">
-                <div className="flex items-center gap-1.5 justify-end">
-                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
-                    autoPreflightConfig.lastRun.status === 'pass'
-                      ? 'text-accent-green bg-accent-green/10'
-                      : autoPreflightConfig.lastRun.status === 'fail'
-                      ? 'text-accent-red bg-accent-red/10'
-                      : 'text-text-muted bg-divider'
-                  }`}>
-                    {autoPreflightConfig.lastRun.status.toUpperCase()}
-                  </span>
-                  <span className="text-[13px] font-medium text-text-primary">
-                    {autoPreflightConfig.lastRun.triggerName}
-                  </span>
-                </div>
-                <p className="text-[11px] text-text-muted mt-0.5">
-                  {fmtStr(autoPreflightConfig.lastRun.timestamp)}
-                </p>
-              </div>
-            ) : (
-              <span className="text-[13px] text-text-muted">Never</span>
-            )}
-          </div>
+          {/* ── Auto Preflight row ──────────────────────────── */}
+          {(() => {
+            const cfg = autoPreflightConfig
+            const apfMs   = cfg?.nextTrigger?.msUntil
+            const apfNext = apfMs != null ? (() => {
+              const d = Math.floor(apfMs / 86_400_000)
+              const h = Math.floor((apfMs % 86_400_000) / 3_600_000)
+              const m = Math.floor((apfMs % 3_600_000) / 60_000)
+              return d > 0 ? `Next in ${d}d ${h}h` : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
+            })() : cfg?.enabled ? 'None scheduled' : null
 
-          {/* Next scheduled trigger */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-[14px] text-text-secondary">Next trigger</span>
-            {autoPreflightConfig?.nextTrigger ? (() => {
-              const ms = autoPreflightConfig.nextTrigger.msUntil
-              const d = Math.floor(ms / 86_400_000)
-              const h = Math.floor((ms % 86_400_000) / 3_600_000)
-              const m = Math.floor((ms % 3_600_000) / 60_000)
-              const countdown = d > 0 ? `in ${d}d ${h}h` : h > 0 ? `in ${h}h ${m}m` : `in ${m}m`
-              return (
-                <div className="text-right">
-                  <span className="text-[13px] font-medium text-text-primary">
-                    {autoPreflightConfig.nextTrigger.triggerName}
-                  </span>
-                  <p className="text-[11px] text-text-muted mt-0.5">{countdown}</p>
-                </div>
-              )
-            })() : (
-              <span className="text-[13px] text-text-muted">
-                {autoPreflightConfig?.enabled ? 'None scheduled' : 'Disabled'}
-              </span>
-            )}
-          </div>
-        </Card>
+            let apfHealth = 'Off'
+            let apfDot    = 'bg-text-muted/40'
+            let apfColor  = 'text-text-muted'
+            if (cfg?.enabled) {
+              if (!cfg.lastRun)                         { apfHealth = 'Enabled'; apfDot = 'bg-accent-blue'; apfColor = 'text-text-secondary' }
+              else if (cfg.lastRun.status === 'pass')   { apfHealth = 'Healthy';        apfDot = 'bg-accent-green'; apfColor = 'text-accent-green' }
+              else if (cfg.lastRun.status === 'fail')   { apfHealth = 'Last run failed'; apfDot = 'bg-accent-red';   apfColor = 'text-accent-red'   }
+              else                                      { apfHealth = 'Needs review';   apfDot = 'bg-accent-amber'; apfColor = 'text-accent-amber' }
+            }
 
-        {/* Session Monitor (part of Automation) */}
-        <Card padding="none">
-          {/* Enable / disable toggle */}
-          <button
-            onClick={handleKeepaliveToggle}
-            disabled={kaToggling || keepaliveConfig === null}
-            className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
-          >
-            <div>
-              <p className="text-[15px] font-medium text-text-primary">
-                {kaToggling ? 'Updating…' : 'Periodic Session Check'}
-              </p>
-              <p className="text-[12px] text-text-secondary mt-0.5">
-                {keepaliveConfig
-                  ? `Verifies login every ${keepaliveConfig.intervalMinutes}m automatically`
-                  : 'Loading…'}
-              </p>
-            </div>
-            <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ml-4 ${
-              keepaliveConfig?.enabled ? 'bg-accent-blue' : 'bg-divider'
-            }`}>
-              <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-                keepaliveConfig?.enabled ? 'translate-x-5' : 'translate-x-0'
-              }`} />
-            </div>
-          </button>
-
-          {/* Last keepalive result */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-            <span className="text-[14px] text-text-secondary">Last check</span>
-            {keepaliveConfig?.lastRun ? (
-              <div className="text-right">
-                <div className="flex items-center gap-1.5 justify-end">
-                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
-                    keepaliveConfig.lastRun.valid
-                      ? 'text-accent-green bg-accent-green/10'
-                      : 'text-accent-red bg-accent-red/10'
-                  }`}>
-                    {keepaliveConfig.lastRun.valid ? 'VALID' : 'FAILED'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-text-muted mt-0.5">
-                  {fmtStr(keepaliveConfig.lastRun.timestamp)}
-                </p>
-                {!keepaliveConfig.lastRun.valid && (
-                  <p className="text-[11px] text-accent-red mt-0.5 max-w-[180px] text-right break-words">
-                    {keepaliveConfig.lastRun.detail.length > 60
-                      ? keepaliveConfig.lastRun.detail.slice(0, 60) + '…'
-                      : keepaliveConfig.lastRun.detail}
+            return (
+              <button
+                onClick={handleAutoPreflightToggle}
+                disabled={apfToggling || cfg === null}
+                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
+              >
+                <div className="flex-1 mr-4 min-w-0">
+                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                    {apfToggling ? 'Updating…' : 'Auto Preflight'}
                   </p>
-                )}
-              </div>
-            ) : (
-              <span className="text-[13px] text-text-muted">Never</span>
-            )}
-          </div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${apfDot}`} />
+                    <span className={`text-[12px] font-medium ${apfColor}`}>{apfHealth}</span>
+                    {apfNext && <span className="text-[12px] text-text-muted">· {apfNext}</span>}
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
+                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </div>
+              </button>
+            )
+          })()}
 
-          {/* Next scheduled check */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-[14px] text-text-secondary">Next check</span>
-            {keepaliveConfig?.next ? (() => {
-              const ms = keepaliveConfig.next.msUntil
-              const h  = Math.floor(ms / 3_600_000)
-              const m  = Math.floor((ms % 3_600_000) / 60_000)
-              const countdown = h > 0 ? `in ${h}h ${m}m` : ms < 60_000 ? 'due now' : `in ${m}m`
-              return <span className="text-[13px] text-text-primary">{countdown}</span>
-            })() : (
-              <span className="text-[13px] text-text-muted">
-                {keepaliveConfig?.enabled ? 'None scheduled' : 'Disabled'}
-              </span>
-            )}
-          </div>
+          {/* ── Session Check row ───────────────────────────── */}
+          {(() => {
+            const cfg = keepaliveConfig
+            const kaMs   = cfg?.next?.msUntil
+            const kaNext = kaMs != null ? (() => {
+              const h = Math.floor(kaMs / 3_600_000)
+              const m = Math.floor((kaMs % 3_600_000) / 60_000)
+              return kaMs < 60_000 ? 'Due now' : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
+            })() : cfg?.enabled ? 'None scheduled' : null
+
+            let kaHealth = 'Off'
+            let kaDot    = 'bg-text-muted/40'
+            let kaColor  = 'text-text-muted'
+            if (cfg?.enabled) {
+              if (!cfg.lastRun)              { kaHealth = 'Enabled';      kaDot = 'bg-accent-blue';  kaColor = 'text-text-secondary' }
+              else if (cfg.lastRun.valid)    { kaHealth = 'Healthy';      kaDot = 'bg-accent-green'; kaColor = 'text-accent-green'   }
+              else                           { kaHealth = 'Needs review'; kaDot = 'bg-accent-red';   kaColor = 'text-accent-red'     }
+            }
+
+            return (
+              <button
+                onClick={handleKeepaliveToggle}
+                disabled={kaToggling || cfg === null}
+                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity"
+              >
+                <div className="flex-1 mr-4 min-w-0">
+                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                    {kaToggling ? 'Updating…' : 'Session Check'}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kaDot}`} />
+                    <span className={`text-[12px] font-medium ${kaColor}`}>{kaHealth}</span>
+                    {kaNext && <span className="text-[12px] text-text-muted">· {kaNext}</span>}
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
+                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </div>
+              </button>
+            )
+          })()}
+
         </Card>
 
         {/* ── 1e. Suggestions ─────────────────────────────────── */}
