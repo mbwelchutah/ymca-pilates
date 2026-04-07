@@ -122,7 +122,10 @@ function checkFreshness(thresholdMs = TRUST_THRESHOLD_MIN * 60 * 1000) {
       return { trusted: false, detail: 'Daxko session invalid — running full check' };
     }
     const daxkoAgeMs = now - new Date(sessionStatus.checkedAt).getTime();
-    if (daxkoAgeMs >= thresholdMs) {
+    if (!Number.isFinite(daxkoAgeMs)) {
+      return { trusted: false, detail: 'Daxko session has invalid checkedAt — running full check' };
+    }
+    if (daxkoAgeMs > thresholdMs) {
       return { trusted: false, detail: `Daxko session stale (${Math.round(daxkoAgeMs / 60000)}m old) — running full check` };
     }
 
@@ -139,7 +142,10 @@ function checkFreshness(thresholdMs = TRUST_THRESHOLD_MIN * 60 * 1000) {
       return { trusted: false, detail: 'FamilyWorks session invalid — running full check' };
     }
     const fwAgeMs = now - new Date(fwStatus.checkedAt).getTime();
-    if (fwAgeMs >= thresholdMs) {
+    if (!Number.isFinite(fwAgeMs)) {
+      return { trusted: false, detail: 'FamilyWorks session has invalid checkedAt — running full check' };
+    }
+    if (fwAgeMs > thresholdMs) {
       return { trusted: false, detail: `FamilyWorks session stale (${Math.round(fwAgeMs / 60000)}m old) — running full check` };
     }
 
