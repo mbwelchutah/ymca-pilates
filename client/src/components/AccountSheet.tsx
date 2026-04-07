@@ -26,6 +26,7 @@ function deriveStatus(s: SessionStatus | null): {
   dot: 'green' | 'amber' | 'gray'
   connection: string
   connectionCls: string
+  signedIn: boolean
   needsAttention: boolean
 } {
   if (!s) return {
@@ -34,11 +35,12 @@ function deriveStatus(s: SessionStatus | null): {
     dot: 'gray',
     connection: '—',
     connectionCls: 'text-text-muted',
+    signedIn: false,
     needsAttention: false,
   }
 
-  const signedIn   = s.daxko        === 'DAXKO_READY'
-  const connActive = s.familyworks  === 'FAMILYWORKS_READY'
+  const signedIn   = s.daxko       === 'DAXKO_READY'
+  const connActive = s.familyworks === 'FAMILYWORKS_READY'
 
   if (!signedIn) return {
     headline: 'Needs attention',
@@ -46,6 +48,7 @@ function deriveStatus(s: SessionStatus | null): {
     dot: 'amber',
     connection: 'Sign-in required',
     connectionCls: 'text-accent-amber',
+    signedIn: false,
     needsAttention: true,
   }
 
@@ -55,6 +58,7 @@ function deriveStatus(s: SessionStatus | null): {
     dot: 'amber',
     connection: 'Schedule disconnected',
     connectionCls: 'text-accent-amber',
+    signedIn: true,
     needsAttention: true,
   }
 
@@ -64,6 +68,7 @@ function deriveStatus(s: SessionStatus | null): {
     dot: 'green',
     connection: 'Connection active',
     connectionCls: 'text-accent-green',
+    signedIn: true,
     needsAttention: false,
   }
 }
@@ -75,10 +80,11 @@ const DOT_CLS: Record<'green' | 'amber' | 'gray', string> = {
 }
 
 export function AccountSheet({ open, onClose }: AccountSheetProps) {
-  const [session,      setSession]      = useState<SessionStatus | null>(null)
-  const [refreshing,   setRefreshing]   = useState(false)
-  const [signingOut,   setSigningOut]   = useState(false)
-  const [feedback,     setFeedback]     = useState<{ text: string; cls: string } | null>(null)
+  const [session,    setSession]    = useState<SessionStatus | null>(null)
+  const [signingIn,  setSigningIn]  = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+  const [feedback,   setFeedback]   = useState<{ text: string; cls: string } | null>(null)
 
   const fetchSession = useCallback(() => {
     api.getSessionStatus()
@@ -93,8 +99,29 @@ export function AccountSheet({ open, onClose }: AccountSheetProps) {
     }
   }, [open, fetchSession])
 
+  const busy = signingIn || refreshing || signingOut
+
+  const handleSignIn = async () => {
+    if (busy) return
+    setSigningIn(true)
+    setFeedback({ text: 'Signing in — this takes about 30 seconds…', cls: 'text-text-secondary' })
+    try {
+      const result = await api.settingsLogin()
+      if (result.success) {
+        setFeedback({ text: result.detail ?? 'Signed in successfully', cls: 'text-accent-green' })
+      } else {
+        setFeedback({ text: result.detail ?? 'Sign-in failed — check credentials in Settings', cls: 'text-accent-red' })
+      }
+      fetchSession()
+    } catch {
+      setFeedback({ text: 'Could not reach server — try again', cls: 'text-accent-red' })
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
   const handleRefresh = async () => {
-    if (refreshing || signingOut) return
+    if (busy) return
     setRefreshing(true)
     setFeedback({ text: 'Checking connection…', cls: 'text-text-secondary' })
     try {
@@ -113,7 +140,7 @@ export function AccountSheet({ open, onClose }: AccountSheetProps) {
   }
 
   const handleSignOut = async () => {
-    if (refreshing || signingOut) return
+    if (busy) return
     setSigningOut(true)
     setFeedback({ text: 'Signing out…', cls: 'text-text-secondary' })
     try {
@@ -131,7 +158,6 @@ export function AccountSheet({ open, onClose }: AccountSheetProps) {
     }
   }
 
-  const busy = refreshing || signingOut
   const info = deriveStatus(session)
 
   return (
@@ -171,35 +197,58 @@ export function AccountSheet({ open, onClose }: AccountSheetProps) {
 
           {/* Status block */}
           <div className="bg-[#f2f2f7] rounded-2xl px-4 py-4 mb-5">
-            {/* Headline */}
             <div className="flex items-center gap-2.5 mb-1">
               <span className={`w-2 h-2 rounded-full shrink-0 ${DOT_CLS[info.dot]}`} />
               <span className={`text-[17px] font-semibold ${info.headlineCls}`}>{info.headline}</span>
             </div>
-
-            {/* Connection line */}
             <p className={`text-[14px] ml-[18px] ${info.connectionCls}`}>{info.connection}</p>
-
-            {/* Last checked */}
             <p className="text-[13px] text-text-muted mt-2 ml-[18px]">
               Last checked: {formatChecked(session?.lastVerified ?? null)}
             </p>
           </div>
 
-          {/* Feedback line */}
+          {/* Feedback */}
           {feedback && (
             <p className={`text-[13px] mb-3 ${feedback.cls}`}>{feedback.text}</p>
           )}
 
-          {/* Actions */}
+          {/* Actions — layout shifts based on whether sign-in is the primary need */}
           <div className="flex flex-col gap-2.5">
-            <button
-              onClick={handleRefresh}
-              disabled={busy}
-              className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
-            >
-              {refreshing ? 'Checking…' : 'Refresh connection'}
-            </button>
+            {!info.signedIn ? (
+              <>
+                <button
+                  onClick={handleSignIn}
+                  disabled={busy}
+                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                >
+                  {signingIn ? 'Signing in…' : 'Sign in'}
+                </button>
+                <button
+                  onClick={handleRefresh}
+                  disabled={busy}
+                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                >
+                  {refreshing ? 'Checking…' : 'Refresh connection'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleRefresh}
+                  disabled={busy}
+                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                >
+                  {refreshing ? 'Checking…' : 'Refresh connection'}
+                </button>
+                <button
+                  onClick={handleSignIn}
+                  disabled={busy}
+                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                >
+                  {signingIn ? 'Signing in…' : 'Sign in again'}
+                </button>
+              </>
+            )}
 
             <button
               onClick={handleSignOut}
