@@ -4237,7 +4237,12 @@ const server = http.createServer((req, res) => {
           console.log('[settings-refresh] Tier-2 ping succeeded:', pingResult.detail);
 
           // Read the FamilyWorks status from the freshly-stamped session file.
-          // pingSessionHttp() called refreshStatusTimestamps() so the file is current.
+          // pingSessionHttp() verified FamilyWorks via HTTP AND called refreshStatusTimestamps(),
+          // so familyworks-session.json is up to date with a fresh checkedAt.
+          // Sniper-state recency comparison is intentionally skipped here: the HTTP ping
+          // already confirmed the live FamilyWorks session, making sniper-state stale
+          // by definition. Defaulting to FAMILYWORKS_READY when the file is absent is
+          // correct because the ping just proved the session is active.
           let familyworks = 'FAMILYWORKS_READY';
           let fwCheckedAt = null;
           try {
