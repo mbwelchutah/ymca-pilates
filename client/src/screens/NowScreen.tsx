@@ -447,34 +447,6 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   }
 }
 
-// ── Compact detail row (Stage 4) ───────────────────────────────────────────────
-// Visually secondary: 12 px text, sm dot, muted colors.
-// Used in the collapsible details section below the primary result card.
-
-function CompactRow({
-  label, value, dotColor, detail,
-}: {
-  label:     string
-  value:     string
-  dotColor:  DotColor
-  detail?:   string
-}) {
-  return (
-    <div className="px-4 py-2.5 border-b border-divider last:border-0">
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] text-text-muted">{label}</span>
-        <div className="flex items-center gap-1.5">
-          <StatusDot color={dotColor} size="sm" />
-          <span className="text-[12px] font-medium text-text-secondary">{value}</span>
-        </div>
-      </div>
-      {detail && (
-        <p className="text-[11px] text-text-muted mt-0.5 leading-snug">{detail}</p>
-      )}
-    </div>
-  )
-}
-
 // ── Readiness row sub-component ────────────────────────────────────────────────
 
 function ReadinessRow({
@@ -1654,25 +1626,37 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 }
               }
 
+              const hasRunEvents = (sniperRunState?.events?.length ?? 0) > 0
               const milestones = [
-                { label: 'Session', dot: sessDot,   value: sessValue   },
-                { label: 'Class',   dot: classDot,  value: classValue  },
-                { label: 'Modal',   dot: modalDot,  value: modalValue  },
-                { label: 'Action',  dot: actionDot, value: actionValue },
+                { label: 'Session', dot: sessDot,   value: sessValue,   section: 'tools-readiness'                                    },
+                { label: 'Class',   dot: classDot,  value: classValue,  section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
+                { label: 'Modal',   dot: modalDot,  value: modalValue,  section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
+                { label: 'Action',  dot: actionDot, value: actionValue, section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
               ]
 
               return (
                 <div className="flex border-b border-divider">
-                  {milestones.map((m, i) => (
-                    <div
-                      key={m.label}
-                      className={`flex-1 flex flex-col items-center py-3 gap-1 ${i > 0 ? 'border-l border-divider' : ''}`}
-                    >
-                      <StatusDot color={m.dot} />
-                      <span className="text-[12px] font-medium text-text-secondary">{m.value}</span>
-                      <span className="text-[10px] text-text-muted">{m.label}</span>
-                    </div>
-                  ))}
+                  {milestones.map((m, i) => {
+                    const base = `flex-1 flex flex-col items-center py-3 gap-1 ${i > 0 ? 'border-l border-divider' : ''}`
+                    const inner = (
+                      <>
+                        <StatusDot color={m.dot} />
+                        <span className="text-[12px] font-medium text-text-secondary">{m.value}</span>
+                        <span className="text-[10px] text-text-muted">{m.label}</span>
+                      </>
+                    )
+                    return onGoToTools ? (
+                      <button
+                        key={m.label}
+                        onClick={() => onGoToTools(m.section)}
+                        className={`${base} active:bg-divider/50 transition-colors`}
+                      >
+                        {inner}
+                      </button>
+                    ) : (
+                      <div key={m.label} className={base}>{inner}</div>
+                    )
+                  })}
                 </div>
               )
             })()}
@@ -1701,7 +1685,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               return (
                 <button
                   onClick={() => onGoToTools(section)}
-                  className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-2.5 border-t border-divider"
+                  className="w-full text-center text-[13px] font-medium text-accent-blue active:opacity-60 py-3 border-t border-divider"
                 >
                   {label}
                 </button>
