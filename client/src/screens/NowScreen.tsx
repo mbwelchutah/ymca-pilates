@@ -1503,6 +1503,32 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           )}
         </Card>
 
+        {/* Stage 5 — Session attention nudge ───────────────────────────
+             Shown only when accountAttention is true (explicit known-failure:
+             AUTH_NEEDS_LOGIN or FAMILYWORKS_SESSION_MISSING). No dismiss —
+             it disappears naturally once the session is fixed.              */}
+        {accountAttention && (
+          <button
+            onClick={onAccount}
+            className="w-full rounded-2xl bg-accent-amber/10 border border-accent-amber/20 px-4 py-3 flex items-center gap-3 text-left active:opacity-70 transition-opacity"
+          >
+            <svg className="w-4 h-4 flex-shrink-0 text-accent-amber" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-accent-amber leading-snug">
+                Session needs attention
+              </p>
+              <p className="text-[12px] text-text-muted mt-0.5">
+                Tap to review and sign in
+              </p>
+            </div>
+            <svg className="w-4 h-4 flex-shrink-0 text-accent-amber/60" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+
         {/* Stage 10D — Escalation banner: click_failed alert ─────────── */}
         {bgReadiness?.escalation && (
           <div className="rounded-2xl bg-accent-amber/10 border border-accent-amber/30 px-4 py-3.5">
