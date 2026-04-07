@@ -1,0 +1,363 @@
+You are redesigning the Tools tab of the YMCA Booker app.
+
+PRIMARY GOAL
+
+Simplify the Tools tab so it feels clean, useful, and calm.
+
+Right now Tools contains too much at once:
+- run history
+- automation toggles
+- suggestions
+- failure trends
+- recent failures
+- technical diagnostics
+
+This makes it feel crowded and harder to understand.
+
+The new Tools tab should answer only these 3 questions first:
+
+1. What happened last time?
+2. Are the automations healthy?
+3. What needs my attention?
+
+Everything else should be secondary or collapsed.
+
+IMPORTANT PRODUCT DIRECTION
+
+Now screen = trust + current booking state
+Tools = explanation + health + diagnostics
+
+Tools should feel like:
+- an operations summary
+- a health dashboard
+- a clean diagnostic center
+
+NOT:
+- a raw error dump
+- a giant analytics page
+- a debug wall
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not change booking logic
+- Do not remove data entirely unless explicitly stated
+- Prefer collapsing / demoting over deleting
+- Keep mobile-first layout
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+NEW TOOLS TAB STRUCTURE
+==================================================
+
+Target order, top to bottom:
+
+1. Last Run
+2. Automation Health
+3. Needs Attention
+4. Recent Activity (collapsed or compact)
+5. Technical Details (collapsed)
+6. Failure Trends (collapsed, optional)
+
+Tools should not open with a wall of failures.
+
+==================================================
+STAGE 1 — REBUILD THE TOP OF TOOLS AROUND “LAST RUN”
+==================================================
+
+Goal:
+Make the first thing in Tools be the most useful thing.
+
+Tasks:
+1. Create a compact Last Run card at the top
+2. Show only:
+   - outcome: success / waitlist / failed
+   - timestamp
+   - one-line reason
+3. Example reasons:
+   - “Login expired”
+   - “Booking button unavailable”
+   - “Class not found”
+   - “Booked successfully”
+4. Add tap to expand for more detail
+5. Remove duplicate run result displays from other top sections
+
+Success criteria:
+- first screen in Tools instantly explains the most recent outcome
+- no raw logs at the top
+
+After Stage 1:
+Stop and summarize:
+- what Last Run now shows
+- what top clutter was removed
+
+==================================================
+STAGE 2 — REPLACE MULTIPLE AUTOMATION CARDS WITH ONE “AUTOMATION HEALTH” SECTION
+==================================================
+
+Goal:
+Make automation status readable in one place.
+
+Tasks:
+1. Combine Auto Preflight and Periodic Session Check into one section:
+   Title:
+   “Automation Health”
+2. Inside show compact rows:
+   - Preflight: On / Off + next run + last result
+   - Session Check: On / Off + next check + last result
+3. Keep toggles, but make rows cleaner and tighter
+4. Avoid oversized cards if possible
+5. Use human labels:
+   - Healthy
+   - Needs review
+   - Last run failed
+   - Next check in 3h 28m
+
+Success criteria:
+- automation status fits in one coherent section
+- less vertical sprawl
+
+After Stage 2:
+Stop and summarize:
+- how automation info was consolidated
+- what became easier to scan
+
+==================================================
+STAGE 3 — CREATE ONE “NEEDS ATTENTION” SECTION
+==================================================
+
+Goal:
+Stop scattering concern signals all over the page.
+
+Tasks:
+1. Create one section called:
+   “Needs Attention”
+2. Only show real actionable items here
+3. Limit to the top 1–3 highest-priority issues
+4. Examples:
+   - “Session needs attention”
+   - “Repeated login failures detected”
+   - “Booking button not found recently”
+5. Each item should:
+   - have a short title
+   - one short explanation
+   - optional CTA like “Review” or deep link
+6. Remove or reduce repeated suggestion cards elsewhere if they say the same thing
+
+Success criteria:
+- user sees one focused attention area
+- no repeated “advice” cards saying similar things
+
+After Stage 3:
+Stop and summarize:
+- what now appears in Needs Attention
+- what suggestion duplication was removed
+
+==================================================
+STAGE 4 — DEMOTE “SUGGESTIONS” INTO SECONDARY INSIGHTS
+==================================================
+
+Goal:
+Suggestions should help, not dominate.
+
+Tasks:
+1. Move current Suggestions section lower on the page
+2. Rename if needed to:
+   - “Insights”
+   - or “Suggestions”
+3. Limit to 2–3 items max by default
+4. Collapse the rest behind:
+   - “Show more insights”
+5. Use short, clear copy
+6. Avoid repeating anything already shown in Needs Attention
+
+Success criteria:
+- suggestions no longer crowd the core Tools view
+- user sees only the most useful insights first
+
+After Stage 4:
+Stop and summarize:
+- what was demoted
+- how suggestions became lighter
+
+==================================================
+STAGE 5 — COLLAPSE FAILURE TRENDS BY DEFAULT
+==================================================
+
+Goal:
+Keep analytics available without overwhelming the user.
+
+Tasks:
+1. Move “By Failure Type” and “By Phase” into a collapsed section:
+   Title:
+   “Failure Trends”
+2. Show only a compact summary when collapsed, such as:
+   - “Top issue: schedule load failures”
+   - “137 total failures in selected window”
+3. Expand only on tap
+4. Keep time filter if useful, but make it visually lighter
+5. Do not show large bar charts by default on initial Tools view
+
+Success criteria:
+- analytics remain available
+- Tools opens with clarity, not chart clutter
+
+After Stage 5:
+Stop and summarize:
+- how failure trends are collapsed
+- what the collapsed summary shows
+
+==================================================
+STAGE 6 — COLLAPSE RECENT FAILURES / RAW INCIDENT LIST
+==================================================
+
+Goal:
+Raw incident lists should be available, but never dominate.
+
+Tasks:
+1. Move Recent Failures / error feed lower in Tools
+2. Rename section to:
+   - “Recent Activity”
+   or
+   - “Incident History”
+3. Show only the latest 3 items by default
+4. Add “Show all” to expand full list
+5. Keep each row compact:
+   - title
+   - time
+   - short summary
+6. Do not show raw Playwright logs unless user taps further
+
+Success criteria:
+- user can review recent problems
+- Tools no longer starts with a long incident feed
+
+After Stage 6:
+Stop and summarize:
+- how incident history was reduced
+- what the default visible list now contains
+
+==================================================
+STAGE 7 — MOVE RAW TECHNICAL OUTPUT INTO “TECHNICAL DETAILS”
+==================================================
+
+Goal:
+Hide developer-level noise unless explicitly requested.
+
+Tasks:
+1. Create a bottom section:
+   “Technical Details”
+2. Put raw logs here:
+   - Playwright errors
+   - launch errors
+   - stack traces
+   - technical call details
+3. Collapse by default
+4. Do not show technical log walls anywhere else in Tools by default
+
+Success criteria:
+- human-readable Tools by default
+- technical depth still available when needed
+
+After Stage 7:
+Stop and summarize:
+- what moved into Technical Details
+- what technical content was removed from default view
+
+==================================================
+STAGE 8 — CLEAN VISUAL HIERARCHY + SPACING
+==================================================
+
+Goal:
+Make Tools feel calmer and easier to scan.
+
+Tasks:
+1. Tighten vertical spacing between large sections
+2. Reduce oversized cards where possible
+3. Standardize section headers:
+   - Last Run
+   - Automation Health
+   - Needs Attention
+   - Insights
+   - Failure Trends
+   - Recent Activity
+   - Technical Details
+4. Remove visual repetition
+5. Make the page feel like one coherent control surface
+
+Success criteria:
+- easier scanning
+- less scrolling fatigue
+- more premium feel
+
+After Stage 8:
+Stop and summarize:
+- spacing and hierarchy improvements
+- how the page now feels more coherent
+
+==================================================
+STAGE 9 — FINAL CONTENT AUDIT
+==================================================
+
+Goal:
+Ensure every section has a clear job.
+
+Tasks:
+1. Audit each section and ask:
+   - Is this primary, secondary, or technical?
+2. Remove duplicate messages across sections
+3. Make sure the final page answers:
+   - What happened last time?
+   - Are automations healthy?
+   - What needs my attention?
+4. Ensure everything else is optional and lower-priority
+
+Success criteria:
+- no section feels redundant
+- Tools opens with confidence, not overload
+
+After Stage 9:
+Stop and summarize:
+- what final redundancies were removed
+- why the final Tools tab is simpler and stronger
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+When the user opens Tools, they should first see:
+
+1. Last Run
+2. Automation Health
+3. Needs Attention
+
+They should NOT first see:
+- a long error list
+- giant failure charts
+- raw technical logs
+- too many suggestion cards
+
+The final Tools tab should feel like:
+- clear
+- intentional
+- calm
+- useful
+- premium
+
+Not like:
+- a debugging console
+- an incident firehose
+- an analytics overload
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

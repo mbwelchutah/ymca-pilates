@@ -595,6 +595,101 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
   )
 }
 
+// ── Stage 1: Compact Last Run summary card ─────────────────────────────────────
+
+function resultToOutcome(result: string | null): {
+  label: string; reason: string; color: string; dot: string
+} {
+  switch (result) {
+    case 'booked':
+      return { label: 'Booked',      reason: 'Booked successfully',             color: 'text-accent-green', dot: 'bg-accent-green' }
+    case 'dry_run':
+      return { label: 'Simulated',   reason: 'Simulated booking (test mode)',    color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
+    case 'found_not_open_yet':
+      return { label: 'Waiting',     reason: 'Registration not open yet',        color: 'text-text-muted',   dot: 'bg-text-muted'   }
+    case 'not_found':
+      return { label: 'Not Found',   reason: 'Class not found on schedule',      color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+    case 'skipped':
+      return { label: 'Skipped',     reason: 'Booking check was skipped',        color: 'text-text-muted',   dot: 'bg-text-muted'   }
+    default:
+      return { label: 'Failed',      reason: 'Booking attempt failed',           color: 'text-accent-red',   dot: 'bg-accent-red'   }
+  }
+}
+
+interface JobLike {
+  id: number
+  class_title: string
+  last_run_at: string | null
+  last_result: string | null
+  last_error_message: string | null
+}
+
+function LastRunSummaryCard({ lastRunJob, botStatus }: {
+  lastRunJob: JobLike | null
+  botStatus:  BotStatus | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (!lastRunJob?.last_run_at) {
+    return (
+      <Card padding="none">
+        <div className="px-4 py-3.5 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-text-muted/30 flex-shrink-0" />
+          <div>
+            <p className="text-[15px] font-medium text-text-secondary">No runs yet</p>
+            <p className="text-[12px] text-text-muted mt-0.5">Scheduler {botStatus?.active ? 'running' : 'idle'}</p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  const { label, reason: baseReason, color, dot } = resultToOutcome(lastRunJob.last_result)
+  const errorShort = lastRunJob.last_error_message
+    ? (lastRunJob.last_error_message.length > 55
+        ? lastRunJob.last_error_message.slice(0, 55) + '…'
+        : lastRunJob.last_error_message)
+    : null
+  const reason = errorShort ?? baseReason
+
+  return (
+    <Card padding="none">
+      {/* ── Collapsed row ───────────────────────────────────── */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
+            <span className={`text-[16px] font-semibold leading-tight ${color}`}>{label}</span>
+            <span className="text-[12px] text-text-muted">{fmtStr(lastRunJob.last_run_at)}</span>
+          </div>
+          <p className="text-[13px] text-text-secondary mt-1 truncate">{reason}</p>
+        </div>
+        <ChevronIcon rotated={expanded} />
+      </button>
+
+      {/* ── Expanded detail ─────────────────────────────────── */}
+      {expanded && (
+        <div className="border-t border-divider">
+          <DetailRow label="Class"      value={lastRunJob.class_title ?? '—'} />
+          <DetailRow label="Job"        value={`#${lastRunJob.id}`} />
+          <DetailRow label="Scheduler"  value={botStatus?.active ? 'Running' : 'Idle'} />
+          <DetailRow
+            label="Result"
+            value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
+            last={!lastRunJob.last_error_message}
+          />
+          {lastRunJob.last_error_message && (
+            <DetailRow label="Error" value={lastRunJob.last_error_message} last />
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, scrollTo }: ToolsScreenProps) {
@@ -759,6 +854,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
       <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} />
       <ScreenContainer>
 
+        {/* ── Last Run (compact, tap to expand) ───────────── */}
+        <SectionHeader title="Last Run" id="tools-last-run" />
+        <LastRunSummaryCard lastRunJob={lastRunJob} botStatus={botStatus} />
+
         {/* ── Actions ──────────────────────────────────────── */}
         <SectionHeader title="Actions" id="tools-actions" />
         <Card padding="none">
@@ -888,52 +987,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             </span>
           </div>
         </Card>
-
-        {/* ── Last Run ─────────────────────────────────────── */}
-        <SectionHeader title="Last Run" id="tools-last-run" />
-        <Card padding="none">
-          <DetailRow
-            label="Scheduler"
-            value={botStatus == null ? 'Loading…' : botStatus.active ? 'Running' : 'Idle'}
-          />
-          {lastRunJob ? (
-            <>
-              <DetailRow
-                label="Last Run"
-                value={lastRunJob.last_run_at ? fmtStr(lastRunJob.last_run_at) : '—'}
-              />
-              <DetailRow
-                label="Job"
-                value={`#${lastRunJob.id} — ${lastRunJob.class_title}`}
-              />
-              <DetailRow
-                label="Result"
-                value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
-                last={!lastRunJob.last_error_message}
-              />
-              {lastRunJob.last_error_message && (
-                <DetailRow
-                  label="Error"
-                  value={
-                    lastRunJob.last_error_message.length > 60
-                      ? lastRunJob.last_error_message.slice(0, 60) + '…'
-                      : lastRunJob.last_error_message
-                  }
-                  last
-                />
-              )}
-            </>
-          ) : (
-            <DetailRow label="Last Run" value="No runs yet" last />
-          )}
-        </Card>
-        {botStatus?.log && (
-          <Card padding="sm" className="bg-surface border border-divider shadow-none">
-            <p className="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
-              {botStatus.log}
-            </p>
-          </Card>
-        )}
 
         {/* ── Run Events ───────────────────────────────────── */}
         <SectionHeader
