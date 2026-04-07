@@ -21,6 +21,9 @@ const backendPaths = [
   '/refresh-schedule',
   '/screenshots',
   '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
 ]
 
 export default defineConfig({
