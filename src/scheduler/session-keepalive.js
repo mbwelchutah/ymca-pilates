@@ -12,16 +12,18 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { runSessionCheck }  = require('../bot/session-check');
-const { recordFailure }    = require('../db/failures');
-const { getAllJobs }        = require('../db/jobs');
-const { refreshReadiness } = require('../bot/readiness-state');
+const { runSessionCheck, loadStatus } = require('../bot/session-check');
+const { recordFailure }               = require('../db/failures');
+const { getAllJobs }                   = require('../db/jobs');
+const { refreshReadiness }            = require('../bot/readiness-state');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
 const LOG_FILE      = path.join(DATA_DIR, 'session-keepalive-log.json');
+const FW_FILE       = path.join(DATA_DIR, 'familyworks-session.json');
 
 const DEFAULT_INTERVAL_MINUTES = 12;  // silent background check every 12 minutes
+const TRUST_THRESHOLD_MIN      = 30;  // Tier-1: trust cached data within this window
 const MAX_LOG_ENTRIES          = 20;
 
 // ── In-memory guard ───────────────────────────────────────────────────────────
@@ -100,6 +102,58 @@ function getNextKeepaliveInfo() {
   };
 }
 
+// ── Tier-1: File-freshness check ─────────────────────────────────────────────
+//
+// Reads the two on-disk session files and decides whether they are recent
+// enough to be trusted without launching a browser.
+//
+// Returns { trusted: boolean, detail: string }.
+
+function checkFreshness(thresholdMs = TRUST_THRESHOLD_MIN * 60 * 1000) {
+  try {
+    const now = Date.now();
+
+    // ── Daxko (session-status.json) ─────────────────────────────────────────
+    const sessionStatus = loadStatus();
+    if (!sessionStatus) {
+      return { trusted: false, detail: 'Daxko session file missing — running full check' };
+    }
+    if (sessionStatus.valid !== true) {
+      return { trusted: false, detail: 'Daxko session invalid — running full check' };
+    }
+    const daxkoAgeMs = now - new Date(sessionStatus.checkedAt).getTime();
+    if (daxkoAgeMs >= thresholdMs) {
+      return { trusted: false, detail: `Daxko session stale (${Math.round(daxkoAgeMs / 60000)}m old) — running full check` };
+    }
+
+    // ── FamilyWorks (familyworks-session.json) ───────────────────────────────
+    let fwStatus = null;
+    try {
+      if (fs.existsSync(FW_FILE)) fwStatus = JSON.parse(fs.readFileSync(FW_FILE, 'utf8'));
+    } catch { /* fwStatus stays null */ }
+
+    if (!fwStatus) {
+      return { trusted: false, detail: 'FamilyWorks session file missing — running full check' };
+    }
+    if (fwStatus.ready !== true || fwStatus.status !== 'FAMILYWORKS_READY') {
+      return { trusted: false, detail: 'FamilyWorks session invalid — running full check' };
+    }
+    const fwAgeMs = now - new Date(fwStatus.checkedAt).getTime();
+    if (fwAgeMs >= thresholdMs) {
+      return { trusted: false, detail: `FamilyWorks session stale (${Math.round(fwAgeMs / 60000)}m old) — running full check` };
+    }
+
+    const daxkoAge = Math.round(daxkoAgeMs / 60000);
+    const fwAge    = Math.round(fwAgeMs    / 60000);
+    return {
+      trusted: true,
+      detail:  `Session data fresh — Daxko verified ${daxkoAge}m ago, FamilyWorks ${fwAge}m ago (threshold ${TRUST_THRESHOLD_MIN}m)`,
+    };
+  } catch (err) {
+    return { trusted: false, detail: `Freshness check error: ${err.message}` };
+  }
+}
+
 // ── Main check ────────────────────────────────────────────────────────────────
 
 async function checkSessionKeepalive({ isActive = false } = {}) {
@@ -123,7 +177,26 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
 
   running = true;
   const timestamp = new Date().toISOString();
-  console.log('[session-keepalive] Running periodic session check...');
+
+  // ── Tier 1: File-freshness short-circuit ─────────────────────────────────
+  // If both session files are recent and valid, skip the Playwright launch.
+  // Records a trust log entry so "Last check" in the UI stays current.
+  const freshness = checkFreshness();
+  if (freshness.trusted) {
+    console.log('[session-keepalive] Tier 1 trust —', freshness.detail);
+    appendLog({ timestamp, valid: true, detail: freshness.detail, screenshot: null, tier: 1 });
+    try {
+      const jobs   = getAllJobs().filter(j => j.is_active === 1);
+      const topJob = jobs[0] ?? null;
+      refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
+    } catch (_) { /* non-fatal */ }
+    running = false;
+    return;
+  }
+
+  // Tier 1 missed — log the reason and fall through to the full Playwright check.
+  console.log('[session-keepalive] Tier 1 miss —', freshness.detail);
+  console.log('[session-keepalive] Running full Playwright session check (Tier 3)...');
 
   try {
     const result = await runSessionCheck({ source: 'keepalive' });
@@ -133,6 +206,7 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
       valid:      result.valid,
       detail:     result.detail,
       screenshot: result.screenshot ?? null,
+      tier:       3,
     };
     appendLog(entry);
 
@@ -164,7 +238,7 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
     }
   } catch (err) {
     console.error('[session-keepalive] Unexpected error:', err.message);
-    appendLog({ timestamp, valid: false, detail: err.message, screenshot: null });
+    appendLog({ timestamp, valid: false, detail: err.message, screenshot: null, tier: 3 });
   } finally {
     running = false;
   }
@@ -179,10 +253,11 @@ function getKeepaliveConfig() {
   const next     = getNextKeepaliveInfo();
   // Return both units for forward/backward client compatibility.
   return {
-    enabled:         settings.enabled,
-    intervalMinutes: settings.intervalMinutes,
-    intervalHours:   Math.round(settings.intervalMinutes / 60),
-    lastRun:         lastEntry,
+    enabled:               settings.enabled,
+    intervalMinutes:       settings.intervalMinutes,
+    intervalHours:         Math.round(settings.intervalMinutes / 60),
+    trustThresholdMinutes: TRUST_THRESHOLD_MIN,
+    lastRun:               lastEntry,
     next,
   };
 }
