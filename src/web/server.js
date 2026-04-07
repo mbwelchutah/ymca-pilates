@@ -4372,45 +4372,59 @@ const server = http.createServer((req, res) => {
     // Reads optional { forceMinTier } from request body.
     // On success: propagates freshness into readiness state (trust line + confidence).
     // Returns sanitized result — no cookies, no internal diagnostics.
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
-      (async () => {
-        let forceMinTier;
-        try {
-          const parsed = JSON.parse(body || '{}');
-          if (parsed.forceMinTier != null) forceMinTier = Number(parsed.forceMinTier);
-        } catch (_) { /* non-fatal — optional param */ }
-
-        try {
-          const { validateSessionFastThenFallback } = require('../bot/session-validator');
-          const result = await validateSessionFastThenFallback({ forceMinTier });
-
-          // Propagate freshness into readiness state so NowScreen trust line
-          // and confidence score session dimension update without waiting for keepalive.
-          if (result.valid) {
-            try {
-              const { refreshReadiness } = require('../bot/readiness-state');
-              const jobs   = getAllJobs().filter(j => j.is_active === 1);
-              const topJob = jobs[0] ?? null;
-              refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'account-refresh' });
-            } catch (_) { /* non-fatal */ }
+    // Guarded by the auth lock so concurrent bot/auth operations are not disrupted.
+    if (jobState.active) {
+      json({ success: false, locked: true, valid: false, detail: 'A booking run is in progress — try again when it finishes.' });
+    } else if (isAuthLocked()) {
+      json({ success: false, locked: true, valid: false, detail: 'Another auth operation is in progress — try again in a moment.' });
+    } else {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        (async () => {
+          if (!acquireAuthLock('validate-session')) {
+            json({ success: false, locked: true, valid: false, detail: 'Another auth operation is in progress — try again in a moment.' });
+            return;
           }
+          try {
+            let forceMinTier;
+            try {
+              const parsed = JSON.parse(body || '{}');
+              const raw = Number(parsed.forceMinTier);
+              if ([1, 2, 3].includes(raw)) forceMinTier = raw;
+            } catch (_) { /* non-fatal — optional param */ }
 
-          json({
-            success:     result.valid,
-            valid:       result.valid,
-            daxko:       result.daxko,
-            familyworks: result.familyworks,
-            checkedAt:   result.checkedAt,
-            detail:      result.detail,
-          });
-        } catch (err) {
-          console.error('[validate-session] Error:', err.message);
-          json({ success: false, valid: false, detail: err.message || 'Validation failed' });
-        }
-      })();
-    });
+            const { validateSessionFastThenFallback } = require('../bot/session-validator');
+            const result = await validateSessionFastThenFallback({ forceMinTier });
+
+            // Propagate freshness into readiness state so NowScreen trust line
+            // and confidence score session dimension update without waiting for keepalive.
+            if (result.valid) {
+              try {
+                const { refreshReadiness } = require('../bot/readiness-state');
+                const jobs   = getAllJobs().filter(j => j.is_active === 1);
+                const topJob = jobs[0] ?? null;
+                refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'validate-session' });
+              } catch (_) { /* non-fatal */ }
+            }
+
+            json({
+              success:     result.valid,
+              valid:       result.valid,
+              daxko:       result.daxko,
+              familyworks: result.familyworks,
+              checkedAt:   result.checkedAt,
+              detail:      result.detail,
+            });
+          } catch (err) {
+            console.error('[validate-session] Error:', err.message);
+            json({ success: false, valid: false, detail: err.message || 'Validation failed' });
+          } finally {
+            releaseAuthLock();
+          }
+        })();
+      });
+    }
 
   } else if (req.method === 'POST' && path === '/api/settings-clear') {
     // Instantly wipes all persisted auth state. No browser launched.
