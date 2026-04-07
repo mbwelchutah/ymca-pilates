@@ -703,7 +703,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
-  const [activityShowAll, setActivityShowAll] = useState(false)
+  const [activityShowAll, setActivityShowAll]   = useState(false)
+  const [insightsShowAll, setInsightsShowAll]   = useState(false)
   const [forceLoading, setForceLoading]       = useState(false)
   const [forceMsg, setForceMsg]               = useState<{ ok: boolean; text: string } | null>(null)
   const [runOnceLoading, setRunOnceLoading]   = useState(false)
@@ -1193,15 +1194,15 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           )
         })()}
 
-        {/* ── 1e. Suggestions ─────────────────────────────────── */}
+        {/* ── Insights ─────────────────────────────────────── */}
         {suggestions.length > 0 && (
           <>
-            <SectionHeader title="Suggestions" />
+            <SectionHeader title="Insights" />
             <div className="space-y-2">
-              {suggestions.slice(0, 5).map(s => (
-                <Card key={s.id} padding="sm" className="border border-accent-amber/30 bg-accent-amber/5 shadow-none">
+              {(insightsShowAll ? suggestions : suggestions.slice(0, 2)).map(s => (
+                <Card key={s.id} padding="sm" className="border border-divider shadow-none bg-surface">
                   <div className="flex items-start gap-2.5">
-                    <span className="text-[15px] flex-shrink-0 mt-px">💡</span>
+                    <span className="text-[14px] flex-shrink-0 mt-px">💡</span>
                     <div className="min-w-0">
                       <p className="text-[13px] font-medium text-text-primary leading-snug">
                         {s.text}
@@ -1215,6 +1216,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                   </div>
                 </Card>
               ))}
+              {suggestions.length > 2 && (
+                <button
+                  onClick={() => setInsightsShowAll(v => !v)}
+                  className="w-full text-left px-1 py-1"
+                >
+                  <span className="text-[13px] font-medium text-accent-blue">
+                    {insightsShowAll
+                      ? 'Show less'
+                      : `Show ${suggestions.length - 2} more insight${suggestions.length - 2 === 1 ? '' : 's'}`}
+                  </span>
+                </button>
+              )}
             </div>
           </>
         )}
