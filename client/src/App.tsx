@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { TabBar } from './components/nav/TabBar'
 import type { Tab } from './components/nav/TabBar'
 import { NowScreen } from './screens/NowScreen'
@@ -21,6 +21,8 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAttention, setAccountAttention] = useState(false)
   const [polledStatus, setPolledStatus] = useState<SessionStatus | null>(null)
+  const [autoVerifySignal, setAutoVerifySignal] = useState(0)
+  const startupVerified = useRef(false)
 
   const { state, loading, error, refresh } = useAppState()
 
@@ -70,11 +72,23 @@ export default function App() {
     }
   }, [state.jobs, selectedJobId])
 
+  // ── Auto-verify on startup ────────────────────────────────────────────────
+  // Fires once, as soon as we have a valid job loaded, to check class readiness
+  // immediately without the user having to tap "Verify".
+  useEffect(() => {
+    if (loading || startupVerified.current) return
+    if (selectedJobId == null || !state.jobs.some(j => j.id === selectedJobId)) return
+    startupVerified.current = true
+    setAutoVerifySignal(s => s + 1)
+  }, [loading, selectedJobId, state.jobs])
+
   const handleSelectJob = (id: number) => {
     setSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
     setTab('now')
     localStorage.setItem('mobileTab', 'now')
+    // Verify the newly selected class automatically
+    setAutoVerifySignal(s => s + 1)
   }
 
   const handleTabChange = (t: Tab) => {
@@ -98,6 +112,7 @@ export default function App() {
             onGoToTools={() => handleTabChange('tools')}
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
+            autoVerifySignal={autoVerifySignal}
           />
         )}
         {tab === 'plan' && (

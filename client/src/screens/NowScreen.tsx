@@ -32,6 +32,7 @@ interface NowScreenProps {
   onGoToTools?: () => void
   onAccount?: () => void
   accountAttention?: boolean
+  autoVerifySignal?: number
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -610,9 +611,14 @@ function AccountSessionBlock({
   )
 }
 
+// ── Auto-verify tracking (module-level so it survives tab remounts) ────────────
+// Stores the last autoVerifySignal value that NowScreen already acted on so
+// switching tabs and back doesn't retrigger a verify that already ran.
+let _lastAutoVerifyFired = 0
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, autoVerifySignal }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -946,6 +952,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       setPreflightRunning(false)
     }
   }
+
+  // ── Auto-verify on startup / class change ──────────────────────────────────
+  // Parent increments autoVerifySignal when it wants a verify triggered (once
+  // on first load, and again each time the user selects a different class).
+  // lastFiredSignal persists across remounts via ref so tab-switching doesn't
+  // retrigger a verify that already ran at this signal level.
+  const handleCheckNowRef = useRef(handleCheckNow)
+  handleCheckNowRef.current = handleCheckNow
+  useEffect(() => {
+    if (!autoVerifySignal || autoVerifySignal <= _lastAutoVerifyFired) return
+    _lastAutoVerifyFired = autoVerifySignal
+    handleCheckNowRef.current()
+  }, [autoVerifySignal])
 
   // ── Composite readiness (Stage 10) ─────────────────────────────────────────
   // Derived at render time from the live bundle + last preflight status.
