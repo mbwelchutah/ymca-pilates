@@ -1,0 +1,199 @@
+You are restructuring the UI architecture of the YMCA Booker app.
+
+GOAL
+
+Separate:
+- “Trust UI” (Now screen)
+FROM
+- “Evidence / Debug UI” (Tools screen)
+
+The Now screen must become clean, calm, and confidence-driven.
+All diagnostic, historical, and detailed execution data must move to Tools.
+
+DO NOT change booking logic.
+DO NOT change state machine.
+DO NOT remove data — only relocate and reorganize.
+
+Work in stages. Keep app runnable after each stage.
+
+==================================================
+STAGE 1 — REMOVE DIAGNOSTIC SECTIONS FROM NOW
+==================================================
+
+Remove the following from the Now screen:
+
+1. Preflight detail list:
+   - Session / Schedule / Discovery / Modal rows
+2. “Show details” / “Hide details” toggle
+3. “Last booking run” section
+4. Past run timestamps / chips
+5. Any long-form error or execution output
+
+Preserve:
+- Main state card (Waiting / Booking / Issue)
+- Countdown
+- Trust line (Armed · Confidence · Freshness)
+- Status chips (Ready / Found / Reachable / Not open yet)
+
+If needed, temporarily hide removed sections behind feature flags.
+
+Success criteria:
+- Now screen contains ZERO logs or execution history
+- Now screen reads clean and focused
+
+STOP and summarize changes.
+
+==================================================
+STAGE 2 — CREATE TOOLS: “LAST RUN” SECTION
+==================================================
+
+In Tools tab, create a new section:
+
+Title:
+👉 Last Run
+
+Include:
+
+1. Last run status:
+   - Success / Failed
+   - Timestamp
+
+2. Expandable run detail card:
+   - attempt time
+   - outcome (booked / waitlisted / failed)
+   - key signals (login, class found, modal, action)
+
+3. Past runs list:
+   - compact row format
+   - timestamp + result
+   - tap to expand
+
+Design:
+- clean cards
+- no raw logs by default
+- expandable for detail
+
+Success criteria:
+- user can understand what happened last time
+- no overwhelming text
+
+STOP and summarize.
+
+==================================================
+STAGE 3 — MOVE PREFLIGHT INTO TOOLS
+==================================================
+
+Create new Tools section:
+
+Title:
+👉 Readiness
+
+Move preflight system here:
+
+Display:
+
+- Session → Ready / Needs login
+- Schedule → Ready / Issue
+- Class → Found / Not found
+- Modal → Reachable / Issue
+
+Each row should:
+- be tappable
+- expand to show short explanation
+
+Examples:
+- “Login confirmed”
+- “Class found on schedule”
+- “Booking modal reachable”
+
+Remove:
+- raw debug output
+- stack traces
+- browser logs
+
+Success criteria:
+- preflight becomes readable and structured
+- feels like system health, not debug output
+
+STOP and summarize.
+
+==================================================
+STAGE 4 — HANDLE ERRORS PROPERLY
+==================================================
+
+Move ALL raw errors (like Playwright logs) out of main UI.
+
+In Tools:
+
+Create:
+👉 Diagnostics (collapsed by default)
+
+Inside:
+- raw error logs
+- technical output
+- stack traces
+
+In Now screen:
+Replace errors with HUMAN messages only:
+
+Examples:
+- “Login required”
+- “Session expired”
+- “Booking failed — retrying”
+
+DO NOT show:
+- chromium logs
+- launch arguments
+- stack traces
+
+Success criteria:
+- Now is human-readable
+- Tools contains technical depth
+
+STOP and summarize.
+
+==================================================
+STAGE 5 — CONNECT NOW → TOOLS (SMART HANDOFF)
+==================================================
+
+When something fails on Now screen:
+
+Add subtle link:
+👉 “View details in Tools”
+
+Tap behavior:
+- deep-links into:
+  Tools → Last Run → expanded failed run
+
+Optional:
+- auto-highlight the relevant failure row
+
+Success criteria:
+- user can move from trust → detail seamlessly
+- no clutter on Now screen
+
+STOP and summarize.
+
+==================================================
+FINAL RESULT
+==================================================
+
+Now screen:
+- calm
+- confident
+- no logs
+- no duplication
+- answers: “Will this work?”
+
+Tools screen:
+- detailed
+- expandable
+- diagnostic
+- answers: “Why / what happened?”
+
+The UI should feel like:
+- Apple Fitness (Now)
+- Strava activity detail (Tools)
+
+Do NOT add new features.
+Only reorganize and simplify.

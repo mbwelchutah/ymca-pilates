@@ -21,7 +21,6 @@ import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib
 import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
-import { ReplayTimeline } from '../components/ReplayTimeline'
 
 interface NowScreenProps {
   appState: AppState
@@ -861,7 +860,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
   const [checkStep,    setCheckStep]    = useState<string | null>(null)
   const [checkElapsed,         setCheckElapsed]         = useState<number>(0)
-  const [showReadinessDetails, setShowReadinessDetails] = useState(false)
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
   const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
   // Stage 4: stable confidence label — separate hysteresis for the label so it
@@ -1679,142 +1677,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )
             })()}
 
-            {/* ── Toggle — expand/collapse detail rows (Step 2) ─────────────── */}
-            <button
-              onClick={() => setShowReadinessDetails(v => !v)}
-              className="w-full text-center text-[11px] text-text-muted active:opacity-50 py-2 border-b border-divider"
-            >
-              {showReadinessDetails ? 'Hide details ↑' : 'Show details ↓'}
-            </button>
-
-            {/* ── Detail rows — hidden by default (Step 2) ──────────────────── */}
-            {showReadinessDetails && (
-              <>
-                {/* Session */}
-                {sessionStatus && (() => {
-                  const s  = daxkoToLabel(sessionStatus.daxko)
-                  const lv = sessionStatus.lastVerified
-                    ? `Last checked: ${formatPreflightTime(sessionStatus.lastVerified)}`
-                    : undefined
-                  const authD =
-                    authDetail?.verdict === 'login_required'
-                      ? (authDetail.detail ?? 'Credentials rejected — re-enter in Settings')
-                      : authDetail?.verdict === 'ready'
-                      ? sessionStatus.lastVerified
-                          ? `Login confirmed at ${formatPreflightTime(sessionStatus.lastVerified)}`
-                          : 'Login confirmed'
-                      : lv
-                  return (
-                    <CompactRow
-                      label="Session"
-                      value={s.label}
-                      dotColor={s.dotColor}
-                      detail={authD}
-                    />
-                  )
-                })()}
-
-                {/* Schedule (FamilyWorks) */}
-                {sessionStatus && (() => {
-                  const fw = fwToLabel(sessionStatus.familyworks)
-                  const fwD =
-                    authDetail?.verdict === 'session_expired'
-                      ? (authDetail.detail ?? 'Re-login required — use Settings → Log in now')
-                      : authDetail?.verdict === 'ready'
-                      ? 'Schedule access confirmed'
-                      : undefined
-                  return (
-                    <CompactRow
-                      label="Schedule"
-                      value={fw.label}
-                      dotColor={fw.dotColor}
-                      detail={fwD}
-                    />
-                  )
-                })()}
-
-                {/* Discovery — only when bundle has tested it */}
-                {bundle && bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
-                  <CompactRow
-                    label="Discovery"
-                    value={DISCOVERY_LABEL[bundle.discovery] ?? bundle.discovery}
-                    dotColor={readinessDotColor(bundle.discovery)}
-                    detail={(() => {
-                      if (discoveryDetail?.found) {
-                        const matched = discoveryDetail.matched
-                          ? `Class found — ${discoveryDetail.matched}`
-                          : 'Class found on schedule'
-                        return matched
-                      }
-                      if (discoveryDetail && !discoveryDetail.found) {
-                        return discoveryDetail.nearMisses
-                          ? `Not found — closest: ${discoveryDetail.nearMisses}`
-                          : 'Class not found on this day\'s schedule'
-                      }
-                      return undefined
-                    })()}
-                  />
-                )}
-
-                {/* Modal — only when tested */}
-                {bundle && bundle.modal !== undefined && bundle.modal !== 'MODAL_NOT_TESTED' && (
-                  <CompactRow
-                    label="Modal"
-                    value={MODAL_LABEL[bundle.modal] ?? bundle.modal}
-                    dotColor={readinessDotColor(bundle.modal)}
-                    detail={(() => {
-                      if (!modalDetail) return undefined
-                      if (modalDetail.verdict === 'reachable') return 'Modal reachable'
-                      if (modalDetail.verdict === 'login_required') return 'Login wall shown — re-login may be needed'
-                      return modalDetail.detail
-                        ? `Could not open modal: ${modalDetail.detail}`
-                        : 'Could not open modal'
-                    })()}
-                  />
-                )}
-
-                {/* Action — only when tested */}
-                {bundle && bundle.action !== 'ACTION_NOT_TESTED' && (
-                  <CompactRow
-                    label="Action"
-                    value={ACTION_LABEL[bundle.action] ?? bundle.action}
-                    dotColor={readinessDotColor(bundle.action)}
-                    detail={(() => {
-                      if (!actionDetail) {
-                        if (bundle.action === 'ACTION_BLOCKED' && phase === 'too_early') {
-                          return 'Registration not open yet — will recheck when window opens'
-                        }
-                        return undefined
-                      }
-                      switch (actionDetail.verdict) {
-                        case 'ready':     return 'Register button ready'
-                        case 'waitlist_only': return 'Waitlist available — class is full'
-                        case 'login_required': return 'Login to Register shown'
-                        case 'full':
-                          return actionDetail.actionState === 'CANCEL_ONLY'
-                            ? 'Already registered (Cancel button visible)'
-                            : 'Class is full — registration unavailable'
-                        default: return undefined
-                      }
-                    })()}
-                  />
-                )}
-
-                {/* Last run timestamp — quiet footer row */}
-                {job?.last_run_at && (
-                  <div className="px-4 py-2 border-b border-divider last:border-0 flex items-center justify-between">
-                    <span className="text-[11px] text-text-muted">Last run</span>
-                    <span className="text-[11px] text-text-muted tabular-nums">
-                      {new Date(job.last_run_at).toLocaleString([], {
-                        month: 'short', day: 'numeric',
-                        hour: 'numeric', minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-
             {/* Tools link — always accessible at the bottom of the card */}
             {onGoToTools && (
               <button
@@ -1825,15 +1687,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </button>
             )}
           </Card>
-        )}
-
-        {/* ── Replay Timeline ──────────────────────────────────────── */}
-        {job && (
-          <ReplayTimeline
-            jobId={selectedJobId}
-            runKey={job.last_run_at ?? null}
-            isBookingActive={bgReadiness?.armed?.state === 'booking'}
-          />
         )}
 
         {/* ── Contextual action: Book again ───────────────────────── */}
