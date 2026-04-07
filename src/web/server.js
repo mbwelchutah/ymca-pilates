@@ -71,9 +71,9 @@ function serveStatic(res, filePath) {
 }
 
 // ---------------------------------------------------------------------------
-// PWA helpers — generate dumbbell PNG icons without external packages.
+// PWA helpers — generate robot PNG icons without external packages.
 // ---------------------------------------------------------------------------
-function makeDumbbellPng(size) {
+function makeRobotPng(size) {
   const zlib = require('zlib');
   const crcTable = (() => {
     const t = new Uint32Array(256);
@@ -96,28 +96,45 @@ function makeDumbbellPng(size) {
     return Buffer.concat([lb, tb, data, cb]);
   }
 
-  // Dumbbell geometry (all values relative to size)
-  // Plates centered at 27% / 73% of width; radius 20% → 7% margin on each edge.
-  const cx = size / 2, cy = size / 2;
-  const weightR  = size * 0.20;   // radius of each round weight plate
-  const plateGap = size * 0.23;   // distance from canvas center to each plate center
-  const barHalf  = size * 0.065;  // half-height of the connecting bar
-  const gripL    = cx - plateGap + weightR * 0.55; // bar left edge (inside left plate)
-  const gripR    = cx + plateGap - weightR * 0.55; // bar right edge (inside right plate)
+  // Robot face geometry (all values as fractions of size).
+  // Orange (#FF6600) robot face on black (#000000) background.
+  // Head: wide rectangle from 10% to 90% wide, 22% to 87% tall.
+  // Antenna: thin stem (47–53% x, 8–22% y) + circle ball at top center.
+  // Eyes: two square cutouts (black) inside the head.
+  // Mouth: wide rectangular cutout (black) across lower head.
+  const headL = size * 0.10, headR = size * 0.90;
+  const headT = size * 0.22, headB = size * 0.87;
 
-  // Colors: white background, dark navy dumbbell
-  const BG = [255, 255, 255];    // white
-  const FG = [28, 35, 64];       // #1c2340 dark navy
+  const stemL = size * 0.47, stemR = size * 0.53;
+  const stemT = size * 0.08, stemB = headT;
+
+  const ballCx = size * 0.50, ballCy = size * 0.08, ballR = size * 0.055;
+
+  const eyeT = size * 0.35, eyeB = size * 0.55;
+  const eyeLl = size * 0.23, eyeLr = size * 0.43;
+  const eyeRl = size * 0.57, eyeRr = size * 0.77;
+
+  const mouthL = size * 0.25, mouthR = size * 0.75;
+  const mouthT = size * 0.65, mouthB = size * 0.76;
+
+  const BG = [0,   0,   0  ];   // #000000 black background
+  const FG = [255, 102, 0  ];   // #FF6600 orange robot
 
   const rows = [];
   for (let y = 0; y < size; y++) {
     const row = Buffer.alloc(1 + size * 3);
     row[0] = 0; // PNG filter: None
     for (let x = 0; x < size; x++) {
-      const inLeft  = Math.hypot(x - (cx - plateGap), y - cy) <= weightR;
-      const inRight = Math.hypot(x - (cx + plateGap), y - cy) <= weightR;
-      const inBar   = x >= gripL && x <= gripR && Math.abs(y - cy) <= barHalf;
-      const [r, g, b] = (inLeft || inRight || inBar) ? FG : BG;
+      const inHead  = x >= headL && x <= headR && y >= headT && y <= headB;
+      const inStem  = x >= stemL && x <= stemR && y >= stemT && y <= stemB;
+      const inBall  = Math.hypot(x - ballCx, y - ballCy) <= ballR;
+      const inEyeL  = x >= eyeLl && x <= eyeLr && y >= eyeT && y <= eyeB;
+      const inEyeR  = x >= eyeRl && x <= eyeRr && y >= eyeT && y <= eyeB;
+      const inMouth = x >= mouthL && x <= mouthR && y >= mouthT && y <= mouthB;
+
+      // Orange: head (minus eye/mouth cutouts) + antenna stem + antenna ball
+      const isOrange = (inHead && !inEyeL && !inEyeR && !inMouth) || inStem || inBall;
+      const [r, g, b] = isOrange ? FG : BG;
       row[1 + x * 3] = r;
       row[2 + x * 3] = g;
       row[3 + x * 3] = b;
@@ -138,7 +155,7 @@ function makeDumbbellPng(size) {
 // Cache generated PNGs so they're only built once per process lifetime.
 const _pngCache = {};
 function getCachedPng(size) {
-  if (!_pngCache[size]) _pngCache[size] = makeDumbbellPng(size);
+  if (!_pngCache[size]) _pngCache[size] = makeRobotPng(size);
   return _pngCache[size];
 }
 
@@ -147,8 +164,8 @@ const MANIFEST_JSON = JSON.stringify({
   short_name: 'YMCA BOT',
   start_url: '/',
   display: 'standalone',
-  background_color: '#ffffff',
-  theme_color: '#ffffff',
+  background_color: '#000000',
+  theme_color: '#000000',
   icons: [
     { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
