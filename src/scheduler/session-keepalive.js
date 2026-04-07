@@ -289,6 +289,7 @@ function getKeepaliveConfig() {
 
 module.exports = {
   checkSessionKeepalive,
+  checkFreshness,
   loadSettings,
   saveSettings,
   getKeepaliveConfig,
