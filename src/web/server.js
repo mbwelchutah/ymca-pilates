@@ -4389,7 +4389,7 @@ const server = http.createServer((req, res) => {
           ? intervalMinutes
           : (typeof intervalHours === 'number' && intervalHours > 0 ? Math.round(intervalHours * 60) : 12);
         saveKeepaliveSettings({ enabled, intervalMinutes: minutes });
-        json({ success: true, enabled, intervalMinutes: minutes });
+        json({ success: true, enabled, intervalMinutes: minutes, intervalHours: Math.round(minutes / 60) });
       } catch {
         json({ success: false, message: 'Invalid body' });
       }

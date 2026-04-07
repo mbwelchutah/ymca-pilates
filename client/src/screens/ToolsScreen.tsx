@@ -621,10 +621,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   // ── Session keepalive config (Stage 9.3) ──────────────────────────────────
   const [keepaliveConfig, setKeepaliveConfig] = useState<{
-    enabled:       boolean
-    intervalHours: number
-    lastRun:       { timestamp: string; valid: boolean; detail: string; screenshot: string | null } | null
-    next:          { msUntil: number; intervalHours: number } | null
+    enabled:         boolean
+    intervalMinutes: number
+    intervalHours:   number
+    lastRun:         { timestamp: string; valid: boolean; detail: string; screenshot: string | null } | null
+    next:            { msUntil: number; intervalMinutes: number; intervalHours: number } | null
   } | null>(null)
   const [kaToggling, setKaToggling] = useState(false)
 
@@ -702,7 +703,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     setKaToggling(true)
     try {
       const next = !keepaliveConfig.enabled
-      const r = await api.setSessionKeepaliveConfig(next, keepaliveConfig.intervalHours)
+      const r = await api.setSessionKeepaliveConfig(next, keepaliveConfig.intervalMinutes)
       if (r.success) setKeepaliveConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
     } catch { /* ignored */ } finally { setKaToggling(false) }
   }
@@ -870,7 +871,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               </p>
               <p className="text-[12px] text-text-secondary mt-0.5">
                 {keepaliveConfig
-                  ? `Verifies login every ${keepaliveConfig.intervalHours}h automatically`
+                  ? `Verifies login every ${keepaliveConfig.intervalMinutes}m automatically`
                   : 'Loading…'}
               </p>
             </div>

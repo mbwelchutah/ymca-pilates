@@ -92,7 +92,12 @@ function getNextKeepaliveInfo() {
   const settings = loadSettings();
   if (!settings.enabled) return null;
   const ms = getMsUntilNext(settings);
-  return { msUntil: Math.max(0, ms), intervalMinutes: settings.intervalMinutes };
+  // Return both units for forward/backward client compatibility.
+  return {
+    msUntil:         Math.max(0, ms),
+    intervalMinutes: settings.intervalMinutes,
+    intervalHours:   Math.round(settings.intervalMinutes / 60),
+  };
 }
 
 // ── Main check ────────────────────────────────────────────────────────────────
@@ -172,7 +177,14 @@ function getKeepaliveConfig() {
   const entries  = loadLog();
   const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null;
   const next     = getNextKeepaliveInfo();
-  return { enabled: settings.enabled, intervalMinutes: settings.intervalMinutes, lastRun: lastEntry, next };
+  // Return both units for forward/backward client compatibility.
+  return {
+    enabled:         settings.enabled,
+    intervalMinutes: settings.intervalMinutes,
+    intervalHours:   Math.round(settings.intervalMinutes / 60),
+    lastRun:         lastEntry,
+    next,
+  };
 }
 
 module.exports = {
