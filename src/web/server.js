@@ -4382,11 +4382,14 @@ const server = http.createServer((req, res) => {
     req.on('data', d => { body += d; });
     req.on('end', () => {
       try {
-        const { enabled, intervalHours } = JSON.parse(body);
+        const { enabled, intervalMinutes, intervalHours } = JSON.parse(body);
         if (typeof enabled !== 'boolean') { json({ success: false, message: 'enabled must be boolean' }); return; }
-        const hours = typeof intervalHours === 'number' && intervalHours > 0 ? intervalHours : 4;
-        saveKeepaliveSettings({ enabled, intervalHours: hours });
-        json({ success: true, enabled, intervalHours: hours });
+        // Accept intervalMinutes (new) or intervalHours (legacy) from callers.
+        const minutes = typeof intervalMinutes === 'number' && intervalMinutes > 0
+          ? intervalMinutes
+          : (typeof intervalHours === 'number' && intervalHours > 0 ? Math.round(intervalHours * 60) : 12);
+        saveKeepaliveSettings({ enabled, intervalMinutes: minutes });
+        json({ success: true, enabled, intervalMinutes: minutes });
       } catch {
         json({ success: false, message: 'Invalid body' });
       }

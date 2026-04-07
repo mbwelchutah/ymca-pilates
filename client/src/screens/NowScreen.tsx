@@ -31,6 +31,7 @@ interface NowScreenProps {
   refresh: () => void
   onGoToTools?: () => void
   onAccount?: () => void
+  accountAttention?: boolean
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -610,7 +611,7 @@ function AccountSessionBlock({
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -1085,7 +1086,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (loading) {
     return (
       <>
-        <AppHeader subtitle="Loading…" onAccount={onAccount} />
+        <AppHeader subtitle="Loading…" onAccount={onAccount} accountAttention={accountAttention} />
         <ScreenContainer>
           <Card className="flex items-center justify-center h-40">
             <span className="text-text-secondary text-[15px]">Loading…</span>
@@ -1098,7 +1099,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (error) {
     return (
       <>
-        <AppHeader subtitle="Error" onAccount={onAccount} />
+        <AppHeader subtitle="Error" onAccount={onAccount} accountAttention={accountAttention} />
         <ScreenContainer>
           <Card>
             <p className="text-accent-red text-[14px]">{error}</p>
@@ -1123,6 +1124,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           return flags ? `${base} · ${flags}` : base
         })()}
         onAccount={onAccount}
+        accountAttention={accountAttention}
       />
 
       <ScreenContainer>

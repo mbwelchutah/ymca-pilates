@@ -11,9 +11,10 @@ interface SettingsScreenProps {
   appState: AppState
   refresh: () => void
   onAccount?: () => void
+  accountAttention?: boolean
 }
 
-export function SettingsScreen({ appState, refresh, onAccount }: SettingsScreenProps) {
+export function SettingsScreen({ appState, refresh, onAccount, accountAttention }: SettingsScreenProps) {
   const handleDryRun = async (enabled: boolean) => {
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
@@ -28,7 +29,7 @@ export function SettingsScreen({ appState, refresh, onAccount }: SettingsScreenP
 
   return (
     <>
-      <AppHeader subtitle="Settings" onAccount={onAccount} />
+      <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} />
       <ScreenContainer>
 
         {/* Account */}

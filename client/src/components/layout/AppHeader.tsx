@@ -8,9 +8,10 @@ interface AppHeaderProps {
   action?: Action
   secondaryAction?: Action
   onAccount?: () => void
+  accountAttention?: boolean
 }
 
-export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, onAccount }: AppHeaderProps) {
+export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, onAccount, accountAttention }: AppHeaderProps) {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-[51] bg-white/95 backdrop-blur-md border-b border-divider"
@@ -45,7 +46,7 @@ export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, on
             <button
               onClick={onAccount}
               aria-label="Account"
-              className="w-8 h-8 flex items-center justify-center rounded-full text-text-secondary active:bg-surface transition-colors"
+              className="relative w-8 h-8 flex items-center justify-center rounded-full text-text-secondary active:bg-surface transition-colors"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -61,6 +62,9 @@ export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, on
                 <circle cx="12" cy="8" r="4" />
                 <path d="M4 20c0-4 3.582-7 8-7s8 3 8 7" />
               </svg>
+              {accountAttention && (
+                <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-accent-amber ring-2 ring-white" />
+              )}
             </button>
           )}
         </div>

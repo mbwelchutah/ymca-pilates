@@ -7,6 +7,9 @@ import { ToolsScreen } from './screens/ToolsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { AccountSheet } from './components/AccountSheet'
 import { useAppState } from './hooks/useAppState'
+import { api } from './lib/api'
+
+const SESSION_POLL_MS = 5 * 60 * 1000  // 5 minutes
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => {
@@ -15,8 +18,27 @@ export default function App() {
   })
 
   const [accountOpen, setAccountOpen] = useState(false)
+  const [accountAttention, setAccountAttention] = useState(false)
 
   const { state, loading, error, refresh } = useAppState()
+
+  // ── Session status polling — derives attention dot ────────────────────────
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const status = await api.getSessionStatus()
+        const needsAttention =
+          (status.daxko !== null && status.daxko !== 'DAXKO_READY') ||
+          (status.familyworks !== null && status.familyworks !== 'FAMILYWORKS_READY')
+        setAccountAttention(needsAttention)
+      } catch {
+        // Silent fail — unclear state, do not set attention dot
+      }
+    }
+    check()
+    const id = setInterval(check, SESSION_POLL_MS)
+    return () => clearInterval(id)
+  }, [])
 
   // ── Single source of truth for the watched class ─────────────────────────
   // Stored in localStorage so it survives page reload.
@@ -68,6 +90,7 @@ export default function App() {
             refresh={refresh}
             onGoToTools={() => handleTabChange('tools')}
             onAccount={() => setAccountOpen(true)}
+            accountAttention={accountAttention}
           />
         )}
         {tab === 'plan' && (
@@ -78,13 +101,14 @@ export default function App() {
             loading={loading}
             refresh={refresh}
             onAccount={() => setAccountOpen(true)}
+            accountAttention={accountAttention}
           />
         )}
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} />
+          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} />
+          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} />
         )}
       </main>
     </div>

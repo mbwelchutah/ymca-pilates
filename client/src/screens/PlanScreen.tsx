@@ -17,6 +17,7 @@ interface PlanScreenProps {
   loading: boolean
   refresh: () => Promise<void>
   onAccount?: () => void
+  accountAttention?: boolean
 }
 
 const DAY_NAMES: Record<number, string> = {
@@ -694,7 +695,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
   )
 }
 
-export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount }: PlanScreenProps) {
+export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention }: PlanScreenProps) {
   const [showAdd, setShowAdd]         = useState(false)
   const [showBrowse, setShowBrowse]   = useState(false)
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
@@ -809,6 +810,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         action={showingControls ? { label: 'Add', onClick: () => { setEditingJob(null); setShowAdd(true) } } : undefined}
         secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
         onAccount={onAccount}
+        accountAttention={accountAttention}
       />
       <ScreenContainer>
         {showAdd && (

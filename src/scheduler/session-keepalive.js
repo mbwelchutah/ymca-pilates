@@ -1,8 +1,8 @@
-// Session Keep-Alive / Reliability (Stage 9.3)
+// Session Keep-Alive / Reliability (Stage 9.3 / Stage 4 auth-arch)
 //
 // Periodically runs a lightweight session check to verify credentials are still
-// valid and the YMCA auth system is reachable.  Designed to run at LOW frequency
-// (default: every 4 hours) so it never spams the auth server.
+// valid and the YMCA auth system is reachable.  Runs silently in the background
+// (default: every 12 minutes) while idle — no alerts, no modals.
 //
 // A keepalive failure is also recorded in the failures DB so the confidence
 // score naturally penalises it without any extra wiring.
@@ -21,8 +21,8 @@ const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
 const LOG_FILE      = path.join(DATA_DIR, 'session-keepalive-log.json');
 
-const DEFAULT_INTERVAL_HOURS = 4;
-const MAX_LOG_ENTRIES        = 20;
+const DEFAULT_INTERVAL_MINUTES = 12;  // silent background check every 12 minutes
+const MAX_LOG_ENTRIES          = 20;
 
 // ── In-memory guard ───────────────────────────────────────────────────────────
 let running = false;
@@ -31,15 +31,19 @@ let running = false;
 
 function loadSettings() {
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) return { enabled: false, intervalHours: DEFAULT_INTERVAL_HOURS };
+    if (!fs.existsSync(SETTINGS_FILE)) return { enabled: true, intervalMinutes: DEFAULT_INTERVAL_MINUTES };
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    // Support legacy settings files that stored intervalHours.
+    const legacyMinutes = typeof raw.intervalHours === 'number' && raw.intervalHours > 0
+      ? Math.round(raw.intervalHours * 60)
+      : null;
     return {
-      enabled:       typeof raw.enabled === 'boolean' ? raw.enabled : false,
-      intervalHours: typeof raw.intervalHours === 'number' && raw.intervalHours > 0
-        ? raw.intervalHours
-        : DEFAULT_INTERVAL_HOURS,
+      enabled:         typeof raw.enabled === 'boolean' ? raw.enabled : true,
+      intervalMinutes: typeof raw.intervalMinutes === 'number' && raw.intervalMinutes > 0
+        ? raw.intervalMinutes
+        : legacyMinutes ?? DEFAULT_INTERVAL_MINUTES,
     };
-  } catch { return { enabled: false, intervalHours: DEFAULT_INTERVAL_HOURS }; }
+  } catch { return { enabled: true, intervalMinutes: DEFAULT_INTERVAL_MINUTES }; }
 }
 
 function saveSettings(settings) {
@@ -79,7 +83,7 @@ function getLastRunTime() {
 function getMsUntilNext(settings) {
   const lastMs = getLastRunTime();
   if (lastMs === null) return 0; // never run → due immediately
-  const intervalMs = settings.intervalHours * 60 * 60 * 1000;
+  const intervalMs = settings.intervalMinutes * 60 * 1000;
   return lastMs + intervalMs - Date.now();
 }
 
@@ -88,7 +92,7 @@ function getNextKeepaliveInfo() {
   const settings = loadSettings();
   if (!settings.enabled) return null;
   const ms = getMsUntilNext(settings);
-  return { msUntil: Math.max(0, ms), intervalHours: settings.intervalHours };
+  return { msUntil: Math.max(0, ms), intervalMinutes: settings.intervalMinutes };
 }
 
 // ── Main check ────────────────────────────────────────────────────────────────
@@ -168,7 +172,7 @@ function getKeepaliveConfig() {
   const entries  = loadLog();
   const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null;
   const next     = getNextKeepaliveInfo();
-  return { enabled: settings.enabled, intervalHours: settings.intervalHours, lastRun: lastEntry, next };
+  return { enabled: settings.enabled, intervalMinutes: settings.intervalMinutes, lastRun: lastEntry, next };
 }
 
 module.exports = {
