@@ -1650,7 +1650,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     authDetail?.verdict === 'login_required'
                       ? (authDetail.detail ?? 'Credentials rejected — re-enter in Settings')
                       : authDetail?.verdict === 'ready'
-                      ? 'Login confirmed'
+                      ? sessionStatus.lastVerified
+                          ? `Login confirmed at ${formatPreflightTime(sessionStatus.lastVerified)}`
+                          : 'Login confirmed'
                       : lv
                   return (
                     <CompactRow
