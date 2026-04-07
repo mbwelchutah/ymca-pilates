@@ -702,7 +702,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
-  const [expandedKey, setExpandedKey]     = useState<string | null>(null)
+  const [expandedKey, setExpandedKey]         = useState<string | null>(null)
+  const [activityShowAll, setActivityShowAll] = useState(false)
   const [forceLoading, setForceLoading]       = useState(false)
   const [forceMsg, setForceMsg]               = useState<{ ok: boolean; text: string } | null>(null)
   const [runOnceLoading, setRunOnceLoading]   = useState(false)
@@ -1234,97 +1235,115 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           )
         })()}
 
-        {/* ── 3. Recent Failures ─────────────────────────────── */}
+        {/* ── Recent Activity ───────────────────────────────── */}
         {recentFailures.length > 0 && (
           <>
-            <SectionHeader title="Recent Failures" />
+            <SectionHeader title="Recent Activity" />
             <Card padding="none">
-              {recentFailures.map((f, i) => {
-                const entryKey = f.id != null ? String(f.id) : f.occurred_at
-                const isOpen   = expandedKey === entryKey
-                const primary  = f.label ?? REASON_LABELS[f.reason] ?? f.reason
-                const msgSnip  = f.message
-                  ? (f.message.length > 60 ? f.message.slice(0, 60) + '…' : f.message)
-                  : null
+              {(() => {
+                const visible = activityShowAll ? recentFailures : recentFailures.slice(0, 3)
+                const hidden  = recentFailures.length - visible.length
 
                 return (
-                  <div key={entryKey}>
-                    {/* ── Collapsed row ────────────────────── */}
-                    <button
-                      onClick={() => setExpandedKey(isOpen ? null : entryKey)}
-                      className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
-                    >
-                      <div className="flex-1 mr-3 min-w-0">
-                        <p className="text-[14px] font-medium text-text-primary flex items-center">
-                          <span className="truncate">{primary}</span>
-                          {f.screenshot && <CameraIcon />}
-                        </p>
-                        <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-[11px] font-medium text-text-secondary bg-divider rounded px-1.5 py-0.5 leading-tight">
-                            {PHASE_LABELS[f.phase] ?? f.phase}
+                  <>
+                    {visible.map((f, i) => {
+                      const entryKey = f.id != null ? String(f.id) : f.occurred_at
+                      const isOpen   = expandedKey === entryKey
+                      const primary  = f.label ?? REASON_LABELS[f.reason] ?? f.reason
+                      const msgSnip  = f.message
+                        ? (f.message.length > 60 ? f.message.slice(0, 60) + '…' : f.message)
+                        : null
+
+                      return (
+                        <div key={entryKey}>
+                          {/* ── Collapsed row ──────────────── */}
+                          <button
+                            onClick={() => setExpandedKey(isOpen ? null : entryKey)}
+                            className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
+                          >
+                            <div className="flex-1 mr-3 min-w-0">
+                              <p className="text-[14px] font-medium text-text-primary flex items-center">
+                                <span className="truncate">{primary}</span>
+                                {f.screenshot && <CameraIcon />}
+                              </p>
+                              <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-[11px] font-medium text-text-secondary bg-divider rounded px-1.5 py-0.5 leading-tight">
+                                  {PHASE_LABELS[f.phase] ?? f.phase}
+                                </span>
+                                <span className="text-[12px] text-text-muted">{fmtStr(f.occurred_at)}</span>
+                              </p>
+                              {msgSnip && (
+                                <p className="text-[11px] text-text-muted mt-0.5 break-words">{msgSnip}</p>
+                              )}
+                            </div>
+                            <ChevronIcon rotated={isOpen} />
+                          </button>
+
+                          {/* ── Expanded detail ────────────── */}
+                          {isOpen && (
+                            <div className="px-4 pb-4 space-y-3">
+                              {f.message && (
+                                <div className="bg-surface rounded-lg p-3 border border-divider">
+                                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Message</p>
+                                  <p className="text-[12px] text-text-secondary leading-relaxed break-words font-mono">{f.message}</p>
+                                </div>
+                              )}
+                              {f.expected != null && f.actual != null && (
+                                <div className="bg-surface rounded-lg p-3 border border-divider space-y-1.5">
+                                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Mismatch</p>
+                                  <div className="flex gap-2">
+                                    <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Expected</span>
+                                    <span className="text-[12px] text-text-secondary font-mono break-all">{f.expected}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Actual</span>
+                                    <span className="text-[12px] text-text-secondary font-mono break-all">{f.actual}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {f.url && (
+                                <div className="flex gap-2 items-start">
+                                  <span className="text-[10px] font-semibold text-text-muted w-8 flex-shrink-0 pt-px">URL</span>
+                                  <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
+                                </div>
+                              )}
+                              {f.screenshot ? (
+                                <img
+                                  src={`/screenshots/${f.screenshot}`}
+                                  alt={f.reason}
+                                  className="w-full rounded-xl border border-divider"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
+                              )}
+                            </div>
+                          )}
+
+                          {i < visible.length - 1 && <div className="h-px bg-divider mx-4" />}
+                        </div>
+                      )
+                    })}
+
+                    {/* ── Show all / collapse toggle ──────── */}
+                    {(hidden > 0 || activityShowAll) && (
+                      <>
+                        <div className="h-px bg-divider mx-4" />
+                        <button
+                          onClick={() => setActivityShowAll(s => !s)}
+                          className="w-full px-4 py-3 text-left active:bg-divider/40 transition-colors"
+                        >
+                          <span className="text-[13px] font-medium text-accent-blue">
+                            {activityShowAll
+                              ? 'Show less'
+                              : `Show all ${recentFailures.length} incidents`}
                           </span>
-                          <span className="text-[12px] text-text-muted">{fmtStr(f.occurred_at)}</span>
-                        </p>
-                        {msgSnip && (
-                          <p className="text-[11px] text-text-muted mt-0.5 break-words">
-                            {msgSnip}
-                          </p>
-                        )}
-                      </div>
-                      <ChevronIcon rotated={isOpen} />
-                    </button>
-
-                    {/* ── Expanded detail ──────────────────── */}
-                    {isOpen && (
-                      <div className="px-4 pb-4 space-y-3">
-
-                        {f.message && (
-                          <div className="bg-surface rounded-lg p-3 border border-divider">
-                            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Message</p>
-                            <p className="text-[12px] text-text-secondary leading-relaxed break-words font-mono">
-                              {f.message}
-                            </p>
-                          </div>
-                        )}
-
-                        {f.expected != null && f.actual != null && (
-                          <div className="bg-surface rounded-lg p-3 border border-divider space-y-1.5">
-                            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Mismatch</p>
-                            <div className="flex gap-2">
-                              <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Expected</span>
-                              <span className="text-[12px] text-text-secondary font-mono break-all">{f.expected}</span>
-                            </div>
-                            <div className="flex gap-2">
-                              <span className="text-[10px] font-semibold text-text-muted w-16 flex-shrink-0 pt-px">Actual</span>
-                              <span className="text-[12px] text-text-secondary font-mono break-all">{f.actual}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {f.url && (
-                          <div className="flex gap-2 items-start">
-                            <span className="text-[10px] font-semibold text-text-muted w-8 flex-shrink-0 pt-px">URL</span>
-                            <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
-                          </div>
-                        )}
-
-                        {f.screenshot ? (
-                          <img
-                            src={`/screenshots/${f.screenshot}`}
-                            alt={f.reason}
-                            className="w-full rounded-xl border border-divider"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
-                        )}
-                      </div>
+                        </button>
+                      </>
                     )}
-
-                    {i < recentFailures.length - 1 && <div className="h-px bg-divider mx-4" />}
-                  </div>
+                  </>
                 )
-              })}
+              })()}
             </Card>
           </>
         )}
