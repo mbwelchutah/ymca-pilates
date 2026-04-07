@@ -4,7 +4,7 @@ import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
-import type { AppState } from '../types'
+import type { AppState, SessionStatus } from '../types'
 import type { SniperRunState, SniperTiming } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
@@ -42,7 +42,7 @@ interface FailureData {
   trends:   { h24: TrendWindow; d7: TrendWindow }
 }
 
-interface SessionStatus {
+interface BotStatus {
   active: boolean
   log: string
   success: boolean | null
@@ -601,6 +601,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
   const [trendWindow, setTrendWindow]     = useState<'h24' | 'd7'>('h24')
+  const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
   const [expandedKey, setExpandedKey]     = useState<string | null>(null)
@@ -631,7 +632,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
-    api.getStatus().then(setSessionStatus).catch(() => {})
+    api.getStatus().then(setBotStatus).catch(() => {})
+    api.getSessionStatus().then(setSessionStatus).catch(() => {})
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
@@ -716,6 +718,30 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     sniperState:  sniperRunState?.sniperState ?? null,
   })
 
+  // ── Readiness dot helpers ────────────────────────────────────────────────
+  const daxkoToLabel = (s: SessionStatus['daxko'] | undefined): { label: string; dot: string } => {
+    switch (s) {
+      case 'DAXKO_READY':      return { label: 'Ready',       dot: 'bg-accent-green' }
+      case 'AUTH_NEEDS_LOGIN': return { label: 'Needs login', dot: 'bg-accent-red'   }
+      default:                 return { label: 'Unknown',     dot: 'bg-divider'      }
+    }
+  }
+  const fwToLabel = (s: SessionStatus['familyworks'] | undefined): { label: string; dot: string } => {
+    switch (s) {
+      case 'FAMILYWORKS_READY':           return { label: 'Ready',   dot: 'bg-accent-green' }
+      case 'FAMILYWORKS_SESSION_MISSING': return { label: 'Missing', dot: 'bg-accent-red'   }
+      case 'FAMILYWORKS_SESSION_EXPIRED': return { label: 'Expired', dot: 'bg-accent-red'   }
+      default:                            return { label: 'Unknown', dot: 'bg-divider'      }
+    }
+  }
+  const bundleDot = (val: string): string => {
+    if (val.includes('READY') || val.includes('FOUND') || val.includes('REACHABLE')) return 'bg-accent-green'
+    if (val.includes('REQUIRED') || val.includes('EXPIRED') || val.includes('MISSING') ||
+        val.includes('BLOCKED')  || val.includes('FAILED'))                            return 'bg-accent-red'
+    if (val.includes('NOT_TESTED')) return 'bg-divider'
+    return 'bg-accent-amber'
+  }
+
   return (
     <>
       <AppHeader subtitle="Diagnostics" onAccount={onAccount} accountAttention={accountAttention} />
@@ -725,8 +751,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         <SectionHeader title="Last Run" />
         <Card padding="none">
           <DetailRow
-            label="Session"
-            value={sessionStatus == null ? 'Loading…' : sessionStatus.active ? 'Running' : 'Idle'}
+            label="Scheduler"
+            value={botStatus == null ? 'Loading…' : botStatus.active ? 'Running' : 'Idle'}
           />
           {lastRunJob ? (
             <>
@@ -759,21 +785,96 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             <DetailRow label="Last Run" value="No runs yet" last />
           )}
         </Card>
-        {sessionStatus?.log && (
+        {botStatus?.log && (
           <Card padding="sm" className="bg-surface border border-divider shadow-none">
             <p className="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
-              {sessionStatus.log}
+              {botStatus.log}
             </p>
           </Card>
         )}
 
-        {/* ── 1b. Last Run Events ─────────────────────────────── */}
+        {/* ── 1b. Readiness ───────────────────────────────────── */}
+        <SectionHeader title="Readiness" />
+        <Card padding="none">
+          {/* Session (Daxko auth) */}
+          {(() => {
+            const { label, dot } = daxkoToLabel(sessionStatus?.daxko)
+            return (
+              <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                <span className="text-[14px] text-text-secondary">Session</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                  <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                </div>
+              </div>
+            )
+          })()}
+          {/* Schedule (FamilyWorks) */}
+          {(() => {
+            const { label, dot } = fwToLabel(sessionStatus?.familyworks)
+            return (
+              <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                <span className="text-[14px] text-text-secondary">Schedule</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                  <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                </div>
+              </div>
+            )
+          })()}
+          {/* Discovery */}
+          {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+              <span className="text-[14px] text-text-secondary">Class</span>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.discovery)}`} />
+                <span className="text-[14px] font-medium text-text-primary">
+                  {DISCOVERY_LABEL[sniperRunState.bundle.discovery] ?? sniperRunState.bundle.discovery}
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Modal */}
+          {sniperRunState?.bundle && sniperRunState.bundle.modal &&
+           sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
+            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+              <span className="text-[14px] text-text-secondary">Modal</span>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
+                <span className="text-[14px] font-medium text-text-primary">
+                  {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Action */}
+          {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
+            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+              <span className="text-[14px] text-text-secondary">Action</span>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.action)}`} />
+                <span className="text-[14px] font-medium text-text-primary">
+                  {ACTION_LABEL[sniperRunState.bundle.action] ?? sniperRunState.bundle.action}
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Last check timestamp */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-[14px] text-text-secondary">Last checked</span>
+            <span className="text-[13px] text-text-muted">
+              {sniperRunState?.runId ? fmtStr(sniperRunState.runId) : sessionStatus?.lastVerified ? fmtStr(sessionStatus.lastVerified) : '—'}
+            </span>
+          </div>
+        </Card>
+
+        {/* ── 1c. Last Run Events ─────────────────────────────── */}
         <SectionHeader
           title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
         />
         <LastRunEvents sniperRunState={sniperRunState} />
 
-        {/* ── 1c. Last Check Now (per-phase diagnostics) ──────── */}
+        {/* ── 1d. Last Check Now (per-phase diagnostics) ──────── */}
         <LastCheckNowSection sniperRunState={sniperRunState} />
 
         {/* ── 1d. Auto Preflight ──────────────────────────────── */}
