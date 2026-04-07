@@ -9,6 +9,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { createSession } = require('./daxko-session');
+const { saveCookies }   = require('./session-ping');
 
 const DATA_DIR    = path.resolve(__dirname, '../data');
 const STATUS_FILE = path.join(DATA_DIR, 'session-status.json');
@@ -41,6 +42,13 @@ async function runSessionCheck({ source = 'manual' } = {}) {
   try {
     session = await createSession({ headless: true });
     // If createSession() returned without throwing, auth succeeded.
+    // Save browser cookies for Tier-2 HTTP ping on the next keepalive.
+    try {
+      const allCookies = await session.page.context().cookies();
+      saveCookies(allCookies);
+    } catch (e) {
+      console.warn('[session-check] Failed to save cookies for Tier-2 ping:', e.message);
+    }
     const screenshotRaw = await session.snap('session-check-pass');
     const screenshot = screenshotRaw ? path.basename(screenshotRaw) : null;
     const status = {

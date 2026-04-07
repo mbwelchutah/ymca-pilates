@@ -16,6 +16,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { createSession } = require('./daxko-session');
+const { saveCookies }   = require('./session-ping');
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const DAXKO_FILE = path.join(DATA_DIR, 'session-status.json');
@@ -271,6 +272,14 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
     // ── Step 1: Daxko login ───────────────────────────────────────────────
     sess = await createSession({ headless: true });
     console.log('[settings-auth] Daxko login: OK');
+
+    // Save browser cookies for Tier-2 HTTP ping on the next keepalive.
+    try {
+      const allCookies = await sess.page.context().cookies();
+      saveCookies(allCookies);
+    } catch (e) {
+      console.warn('[settings-auth] Failed to save cookies for Tier-2 ping:', e.message);
+    }
 
     saveDaxkoStatus({
       valid: true,

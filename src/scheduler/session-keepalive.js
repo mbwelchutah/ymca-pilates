@@ -16,6 +16,7 @@ const { runSessionCheck, loadStatus } = require('../bot/session-check');
 const { recordFailure }               = require('../db/failures');
 const { getAllJobs }                   = require('../db/jobs');
 const { refreshReadiness }            = require('../bot/readiness-state');
+const { pingSessionHttp }             = require('../bot/session-ping');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
@@ -200,8 +201,26 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
     return;
   }
 
-  // Tier 1 missed — log the reason and fall through to the full Playwright check.
+  // Tier 1 missed — log the reason and try Tier-2 HTTP ping before Playwright.
   console.log('[session-keepalive] Tier 1 miss —', freshness.detail);
+
+  // ── Tier 2: HTTP ping ─────────────────────────────────────────────────────
+  // Uses saved browser cookies to make a fast authenticated HTTP request to
+  // Daxko and FamilyWorks.  Skips Playwright entirely on success.
+  const pingResult = await pingSessionHttp();
+  if (pingResult.trusted) {
+    console.log('[session-keepalive] Tier 2 trust —', pingResult.detail);
+    appendLog({ timestamp, valid: true, detail: pingResult.detail, screenshot: null, tier: 2 });
+    try {
+      const jobs   = getAllJobs().filter(j => j.is_active === 1);
+      const topJob = jobs[0] ?? null;
+      refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
+    } catch (_) { /* non-fatal */ }
+    running = false;
+    return;
+  }
+
+  console.log('[session-keepalive] Tier 2 miss —', pingResult.detail);
   console.log('[session-keepalive] Running full Playwright session check (Tier 3)...');
 
   try {
