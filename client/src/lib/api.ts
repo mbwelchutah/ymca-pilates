@@ -205,6 +205,20 @@ export const api = {
     tier?: 2 | 3
   }> => apiFetch('/api/settings-refresh', { method: 'POST' }),
 
+  validateSession: (opts?: { forceMinTier?: 1 | 2 | 3 }): Promise<{
+    success:     boolean
+    valid:       boolean
+    daxko:       string | null
+    familyworks: string | null
+    checkedAt:   string | null
+    detail:      string | null
+  }> =>
+    apiFetch('/api/validate-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts ?? {}),
+    }),
+
   settingsClear: (): Promise<{
     success: boolean
     daxko?: SessionStatus['daxko']

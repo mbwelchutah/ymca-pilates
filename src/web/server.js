@@ -4259,6 +4259,15 @@ const server = http.createServer((req, res) => {
           const detail  = `Tier-2: ${pingResult.detail}`;
           console.log('[settings-refresh] Done (Tier-2).', { daxko: 'DAXKO_READY', familyworks });
 
+          // Propagate freshness into readiness state so NowScreen trust line
+          // and confidence score session dimension update immediately.
+          try {
+            const { refreshReadiness } = require('../bot/readiness-state');
+            const jobs   = getAllJobs().filter(j => j.is_active === 1);
+            const topJob = jobs[0] ?? null;
+            refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'account-refresh' });
+          } catch (_) { /* non-fatal */ }
+
           json({ success: true, daxko: 'DAXKO_READY', familyworks, overall, lastVerified, detail, tier: 2 });
           return;
         }
@@ -4340,6 +4349,15 @@ const server = http.createServer((req, res) => {
         const detail = `Daxko: ${daxko} | FamilyWorks: ${familyworks} — ${checkResult.detail}`;
         console.log('[settings-refresh] Done (Tier-3).', { daxko, familyworks, overall });
 
+        // Propagate freshness into readiness state so NowScreen trust line
+        // and confidence score session dimension update immediately.
+        try {
+          const { refreshReadiness } = require('../bot/readiness-state');
+          const jobs   = getAllJobs().filter(j => j.is_active === 1);
+          const topJob = jobs[0] ?? null;
+          refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'account-refresh' });
+        } catch (_) { /* non-fatal */ }
+
         json({ success: true, daxko, familyworks, overall, lastVerified, detail, tier: 3 });
       } catch (err) {
         console.error('[settings-refresh] route error:', err.message);
@@ -4348,6 +4366,51 @@ const server = http.createServer((req, res) => {
         releaseAuthLock();
       }
     })();
+
+  } else if (req.method === 'POST' && path === '/api/validate-session') {
+    // Stage 10: thin wrapper around the Stage 9 escalation engine.
+    // Reads optional { forceMinTier } from request body.
+    // On success: propagates freshness into readiness state (trust line + confidence).
+    // Returns sanitized result — no cookies, no internal diagnostics.
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      (async () => {
+        let forceMinTier;
+        try {
+          const parsed = JSON.parse(body || '{}');
+          if (parsed.forceMinTier != null) forceMinTier = Number(parsed.forceMinTier);
+        } catch (_) { /* non-fatal — optional param */ }
+
+        try {
+          const { validateSessionFastThenFallback } = require('../bot/session-validator');
+          const result = await validateSessionFastThenFallback({ forceMinTier });
+
+          // Propagate freshness into readiness state so NowScreen trust line
+          // and confidence score session dimension update without waiting for keepalive.
+          if (result.valid) {
+            try {
+              const { refreshReadiness } = require('../bot/readiness-state');
+              const jobs   = getAllJobs().filter(j => j.is_active === 1);
+              const topJob = jobs[0] ?? null;
+              refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'account-refresh' });
+            } catch (_) { /* non-fatal */ }
+          }
+
+          json({
+            success:     result.valid,
+            valid:       result.valid,
+            daxko:       result.daxko,
+            familyworks: result.familyworks,
+            checkedAt:   result.checkedAt,
+            detail:      result.detail,
+          });
+        } catch (err) {
+          console.error('[validate-session] Error:', err.message);
+          json({ success: false, valid: false, detail: err.message || 'Validation failed' });
+        }
+      })();
+    });
 
   } else if (req.method === 'POST' && path === '/api/settings-clear') {
     // Instantly wipes all persisted auth state. No browser launched.
