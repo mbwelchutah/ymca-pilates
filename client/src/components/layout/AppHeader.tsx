@@ -7,9 +7,10 @@ interface AppHeaderProps {
   subtitle?: string
   action?: Action
   secondaryAction?: Action
+  onAccount?: () => void
 }
 
-export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction }: AppHeaderProps) {
+export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, onAccount }: AppHeaderProps) {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-[51] bg-white/95 backdrop-blur-md border-b border-divider"
@@ -22,26 +23,47 @@ export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction }: 
           </h1>
           <p className="text-[13px] text-text-secondary font-medium mt-0.5">{subtitle}</p>
         </div>
-        {(action || secondaryAction) && (
-          <div className="flex items-center gap-3">
-            {secondaryAction && (
-              <button
-                onClick={secondaryAction.onClick}
-                className="text-[13px] font-semibold text-text-secondary active:opacity-70 transition-opacity"
+
+        <div className="flex items-center gap-3">
+          {secondaryAction && (
+            <button
+              onClick={secondaryAction.onClick}
+              className="text-[13px] font-semibold text-text-secondary active:opacity-70 transition-opacity"
+            >
+              {secondaryAction.label}
+            </button>
+          )}
+          {action && (
+            <button
+              onClick={action.onClick}
+              className="text-[13px] font-semibold text-accent-blue active:opacity-70 transition-opacity"
+            >
+              {action.label}
+            </button>
+          )}
+          {onAccount && (
+            <button
+              onClick={onAccount}
+              aria-label="Account"
+              className="w-8 h-8 flex items-center justify-center rounded-full text-text-secondary active:bg-surface transition-colors"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {secondaryAction.label}
-              </button>
-            )}
-            {action && (
-              <button
-                onClick={action.onClick}
-                className="text-[13px] font-semibold text-accent-blue active:opacity-70 transition-opacity"
-              >
-                {action.label}
-              </button>
-            )}
-          </div>
-        )}
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 3.582-7 8-7s8 3 8 7" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

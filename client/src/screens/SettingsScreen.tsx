@@ -11,6 +11,7 @@ import { api } from '../lib/api'
 interface SettingsScreenProps {
   appState: AppState
   refresh: () => void
+  onAccount?: () => void
 }
 
 function daxkoLabel(s: SessionStatus['daxko']): { text: string; cls: string } {
@@ -45,7 +46,7 @@ type ActionState = 'idle' | 'running' | 'done' | 'error'
 
 interface Feedback { text: string; cls: string }
 
-export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
+export function SettingsScreen({ appState, refresh, onAccount }: SettingsScreenProps) {
   const [sessionStatus,  setSessionStatus]  = useState<SessionStatus | null>(null)
   const [loginState,     setLoginState]     = useState<ActionState>('idle')
   const [refreshState,   setRefreshState]   = useState<ActionState>('idle')
@@ -223,7 +224,7 @@ export function SettingsScreen({ appState, refresh }: SettingsScreenProps) {
 
   return (
     <>
-      <AppHeader subtitle="Settings" />
+      <AppHeader subtitle="Settings" onAccount={onAccount} />
       <ScreenContainer>
 
         {/* Account & Session */}

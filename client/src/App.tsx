@@ -13,6 +13,8 @@ export default function App() {
     return (saved === 'now' || saved === 'plan' || saved === 'tools' || saved === 'settings') ? saved : 'now'
   })
 
+  const [accountOpen, setAccountOpen] = useState(false)
+
   const { state, loading, error, refresh } = useAppState()
 
   // ── Single source of truth for the watched class ─────────────────────────
@@ -63,6 +65,7 @@ export default function App() {
             error={error}
             refresh={refresh}
             onGoToTools={() => handleTabChange('tools')}
+            onAccount={() => setAccountOpen(true)}
           />
         )}
         {tab === 'plan' && (
@@ -72,13 +75,14 @@ export default function App() {
             onSelectJob={handleSelectJob}
             loading={loading}
             refresh={refresh}
+            onAccount={() => setAccountOpen(true)}
           />
         )}
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} />
+          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} refresh={refresh} />
+          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} />
         )}
       </main>
     </div>

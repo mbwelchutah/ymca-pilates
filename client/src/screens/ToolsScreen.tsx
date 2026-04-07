@@ -52,6 +52,7 @@ interface ToolsScreenProps {
   appState: AppState
   selectedJobId: number | null
   refresh: () => void
+  onAccount?: () => void
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -594,7 +595,7 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenProps) {
+export function ToolsScreen({ appState, selectedJobId, refresh, onAccount }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
@@ -715,7 +716,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh }: ToolsScreenPro
 
   return (
     <>
-      <AppHeader subtitle="Diagnostics" />
+      <AppHeader subtitle="Diagnostics" onAccount={onAccount} />
       <ScreenContainer>
 
         {/* ── 1. Last Run ────────────────────────────────────── */}

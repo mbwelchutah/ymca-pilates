@@ -1,0 +1,342 @@
+You are implementing the next authentication and session architecture phase for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Move login/session out of general Settings and turn it into a clean Account system with a user icon, while also making auth validation faster, quieter, and more reliable.
+
+This phase has 3 major goals:
+
+1. Separate login/session into a dedicated Account surface
+2. Add silent background session validation
+3. Add API-first passive validation with Playwright fallback
+
+This should make the app feel like:
+- I am signed in
+- the system maintains connection automatically
+- I only hear about auth if something actually needs attention
+
+IMPORTANT PRODUCT DIRECTION
+
+Now = mission control
+Account = signed-in identity + connection state
+Tools = diagnostics
+Settings = general app preferences
+
+Do NOT keep login as a “tool” inside Settings.
+Do NOT make the user feel like they must manually manage session.
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not break current working auth/session flow
+- Do not remove current OAuth logic
+- Do not remove Playwright truth validation entirely
+- Do not expose technical auth jargon on the main UI
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+================================
+STAGE 1 — ADD USER ICON ENTRY POINT
+================================
+
+Goal:
+Create a simple Account entry point in the top-right corner.
+
+Tasks:
+1. Add a user/account icon to the right-hand corner of the app header
+2. Keep it visually simple and lightweight
+3. Make it tappable
+4. Ensure placement is consistent and mobile-friendly
+
+Do not yet move logic. Just create the entry point.
+
+After Stage 1:
+Stop and summarize:
+- where the icon appears
+- how it opens
+- what remains to be built
+
+================================
+STAGE 2 — CREATE ACCOUNT SHEET / ACCOUNT SURFACE
+================================
+
+Goal:
+Move session/account visibility into a dedicated account sheet.
+
+Tasks:
+1. Add an Account sheet/modal/panel opened from the user icon
+2. Keep it clean and human-readable
+3. Show:
+   - Signed in / Needs attention
+   - Last checked
+   - Connection state
+4. Add minimal actions:
+   - Refresh connection
+   - Sign out
+
+Keep wording human:
+- “Signed in”
+- “Connection active”
+- “Last checked”
+
+Avoid wording like:
+- session token
+- auth state
+- cookie
+- refresh session
+
+After Stage 2:
+Stop and summarize:
+- what the Account sheet contains
+- what actions it offers
+- how it differs from the old Settings approach
+
+================================
+STAGE 3 — REMOVE LOGIN / SESSION CONTROL FROM SETTINGS
+================================
+
+Goal:
+Clean up Settings so login no longer feels buried or awkward.
+
+Tasks:
+1. Remove or demote old login/session controls from Settings
+2. Keep only any high-level account reference if needed
+3. Ensure the Account surface is now the primary home for auth/session control
+
+Do not break existing logic during this move.
+
+After Stage 3:
+Stop and summarize:
+- what was removed from Settings
+- what now lives in Account
+- how confusion was reduced
+
+================================
+STAGE 4 — ADD SILENT BACKGROUND SESSION VALIDATION
+================================
+
+Goal:
+Periodically check whether the Daxko → FamilyWorks session is still valid without bothering the user.
+
+Tasks:
+1. Add a silent background validation loop
+2. Run at a safe interval when idle (for example 10–15 minutes)
+3. Update:
+   - connection state
+   - last checked
+4. If validation succeeds:
+   - quietly refresh freshness
+5. If validation is unclear:
+   - fail soft
+   - do not immediately alarm the user
+6. If validation clearly fails:
+   - mark account state as needing attention
+
+Do not interrupt the user.
+Do not auto-open modals or show scary alerts.
+
+After Stage 4:
+Stop and summarize:
+- how often validation runs
+- what it updates
+- when the user is or is not notified
+
+================================
+STAGE 5 — ADD PRE-BOOKING HARD VALIDATION
+================================
+
+Goal:
+Before sniper execution, ensure the FamilyWorks session is truly valid.
+
+Tasks:
+1. Add a stronger validation check shortly before a booking attempt
+2. Confirm:
+   - FamilyWorks schedule loads
+   - expected booking-surface markers exist
+3. If valid:
+   - proceed
+4. If invalid with high confidence:
+   - trigger re-auth / existing recovery logic
+5. If ambiguous:
+   - allow downstream logic / stronger validation to decide
+
+This is safety-critical.
+Do not weaken booking reliability.
+
+After Stage 5:
+Stop and summarize:
+- how pre-booking validation differs from background validation
+- what counts as valid
+- what triggers recovery
+
+================================
+STAGE 6 — DEFINE 3-TIER VALIDATION MODEL
+================================
+
+Goal:
+Structure validation into clear layers.
+
+Tasks:
+1. Implement 3 validation tiers:
+
+Tier 1 — Cookie/auth presence check
+Tier 2 — Lightweight my.familyworks.app request validation
+Tier 3 — Playwright truth validation
+
+2. Add a shared result model such as:
+{
+  isValid: boolean | "unknown",
+  confidence: "low" | "medium" | "high",
+  tier: 1 | 2 | 3,
+  reason: string
+}
+
+3. Document in code/comments:
+- Tier 1 = fast, weak
+- Tier 2 = fast, stronger
+- Tier 3 = slowest, strongest
+
+After Stage 6:
+Stop and summarize:
+- what the 3 tiers are
+- how result objects work
+- how they will be used
+
+================================
+STAGE 7 — IMPLEMENT TIER 1 + TIER 2 VALIDATION
+================================
+
+Goal:
+Use the fastest possible validation first.
+
+Tasks:
+1. Tier 1:
+   - inspect expected auth/session presence
+   - treat as weak signal only
+2. Tier 2:
+   - reuse the smallest authenticated FamilyWorks request the app already knows how to make
+   - validate based on real FamilyWorks response shape
+3. Return:
+   - valid
+   - invalid
+   - unknown
+4. Log:
+   - [auth-check] tier1 ...
+   - [auth-check] tier2 ...
+
+Do not rely on Tier 1 alone as booking truth.
+
+After Stage 7:
+Stop and summarize:
+- what Tier 1 checks
+- what Tier 2 request is used
+- what counts as valid/invalid/unknown
+
+================================
+STAGE 8 — IMPLEMENT TIER 3 FALLBACK
+================================
+
+Goal:
+Use Playwright only when stronger truth is needed.
+
+Tasks:
+1. Run Tier 3 only when:
+   - Tier 2 is invalid
+   - Tier 2 is unknown
+   - booking is near
+   - stronger truth is required
+2. Validate on the actual FamilyWorks booking surface
+3. Use real truth markers such as:
+   - Reserve visible
+   - Waitlist visible
+   - schedule shell visible
+4. Preserve existing strong FamilyWorks-side auth logic
+
+After Stage 8:
+Stop and summarize:
+- when Playwright runs
+- what it validates
+- how it acts as final truth
+
+================================
+STAGE 9 — ADD TIER ESCALATION ENGINE
+================================
+
+Goal:
+Choose the cheapest safe validation path automatically.
+
+Tasks:
+1. Add a validator function like:
+   validateSessionFastThenFallback()
+
+2. Escalation logic:
+- Tier 1 first
+- if suspicious → Tier 2
+- if Tier 2 valid with good confidence → stop
+- if Tier 2 invalid/unknown → Tier 3
+- if booking window is near, prefer stronger validation
+
+3. Add “strict mode” near booking time
+
+After Stage 9:
+Stop and summarize:
+- how escalation works
+- when strict mode applies
+- how safety is preserved
+
+================================
+STAGE 10 — CONNECT TO ACCOUNT UI + NOW TRUST STATE
+================================
+
+Goal:
+Use the new validation system without overwhelming the user.
+
+Tasks:
+1. Update Account sheet with:
+   - signed in / needs attention
+   - last checked
+   - refresh connection result
+2. Feed validation result into:
+   - readiness
+   - trust line freshness
+   - confidence input if that exists
+3. Do NOT show:
+   - tier numbers
+   - cookies
+   - raw auth diagnostics
+4. If everything is healthy:
+   - keep UI quiet
+5. If connection clearly needs attention:
+   - surface subtle issue only where appropriate
+
+After Stage 10:
+Stop and summarize:
+- what the user now sees
+- what remains hidden
+- how trust improves
+
+FINAL RULES
+
+Do not:
+- trust cookie presence alone
+- remove browser truth validation
+- leave login buried in Settings
+- expose technical auth jargon to the user
+
+Do:
+- make Account the home for connection status
+- validate silently in the background
+- use request-first validation when possible
+- preserve stronger truth before booking
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
