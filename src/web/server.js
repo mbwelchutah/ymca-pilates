@@ -105,9 +105,9 @@ function makeDumbbellPng(size) {
   const gripL    = cx - plateGap + weightR * 0.55; // bar left edge (inside left plate)
   const gripR    = cx + plateGap - weightR * 0.55; // bar right edge (inside right plate)
 
-  // Colors: dark navy background, white dumbbell
-  const BG = [28, 35, 64];       // #1c2340
-  const FG = [255, 255, 255];    // white
+  // Colors: white background, dark navy dumbbell
+  const BG = [255, 255, 255];    // white
+  const FG = [28, 35, 64];       // #1c2340 dark navy
 
   const rows = [];
   for (let y = 0; y < size; y++) {
