@@ -1100,6 +1100,99 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         </Card>
 
+        {/* ── Needs Attention ──────────────────────────────── */}
+        {(() => {
+          type AttentionItem = { title: string; detail: string; color: 'red' | 'amber' }
+          const items: AttentionItem[] = []
+
+          // 1. Daxko session expired / needs login
+          if (sessionStatus?.daxko === 'AUTH_NEEDS_LOGIN') {
+            items.push({
+              title:  'Session needs login',
+              detail: 'Your YMCA account session has expired. Open Settings and sign in again to re-enable booking.',
+              color:  'red',
+            })
+          }
+
+          // 2. FamilyWorks session missing or expired
+          if (
+            sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_MISSING' ||
+            sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_EXPIRED'
+          ) {
+            items.push({
+              title:  'Schedule session unavailable',
+              detail: 'FamilyWorks schedule access is missing or expired. Open Settings to reconnect.',
+              color:  'red',
+            })
+          }
+
+          // 3. Last auto-preflight failed
+          if (autoPreflightConfig?.lastRun?.status === 'fail') {
+            items.push({
+              title:  'Last preflight failed',
+              detail: `The automatic preflight check (${autoPreflightConfig.lastRun.triggerName}) did not pass. Run a manual Preflight Check from Actions to re-verify.`,
+              color:  'amber',
+            })
+          }
+
+          // 4. Session keepalive check failed
+          if (keepaliveConfig?.lastRun?.valid === false) {
+            items.push({
+              title:  'Session check failed',
+              detail: 'The automatic session check could not verify your login. A new check will run shortly, or trigger one manually.',
+              color:  'amber',
+            })
+          }
+
+          // 5. Repeated failures in last 24h (threshold: 5+)
+          const h24 = failures?.trends?.h24
+          if (h24 && h24.total >= 5) {
+            const topReason = h24.byReason[0]
+            items.push({
+              title:  'Repeated failures detected',
+              detail: `${h24.total} failures in the last 24 hours. Most common issue: ${REASON_LABELS[topReason?.reason] ?? topReason?.reason ?? 'unknown'}.`,
+              color:  'amber',
+            })
+          }
+
+          if (items.length === 0) return null
+
+          const visible = items.slice(0, 3)
+
+          return (
+            <>
+              <SectionHeader title="Needs Attention" />
+              <div className="space-y-2">
+                {visible.map((item, i) => (
+                  <Card
+                    key={i}
+                    padding="sm"
+                    className={`shadow-none border ${
+                      item.color === 'red'
+                        ? 'border-accent-red/30 bg-accent-red/5'
+                        : 'border-accent-amber/30 bg-accent-amber/5'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="text-[15px] flex-shrink-0 mt-px">
+                        {item.color === 'red' ? '🔴' : '⚠️'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-text-primary leading-snug">
+                          {item.title}
+                        </p>
+                        <p className="text-[12px] text-text-secondary mt-0.5 leading-relaxed">
+                          {item.detail}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </>
+          )
+        })()}
+
         {/* ── 1e. Suggestions ─────────────────────────────────── */}
         {suggestions.length > 0 && (
           <>
