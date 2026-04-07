@@ -1,14 +1,15 @@
 interface SectionHeaderProps {
   title: string
+  id?: string
   action?: {
     label: string
     onClick: () => void
   }
 }
 
-export function SectionHeader({ title, action }: SectionHeaderProps) {
+export function SectionHeader({ title, id, action }: SectionHeaderProps) {
   return (
-    <div className="flex items-center justify-between px-1 mb-1">
+    <div id={id} className="flex items-center justify-between px-1 mb-1">
       <h2 className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
         {title}
       </h2>

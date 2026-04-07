@@ -28,7 +28,7 @@ interface NowScreenProps {
   loading: boolean
   error: string | null
   refresh: () => void
-  onGoToTools?: () => void
+  onGoToTools?: (section?: string) => void
   onAccount?: () => void
   accountAttention?: boolean
   autoVerifySignal?: number
@@ -1677,15 +1677,36 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )
             })()}
 
-            {/* Tools link — always accessible at the bottom of the card */}
-            {onGoToTools && (
-              <button
-                onClick={onGoToTools}
-                className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-2.5 border-t border-divider"
-              >
-                View details in Tools →
-              </button>
-            )}
+            {/* Tools link — context-aware handoff */}
+            {onGoToTools && (() => {
+              const hasSessionProblem =
+                sessionStatus?.daxko !== 'DAXKO_READY' ||
+                sessionStatus?.familyworks !== 'FAMILYWORKS_READY'
+              const hasRunEvents = (sniperRunState?.events?.length ?? 0) > 0
+
+              let section: string
+              let label: string
+
+              if (hasSessionProblem) {
+                section = 'tools-readiness'
+                label   = 'Check session in Tools →'
+              } else if (hasRunEvents) {
+                section = 'tools-run-events'
+                label   = 'View run events in Tools →'
+              } else {
+                section = 'tools-readiness'
+                label   = 'View details in Tools →'
+              }
+
+              return (
+                <button
+                  onClick={() => onGoToTools(section)}
+                  className="w-full text-center text-[12px] text-text-muted active:opacity-60 py-2.5 border-t border-divider"
+                >
+                  {label}
+                </button>
+              )
+            })()}
           </Card>
         )}
 

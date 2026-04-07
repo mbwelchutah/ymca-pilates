@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -54,6 +54,7 @@ interface ToolsScreenProps {
   refresh: () => void
   onAccount?: () => void
   accountAttention?: boolean
+  scrollTo?: string
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -489,7 +490,7 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
 
   return (
     <>
-      <SectionHeader title={`Last Check · ${fmtStr(snap.checkedAt)}`} />
+      <SectionHeader id="tools-last-check" title={`Last Check · ${fmtStr(snap.checkedAt)}`} />
       <Card padding="none">
 
         {/* Session / Auth */}
@@ -596,8 +597,9 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention }: ToolsScreenProps) {
+export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, scrollTo }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
+  const scrolledRef = useRef<string | undefined>(undefined)
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
   const [trendWindow, setTrendWindow]     = useState<'h24' | 'd7'>('h24')
@@ -638,6 +640,16 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
   }, [])
+
+  // ── Auto-scroll to linked section when arriving from Now ─────────────────
+  useEffect(() => {
+    if (!scrollTo || scrollTo === scrolledRef.current) return
+    scrolledRef.current = scrollTo
+    const el = document.getElementById(scrollTo)
+    if (el) {
+      setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+    }
+  }, [scrollTo])
 
   const lastRunJob = [...appState.jobs]
     .filter(j => j.last_run_at)
@@ -748,7 +760,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
       <ScreenContainer>
 
         {/* ── 1. Last Run ────────────────────────────────────── */}
-        <SectionHeader title="Last Run" />
+        <SectionHeader title="Last Run" id="tools-last-run" />
         <Card padding="none">
           <DetailRow
             label="Scheduler"
@@ -794,7 +806,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         )}
 
         {/* ── 1b. Readiness ───────────────────────────────────── */}
-        <SectionHeader title="Readiness" />
+        <SectionHeader title="Readiness" id="tools-readiness" />
         <Card padding="none">
           {/* Session (Daxko auth) */}
           {(() => {
@@ -870,6 +882,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         {/* ── 1c. Last Run Events ─────────────────────────────── */}
         <SectionHeader
+          id="tools-run-events"
           title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
         />
         <LastRunEvents sniperRunState={sniperRunState} />

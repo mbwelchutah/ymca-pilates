@@ -22,6 +22,7 @@ export default function App() {
   const [accountAttention, setAccountAttention] = useState(false)
   const [polledStatus, setPolledStatus] = useState<SessionStatus | null>(null)
   const [autoVerifySignal, setAutoVerifySignal] = useState(0)
+  const [toolsSection, setToolsSection] = useState<string | undefined>(undefined)
   const startupVerified = useRef(false)
 
   const { state, loading, error, refresh } = useAppState()
@@ -109,7 +110,7 @@ export default function App() {
             loading={loading}
             error={error}
             refresh={refresh}
-            onGoToTools={() => handleTabChange('tools')}
+            onGoToTools={(section) => { setToolsSection(section); handleTabChange('tools') }}
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
             autoVerifySignal={autoVerifySignal}
@@ -127,7 +128,7 @@ export default function App() {
           />
         )}
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} />
+          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} scrollTo={toolsSection} />
         )}
         {tab === 'settings' && (
           <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} />
