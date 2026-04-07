@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 interface AccountSheetProps {
   open: boolean
   onClose: () => void
+  polledStatus?: SessionStatus | null
 }
 
 function formatChecked(iso: string | null): string {
@@ -79,7 +80,7 @@ const DOT_CLS: Record<'green' | 'amber' | 'gray', string> = {
   gray:  'bg-[#c7c7cc]',
 }
 
-export function AccountSheet({ open, onClose }: AccountSheetProps) {
+export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps) {
   const [session,    setSession]    = useState<SessionStatus | null>(null)
   const [signingIn,  setSigningIn]  = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -92,12 +93,21 @@ export function AccountSheet({ open, onClose }: AccountSheetProps) {
       .catch(() => setSession(null))
   }, [])
 
+  // Fetch fresh status on open.
   useEffect(() => {
     if (open) {
       setFeedback(null)
       fetchSession()
     }
   }, [open, fetchSession])
+
+  // When App's background poll produces a newer status while the sheet is
+  // open, merge it in so "Last checked" updates without user action.
+  useEffect(() => {
+    if (open && polledStatus != null) {
+      setSession(polledStatus)
+    }
+  }, [open, polledStatus])
 
   const busy = signingIn || refreshing || signingOut
 

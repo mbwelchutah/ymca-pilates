@@ -8,6 +8,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { AccountSheet } from './components/AccountSheet'
 import { useAppState } from './hooks/useAppState'
 import { api } from './lib/api'
+import type { SessionStatus } from './types'
 
 const SESSION_POLL_MS = 5 * 60 * 1000  // 5 minutes
 
@@ -19,20 +20,26 @@ export default function App() {
 
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAttention, setAccountAttention] = useState(false)
+  const [polledStatus, setPolledStatus] = useState<SessionStatus | null>(null)
 
   const { state, loading, error, refresh } = useAppState()
 
   // ── Session status polling — derives attention dot ────────────────────────
+  // Only lights up the dot for explicit known failures (DAXKO_READY and
+  // FAMILYWORKS_READY are the only "clear" states). AUTH_UNKNOWN is ambiguous —
+  // dot stays off. On network error: reset to false (silent fail).
   useEffect(() => {
     const check = async () => {
       try {
         const status = await api.getSessionStatus()
+        setPolledStatus(status)
         const needsAttention =
-          (status.daxko !== null && status.daxko !== 'DAXKO_READY') ||
-          (status.familyworks !== null && status.familyworks !== 'FAMILYWORKS_READY')
+          status.daxko === 'AUTH_NEEDS_LOGIN' ||
+          status.familyworks === 'FAMILYWORKS_SESSION_MISSING'
         setAccountAttention(needsAttention)
       } catch {
-        // Silent fail — unclear state, do not set attention dot
+        // Ambiguous / unreachable — reset dot, do not alarm
+        setAccountAttention(false)
       }
     }
     check()
@@ -77,7 +84,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
-      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} />
+      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} polledStatus={polledStatus} />
       <TabBar active={tab} onChange={handleTabChange} />
 
       <main className="flex-1 overflow-y-auto pt-content-top">
