@@ -71,9 +71,9 @@ function serveStatic(res, filePath) {
 }
 
 // ---------------------------------------------------------------------------
-// PWA helpers — generate solid-colour PNG icons without external packages.
+// PWA helpers — generate dumbbell PNG icons without external packages.
 // ---------------------------------------------------------------------------
-function makeSolidPng(width, height, r, g, b) {
+function makeDumbbellPng(size) {
   const zlib = require('zlib');
   const crcTable = (() => {
     const t = new Uint32Array(256);
@@ -95,30 +95,56 @@ function makeSolidPng(width, height, r, g, b) {
     const cb = Buffer.alloc(4); cb.writeUInt32BE(crc32(Buffer.concat([tb, data])), 0);
     return Buffer.concat([lb, tb, data, cb]);
   }
+
+  // Dumbbell geometry (all values relative to size)
+  // Plates centered at 27% / 73% of width; radius 20% → 7% margin on each edge.
+  const cx = size / 2, cy = size / 2;
+  const weightR  = size * 0.20;   // radius of each round weight plate
+  const plateGap = size * 0.23;   // distance from canvas center to each plate center
+  const barHalf  = size * 0.065;  // half-height of the connecting bar
+  const gripL    = cx - plateGap + weightR * 0.55; // bar left edge (inside left plate)
+  const gripR    = cx + plateGap - weightR * 0.55; // bar right edge (inside right plate)
+
+  // Colors: dark navy background, white dumbbell
+  const BG = [28, 35, 64];       // #1c2340
+  const FG = [255, 255, 255];    // white
+
+  const rows = [];
+  for (let y = 0; y < size; y++) {
+    const row = Buffer.alloc(1 + size * 3);
+    row[0] = 0; // PNG filter: None
+    for (let x = 0; x < size; x++) {
+      const inLeft  = Math.hypot(x - (cx - plateGap), y - cy) <= weightR;
+      const inRight = Math.hypot(x - (cx + plateGap), y - cy) <= weightR;
+      const inBar   = x >= gripL && x <= gripR && Math.abs(y - cy) <= barHalf;
+      const [r, g, b] = (inLeft || inRight || inBar) ? FG : BG;
+      row[1 + x * 3] = r;
+      row[2 + x * 3] = g;
+      row[3 + x * 3] = b;
+    }
+    rows.push(row);
+  }
+
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; ihdr[9] = 2; // 8-bit RGB
-  const row = Buffer.alloc(1 + width * 3);
-  row[0] = 0; // filter: None
-  for (let x = 0; x < width; x++) { row[1 + x * 3] = r; row[2 + x * 3] = g; row[3 + x * 3] = b; }
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))),
     chunk('IEND', Buffer.alloc(0)),
   ]);
 }
 // Cache generated PNGs so they're only built once per process lifetime.
 const _pngCache = {};
 function getCachedPng(size) {
-  if (!_pngCache[size]) _pngCache[size] = makeSolidPng(size, size, 28, 35, 64); // #1c2340
+  if (!_pngCache[size]) _pngCache[size] = makeDumbbellPng(size);
   return _pngCache[size];
 }
 
 const MANIFEST_JSON = JSON.stringify({
-  name: 'YMCA Booker',
-  short_name: 'YMCA',
+  name: 'YMCA BOT',
+  short_name: 'YMCA BOT',
   start_url: '/',
   display: 'standalone',
   background_color: '#ffffff',
@@ -345,11 +371,11 @@ function buildHtml(jobs, error, editError) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>YMCA Booker</title>
+  <title>YMCA BOT</title>
   <!-- PWA / home-screen meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="YMCA Booker">
+  <meta name="apple-mobile-web-app-title" content="YMCA BOT">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#ffffff">
   <link rel="manifest" href="/manifest.json">

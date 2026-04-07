@@ -20,7 +20,7 @@ export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, on
       <div className="pt-4 px-4 pb-2 flex items-center justify-between">
         <div>
           <h1 className="text-[22px] font-bold tracking-tight text-text-primary leading-tight">
-            YMCA Booker
+            YMCA BOT
           </h1>
           <p className="text-[13px] text-text-secondary font-medium mt-0.5">{subtitle}</p>
         </div>
