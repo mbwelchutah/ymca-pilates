@@ -869,7 +869,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             label={selectedJob ? `Preflight Check — ${selectedJob.class_title}` : 'Preflight Check'}
             detail={
               selectedJob
-                ? `Job #${selectedJob.id} · verify readiness without booking`
+                ? `Job #${selectedJob.id} · confirm readiness without booking`
                 : 'Select a class in Plan first'
             }
             onClick={handlePreflight}
@@ -881,7 +881,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
             detail={
               selectedJob
-                ? `Job #${selectedJob.id} · force-attempt booking immediately`
+                ? `Job #${selectedJob.id} · attempt booking right now`
                 : 'Select a class in Plan first'
             }
             onClick={handleForce}
@@ -1167,7 +1167,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           if (autoPreflightConfig?.lastRun?.status === 'fail') {
             items.push({
               title:  'Last preflight failed',
-              detail: `The automatic preflight check (${autoPreflightConfig.lastRun.triggerName}) did not pass. Run a manual Preflight Check from Actions to re-verify.`,
+              detail: `${autoPreflightConfig.lastRun.triggerName ? `"${autoPreflightConfig.lastRun.triggerName}" ` : 'The automatic '}preflight check failed — use Preflight Check in Actions to re-verify.`,
               color:  'amber',
             })
           }
@@ -1244,7 +1244,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                         {s.text}
                       </p>
                       {s.detail && (
-                        <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">
+                        <p className="text-[12px] text-text-secondary mt-0.5 leading-relaxed">
                           {s.detail}
                         </p>
                       )}
