@@ -4204,9 +4204,12 @@ const server = http.createServer((req, res) => {
     })();
 
   } else if (req.method === 'POST' && path === '/api/settings-refresh') {
-    // Lightweight session revalidation triggered from Settings > Refresh session.
-    // Verifies Daxko credentials via a fresh browser login (runSessionCheck),
-    // then reads the most recent FamilyWorks state from persisted files only.
+    // Session revalidation triggered from AccountSheet > Refresh connection.
+    //
+    // Escalation (Tier-1 skipped — user asked for active network verification):
+    //   Tier 2: HTTP ping via saved cookies (~1–5 s, no browser)
+    //   Tier 3: Full Playwright check via runSessionCheck (~30 s, fallback)
+    //
     // Does NOT attempt FamilyWorks SSO or modal interaction — use Log in now for that.
     // Does NOT auto-login if invalid — simply reports AUTH_NEEDS_LOGIN.
     if (jobState.active) {
@@ -4223,13 +4226,48 @@ const server = http.createServer((req, res) => {
         return;
       }
       try {
-        // ── Daxko check ──────────────────────────────────────────────────────
-        console.log('[settings-refresh] Starting session refresh...');
+        console.log('[settings-refresh] Starting session refresh (Tier-2 first)...');
+
+        // ── Tier 2: HTTP ping using saved browser cookies ─────────────────────
+        const { pingSessionHttp } = require('../bot/session-ping');
+        const pingResult = await pingSessionHttp();
+
+        if (pingResult.trusted) {
+          // Both Daxko and FamilyWorks confirmed via HTTP — no browser needed.
+          console.log('[settings-refresh] Tier-2 ping succeeded:', pingResult.detail);
+
+          // Read the FamilyWorks status from the freshly-stamped session file.
+          // pingSessionHttp() called refreshStatusTimestamps() so the file is current.
+          let familyworks = 'FAMILYWORKS_READY';
+          let fwCheckedAt = null;
+          try {
+            const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
+            if (fsStatic.existsSync(fwPath)) {
+              const fwEntry = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
+              familyworks = fwEntry?.status || 'FAMILYWORKS_READY';
+              fwCheckedAt = fwEntry?.checkedAt || null;
+            }
+          } catch (_) { /* non-fatal */ }
+
+          const lastVerified = fwCheckedAt || new Date().toISOString();
+          const overall = familyworks === 'FAMILYWORKS_READY' ? 'DAXKO_READY' : familyworks;
+          const detail  = `Tier-2: ${pingResult.detail}`;
+          console.log('[settings-refresh] Done (Tier-2).', { daxko: 'DAXKO_READY', familyworks });
+
+          json({ success: true, daxko: 'DAXKO_READY', familyworks, overall, lastVerified, detail, tier: 2 });
+          return;
+        }
+
+        // ── Tier 2 missed — fall through to Tier-3 Playwright check ──────────
+        console.log('[settings-refresh] Tier-2 miss:', pingResult.detail);
+        console.log('[settings-refresh] Falling through to Tier-3 Playwright check...');
+
+        // ── Tier 3: Daxko check via full Playwright login ─────────────────────
         const { runSessionCheck } = require('../bot/session-check');
         const checkResult = await runSessionCheck({ source: 'refresh' });
 
         const daxko = checkResult.valid ? 'DAXKO_READY' : 'AUTH_NEEDS_LOGIN';
-        console.log(`[settings-refresh] Daxko: ${daxko} — ${checkResult.detail}`);
+        console.log(`[settings-refresh] Tier-3 Daxko: ${daxko} — ${checkResult.detail}`);
 
         // ── FamilyWorks — read from persisted files, no browser ───────────
         let familyworks = 'AUTH_UNKNOWN';
@@ -4295,9 +4333,9 @@ const server = http.createServer((req, res) => {
         const lastVerified = stamps.length > 0 ? stamps.reduce((a, b) => (a > b ? a : b)) : null;
 
         const detail = `Daxko: ${daxko} | FamilyWorks: ${familyworks} — ${checkResult.detail}`;
-        console.log('[settings-refresh] Done.', { daxko, familyworks, overall });
+        console.log('[settings-refresh] Done (Tier-3).', { daxko, familyworks, overall });
 
-        json({ success: true, daxko, familyworks, overall, lastVerified, detail });
+        json({ success: true, daxko, familyworks, overall, lastVerified, detail, tier: 3 });
       } catch (err) {
         console.error('[settings-refresh] route error:', err.message);
         json({ success: false, detail: err.message || 'Refresh failed unexpectedly' });

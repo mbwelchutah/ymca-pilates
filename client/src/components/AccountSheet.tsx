@@ -137,7 +137,10 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
     try {
       const result = await api.settingsRefresh()
       if (result.success) {
-        setFeedback({ text: 'Connection confirmed', cls: 'text-accent-green' })
+        const text = result.tier === 2
+          ? 'Connection verified'
+          : 'Connection confirmed (full check)'
+        setFeedback({ text, cls: 'text-accent-green' })
       } else {
         setFeedback({ text: result.detail ?? 'Could not confirm connection', cls: 'text-accent-amber' })
       }

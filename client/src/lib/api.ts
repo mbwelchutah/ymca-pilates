@@ -202,6 +202,7 @@ export const api = {
     overall?: SessionStatus['overall']
     lastVerified?: string | null
     detail?: string
+    tier?: 2 | 3
   }> => apiFetch('/api/settings-refresh', { method: 'POST' }),
 
   settingsClear: (): Promise<{
