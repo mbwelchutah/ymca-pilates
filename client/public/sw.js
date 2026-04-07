@@ -2,7 +2,7 @@
 // Network-first for API calls; cache-first for all static app assets.
 // Offline fallback: serve the cached app shell so the UI loads even with no connection.
 
-const CACHE = 'ymca-booker-v1'
+const CACHE = 'ymca-booker-v2'
 
 // Paths that are never cached — always go straight to the network.
 const BYPASS = ['/api/', '/screenshots/', '/manifest.json']
