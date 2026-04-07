@@ -756,56 +756,65 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   return (
     <>
-      <AppHeader subtitle="Diagnostics" onAccount={onAccount} accountAttention={accountAttention} />
+      <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} />
       <ScreenContainer>
 
-        {/* ── 1. Last Run ────────────────────────────────────── */}
-        <SectionHeader title="Last Run" id="tools-last-run" />
+        {/* ── Actions ──────────────────────────────────────── */}
+        <SectionHeader title="Actions" id="tools-actions" />
         <Card padding="none">
-          <DetailRow
-            label="Scheduler"
-            value={botStatus == null ? 'Loading…' : botStatus.active ? 'Running' : 'Idle'}
+          <ActionRow
+            label={selectedJob ? `Preflight Check — ${selectedJob.class_title}` : 'Preflight Check'}
+            detail={
+              selectedJob
+                ? `Job #${selectedJob.id} · verify readiness without booking`
+                : 'Select a class in Plan first'
+            }
+            onClick={handlePreflight}
+            loading={preflightLoading}
+            disabled={!selectedJob}
           />
-          {lastRunJob ? (
-            <>
-              <DetailRow
-                label="Last Run"
-                value={lastRunJob.last_run_at ? fmtStr(lastRunJob.last_run_at) : '—'}
-              />
-              <DetailRow
-                label="Job"
-                value={`#${lastRunJob.id} — ${lastRunJob.class_title}`}
-              />
-              <DetailRow
-                label="Result"
-                value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
-                last={!lastRunJob.last_error_message}
-              />
-              {lastRunJob.last_error_message && (
-                <DetailRow
-                  label="Error"
-                  value={
-                    lastRunJob.last_error_message.length > 60
-                      ? lastRunJob.last_error_message.slice(0, 60) + '…'
-                      : lastRunJob.last_error_message
-                  }
-                  last
-                />
-              )}
-            </>
-          ) : (
-            <DetailRow label="Last Run" value="No runs yet" last />
-          )}
+          <div className="h-px bg-divider mx-4" />
+          <ActionRow
+            label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
+            detail={
+              selectedJob
+                ? `Job #${selectedJob.id} · force-attempt booking immediately`
+                : 'Select a class in Plan first'
+            }
+            onClick={handleForce}
+            loading={forceLoading}
+            disabled={!selectedJob}
+          />
+          <div className="h-px bg-divider mx-4" />
+          <ActionRow
+            label="Check Now"
+            detail="Run one booking check across all active classes"
+            onClick={handleRunOnce}
+            loading={runOnceLoading}
+          />
         </Card>
-        {botStatus?.log && (
-          <Card padding="sm" className="bg-surface border border-divider shadow-none">
-            <p className="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
-              {botStatus.log}
-            </p>
+
+        {(preflightMsg || forceMsg || runOnceMsg) && (
+          <Card padding="sm">
+            {preflightMsg && (
+              <p className={`text-[13px] ${preflightMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+                {preflightMsg.text}
+              </p>
+            )}
+            {forceMsg && (
+              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg ? 'mt-2' : ''}`}>
+                {forceMsg.text}
+              </p>
+            )}
+            {runOnceMsg && (
+              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg || forceMsg ? 'mt-2' : ''}`}>
+                {runOnceMsg.text}
+              </p>
+            )}
           </Card>
         )}
 
-        {/* ── 1b. Readiness ───────────────────────────────────── */}
+        {/* ── Readiness ────────────────────────────────────── */}
         <SectionHeader title="Readiness" id="tools-readiness" />
         <Card padding="none">
           {/* Session (Daxko auth) */}
@@ -880,7 +889,53 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           </div>
         </Card>
 
-        {/* ── 1c. Last Run Events ─────────────────────────────── */}
+        {/* ── Last Run ─────────────────────────────────────── */}
+        <SectionHeader title="Last Run" id="tools-last-run" />
+        <Card padding="none">
+          <DetailRow
+            label="Scheduler"
+            value={botStatus == null ? 'Loading…' : botStatus.active ? 'Running' : 'Idle'}
+          />
+          {lastRunJob ? (
+            <>
+              <DetailRow
+                label="Last Run"
+                value={lastRunJob.last_run_at ? fmtStr(lastRunJob.last_run_at) : '—'}
+              />
+              <DetailRow
+                label="Job"
+                value={`#${lastRunJob.id} — ${lastRunJob.class_title}`}
+              />
+              <DetailRow
+                label="Result"
+                value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
+                last={!lastRunJob.last_error_message}
+              />
+              {lastRunJob.last_error_message && (
+                <DetailRow
+                  label="Error"
+                  value={
+                    lastRunJob.last_error_message.length > 60
+                      ? lastRunJob.last_error_message.slice(0, 60) + '…'
+                      : lastRunJob.last_error_message
+                  }
+                  last
+                />
+              )}
+            </>
+          ) : (
+            <DetailRow label="Last Run" value="No runs yet" last />
+          )}
+        </Card>
+        {botStatus?.log && (
+          <Card padding="sm" className="bg-surface border border-divider shadow-none">
+            <p className="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
+              {botStatus.log}
+            </p>
+          </Card>
+        )}
+
+        {/* ── Run Events ───────────────────────────────────── */}
         <SectionHeader
           id="tools-run-events"
           title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
@@ -890,8 +945,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         {/* ── 1d. Last Check Now (per-phase diagnostics) ──────── */}
         <LastCheckNowSection sniperRunState={sniperRunState} />
 
-        {/* ── 1d. Auto Preflight ──────────────────────────────── */}
-        <SectionHeader title="Auto Preflight" />
+        {/* ── Automation ───────────────────────────────────── */}
+        <SectionHeader title="Automation" />
         <Card padding="none">
           {/* Enable / disable toggle row */}
           <button
@@ -970,8 +1025,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           </div>
         </Card>
 
-        {/* ── 1d. Session Monitor ─────────────────────────────── */}
-        <SectionHeader title="Session Monitor" />
+        {/* Session Monitor (part of Automation) */}
         <Card padding="none">
           {/* Enable / disable toggle */}
           <button
@@ -1265,61 +1319,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               })}
             </Card>
           </>
-        )}
-
-        {/* ── 4. Actions ─────────────────────────────────────── */}
-        <SectionHeader title="Actions" />
-        <Card padding="none">
-          <ActionRow
-            label={selectedJob ? `Preflight Check — ${selectedJob.class_title}` : 'Preflight Check'}
-            detail={
-              selectedJob
-                ? `Job #${selectedJob.id} · verify readiness without booking`
-                : 'Select a class in Plan first'
-            }
-            onClick={handlePreflight}
-            loading={preflightLoading}
-            disabled={!selectedJob}
-          />
-          <div className="h-px bg-divider mx-4" />
-          <ActionRow
-            label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
-            detail={
-              selectedJob
-                ? `Job #${selectedJob.id} · force-attempt booking immediately`
-                : 'Select a class in Plan first'
-            }
-            onClick={handleForce}
-            loading={forceLoading}
-            disabled={!selectedJob}
-          />
-          <div className="h-px bg-divider mx-4" />
-          <ActionRow
-            label="Check Now"
-            detail="Run one booking check across all active classes"
-            onClick={handleRunOnce}
-            loading={runOnceLoading}
-          />
-        </Card>
-
-        {(preflightMsg || forceMsg || runOnceMsg) && (
-          <Card padding="sm">
-            {preflightMsg && (
-              <p className={`text-[13px] ${preflightMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
-                {preflightMsg.text}
-              </p>
-            )}
-            {forceMsg && (
-              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg ? 'mt-2' : ''}`}>
-                {forceMsg.text}
-              </p>
-            )}
-            {runOnceMsg && (
-              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg || forceMsg ? 'mt-2' : ''}`}>
-                {runOnceMsg.text}
-              </p>
-            )}
-          </Card>
         )}
 
       </ScreenContainer>
