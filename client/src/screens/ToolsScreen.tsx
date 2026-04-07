@@ -698,6 +698,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
   const [trendWindow, setTrendWindow]     = useState<'h24' | 'd7'>('h24')
+  const [trendsExpanded, setTrendsExpanded] = useState(false)
   const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
@@ -1124,104 +1125,112 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           </>
         )}
 
-        {/* ── 2. Failure Trends ───────────────────────────────── */}
-        {/* Segment control header row */}
-        <div className="flex items-center justify-between px-1 pt-6 pb-1">
-          <h2 className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">
-            Failure Trends
-          </h2>
-          <div className="flex bg-divider rounded-lg p-0.5 gap-0.5 flex-shrink-0">
-            {(['h24', 'd7'] as const).map(w => (
-              <button
-                key={w}
-                onClick={() => setTrendWindow(w)}
-                className={`text-[12px] font-medium px-3 py-1 rounded-md transition-colors ${
-                  trendWindow === w
-                    ? 'bg-white text-text-primary shadow-sm'
-                    : 'text-text-muted'
-                }`}
-              >
-                {w === 'h24' ? '24h' : '7d'}
-              </button>
-            ))}
-          </div>
-        </div>
-
+        {/* ── Failure Trends (collapsible) ─────────────────── */}
         {(() => {
-          const window = failures?.trends?.[trendWindow]
-          if (!window) return (
-            <Card padding="none">
-              <DetailRow label="Status" value="No data yet" last />
-            </Card>
-          )
+          const trendData = failures?.trends?.[trendWindow]
+          const total     = trendData?.total ?? 0
+          const topReason = trendData?.byReason?.[0]
+          const windowLabel = trendWindow === 'h24' ? '24h' : '7d'
 
-          const { byReason, byPhase, total } = window
-          const topReasons = byReason.slice(0, 5)
-          const topPhases  = byPhase.slice(0, 3)
-
-          if (total === 0) return (
-            <Card padding="sm" className="border border-divider shadow-none bg-surface">
-              <p className="text-[13px] text-text-muted text-center">
-                No failures in the last {trendWindow === 'h24' ? '24 hours' : '7 days'}
-              </p>
-            </Card>
-          )
+          // Collapsed summary line
+          let summary: string
+          if (!trendData)          summary = 'No trend data yet'
+          else if (total === 0)    summary = `No failures in the last ${trendWindow === 'h24' ? '24 hours' : '7 days'}`
+          else                     summary = `${total} failure${total === 1 ? '' : 's'} · Top: ${REASON_LABELS[topReason!.reason] ?? topReason!.reason}`
 
           return (
-            <>
-              {/* Top failure reasons */}
-              <Card padding="none">
-                <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-divider">
-                  <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">
-                    By Failure Type
-                  </span>
-                  <span className="text-[11px] text-text-muted">{total} total</span>
+            <Card padding="none">
+              {/* ── Collapsed header / toggle ──────────────── */}
+              <button
+                onClick={() => setTrendsExpanded(e => !e)}
+                className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Failure Trends</p>
+                  <p className="text-[13px] text-text-muted mt-0.5 truncate">{summary}</p>
                 </div>
-                {topReasons.map((r, i) => {
-                  const pct = total > 0 ? Math.round((r.count / total) * 100) : 0
-                  return (
-                    <div key={r.reason} className={`px-4 py-2.5 ${i < topReasons.length - 1 ? 'border-b border-divider' : ''}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[13px] text-text-primary leading-tight flex-1 mr-2 truncate">
-                          {REASON_LABELS[r.reason] ?? r.reason}
-                        </span>
-                        <span className="text-[12px] font-medium text-text-secondary flex-shrink-0">
-                          {r.count}×
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-divider rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-accent-red/60 rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-text-muted w-8 text-right flex-shrink-0">{pct}%</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </Card>
+                <ChevronIcon rotated={trendsExpanded} />
+              </button>
 
-              {/* Phase breakdown */}
-              {topPhases.length > 0 && (
-                <Card padding="none">
-                  <div className="px-4 pt-3 pb-2 border-b border-divider">
-                    <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">
-                      By Phase
-                    </span>
+              {/* ── Expanded breakdown ─────────────────────── */}
+              {trendsExpanded && (
+                <div className="border-t border-divider">
+                  {/* Time window filter */}
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider">
+                    <span className="text-[12px] text-text-muted">Window</span>
+                    <div className="flex bg-divider rounded-lg p-0.5 gap-0.5">
+                      {(['h24', 'd7'] as const).map(w => (
+                        <button
+                          key={w}
+                          onClick={e => { e.stopPropagation(); setTrendWindow(w) }}
+                          className={`text-[12px] font-medium px-3 py-1 rounded-md transition-colors ${
+                            trendWindow === w ? 'bg-white text-text-primary shadow-sm' : 'text-text-muted'
+                          }`}
+                        >
+                          {w === 'h24' ? '24h' : '7d'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  {topPhases.map((p, i) => (
-                    <DetailRow
-                      key={p.phase}
-                      label={PHASE_LABELS[p.phase] ?? p.phase}
-                      value={`${p.count}×`}
-                      last={i === topPhases.length - 1}
-                    />
-                  ))}
-                </Card>
+
+                  {!trendData ? (
+                    <div className="px-4 py-3">
+                      <p className="text-[13px] text-text-muted">No data yet</p>
+                    </div>
+                  ) : total === 0 ? (
+                    <div className="px-4 py-3">
+                      <p className="text-[13px] text-text-muted">No failures in the last {windowLabel}</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* By failure type */}
+                      <div className="border-b border-divider">
+                        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">By Failure Type</span>
+                          <span className="text-[11px] text-text-muted">{total} total</span>
+                        </div>
+                        {trendData.byReason.slice(0, 5).map((r, i, arr) => {
+                          const pct = Math.round((r.count / total) * 100)
+                          return (
+                            <div key={r.reason} className={`px-4 py-2.5 ${i < arr.length - 1 ? 'border-t border-divider' : ''}`}>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[13px] text-text-primary leading-tight flex-1 mr-2 truncate">
+                                  {REASON_LABELS[r.reason] ?? r.reason}
+                                </span>
+                                <span className="text-[12px] font-medium text-text-secondary flex-shrink-0">{r.count}×</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-1.5 bg-divider rounded-full overflow-hidden">
+                                  <div className="h-full bg-accent-red/60 rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-[10px] text-text-muted w-8 text-right flex-shrink-0">{pct}%</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* By phase */}
+                      {trendData.byPhase.slice(0, 3).length > 0 && (
+                        <div>
+                          <div className="px-4 pt-3 pb-2 border-b border-divider">
+                            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">By Phase</span>
+                          </div>
+                          {trendData.byPhase.slice(0, 3).map((p, i, arr) => (
+                            <DetailRow
+                              key={p.phase}
+                              label={PHASE_LABELS[p.phase] ?? p.phase}
+                              value={`${p.count}×`}
+                              last={i === arr.length - 1}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
-            </>
+            </Card>
           )
         })()}
 
