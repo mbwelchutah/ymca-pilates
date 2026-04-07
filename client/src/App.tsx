@@ -5,6 +5,7 @@ import { NowScreen } from './screens/NowScreen'
 import { PlanScreen } from './screens/PlanScreen'
 import { ToolsScreen } from './screens/ToolsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { AccountSheet } from './components/AccountSheet'
 import { useAppState } from './hooks/useAppState'
 
 export default function App() {
@@ -54,6 +55,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
+      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} />
       <TabBar active={tab} onChange={handleTabChange} />
 
       <main className="flex-1 overflow-y-auto pt-content-top">
