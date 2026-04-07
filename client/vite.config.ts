@@ -21,6 +21,7 @@ const backendPaths = [
   '/refresh-schedule',
   '/screenshots',
   '/manifest.json',
+  '/sw.js',
   '/icon-192.png',
   '/icon-512.png',
   '/apple-touch-icon.png',

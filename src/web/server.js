@@ -172,6 +172,10 @@ const MANIFEST_JSON = JSON.stringify({
   ],
 });
 
+// Timestamp set once at startup — changes on every restart / deployment.
+// Used to generate a unique SW cache name so the old cache is evicted automatically.
+const SW_BOOT_TS = Date.now();
+
 // ---------------------------------------------------------------------------
 // HTML builder — generates the full page with jobs injected server-side.
 // ---------------------------------------------------------------------------
@@ -3854,6 +3858,22 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(buildHtml(jobs, error, editError));
     }
+
+  } else if (req.method === 'GET' && path === '/sw.js') {
+    // Serve the service worker with the boot timestamp injected as the cache name.
+    // Because SW_BOOT_TS changes every restart/deployment, the browser installs a
+    // fresh SW and the activate handler evicts the old cache automatically.
+    const swPath = require('path').resolve(__dirname, '../../client/public/sw.js');
+    const altPath = require('path').resolve(__dirname, '../../dist/sw.js');
+    let swSrc = '';
+    try { swSrc = require('fs').readFileSync(swPath, 'utf8'); }
+    catch { swSrc = require('fs').readFileSync(altPath, 'utf8'); }
+    const swOut = swSrc.replace(/const CACHE = '[^']+'/, `const CACHE = 'ymca-bot-${SW_BOOT_TS}'`);
+    res.writeHead(200, {
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
+    res.end(swOut);
 
   } else if (req.method === 'GET' && path === '/manifest.json') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
