@@ -699,6 +699,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [failures, setFailures]           = useState<FailureData | null>(null)
   const [trendWindow, setTrendWindow]     = useState<'h24' | 'd7'>('h24')
   const [trendsExpanded, setTrendsExpanded] = useState(false)
+  const [techExpanded, setTechExpanded]     = useState(false)
   const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
@@ -916,90 +917,117 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           </Card>
         )}
 
-        {/* ── Readiness ────────────────────────────────────── */}
-        <SectionHeader title="Readiness" id="tools-readiness" />
-        <Card padding="none">
-          {/* Session (Daxko auth) */}
-          {(() => {
-            const { label, dot } = daxkoToLabel(sessionStatus?.daxko)
-            return (
-              <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                <span className="text-[14px] text-text-secondary">Session</span>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                  <span className="text-[14px] font-medium text-text-primary">{label}</span>
-                </div>
-              </div>
-            )
-          })()}
-          {/* Schedule (FamilyWorks) */}
-          {(() => {
-            const { label, dot } = fwToLabel(sessionStatus?.familyworks)
-            return (
-              <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                <span className="text-[14px] text-text-secondary">Schedule</span>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                  <span className="text-[14px] font-medium text-text-primary">{label}</span>
-                </div>
-              </div>
-            )
-          })()}
-          {/* Discovery */}
-          {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
-            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-              <span className="text-[14px] text-text-secondary">Class</span>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.discovery)}`} />
-                <span className="text-[14px] font-medium text-text-primary">
-                  {DISCOVERY_LABEL[sniperRunState.bundle.discovery] ?? sniperRunState.bundle.discovery}
-                </span>
-              </div>
-            </div>
-          )}
-          {/* Modal */}
-          {sniperRunState?.bundle && sniperRunState.bundle.modal &&
-           sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
-            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-              <span className="text-[14px] text-text-secondary">Modal</span>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
-                <span className="text-[14px] font-medium text-text-primary">
-                  {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
-                </span>
-              </div>
-            </div>
-          )}
-          {/* Action */}
-          {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
-            <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-              <span className="text-[14px] text-text-secondary">Action</span>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.action)}`} />
-                <span className="text-[14px] font-medium text-text-primary">
-                  {ACTION_LABEL[sniperRunState.bundle.action] ?? sniperRunState.bundle.action}
-                </span>
-              </div>
-            </div>
-          )}
-          {/* Last check timestamp */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-[14px] text-text-secondary">Last checked</span>
-            <span className="text-[13px] text-text-muted">
-              {sniperRunState?.runId ? fmtStr(sniperRunState.runId) : sessionStatus?.lastVerified ? fmtStr(sessionStatus.lastVerified) : '—'}
-            </span>
-          </div>
-        </Card>
+        {/* ── Technical Details (collapsible) ─────────────── */}
+        {(() => {
+          const { label: daxkoLabel } = daxkoToLabel(sessionStatus?.daxko)
+          const { label: fwLabel }    = fwToLabel(sessionStatus?.familyworks)
+          const evCount = sniperRunState?.events?.length ?? 0
+          const techSummary = [
+            `Session: ${daxkoLabel}`,
+            `Schedule: ${fwLabel}`,
+            evCount > 0 ? `${evCount} event${evCount === 1 ? '' : 's'}` : null,
+          ].filter(Boolean).join(' · ')
 
-        {/* ── Run Events ───────────────────────────────────── */}
-        <SectionHeader
-          id="tools-run-events"
-          title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
-        />
-        <LastRunEvents sniperRunState={sniperRunState} />
+          return (
+            <>
+              <Card padding="none">
+                <button
+                  onClick={() => setTechExpanded(e => !e)}
+                  className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Technical Details</p>
+                    <p className="text-[13px] text-text-muted mt-0.5 truncate">{techSummary}</p>
+                  </div>
+                  <ChevronIcon rotated={techExpanded} />
+                </button>
+              </Card>
 
-        {/* ── 1d. Last Check Now (per-phase diagnostics) ──────── */}
-        <LastCheckNowSection sniperRunState={sniperRunState} />
+              {techExpanded && (
+                <div className="space-y-4">
+                  {/* Readiness */}
+                  <SectionHeader title="Readiness" id="tools-readiness" />
+                  <Card padding="none">
+                    {(() => {
+                      const { label, dot } = daxkoToLabel(sessionStatus?.daxko)
+                      return (
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Session</span>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {(() => {
+                      const { label, dot } = fwToLabel(sessionStatus?.familyworks)
+                      return (
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Schedule</span>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Class</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.discovery)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {DISCOVERY_LABEL[sniperRunState.bundle.discovery] ?? sniperRunState.bundle.discovery}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {sniperRunState?.bundle && sniperRunState.bundle.modal &&
+                     sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Modal</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Action</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.action)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {ACTION_LABEL[sniperRunState.bundle.action] ?? sniperRunState.bundle.action}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <span className="text-[14px] text-text-secondary">Last checked</span>
+                      <span className="text-[13px] text-text-muted">
+                        {sniperRunState?.runId ? fmtStr(sniperRunState.runId) : sessionStatus?.lastVerified ? fmtStr(sessionStatus.lastVerified) : '—'}
+                      </span>
+                    </div>
+                  </Card>
+
+                  {/* Run Events */}
+                  <SectionHeader
+                    id="tools-run-events"
+                    title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
+                  />
+                  <LastRunEvents sniperRunState={sniperRunState} />
+
+                  {/* Last Check Now (per-phase diagnostics) */}
+                  <LastCheckNowSection sniperRunState={sniperRunState} />
+                </div>
+              )}
+            </>
+          )
+        })()}
 
         {/* ── Automation Health ─────────────────────────────── */}
         <SectionHeader title="Automation Health" />
