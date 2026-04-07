@@ -129,9 +129,10 @@ function useCountdown(targetMs: number | null): string {
       const h = Math.floor((diff % 86_400_000) / 3_600_000)
       const m = Math.floor((diff % 3_600_000) / 60_000)
       const s = Math.floor((diff % 60_000) / 1_000)
+      const ss = String(s).padStart(2, '0')
       if (d > 0)      setDisplay(`${d}d ${h}h ${m}m`)
-      else if (h > 0) setDisplay(`${h}h ${m}m ${s}s`)
-      else            setDisplay(`${m}m ${s}s`)
+      else if (h > 0) setDisplay(`${h}h ${m}m ${ss}s`)
+      else            setDisplay(`${m}m ${ss}s`)
     }
     tick()
     const id = setInterval(tick, 1000)
