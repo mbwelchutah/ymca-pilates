@@ -1,3 +1,6 @@
+import { StatusDot } from '../ui/StatusDot'
+import type { AuthStatusEnum } from '../../types'
+
 interface Action {
   label: string
   onClick: () => void
@@ -9,9 +12,25 @@ interface AppHeaderProps {
   secondaryAction?: Action
   onAccount?: () => void
   accountAttention?: boolean
+  authStatus?: AuthStatusEnum | null
 }
 
-export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, onAccount, accountAttention }: AppHeaderProps) {
+function dotProps(authStatus: AuthStatusEnum | null | undefined, accountAttention: boolean | undefined): {
+  color: 'green' | 'amber' | 'red' | 'gray' | 'blue'
+  pulse: boolean
+} | null {
+  if (authStatus === 'connected')     return { color: 'green', pulse: false }
+  if (authStatus === 'recovering')    return { color: 'blue',  pulse: true  }
+  if (authStatus === 'needs_refresh') return { color: 'amber', pulse: false }
+  if (authStatus === 'signed_out')    return { color: 'red',   pulse: false }
+  // Legacy fallback: accountAttention boolean only
+  if (accountAttention)               return { color: 'amber', pulse: false }
+  return null
+}
+
+export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, onAccount, accountAttention, authStatus }: AppHeaderProps) {
+  const dot = onAccount ? dotProps(authStatus, accountAttention) : null
+
   return (
     <div
       className="fixed top-0 left-0 right-0 z-[51] bg-white/95 backdrop-blur-md border-b border-divider"
@@ -62,8 +81,10 @@ export function AppHeader({ subtitle = 'Monitoring', action, secondaryAction, on
                 <circle cx="12" cy="8" r="4" />
                 <path d="M4 20c0-4 3.582-7 8-7s8 3 8 7" />
               </svg>
-              {accountAttention && (
-                <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-accent-amber ring-2 ring-white" />
+              {dot && (
+                <span className="absolute top-0.5 right-0.5">
+                  <StatusDot color={dot.color} pulse={dot.pulse} size="sm" />
+                </span>
               )}
             </button>
           )}

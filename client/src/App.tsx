@@ -8,7 +8,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { AccountSheet } from './components/AccountSheet'
 import { useAppState } from './hooks/useAppState'
 import { api } from './lib/api'
-import type { SessionStatus } from './types'
+import type { SessionStatus, AuthStatusEnum } from './types'
 
 const SESSION_POLL_MS = 5 * 60 * 1000  // 5 minutes
 
@@ -21,6 +21,9 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAttention, setAccountAttention] = useState(false)
   const [polledStatus, setPolledStatus] = useState<SessionStatus | null>(null)
+
+  // Derived from polledStatus.authState — drives the header status dot color.
+  const authStatus: AuthStatusEnum | null = polledStatus?.authState?.status ?? null
   const [autoVerifySignal, setAutoVerifySignal] = useState(0)
   const [toolsSection, setToolsSection] = useState<string | undefined>(undefined)
   const startupVerified = useRef(false)
@@ -113,6 +116,7 @@ export default function App() {
             onGoToTools={(section) => { setToolsSection(section); handleTabChange('tools') }}
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
+            authStatus={authStatus}
             autoVerifySignal={autoVerifySignal}
           />
         )}
@@ -125,13 +129,14 @@ export default function App() {
             refresh={refresh}
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
+            authStatus={authStatus}
           />
         )}
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} scrollTo={toolsSection} />
+          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} authStatus={authStatus} scrollTo={toolsSection} />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} />
+          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} authStatus={authStatus} />
         )}
       </main>
     </div>

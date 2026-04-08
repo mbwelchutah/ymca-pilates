@@ -5,7 +5,7 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
-import type { AppState, Job, Phase, ScrapedClass } from '../types'
+import type { AppState, Job, Phase, ScrapedClass, AuthStatusEnum } from '../types'
 import { api } from '../lib/api'
 import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
@@ -18,6 +18,7 @@ interface PlanScreenProps {
   refresh: () => Promise<void>
   onAccount?: () => void
   accountAttention?: boolean
+  authStatus?: AuthStatusEnum | null
 }
 
 const DAY_NAMES: Record<number, string> = {
@@ -695,7 +696,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
   )
 }
 
-export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention }: PlanScreenProps) {
+export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention, authStatus }: PlanScreenProps) {
   const [showAdd, setShowAdd]         = useState(false)
   const [showBrowse, setShowBrowse]   = useState(false)
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
@@ -811,6 +812,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
         onAccount={onAccount}
         accountAttention={accountAttention}
+        authStatus={authStatus}
       />
       <ScreenContainer>
         {showAdd && (

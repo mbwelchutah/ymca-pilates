@@ -17,8 +17,15 @@ const sizeMap = {
   md: 'w-2.5 h-2.5',
 }
 
-export function StatusDot({ color, size = 'md' }: StatusDotProps) {
+export function StatusDot({ color, pulse = false, size = 'md' }: StatusDotProps) {
   return (
-    <span className={`inline-block rounded-full flex-shrink-0 ${colorMap[color]} ${sizeMap[size]}`} />
+    <span
+      className={[
+        'inline-block rounded-full flex-shrink-0',
+        colorMap[color],
+        sizeMap[size],
+        pulse ? 'animate-pulse' : '',
+      ].filter(Boolean).join(' ')}
+    />
   )
 }

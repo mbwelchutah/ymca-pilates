@@ -4,7 +4,7 @@ import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
-import type { AppState, SessionStatus } from '../types'
+import type { AppState, SessionStatus, AuthStatusEnum } from '../types'
 import type { SniperRunState, SniperTiming } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
@@ -54,6 +54,7 @@ interface ToolsScreenProps {
   refresh: () => void
   onAccount?: () => void
   accountAttention?: boolean
+  authStatus?: AuthStatusEnum | null
   scrollTo?: string
 }
 
@@ -692,7 +693,7 @@ function LastRunSummaryCard({ lastRunJob, botStatus }: {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, scrollTo }: ToolsScreenProps) {
+export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
   const scrolledRef = useRef<string | undefined>(undefined)
 
@@ -855,7 +856,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   return (
     <>
-      <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} />
+      <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
       <ScreenContainer>
 
         {/* ── Last Run (compact, tap to expand) ───────────── */}

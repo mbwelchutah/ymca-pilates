@@ -7,7 +7,7 @@ import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
-import type { AppState, Job, Phase, SessionStatus } from '../types'
+import type { AppState, Job, Phase, SessionStatus, AuthStatusEnum } from '../types'
 import type { SniperRunState } from '../lib/api'
 import { api } from '../lib/api'
 import {
@@ -31,6 +31,7 @@ interface NowScreenProps {
   onGoToTools?: (section?: string) => void
   onAccount?: () => void
   accountAttention?: boolean
+  authStatus?: AuthStatusEnum | null
   autoVerifySignal?: number
 }
 
@@ -589,7 +590,7 @@ let _lastAutoVerifyFired = 0
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, autoVerifySignal }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -1076,7 +1077,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (loading) {
     return (
       <>
-        <AppHeader subtitle="Loading…" onAccount={onAccount} accountAttention={accountAttention} />
+        <AppHeader subtitle="Loading…" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
         <ScreenContainer>
           <Card className="flex items-center justify-center h-40">
             <span className="text-text-secondary text-[15px]">Loading…</span>
@@ -1089,7 +1090,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (error) {
     return (
       <>
-        <AppHeader subtitle="Error" onAccount={onAccount} accountAttention={accountAttention} />
+        <AppHeader subtitle="Error" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
         <ScreenContainer>
           <Card>
             <p className="text-accent-red text-[14px]">{error}</p>
@@ -1115,6 +1116,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         })()}
         onAccount={onAccount}
         accountAttention={accountAttention}
+        authStatus={authStatus}
       />
 
       <ScreenContainer>

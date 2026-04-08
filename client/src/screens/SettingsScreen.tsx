@@ -4,7 +4,7 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
-import type { AppState } from '../types'
+import type { AppState, AuthStatusEnum } from '../types'
 import { api } from '../lib/api'
 
 interface SettingsScreenProps {
@@ -12,9 +12,10 @@ interface SettingsScreenProps {
   refresh: () => void
   onAccount?: () => void
   accountAttention?: boolean
+  authStatus?: AuthStatusEnum | null
 }
 
-export function SettingsScreen({ appState, refresh, onAccount, accountAttention }: SettingsScreenProps) {
+export function SettingsScreen({ appState, refresh, onAccount, accountAttention, authStatus }: SettingsScreenProps) {
   const handleDryRun = async (enabled: boolean) => {
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
@@ -29,7 +30,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention 
 
   return (
     <>
-      <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} />
+      <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
       <ScreenContainer>
 
         {/* Account */}
