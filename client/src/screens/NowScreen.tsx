@@ -17,7 +17,7 @@ import {
 import type { CompositeReadiness } from '../lib/readinessResolver'
 import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence'
 import type { ConfidenceLabel } from '../lib/confidence'
-import { computeArmedModel, ARMED_STATE_LABEL, armedStateDotColor } from '../lib/sniperArmed'
+import { computeArmedModel } from '../lib/sniperArmed'
 import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
@@ -1290,58 +1290,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             )
           })()}
 
-          {/* ── Confidence Ring ───────────────────────────────────────────────────
-               Stage 11A: purely visual arc — no text label below it.
-               Arc color uses the same 80/60 thresholds as the trust line's
-               scoreToLabel so ring and text can never visually contradict.
-               Fill = score/100 (continuous). Animates via stroke transition. */}
-          {job && !isBooked && !isInactive && confidenceScore != null && (() => {
-            const R    = 16
-            const circ = 2 * Math.PI * R   // ≈ 100.53
-
-            const score  = confidenceScore
-            const frac   = Math.max(0, Math.min(1, score / 100))
-            const offset = circ * (1 - frac)
-
-            // Thresholds match scoreToLabel (confidence.ts): 80+ green, 60+ amber, else red
-            const arcColor = score >= 80
-              ? 'var(--color-accent-green)'
-              : score >= 60
-              ? 'var(--color-accent-amber)'
-              : 'var(--color-accent-red)'
-
-            return (
-              <div className="mt-3 flex items-center justify-center">
-                <svg
-                  width="44" height="44" viewBox="0 0 40 40"
-                  className="-rotate-90"
-                  aria-hidden="true"
-                >
-                  {/* Track */}
-                  <circle
-                    cx="20" cy="20" r={R}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    className="text-divider"
-                  />
-                  {/* Arc */}
-                  <circle
-                    cx="20" cy="20" r={R}
-                    fill="none"
-                    strokeWidth="3"
-                    strokeDasharray={circ}
-                    strokeDashoffset={offset}
-                    strokeLinecap="round"
-                    style={{
-                      stroke: arcColor,
-                      transition: 'stroke-dashoffset 0.6s ease, stroke 0.4s ease',
-                    }}
-                  />
-                </svg>
-              </div>
-            )
-          })()}
 
 
           {/* Actions section */}
@@ -1391,37 +1339,50 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* ── Trust line: State · Freshness ── */}
-              {/* Stage 11B: confidence label removed (ring handles it). Freshness is  */}
-              {/* now optional — line renders with state alone when data isn't ready.  */}
+              {/* ── Trust line: State · Confidence · Freshness ── */}
               {!bannerIsComplete && (() => {
                 if (!isReadinessForSelectedJob) return null
 
-                // Running preflight — show state + freshness only (ring carries confidence)
+                // While actively checking — show running indicator
                 if (preflightRunning) {
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
                       <StatusDot color="gray" size="sm" />
                       <span className="text-[12px] text-text-secondary">
                         <span className="font-medium">Checking</span>
-                        <span className="text-text-muted font-normal"> · checked just now</span>
+                        <span className="text-text-muted font-normal"> · running</span>
                       </span>
                     </div>
                   )
                 }
 
-                // Steady state — require stateLabel; freshness is appended when available.
-                // Confidence label dropped: the ring is now the sole visual confidence signal.
-                const stateLabel = sniperArmed?.state ? ARMED_STATE_LABEL[sniperArmed.state] : null
-                if (!stateLabel) return null
+                // Steady state — State · Confidence · Freshness
+                const result = stableResult ?? currentResult
+                if (!result) return null
+
+                const dotColor: DotColor =
+                  result.severity === 'success' ? 'green' :
+                  result.severity === 'error'   ? 'red'   :
+                  result.severity === 'warning' ? 'amber' :
+                  result.severity === 'info'    ? 'blue'  :
+                  'gray'
+
+                // Map confidence: low confidence on an issue → "At risk"
+                const confText = (() => {
+                  if (!confidenceLabel) return null
+                  if (result.state === 'issue' && confidenceLabel === 'Low confidence') return 'At risk'
+                  return confidenceLabel
+                })()
+
+                const secondary = [confText, lastCheckedText].filter(Boolean).join(' · ')
 
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
-                    <StatusDot color={armedStateDotColor(sniperArmed!.state)} size="sm" />
+                    <StatusDot color={dotColor} size="sm" />
                     <span className="text-[12px] text-text-secondary">
-                      <span className="font-medium">{stateLabel}</span>
-                      {lastCheckedText && (
-                        <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                      <span className="font-medium">{result.label}</span>
+                      {secondary && (
+                        <span className="text-text-muted font-normal"> · {secondary}</span>
                       )}
                     </span>
                   </div>
