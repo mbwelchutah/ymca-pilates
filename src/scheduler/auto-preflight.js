@@ -11,13 +11,15 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { getAllJobs }    = require('../db/jobs');
-const { getPhase }     = require('./booking-window');
-const { runBookingJob } = require('../bot/register-pilates');
-const { getDryRun }    = require('../bot/dry-run-state');
-const { loadState }    = require('../bot/sniper-readiness');
-const { loadStatus }   = require('../bot/session-check');
-const { isLocked }     = require('../bot/auth-lock');
+const { getAllJobs }       = require('../db/jobs');
+const { getPhase }         = require('./booking-window');
+const { runBookingJob }    = require('../bot/register-pilates');
+const { getDryRun }        = require('../bot/dry-run-state');
+const { loadState }        = require('../bot/sniper-readiness');
+const { loadStatus }       = require('../bot/session-check');
+const { isLocked }         = require('../bot/auth-lock');
+const { getAuthState, updateAuthState } = require('../bot/auth-state');
+const { pingSessionHttp }  = require('../bot/session-ping');
 
 // If a real auth run produced a failure within this window, skip preflight
 // (same threshold as tick.js warmup gate).
@@ -168,14 +170,24 @@ async function checkAutoPreflights({ isActive = false } = {}) {
 
       // ── Auth-block gate ─────────────────────────────────────────────────
       // Skip preflight if a concurrent auth operation is in progress, or if
-      // there is fresh evidence that auth is broken (mirrors tick.js warmup gate).
-      // This prevents wasting a full browser launch when we know it will fail.
+      // there is fresh evidence that auth is broken.  AuthState is the primary
+      // source of truth; legacy session files are checked as a fallback.
       if (isLocked()) {
         console.log(`[auto-preflight] ${trigger.name} skipped — auth lock held (concurrent login/preflight in progress).`);
         appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: 'Auth lock held — concurrent session operation in progress' });
         continue;
       }
 
+      // Primary: AuthState singleton — fast, no file I/O per-job
+      const authState = getAuthState();
+      if (authState.status === 'signed_out') {
+        console.log(`[auto-preflight] ${trigger.name} skipped — AuthState is signed_out.`);
+        appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: 'Auth signed out — login required before preflight can run' });
+        continue;
+      }
+
+      // Fallback: legacy session files (sniper-state + session-status) for cases
+      // where AuthState hasn't been updated yet (e.g. after a cold restart).
       const sniperState   = loadState();
       const sessionStatus = loadStatus();
       let authBlockReason = null;
@@ -209,27 +221,56 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       console.log(`[auto-preflight] ${trigger.name} preflight — Job #${dbJob.id} (${dbJob.class_title})`);
 
       try {
-        const result = await runBookingJob({
-          id:          dbJob.id,
-          classTitle:  dbJob.class_title,
-          classTime:   dbJob.class_time,
-          instructor:  dbJob.instructor  || null,
-          dayOfWeek:   dbJob.day_of_week,
-          targetDate:  dbJob.target_date || null,
-          maxAttempts: 1,
-        }, { preflightOnly: true, dryRun: getDryRun() });
+        // ── Stage 4: Fast confirmation via HTTP ping ──────────────────────
+        // Before spending 30-60 s on a full browser preflight, run the Tier-2
+        // HTTP ping.  If both sessions are confirmed valid, record the result
+        // and skip the browser entirely.  Only fall through to runBookingJob
+        // when the ping is inconclusive or misses.
+        let pingConfirmed = false;
+        try {
+          const pingResult = await pingSessionHttp();
+          if (pingResult.trusted) {
+            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping — skipping browser.`);
+            updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
+            appendLog({
+              timestamp:   firedAt,
+              jobId:       dbJob.id,
+              classTitle:  dbJob.class_title,
+              triggerName: trigger.name,
+              status:      'pass',
+              message:     `Session confirmed via HTTP ping — no browser launch needed`,
+            });
+            pingConfirmed = true;
+          } else {
+            console.log(`[auto-preflight] ${trigger.name} ping miss (${pingResult.detail}) — running full preflight.`);
+          }
+        } catch (pingErr) {
+          console.log(`[auto-preflight] ${trigger.name} ping error: ${pingErr.message} — running full preflight.`);
+        }
 
-        const status = result.status === 'success' ? 'pass' : 'fail';
-        console.log(`[auto-preflight] ${trigger.name} done — ${status}: ${result.message}`);
+        if (!pingConfirmed) {
+          const result = await runBookingJob({
+            id:          dbJob.id,
+            classTitle:  dbJob.class_title,
+            classTime:   dbJob.class_time,
+            instructor:  dbJob.instructor  || null,
+            dayOfWeek:   dbJob.day_of_week,
+            targetDate:  dbJob.target_date || null,
+            maxAttempts: 1,
+          }, { preflightOnly: true, dryRun: getDryRun() });
 
-        appendLog({
-          timestamp:   firedAt,
-          jobId:       dbJob.id,
-          classTitle:  dbJob.class_title,
-          triggerName: trigger.name,
-          status,
-          message:     result.message,
-        });
+          const status = result.status === 'success' ? 'pass' : 'fail';
+          console.log(`[auto-preflight] ${trigger.name} done — ${status}: ${result.message}`);
+
+          appendLog({
+            timestamp:   firedAt,
+            jobId:       dbJob.id,
+            classTitle:  dbJob.class_title,
+            triggerName: trigger.name,
+            status,
+            message:     result.message,
+          });
+        }
       } catch (err) {
         console.error(`[auto-preflight] ${trigger.name} error:`, err.message);
         appendLog({

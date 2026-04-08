@@ -34,7 +34,8 @@ const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState }        = require('../bot/sniper-readiness');
 const { loadStatus }       = require('../bot/session-check');
-const { isLocked }             = require('../bot/auth-lock');
+const { isLocked }         = require('../bot/auth-lock');
+const { getAuthState }     = require('../bot/auth-state');
 const { refreshReadiness }     = require('../bot/readiness-state');
 const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('./execution-timing');
 const { classifyFailure, computeRetry } = require('./retry-strategy');
@@ -473,6 +474,13 @@ async function runPreflightLoop({ isActive = false } = {}) {
     // ── Auth-block gate ─────────────────────────────────────────────────────
     if (isLocked()) {
       console.log(`[preflight-loop] skip:auth-lock — Job #${dbJob.id} (concurrent operation in progress).`);
+      continue;
+    }
+
+    // Primary: AuthState singleton — authoritative source of truth
+    const authState = getAuthState();
+    if (authState.status === 'signed_out') {
+      console.log(`[preflight-loop] skip:signed-out — Job #${dbJob.id} (AuthState is signed_out; login required).`);
       continue;
     }
 
