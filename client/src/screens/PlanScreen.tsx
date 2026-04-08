@@ -1000,7 +1000,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {/* Sort pills — only shown when 2+ classes are loaded */}
         {!showAdd && !loading && appState.jobs.length >= 2 && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
             {SORT_MODES.map(mode => {
               const active = sortMode === mode
               return (
@@ -1015,7 +1015,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
                     }
                   }}
                   className={`
-                    px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap
+                    flex-shrink-0 px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap
                     ${active
                       ? 'bg-accent-blue text-white'
                       : 'bg-[#f2f2f7] text-text-secondary active:opacity-70'}
