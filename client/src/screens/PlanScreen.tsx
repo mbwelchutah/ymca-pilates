@@ -82,6 +82,17 @@ function formatShortDate(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// Returns the next calendar date (YYYY-MM-DD) on which the given day-of-week occurs,
+// counting today if today matches (so a recurring Tuesday class on a Tuesday shows today).
+function nextOccurrenceISO(dow: number): string {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const daysAhead = (dow - today.getDay() + 7) % 7
+  const next = new Date(today)
+  next.setDate(today.getDate() + daysAhead)
+  return next.toISOString().slice(0, 10)
+}
+
 // Convert "H:MM AM/PM" → minutes since midnight for chronological comparison.
 function timeToMinutes(t: string): number {
   const m = t.match(/^(\d+):(\d+)\s*(AM|PM)$/i)
@@ -148,15 +159,15 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const phase    = (job.phase ?? 'unknown') as Phase
   const countdown = useCountdown(job.bookingOpenMs ?? null)
 
-  // Details line: "Tue, Apr 14 · 4:20 PM · Gretl" or "Tuesday · 4:20 PM · Gretl"
+  // Details line: "Tue, Apr 14 • 4:20 PM • Gretl" — identical format for all cards.
+  // Undated recurring jobs compute their next occurrence so the date is never missing.
+  const effectiveDateISO = job.target_date || nextOccurrenceISO(dayOfWeekNum(job))
   const detailParts = [
-    job.target_date
-      ? `${dayName.slice(0, 3)}, ${formatShortDate(job.target_date)}`
-      : dayName,
+    `${dayName.slice(0, 3)}, ${formatShortDate(effectiveDateISO)}`,
     job.class_time,
     job.instructor || null,
   ].filter(Boolean)
-  const detailLine = detailParts.join(' · ')
+  const detailLine = detailParts.join(' • ')
 
   // Timing line: "Opens Apr 11 at 10:20 PM" + live countdown when window is upcoming
   const timingLine = (() => {
