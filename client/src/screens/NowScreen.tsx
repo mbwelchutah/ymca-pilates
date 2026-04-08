@@ -726,6 +726,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setPreflightStatus(null)
     setStableResult(null)          // Stage 2: reset hysteresis on job switch
     setStableConfidenceLabel(null) // Stage 4: reset label hysteresis on job switch
+    setWhyExpanded(false)          // Stage 11C: collapse "why" panel on job switch
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setSessionStatus).catch(() => {})
     api.getReadiness().then(setBgReadiness).catch(() => {})
@@ -883,6 +884,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [modalDetail,     setModalDetail]     = useState<ModalDetail | null>(null)
   const [actionDetail,    setActionDetail]    = useState<ActionDetail | null>(null)
   const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
+  const [whyExpanded,     setWhyExpanded]     = useState(false) // Stage 11C
 
   const handleCheckNow = async () => {
     if (!job || preflightRunning || bgReadiness?.armed?.state === 'booking') return
@@ -1389,40 +1391,104 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* ── Trust line: State · Confidence · Freshness ── */}
-              {/* Calm reassurance summary — suppressed when banner already shows full state.    */}
-              {/* Always rendered as a strict 3-part line; hidden when any part is unavailable. */}
+              {/* ── Trust line: State · Freshness ── */}
+              {/* Stage 11B: confidence label removed (ring handles it). Freshness is  */}
+              {/* now optional — line renders with state alone when data isn't ready.  */}
               {!bannerIsComplete && (() => {
                 if (!isReadinessForSelectedJob) return null
 
-                // Running: "Confirming · <confidence> · checked just now"
-                // Requires confidence to maintain strict 3-part format; hide otherwise.
-                if (preflightRunning && confidenceLabel != null) {
+                // Running preflight — show state + freshness only (ring carries confidence)
+                if (preflightRunning) {
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
                       <StatusDot color="gray" size="sm" />
                       <span className="text-[12px] text-text-secondary">
-                        <span className="font-medium">Confirming</span>
-                        <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
+                        <span className="font-medium">Checking</span>
                         <span className="text-text-muted font-normal"> · checked just now</span>
                       </span>
                     </div>
                   )
                 }
-                if (preflightRunning) return null
 
-                // Steady state: require all 3 parts — hide rather than show partial line
+                // Steady state — require stateLabel; freshness is appended when available.
+                // Confidence label dropped: the ring is now the sole visual confidence signal.
                 const stateLabel = sniperArmed?.state ? ARMED_STATE_LABEL[sniperArmed.state] : null
-                if (!stateLabel || confidenceLabel == null || !lastCheckedText) return null
+                if (!stateLabel) return null
 
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
                     <StatusDot color={armedStateDotColor(sniperArmed!.state)} size="sm" />
                     <span className="text-[12px] text-text-secondary">
                       <span className="font-medium">{stateLabel}</span>
-                      <span className="text-text-muted font-normal"> · {confidenceLabel}</span>
-                      <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                      {lastCheckedText && (
+                        <span className="text-text-muted font-normal"> · {lastCheckedText}</span>
+                      )}
                     </span>
+                  </div>
+                )
+              })()}
+
+              {/* ── Stage 11C: "Why?" expandable confidence breakdown ── */}
+              {/* Only visible when at least one phase detail is available and we're not */}
+              {/* in an active check (preflightRunning). Collapses on job switch. */}
+              {!preflightRunning && !bannerIsComplete && isReadinessForSelectedJob &&
+                (authDetail || discoveryDetail || modalDetail || actionDetail) && (() => {
+                // Build phase rows — only show phases where detail data exists.
+                type WhyRow = { label: string; value: string; color: string }
+                const rows: WhyRow[] = []
+
+                if (authDetail) {
+                  const v = authDetail.verdict
+                  rows.push({
+                    label: 'Account',
+                    value: v === 'ready' ? 'Active' : v === 'login_required' ? 'Login needed' : v === 'session_expired' ? 'Expired' : v,
+                    color: v === 'ready' ? 'text-green-600' : 'text-red-500',
+                  })
+                }
+                if (discoveryDetail) {
+                  rows.push({
+                    label: 'Class',
+                    value: discoveryDetail.found ? (discoveryDetail.matched ?? 'Found') : 'Not found',
+                    color: discoveryDetail.found ? 'text-green-600' : 'text-red-500',
+                  })
+                }
+                if (modalDetail) {
+                  const v = modalDetail.verdict
+                  rows.push({
+                    label: 'Booking',
+                    value: v === 'reachable' ? 'Ready' : v === 'blocked' ? 'Blocked' : v === 'login_required' ? 'Login needed' : v,
+                    color: v === 'reachable' ? 'text-green-600' : v === 'blocked' ? 'text-red-500' : 'text-text-muted',
+                  })
+                }
+                if (actionDetail) {
+                  const v = actionDetail.verdict
+                  rows.push({
+                    label: 'Action',
+                    value: v === 'ready' ? 'Open' : v === 'waitlist_only' ? 'Waitlist' : v === 'full' ? 'Full' : v === 'login_required' ? 'Login needed' : 'Not open yet',
+                    color: v === 'ready' ? 'text-green-600' : v === 'waitlist_only' ? 'text-amber-500' : v === 'full' || v === 'login_required' ? 'text-red-500' : 'text-text-muted',
+                  })
+                }
+
+                return (
+                  <div className="mb-2">
+                    <button
+                      onClick={() => setWhyExpanded(x => !x)}
+                      className="mx-auto flex items-center gap-0.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+                    >
+                      <span>Why?</span>
+                      <span className={`transition-transform duration-200 ${whyExpanded ? 'rotate-180' : ''}`}>›</span>
+                    </button>
+
+                    {whyExpanded && (
+                      <div className="mt-1.5 mx-auto w-fit min-w-[160px] rounded-lg bg-surface px-4 py-2 space-y-1">
+                        {rows.map(r => (
+                          <div key={r.label} className="flex items-center justify-between gap-4">
+                            <span className="text-[11px] text-text-muted">{r.label}</span>
+                            <span className={`text-[11px] font-medium ${r.color}`}>{r.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })()}
