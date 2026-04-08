@@ -1,0 +1,234 @@
+OBJECTIVE  
+Refactor authentication to be session-first, reliable, fast, and transparent. Separate login from booking. Add Apple-quality Account UI with expandable diagnostics. Prevent concurrent auth issues and confirm auth BEFORE booking.
+
+--------------------------------------------------
+
+STAGE 1 — AUTH ARCHITECTURE (SESSION-FIRST)
+
+Create a single source of truth:
+
+type AuthState = {
+  status: "connected" | "needs_refresh" | "recovering" | "signed_out"
+
+  daxkoValid: boolean
+  familyworksValid: boolean
+  bookingSurfaceValid: boolean
+
+  lastCheckedAt: number | null
+  lastRecoveredAt: number | null
+
+  isAuthInProgress: boolean
+}
+
+Implement session-first priority:
+
+1. Use saved FamilyWorks session (cookies/storageState)
+2. Validate via lightweight check
+3. If invalid → trigger recovery (Daxko login)
+4. Save fresh session
+5. Return to session mode
+
+Only save session when:
+- On FamilyWorks schedule embed
+- Valid markers present (Reserve/Waitlist OR schedule shell)
+- If wrong surface → attempt navigate-back → re-check → only save if valid
+
+--------------------------------------------------
+
+STAGE 2 — SINGLE AUTH LANE (CRITICAL)
+
+Prevent concurrent login issues:
+
+let authLock = false
+
+Rules:
+- If authLock === true → skip or queue
+- Only ONE auth operation at a time:
+  - login
+  - refresh
+  - recovery
+
+All flows must respect this:
+- preflight
+- periodic check
+- booking
+
+--------------------------------------------------
+
+STAGE 3 — FAST VALIDATION (NO BROWSER FIRST)
+
+Create:
+
+async function validateSessionFast(): Promise<{
+  daxkoValid: boolean
+  familyworksValid: boolean
+  bookingSurfaceValid: boolean
+}>
+
+Use:
+- API / fetch replay (msearch probe if available)
+- or lightweight schedule request
+
+Signals:
+- valid JSON → session valid
+- empty/redirect → invalid
+- class data present → booking surface valid
+
+Only launch Playwright if:
+- request fails
+- ambiguous
+- preflight critical check
+
+--------------------------------------------------
+
+STAGE 4 — PREFLIGHT CONFIRMATION
+
+Run checks at:
+- 30 min
+- 10 min
+- 2 min before booking
+
+Logic:
+
+if (!familyworksValid || !bookingSurfaceValid) {
+  triggerAuthRecovery()
+}
+
+Add “Confirmed Ready” state ONLY if:
+- session valid
+- schedule loads
+- booking surface reachable
+
+Emit structured log:
+
+preflight_result: {
+  session: "valid" | "invalid"
+  surface: "confirmed" | "missing"
+  recoveryTriggered: boolean
+}
+
+--------------------------------------------------
+
+STAGE 5 — ACCOUNT UI (TOP RIGHT ENTRY)
+
+Add user icon (top right):
+
+States:
+- green dot → connected
+- orange dot → needs attention
+- gray → neutral
+
+Tap opens Account Sheet
+
+--------------------------------------------------
+
+STAGE 6 — ACCOUNT SHEET (COLLAPSED)
+
+CONNECTED:
+
+● Signed in  
+Connection active  
+Last checked: [time]
+
+NEEDS ATTENTION:
+
+● Needs attention  
+Sign-in required  
+Last checked: [time]
+
+Buttons (dynamic):
+- Refresh connection
+- Sign in / Sign in again
+- Sign out
+
+--------------------------------------------------
+
+STAGE 7 — EXPANDABLE DETAIL (KEY FEATURE)
+
+Add “Show Details” toggle
+
+Expanded view:
+
+Connection details
+
+Daxko  
+✔ Signed in
+
+FamilyWorks  
+✔ Session active
+
+Booking surface  
+✔ Confirmed (class list visible)
+
+Mapping:
+
+- Daxko signed in → auth cookie presence
+- FamilyWorks session → schedule loads successfully
+- Booking surface confirmed → Reserve/Waitlist OR class data visible
+
+Color logic:
+- all good → green
+- partial → yellow
+- failed → red
+
+--------------------------------------------------
+
+STAGE 8 — MICRO INTERACTIONS
+
+Add:
+
+1. Status dot animation
+- connected → slow green pulse
+- recovering → soft shimmer
+- error → static
+
+2. Time label evolution:
+
+"checked just now"  
+→ "checked 1m ago"  
+→ "checked 5m ago"
+
+3. Button states:
+- “Signing in…” (disabled)
+- “Checking…” (disabled)
+- smooth fade transitions
+
+--------------------------------------------------
+
+STAGE 9 — REMOVE LOGIN FROM SETTINGS
+
+Move ALL auth out of Settings
+
+Settings should NOT contain:
+- login
+- session actions
+
+All auth lives in Account sheet
+
+--------------------------------------------------
+
+STAGE 10 — SYSTEM BEHAVIOR
+
+Final flow:
+
+1. App starts
+2. Session reused
+3. Fast validation runs
+4. Periodic checks maintain session
+5. Preflight confirms readiness
+6. Booking only runs if confirmed
+7. Recovery only when needed
+8. UI always reflects real state
+
+--------------------------------------------------
+
+ACCEPTANCE CRITERIA
+
+- No concurrent auth attempts
+- Login rarely triggered
+- No login during booking window unless required
+- Session reused reliably
+- Preflight prevents blind booking
+- Account UI reflects true state
+- Expandable diagnostics working
+- UI feels clean, calm, Apple-quality
