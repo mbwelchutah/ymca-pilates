@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { SessionStatus, AuthState, ConnectionState, OperationState } from '../types'
+import type { SessionStatus, ConnectionState, OperationState } from '../types'
 import { StatusDot } from './ui/StatusDot'
 import { api } from '../lib/api'
 
@@ -215,92 +215,6 @@ function DiagRow({ label, value, ok, neutral = false }: DiagRowProps) {
   )
 }
 
-// ── Three-truth indicator (always-visible in collapsed block) ─────────────────
-
-type TruthStatus = 'ok' | 'fail' | 'neutral' | 'unknown'
-
-interface TruthRowProps {
-  label:  string
-  status: TruthStatus
-  value:  string
-}
-
-function TruthRow({ label, status, value }: TruthRowProps) {
-  const dotFill =
-    status === 'ok'   ? '#34c759' :
-    status === 'fail' ? '#ff3b30' :
-    status === 'neutral' ? '#ff9500' : '#c7c7cc'
-
-  const valueCls =
-    status === 'ok'      ? 'text-accent-green' :
-    status === 'fail'    ? 'text-accent-red'   :
-    status === 'neutral' ? 'text-accent-amber' : 'text-text-muted'
-
-  return (
-    <div className="flex items-center justify-between py-[3px]">
-      <div className="flex items-center gap-2">
-        <svg width="7" height="7" viewBox="0 0 7 7" className="flex-shrink-0" aria-hidden="true">
-          <circle cx="3.5" cy="3.5" r="3.5" fill={dotFill} />
-        </svg>
-        <span className="text-[12px] text-text-secondary">{label}</span>
-      </div>
-      <span className={`text-[12px] font-medium ${valueCls}`}>{value}</span>
-    </div>
-  )
-}
-
-function deriveTruthStatus(valid: boolean | null | undefined, failLabel?: string): { status: TruthStatus; value: string } {
-  if (valid === true)  return { status: 'ok',      value: 'Active' }
-  if (valid === false) return { status: 'fail',    value: failLabel ?? 'Failed' }
-  return                      { status: 'unknown', value: '—' }
-}
-
-interface ThreeTruthsProps {
-  auth:    AuthState | null
-  session: SessionStatus | null
-}
-
-function ThreeTruths({ auth, session: _session }: ThreeTruthsProps) {
-  // All truth derived exclusively from AuthState (canonical).
-  const daxkoValid      = auth?.daxkoValid ?? null
-  const fwValid         = auth?.familyworksValid ?? null
-  const bookingValid    = auth?.bookingAccessConfirmed ?? null
-  const bookingChecked  = auth?.bookingAccessConfirmedAt ?? null   // null = never checked
-
-  const daxko = deriveTruthStatus(daxkoValid, 'Expired')
-  const fw    = deriveTruthStatus(fwValid,    'Inactive')
-
-  // Booking access — 5 states:
-  //   confirmed:true                 → Confirmed (+ age)
-  //   confirmed:false, checked≠null  → Not confirmed (was checked, surface denied)
-  //   confirmed:false, checked=null  → Not yet checked (never run against the modal)
-  //   auth null                      → Unknown
-  let bookingStatus: TruthStatus
-  let bookingValue: string
-  if (auth === null) {
-    bookingStatus = 'unknown'
-    bookingValue  = '—'
-  } else if (bookingValid === true) {
-    bookingStatus = 'ok'
-    bookingValue  = `Confirmed ${formatRelative(bookingChecked)}`
-  } else if (bookingChecked !== null) {
-    // Was checked but surface denied (LOGIN_REQUIRED on modal)
-    bookingStatus = 'fail'
-    bookingValue  = 'Not confirmed'
-  } else {
-    // Never been checked — awaiting first preflight or booking run
-    bookingStatus = 'neutral'
-    bookingValue  = 'Not yet checked'
-  }
-
-  return (
-    <div className="mt-3 pt-3 border-t border-[#e5e5ea]">
-      <TruthRow label="Sign in"       status={daxko.status}   value={daxko.value} />
-      <TruthRow label="Schedule"      status={fw.status}      value={fw.value} />
-      <TruthRow label="Booking modal" status={bookingStatus}  value={bookingValue} />
-    </div>
-  )
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -334,7 +248,11 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
     }
   }, [open, polledStatus])
 
-  const busy = signingIn || refreshing || signingOut
+  // Stage 8: busy includes server-side booking so buttons are disabled while
+  // a booking run is active (server would reject auth attempts anyway, and the
+  // UI should not let the user start an operation that will immediately fail).
+  const bookingRunActive = !!(session?.bookingActive)
+  const busy = signingIn || refreshing || signingOut || bookingRunActive
 
   const handleSignIn = async () => {
     if (busy) return
@@ -534,10 +452,13 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
               </div>
             </div>
 
-            {/* Operation state — secondary, only shown when not idle */}
+            {/* Operation state — secondary context, shown only when not idle.
+                Spinner for active processes (signing in, verifying, refreshing,
+                recovering). No spinner for blocked/non-spinning states. */}
             {op.label && (
               <div className="flex items-center gap-1.5 mt-2.5">
-                {(op.state === 'signing_in' || op.state === 'verifying') && (
+                {(op.state === 'signing_in' || op.state === 'verifying' ||
+                  op.state === 'refreshing') && (
                   <svg className="w-3 h-3 animate-spin text-text-muted flex-shrink-0" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                     <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" />
                     <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -555,9 +476,6 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                   ? `Checked ${formatChecked(session.lastVerified)}`
                   : 'Not yet checked'}
             </p>
-
-            {/* Three-truth rows — always visible */}
-            <ThreeTruths auth={auth} session={session} />
           </div>
 
           {/* ── Details expander ─────────────────────────────────────── */}
