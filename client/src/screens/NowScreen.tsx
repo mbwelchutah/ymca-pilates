@@ -250,8 +250,8 @@ function derivePrimaryResult(opts: {
   if (bookingActive && phase === 'sniper') {
     return {
       state:    'booking',
-      label:    'Booking',
-      detail:   'Attempting registration now',
+      label:    'Booking…',
+      detail:   'Attempting registration now.',
       severity: 'info',
     }
   }
@@ -262,7 +262,7 @@ function derivePrimaryResult(opts: {
     const isDryRun = job?.last_result === 'dry_run'
     return {
       state:    'success',
-      label:    isDryRun ? 'Test run complete' : 'Booked',
+      label:    isDryRun ? 'Test run' : 'Confirmed',
       detail:   isDryRun
         ? 'Test mode — class found and action verified. Switch to Live to actually register.'
         : 'Registration confirmed.',
@@ -281,7 +281,7 @@ function derivePrimaryResult(opts: {
     const isExpired = sessionStatus.overall === 'FAMILYWORKS_SESSION_MISSING'
     return {
       state:    'issue',
-      label:    'Needs attention',
+      label:    'Issue',
       detail:   isExpired
         ? 'Your session has expired. Tap the account icon to sign in again.'
         : 'Login required. Tap the account icon to sign in.',
@@ -294,7 +294,7 @@ function derivePrimaryResult(opts: {
     return {
       state:    'issue',
       label:    'Scheduling off',
-      detail:   'This class is disabled. Turn it on in the Plan tab to resume.',
+      detail:   'This class is paused. Enable it in the Plan tab to resume.',
       severity: 'muted',
     }
   }
@@ -303,15 +303,15 @@ function derivePrimaryResult(opts: {
   if (bgArmedState === 'needs_attention') {
     return {
       state:    'issue',
-      label:    'Needs attention',
-      detail:   'Auto-check detected a problem. A new check will run automatically.',
+      label:    'Issue',
+      detail:   'Something needs review before booking.',
       severity: 'warning',
     }
   }
   if (showComposite && composite.color === 'red') {
     return {
       state:    'issue',
-      label:    'Needs attention',
+      label:    'Issue',
       detail:   compositeDetail,
       severity: 'error',
       ts:       lastPreflightAt ?? undefined,
@@ -324,7 +324,7 @@ function derivePrimaryResult(opts: {
   if (blocked) {
     return {
       state:    'issue',
-      label:    'Needs attention',
+      label:    'Issue',
       detail:   blocked,
       severity: 'warning',
     }
@@ -1165,7 +1165,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="green" />
               <span className="text-[17px] font-semibold text-accent-green">
-                {job?.last_result === 'dry_run' ? 'Test run' : 'Booked'}
+                {job?.last_result === 'dry_run' ? 'Test run' : 'Confirmed'}
               </span>
             </div>
           ) : isInactive ? (

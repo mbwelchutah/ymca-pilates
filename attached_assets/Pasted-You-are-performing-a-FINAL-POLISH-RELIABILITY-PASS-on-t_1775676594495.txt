@@ -1,0 +1,301 @@
+You are performing a FINAL POLISH + RELIABILITY PASS on the NOW tab of the YMCA Booker app.
+
+IMPORTANT RULES
+
+- Do NOT add new features
+- Do NOT expand scope
+- Do NOT redesign architecture
+- ONLY refine and improve what already exists
+
+Assume:
+- Now tab already shows current/active class
+- booking state exists (armed / booking / success / waitlist / fail)
+- countdown + timing exists
+- status indicators exist
+- controls (pause/cancel/etc) exist
+
+This is a FINISHING PASS.
+
+GOAL
+
+Make the NOW tab feel:
+- calm
+- trustworthy
+- real-time
+- easy to understand in 2 seconds
+- iPhone-native and polished
+
+The Now tab should feel like:
+→ “your live booking assistant”
+→ clear what is happening right now
+→ zero confusion under pressure (T-0 booking moment)
+
+==================================================
+STAGE 5 — STATUS LANGUAGE CLEANUP
+==================================================
+
+Goal:
+Make all Now states instantly understandable and human.
+
+Tasks:
+
+1. Standardize status language across Now:
+   Replace any technical/debug phrasing with simple states:
+
+   - Ready
+   - Armed
+   - Waiting
+   - Booking…
+   - Confirmed
+   - Waitlisted
+   - Issue
+
+2. Remove:
+   - duplicate status lines
+   - technical/internal wording
+   - overly verbose explanations
+
+3. Ensure only ONE primary status is visible at a time
+
+4. Ensure tone is calm (not alarming or robotic)
+
+5. If “Issue” appears:
+   - keep it subtle
+   - do NOT flood UI with error detail
+
+Success criteria:
+- user understands state instantly
+- no technical language leaks through
+- status feels like a product, not a log
+
+After Stage 5:
+Summarize:
+- final status vocabulary
+- what was removed/cleaned up
+
+STOP
+
+==================================================
+STAGE 6 — PRIMARY ACTION CLARITY
+==================================================
+
+Goal:
+Make actions obvious, minimal, and correctly prioritized.
+
+Tasks:
+
+1. Ensure only ONE primary action at a time:
+   Examples:
+   - “Pause”
+   - “Resume”
+   - “Cancel”
+   - “Retry”
+
+2. Remove competing CTAs on screen
+
+3. Ensure hierarchy:
+   - Primary = filled / prominent
+   - Secondary = subtle / outline
+
+4. Make labels human:
+   - NOT “Execute job”
+   - YES “Pause booking”
+
+5. Ensure actions match state:
+   - Armed → Pause
+   - Booking → (no action or Cancel)
+   - Confirmed → minimal actions
+
+Success criteria:
+- no confusion about what to tap
+- no competing buttons
+- actions feel intentional
+
+After Stage 6:
+Summarize:
+- what actions were simplified
+- what was removed
+
+STOP
+
+==================================================
+STAGE 7 — COUNTDOWN + TIMING POLISH
+==================================================
+
+Goal:
+Make timing the most trustworthy element on screen.
+
+Tasks:
+
+1. Ensure countdown is:
+   - prominent
+   - readable
+   - stable (no flicker)
+
+2. Format clearly:
+   - “Opens in 2d 5h 19m”
+   - OR “Opens at Apr 10 • 3:15 PM”
+
+3. Avoid duplication:
+   - do not show the same time in multiple formats unnecessarily
+
+4. Ensure timing updates smoothly without jumping
+
+5. Ensure timezone correctness is clearly reflected (no hidden drift)
+
+Success criteria:
+- user trusts the timing
+- countdown is easy to scan
+- no jitter or confusion
+
+After Stage 7:
+Summarize:
+- timing improvements
+- formatting decisions
+
+STOP
+
+==================================================
+STAGE 8 — VISUAL HIERARCHY + SPACING
+==================================================
+
+Goal:
+Make the Now screen feel calm and premium.
+
+Tasks:
+
+1. Clean vertical hierarchy:
+   - Status (top)
+   - Countdown
+   - Class info
+   - Actions
+
+2. Improve spacing between:
+   - sections
+   - cards
+   - controls
+
+3. Ensure typography hierarchy:
+   - large = state / countdown
+   - medium = class info
+   - small = supporting info
+
+4. Remove visual clutter:
+   - unnecessary dividers
+   - duplicate labels
+
+5. Ensure thumb-friendly layout (mobile-first)
+
+Success criteria:
+- screen feels breathable
+- no cramped or messy layout
+- easy one-handed scanning
+
+After Stage 8:
+Summarize:
+- spacing improvements
+- hierarchy refinements
+
+STOP
+
+==================================================
+STAGE 9 — REMOVE “DEBUG / ENGINE” FEEL
+==================================================
+
+Goal:
+Make Now feel like a product, not a bot console.
+
+Tasks:
+
+1. Remove or hide:
+   - raw logs
+   - internal state labels
+   - overly technical indicators
+
+2. Replace with:
+   - calm summaries
+   - human-readable outcomes
+
+3. Ensure:
+   - no duplicate signals
+   - no noisy status stacking
+
+4. Keep transparency WITHOUT clutter
+
+Success criteria:
+- feels like a consumer app
+- not a developer/debug screen
+- still trustworthy
+
+After Stage 9:
+Summarize:
+- what debug elements were removed
+- how UI became cleaner
+
+STOP
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY + TRUST PASS
+==================================================
+
+Goal:
+Make Now feel complete and production-ready.
+
+Tasks:
+
+1. Verify:
+   - one clear status
+   - one clear action
+   - accurate countdown
+   - correct class info
+   - no conflicting UI
+
+2. Ensure consistency with Plan:
+   - naming
+   - tone
+   - structure
+
+3. Ensure emotional feel:
+   - calm under pressure
+   - confidence at booking time
+
+4. Final polish:
+   - no awkward spacing
+   - no redundant text
+   - no visual noise
+
+Success criteria:
+- user trusts the system
+- user understands instantly
+- UI feels finished
+
+After Stage 10:
+Summarize:
+- final refinements
+- why Now feels more trustworthy
+
+STOP
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+The Now tab should:
+
+- communicate state instantly
+- show one clear action
+- present timing clearly and reliably
+- feel calm and controlled
+- avoid technical/debug noise
+- feel like a polished iOS app
+
+It should NOT feel:
+
+- cluttered
+- confusing
+- technical
+- noisy
+- unfinished
+
+START WITH STAGE 5 ONLY.
+DO NOT SKIP AHEAD.
