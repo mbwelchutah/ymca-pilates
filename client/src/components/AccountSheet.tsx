@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { SessionStatus, AuthStatusEnum } from '../types'
+import type { SessionStatus, AuthState } from '../types'
 import { StatusDot } from './ui/StatusDot'
 import { api } from '../lib/api'
 
@@ -85,7 +85,9 @@ function deriveDisplay(s: SessionStatus | null): DisplayInfo {
 
     if (auth.status === 'connected') return {
       headline:       'Connected',
-      subline:        'Daxko and schedule are active',
+      subline:        auth.bookingSurfaceValid
+        ? 'Daxko · Schedule · Booking confirmed'
+        : 'Daxko and schedule active',
       dotColor:       'green',
       dotPulse:       false,
       headlineCls:    'text-text-primary',
@@ -201,6 +203,87 @@ function DiagRow({ label, value, ok, neutral = false }: DiagRowProps) {
     <div className="flex items-center justify-between py-0.5">
       <span className="text-[13px] text-text-secondary">{label}</span>
       <span className={`text-[13px] font-medium ${valueCls}`}>{value}</span>
+    </div>
+  )
+}
+
+// ── Three-truth indicator (always-visible in collapsed block) ─────────────────
+
+type TruthStatus = 'ok' | 'fail' | 'neutral' | 'unknown'
+
+interface TruthRowProps {
+  label:  string
+  status: TruthStatus
+  value:  string
+}
+
+function TruthRow({ label, status, value }: TruthRowProps) {
+  const dotFill =
+    status === 'ok'   ? '#34c759' :
+    status === 'fail' ? '#ff3b30' :
+    status === 'neutral' ? '#ff9500' : '#c7c7cc'
+
+  const valueCls =
+    status === 'ok'      ? 'text-accent-green' :
+    status === 'fail'    ? 'text-accent-red'   :
+    status === 'neutral' ? 'text-accent-amber' : 'text-text-muted'
+
+  return (
+    <div className="flex items-center justify-between py-[3px]">
+      <div className="flex items-center gap-2">
+        <svg width="7" height="7" viewBox="0 0 7 7" className="flex-shrink-0" aria-hidden="true">
+          <circle cx="3.5" cy="3.5" r="3.5" fill={dotFill} />
+        </svg>
+        <span className="text-[12px] text-text-secondary">{label}</span>
+      </div>
+      <span className={`text-[12px] font-medium ${valueCls}`}>{value}</span>
+    </div>
+  )
+}
+
+function deriveTruthStatus(valid: boolean | null | undefined, failLabel?: string): { status: TruthStatus; value: string } {
+  if (valid === true)  return { status: 'ok',      value: 'Active' }
+  if (valid === false) return { status: 'fail',    value: failLabel ?? 'Failed' }
+  return                      { status: 'unknown', value: '—' }
+}
+
+interface ThreeTruthsProps {
+  auth:    AuthState | null
+  session: SessionStatus | null
+}
+
+function ThreeTruths({ auth, session }: ThreeTruthsProps) {
+  // Derive each truth — prefer AuthState, fall back to legacy session fields
+  const daxkoValid    = auth ? auth.daxkoValid : session?.daxko === 'DAXKO_READY'
+  const fwValid       = auth ? auth.familyworksValid : session?.familyworks === 'FAMILYWORKS_READY'
+  const bookingValid  = auth?.bookingSurfaceValid ?? null
+
+  const daxko   = deriveTruthStatus(daxkoValid,   'Expired')
+  const fw      = deriveTruthStatus(fwValid,       'Inactive')
+
+  // Booking: false when connected just means "not yet checked by preflight" → neutral/amber
+  // false when NOT connected → could be login-required → fail
+  let bookingStatus: TruthStatus
+  let bookingValue: string
+  if (bookingValid === true) {
+    bookingStatus = 'ok'
+    bookingValue  = 'Confirmed'
+  } else if (bookingValid === false && auth?.status === 'connected') {
+    bookingStatus = 'neutral'
+    bookingValue  = 'Not yet checked'
+  } else if (bookingValid === false) {
+    bookingStatus = 'fail'
+    bookingValue  = 'Not accessible'
+  } else {
+    bookingStatus = 'unknown'
+    bookingValue  = '—'
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#e5e5ea]">
+      <TruthRow label="Sign in"       status={daxko.status}   value={daxko.value} />
+      <TruthRow label="Schedule"      status={fw.status}      value={fw.value} />
+      <TruthRow label="Booking modal" status={bookingStatus}  value={bookingValue} />
     </div>
   )
 }
@@ -365,6 +448,9 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                   ? `Checked ${formatChecked(session.lastVerified)}`
                   : 'Not yet checked'}
             </p>
+
+            {/* Stage 6: Three-truth rows — always visible */}
+            <ThreeTruths auth={auth} session={session} />
           </div>
 
           {/* ── Details expander ─────────────────────────────────────── */}
