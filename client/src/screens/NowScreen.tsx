@@ -1347,7 +1347,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   )
                 }
 
-                // Steady state — State · Confidence · Freshness
+                // Steady state — Confidence · Freshness
+                // State is already shown in the card above; trust line provides supporting context only.
                 const result = stableResult ?? currentResult
                 if (!result) return null
 
@@ -1365,16 +1366,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   return confidenceLabel
                 })()
 
-                const secondary = [confText, lastCheckedText].filter(Boolean).join(' · ')
+                const trustText = [confText, lastCheckedText].filter(Boolean).join(' · ')
+                if (!trustText) return null
 
                 return (
                   <div className="mb-2 flex items-center justify-center gap-1.5">
                     <StatusDot color={dotColor} size="sm" />
-                    <span className="text-[12px] text-text-secondary">
-                      <span className="font-medium">{result.label}</span>
-                      {secondary && (
-                        <span className="text-text-muted font-normal"> · {secondary}</span>
-                      )}
+                    <span className="text-[12px] text-text-muted">
+                      {trustText}
                     </span>
                   </div>
                 )
