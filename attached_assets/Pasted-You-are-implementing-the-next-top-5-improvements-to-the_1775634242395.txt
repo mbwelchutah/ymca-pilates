@@ -1,0 +1,335 @@
+You are implementing the next top 5 improvements to the login/authentication system for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Make authentication:
+- session-first
+- reliable
+- proactive
+- fast
+- transparent
+
+The app should stop treating “logged in” as the main success condition.
+The real goal is:
+
+👉 booking access confirmed before the booking window opens
+
+This means the app must know the difference between:
+- Daxko signed in
+- FamilyWorks session active
+- booking surface truly confirmed
+
+This phase should reduce:
+- login fragility
+- repeated sign-ins
+- last-minute auth surprises
+- concurrent auth conflicts
+- unnecessary browser validation
+
+IMPORTANT PRODUCT DIRECTION
+
+Use this model:
+
+Primary path:
+- saved FamilyWorks-authenticated session
+
+Validation path:
+- request-first validation
+
+Fallback path:
+- Daxko credential recovery from Replit Secrets
+
+The user should feel:
+- signed in
+- quietly maintained
+- confirmed ready before booking
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not break the current working OAuth flow
+- Do not remove current recovery logic unless replaced safely
+- Do not weaken booking safety
+- Do not expose raw technical auth details in the main UI
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+STAGE 1 — MAKE “BOOKING ACCESS CONFIRMED” THE REAL AUTH TRUTH
+==================================================
+
+Goal:
+Add a stronger operational auth truth than simple login/session presence.
+
+Tasks:
+1. Add a new auth truth layer:
+   - bookingAccessConfirmed
+2. This must mean more than:
+   - Daxko signed in
+   - FamilyWorks session active
+3. Confirm booking access by validating the real FamilyWorks booking surface, or trusted equivalent markers
+4. Distinguish clearly between:
+   - daxko signed in
+   - familyworks session active
+   - booking access confirmed
+5. Make bookingAccessConfirmed the state that matters most before booking
+
+Success criteria:
+- app can tell the difference between being signed in and actually being ready to register
+- false “good” states are reduced
+
+After Stage 1:
+Stop and summarize:
+- how booking access is now defined
+- how it differs from simple auth/session truth
+- what code/state now depends on it
+
+==================================================
+STAGE 2 — MAKE SESSION REUSE THE DEFAULT PATH
+==================================================
+
+Goal:
+Use saved FamilyWorks-authenticated session first, credentials only as fallback.
+
+Tasks:
+1. Refactor auth flow so the app first:
+   - loads saved auth/session state
+   - validates it
+2. Only if invalid:
+   - trigger Daxko recovery using Replit Secrets credentials
+3. After successful recovery:
+   - save fresh session state
+4. Ensure:
+   - passive checks
+   - preflight
+   - booking
+   all try session reuse first
+5. Keep credentials as fallback only, not routine runtime dependency
+
+Success criteria:
+- login is no longer the default path
+- saved session is primary
+- credentials are used less often
+
+After Stage 2:
+Stop and summarize:
+- how session reuse now works
+- when fallback credentials are still used
+- what changed in the auth flow
+
+==================================================
+STAGE 3 — ADD PRE-WINDOW RECOVERY DEADLINES
+==================================================
+
+Goal:
+Recover auth before booking time, not during the click race.
+
+Tasks:
+1. Use preflight checkpoints such as:
+   - 30 min before
+   - 10 min before
+   - 2 min before
+2. At each checkpoint, verify:
+   - familyworks session active?
+   - booking access confirmed?
+3. If not confirmed:
+   - trigger recovery immediately
+4. If recovery succeeds:
+   - save fresh session
+   - mark bookingAccessConfirmed = true
+5. If still not confirmed near the window:
+   - surface a clean Needs attention state before booking time
+6. Do not wait until live booking execution to discover auth is broken unless absolutely unavoidable
+
+Success criteria:
+- auth failures are discovered and handled before the booking window
+- fewer booking-time auth surprises
+
+After Stage 3:
+Stop and summarize:
+- when recovery checkpoints now run
+- what triggers recovery
+- what happens when recovery fails
+
+==================================================
+STAGE 4 — ENFORCE A SINGLE AUTH LANE / AUTH LOCK
+==================================================
+
+Goal:
+Prevent overlapping auth attempts and lock conflicts.
+
+Tasks:
+1. Add one shared auth lane / auth lock model
+2. Ensure only one of these can run at a time:
+   - sign in
+   - refresh connection
+   - auth recovery
+   - booking-critical auth validation
+3. Make all these flows respect the same lock:
+   - periodic background validation
+   - preflight
+   - booking flow
+   - manual refresh
+4. If auth is already in progress:
+   - skip
+   - queue
+   - or defer gracefully
+5. Surface calm UI state such as:
+   - Refreshing connection
+   - Recovering sign-in
+   instead of overlapping errors
+
+Success criteria:
+- no concurrent auth attempts
+- fewer lock conflicts
+- cleaner behavior under load
+
+After Stage 4:
+Stop and summarize:
+- how the auth lock now works
+- what flows respect it
+- how conflicts are handled
+
+==================================================
+STAGE 5 — ADD REQUEST-FIRST VALIDATION WITH BROWSER FALLBACK
+==================================================
+
+Goal:
+Speed up passive validation without weakening booking truth.
+
+Tasks:
+1. Implement a 3-tier validation model:
+
+Tier 1:
+- auth/session presence check
+- weak signal only
+
+Tier 2:
+- lightweight FamilyWorks request validation
+- strong fast signal
+
+Tier 3:
+- Playwright truth validation
+- strongest but slowest
+
+2. Use request-first validation for passive/background checks
+3. Use Playwright only when:
+   - request result is invalid
+   - request result is ambiguous
+   - booking is near
+   - stronger truth is required
+4. Add a validator function such as:
+   validateSessionFastThenFallback()
+5. Log which tier was used:
+   - [auth-check] tier1
+   - [auth-check] tier2
+   - [auth-check] tier3
+
+Success criteria:
+- fewer browser launches for passive validation
+- booking safety preserved
+- stronger validation still available near booking
+
+After Stage 5:
+Stop and summarize:
+- how the 3 tiers work
+- when browser fallback happens
+- how passive validation is now faster
+
+==================================================
+STAGE 6 — CONNECT THE NEW AUTH MODEL TO ACCOUNT UI
+==================================================
+
+Goal:
+Make auth truth visible without clutter.
+
+Tasks:
+1. In the Account sheet collapsed view, keep it simple:
+   - Signed in / Needs attention
+   - Connection active / Sign-in required
+   - Last checked
+2. In expanded details, show:
+   - Daxko signed in
+   - FamilyWorks session active
+   - Booking access confirmed
+3. Keep expanded details human-readable
+4. Do not expose technical logs, cookie details, or raw auth internals here
+
+Success criteria:
+- default view stays clean
+- expanded detail gives transparency
+- auth model is understandable
+
+After Stage 6:
+Stop and summarize:
+- what the user now sees by default
+- what appears in expanded detail
+- how transparency improved
+
+==================================================
+STAGE 7 — FINAL CONSISTENCY PASS
+==================================================
+
+Goal:
+Make the whole auth system behave as one coherent model.
+
+Tasks:
+1. Verify the full flow now behaves like:
+   - reuse session
+   - validate quietly
+   - recover early
+   - confirm booking access
+   - only then book
+2. Ensure:
+   - Account UI
+   - readiness/preflight
+   - booking flow
+   all use the same auth truths
+3. Remove or refactor any older wording/logic that still implies login is frequent or manual
+4. Make the final experience feel like:
+   - “I’m signed in”
+   - “The app maintains the connection”
+   - “Booking will only run when access is confirmed”
+
+Success criteria:
+- no mixed auth models remain
+- login feels rare and controlled
+- connection truth is clear and trustworthy
+
+After Stage 7:
+Stop and summarize:
+- what final inconsistencies were removed
+- why the auth system is now more reliable and transparent
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+By the end of this phase:
+
+- bookingAccessConfirmed is the real pre-booking auth truth
+- saved session is the default path
+- credentials are fallback-only
+- auth recovers before the booking window when possible
+- only one auth flow runs at a time
+- passive validation is faster
+- Account sheet shows simple truth by default
+- expanded detail provides transparency without clutter
+
+The system should feel like:
+- signed in
+- quietly maintained
+- confirmed before booking
+- no login surprises
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
