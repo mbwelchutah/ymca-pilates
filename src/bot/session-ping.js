@@ -118,6 +118,19 @@ async function pingDaxko(cookies) {
 }
 
 // ── FamilyWorks ping ──────────────────────────────────────────────────────────
+//
+// Stage 5: FW ping reliability fix.
+//
+// The FW API endpoint (/api/1.1/obj/user) returns HTTP 200 with a body format
+// that does not match the expected Bubble.io { status: 'success' } envelope.
+// Previously this was treated as "inconclusive" — meaning the FW ping never
+// confirmed a valid session, so the Tier-2 fast path never fired.
+//
+// Revised logic: HTTP 200 means FW accepted the request with our cookies.
+// The body format uncertainty does not indicate auth failure.  Auth failure
+// is signalled by HTTP 401/403 or an explicit "Unauthorized" JSON message.
+// A 200 with ANY other body (unexpected JSON, non-JSON, empty) is now treated
+// as valid — the server accepted the session at the HTTP level.
 
 async function pingFamilyWorks(cookies) {
   try {
@@ -132,32 +145,48 @@ async function pingFamilyWorks(cookies) {
       redirect: 'follow',
     });
 
+    // Explicit rejection — session expired or forbidden.
     if (res.status === 401 || res.status === 403) {
       return { valid: false, detail: `FamilyWorks ping: HTTP ${res.status} — session expired` };
     }
 
     if (res.status === 200) {
+      // Read body as text first so we can inspect it even if JSON parse fails.
+      let bodyText = '';
       let body = null;
-      try { body = await res.json(); } catch { /* treat as inconclusive */ }
+      try {
+        bodyText = await res.text();
+        body = JSON.parse(bodyText);
+      } catch { /* non-JSON — bodyText still has raw content */ }
 
-      if (body?.status === 'success') {
-        return { valid: true, detail: `FamilyWorks ping: 200 OK — session active` };
-      }
+      // Explicit auth-failure signals in JSON body.
       if (body?.status === 'error') {
-        const msg = body?.message ?? 'unknown error';
-        // Unauthorized-type messages → session expired.
+        const msg = body?.message ?? '';
         if (/unauthorized|not logged|unauthenticated/i.test(msg)) {
-          return { valid: false, detail: `FamilyWorks ping: auth error (${msg})` };
+          return { valid: false, detail: `FamilyWorks ping: auth error — ${msg}` };
         }
-        // Other error messages (e.g. endpoint not found) → inconclusive.
-        return { valid: null, detail: `FamilyWorks ping: API error (${msg})` };
+        // Non-auth API error (endpoint not found, etc.) — inconclusive.
+        return { valid: null, detail: `FamilyWorks ping: API error (${msg || 'unknown'})` };
       }
 
-      // 200 but unparseable / unexpected body — inconclusive.
-      return { valid: null, detail: `FamilyWorks ping: 200 but unexpected body — inconclusive` };
+      // Check for login-redirect HTML served as 200 (rare but possible when
+      // redirect:follow follows a 302 → 200 login page).
+      if (!body && bodyText && /sign.?in|log.?in|authenticate|password/i.test(bodyText.slice(0, 500))) {
+        return { valid: false, detail: `FamilyWorks ping: 200 but body looks like login page — session expired` };
+      }
+
+      // Ideal: Bubble.io confirmed session.
+      if (body?.status === 'success') {
+        return { valid: true, detail: `FamilyWorks ping: 200 — session confirmed by API` };
+      }
+
+      // Stage 5 fix: any other 200 (unexpected JSON format, non-JSON, empty)
+      // is treated as valid.  HTTP 200 with our cookies = FW accepted the session.
+      const preview = bodyText ? bodyText.slice(0, 80).replace(/\s+/g, ' ') : '(empty)';
+      return { valid: true, detail: `FamilyWorks ping: 200 — session accepted (body: ${preview})` };
     }
 
-    // Any other status → inconclusive → fall to Tier 3.
+    // Any other status → inconclusive.
     return { valid: null, detail: `FamilyWorks ping: unexpected HTTP ${res.status}` };
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -222,50 +251,68 @@ async function pingSessionHttp() {
   console.log(`[session-ping] Daxko: ${daxkoResult.detail}`);
   console.log(`[session-ping] FamilyWorks: ${fwResult.detail}`);
 
-  const daxkoOk = daxkoResult.valid === true;
-  const fwOk    = fwResult.valid === true;
+  const daxkoOk  = daxkoResult.valid === true;
+  const fwOk     = fwResult.valid === true;
+  const fwFailed = fwResult.valid === false; // explicit 401/403 or Unauthorized body
 
-  if (daxkoOk && fwOk) {
+  // ── Stage 5: Daxko-first trust policy ────────────────────────────────────
+  // Daxko ping is reliable: 200 = active, login-redirect = expired.
+  // FW sessions are established via Daxko OAuth — a valid Daxko session strongly
+  // implies the FW session is still active.  If Daxko is confirmed and FW did
+  // not explicitly fail (i.e. FW ping was inconclusive, not 401/403), we treat
+  // the combined result as trusted.
+  //
+  // Trust tiers (in priority order):
+  //   1. Both confirmed OK   → trusted (fwConfirmed: true)
+  //   2. Daxko OK + FW null  → trusted (fwConfirmed: false, Daxko-first policy)
+  //   3. Daxko failed        → NOT trusted
+  //   4. Daxko OK + FW false → NOT trusted (FW explicitly rejected the session)
+  const trusted    = daxkoOk && !fwFailed;
+  const fwConfirmed = fwOk;
+
+  if (trusted) {
     refreshStatusTimestamps();
     updateAuthState({
       daxkoValid:       true,
-      familyworksValid: true,
+      familyworksValid: fwOk || !fwFailed, // true if FW confirmed or inconclusive
       lastCheckedAt:    Date.now(),
     });
+    const detail = fwOk
+      ? `Tier-2 ping OK — Daxko active, FamilyWorks active`
+      : `Tier-2 ping OK — Daxko active, FamilyWorks inconclusive (Daxko-first policy)`;
     return {
-      trusted:          true,
-      daxkoConfirmed:   true,
-      fwConfirmed:      true,
-      detail:           `Tier-2 ping OK — Daxko session active, FamilyWorks session active`,
+      trusted:        true,
+      daxkoConfirmed: true,
+      fwConfirmed,
+      detail,
       daxkoResult,
       fwResult,
     };
   }
 
-  // Partial or full failure — update known validity flags.
-  // Only update if the ping gave a definitive answer (not null/inconclusive).
+  // Not trusted — update known validity flags.
+  // Only write definitive (non-null) results so we never overwrite a confirmed
+  // valid flag with an inconclusive ping.
   const patch = { lastCheckedAt: Date.now() };
   if (daxkoResult.valid !== null)  patch.daxkoValid       = daxkoResult.valid === true;
   if (fwResult.valid    !== null)  patch.familyworksValid = fwResult.valid    === true;
   if (Object.keys(patch).length > 1) updateAuthState(patch);
 
-  // Determine the primary reason for missing.
+  // Determine the primary reason for not trusting.
   let reason;
-  if (!daxkoOk && daxkoResult.valid !== null) {
-    reason = daxkoResult.detail;
-  } else if (!fwOk && fwResult.valid !== null) {
-    reason = fwResult.detail;
+  if (!daxkoOk) {
+    reason = daxkoResult.detail; // Daxko failure is the root cause
+  } else if (fwFailed) {
+    reason = fwResult.detail; // FW explicitly rejected
   } else {
-    reason = !daxkoOk ? daxkoResult.detail : fwResult.detail;
+    reason = daxkoResult.detail; // fallback
   }
 
-  // daxkoConfirmed is true even on partial miss — used by callers to decide
-  // whether saved FW cookies are worth attempting for session reuse.
   return {
-    trusted:          false,
-    daxkoConfirmed:   daxkoOk,
-    fwConfirmed:      fwOk,
-    detail:           `Tier-2 ping miss — ${reason}`,
+    trusted:        false,
+    daxkoConfirmed: daxkoOk,
+    fwConfirmed,
+    detail:         `Tier-2 ping miss — ${reason}`,
     daxkoResult,
     fwResult,
   };
