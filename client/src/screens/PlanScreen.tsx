@@ -394,16 +394,17 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <button
               onClick={e => { e.stopPropagation(); onEdit() }}
               className="flex-1 py-2 rounded-xl bg-[#f2f2f7] text-accent-blue text-[14px] font-semibold active:opacity-70 transition-opacity"
             >
               Edit
             </button>
+            {/* Passive state: neutral color — destructive red only appears in the confirm step */}
             <button
               onClick={() => setConfirming(true)}
-              className="py-2 px-4 text-[13px] font-medium text-accent-red/70 active:opacity-70 transition-opacity"
+              className="py-2 px-4 text-[13px] font-medium text-text-secondary active:opacity-70 transition-opacity"
             >
               Remove
             </button>
