@@ -209,7 +209,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
         onKeyDown={e => e.key === 'Enter' && onSelect()}
         className="px-4 pt-3.5 pb-3 cursor-pointer active:bg-[#f9f9f9] transition-colors"
       >
-        {/* Row 1: class name + On/Off toggle */}
+        {/* Row 1: class name + On/Off toggle + disclosure chevron */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
             <span className="text-[17px] font-bold text-text-primary tracking-tight leading-tight">
@@ -221,19 +221,29 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
               </span>
             )}
           </div>
-          <button
-            onClick={handleToggleClick}
-            disabled={toggling}
-            className={`
-              flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold
-              transition-colors active:opacity-70 disabled:opacity-40
-              ${job.is_active
-                ? 'bg-accent-green/10 text-accent-green'
-                : 'bg-[#f2f2f7] text-text-secondary'}
-            `}
-          >
-            {toggling ? '…' : job.is_active ? 'On' : 'Off'}
-          </button>
+          {/* On/Off toggle + ›  grouped on the right */}
+          <div className="flex-shrink-0 flex items-center gap-1.5">
+            <button
+              onClick={handleToggleClick}
+              disabled={toggling}
+              className={`
+                px-3 py-1 rounded-full text-[12px] font-semibold
+                transition-colors active:opacity-70 disabled:opacity-40
+                ${job.is_active
+                  ? 'bg-accent-green/10 text-accent-green'
+                  : 'bg-[#f2f2f7] text-text-secondary'}
+              `}
+            >
+              {toggling ? '…' : job.is_active ? 'On' : 'Off'}
+            </button>
+            {/* Disclosure indicator — communicates that the card body taps to Now */}
+            <svg
+              className="w-[14px] h-[14px] text-[#c8c8cc] flex-shrink-0"
+              fill="none" viewBox="0 0 14 14" aria-hidden="true"
+            >
+              <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
         </div>
 
         {/* Row 2: Day · Date · Time · Instructor */}
@@ -978,10 +988,10 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </div>
         )}
 
-        {/* Hint when multiple classes exist */}
-        {appState.jobs.length > 1 && (
-          <p className="text-center text-[12px] text-text-muted px-4">
-            Tap a class to track it on the Now tab
+        {/* Hint — always visible when there are classes, guides user to Now tab */}
+        {appState.jobs.length > 0 && !showAdd && (
+          <p className="text-center text-[12px] text-text-muted px-4 pb-1">
+            Tap a class card to view it live on Now
           </p>
         )}
       </ScreenContainer>
