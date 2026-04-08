@@ -8,7 +8,6 @@ import type { AppState, Job, Phase, ScrapedClass, AuthStatusEnum } from '../type
 import { api } from '../lib/api'
 import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
-import { isThisWeekUTC } from '../lib/bookingCycle'
 
 interface PlanScreenProps {
   appState: AppState
@@ -60,13 +59,20 @@ const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
 // A result badge is "current" if the result is still relevant to the next class occurrence.
 //   - error / not_found: always show (actionable regardless of age)
 //   - target_date job:   always show (result is specific to that date)
-//   - recurring booked/dry_run: only show if the booking is within the same calendar week
-//     (Mon–Sun UTC) — identical to Now's isBookingCurrentCycle so both tabs agree.
+//   - recurring booked/dry_run: show for 6 days from the booking.
+//     6 days is chosen deliberately:
+//       • Long enough to cover the class day itself (booking opens 3 days before).
+//       • Clears before the NEXT booking window opens (7 days later), so the badge
+//         never competes with the "Armed" / "Opens Soon" state of a new cycle.
+//     Now uses a calendar-week boundary for its "Confirmed" headline; Plan uses this
+//     slightly-longer rolling window so the badge stays visible through the class day
+//     even when the booking falls in the previous UTC week.
 function isResultCurrent(job: Job): boolean {
   if (job.last_result === 'error' || job.last_result === 'not_found') return true
   if (job.target_date) return true
   const refAt = job.last_result === 'booked' ? job.last_success_at : job.last_run_at
-  return isThisWeekUTC(refAt)
+  if (!refAt) return false
+  return Date.now() - new Date(refAt).getTime() < 6 * 24 * 60 * 60 * 1000
 }
 
 function formatOpens(ms: number): string {
