@@ -965,9 +965,9 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {!showAdd && <QueueSummary jobs={appState.jobs} loading={loading} />}
 
-        {/* Stage 8: unified Browse/Add entry — Browse is primary, manual is escape */}
+        {/* Browse primary + Add Manually secondary */}
         {!showAdd && !loading && (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col gap-2">
             <button
               onClick={() => setShowBrowse(true)}
               className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold active:opacity-70 transition-opacity"
@@ -979,9 +979,9 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
             </button>
             <button
               onClick={() => { setEditingJob(null); setPrefill(null); setShowAdd(true) }}
-              className="text-[13px] text-text-muted active:opacity-70 transition-opacity"
+              className="flex items-center justify-center w-full py-3.5 rounded-2xl bg-[#f2f2f7] text-text-secondary text-[15px] font-semibold active:opacity-70 transition-opacity"
             >
-              or add manually
+              Add Manually
             </button>
           </div>
         )}
