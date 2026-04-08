@@ -636,7 +636,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
             </div>
           </div>
           {refreshErr && (
-            <p className="text-[12px] text-accent-red mt-1">{refreshErr}</p>
+            <p className="text-[12px] text-text-secondary mt-1">Refresh failed — try again.</p>
           )}
           <p className="text-[12px] text-text-muted mt-0.5">
             Schedule refresh takes ~30 seconds.
@@ -652,8 +652,18 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
               <span className="text-[15px] text-text-secondary">Loading…</span>
             </div>
           ) : err ? (
-            <div className="flex items-center justify-center py-12">
-              <span className="text-[14px] text-accent-red">{err}</span>
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <p className="text-[15px] font-semibold text-text-primary">Schedule unavailable</p>
+              <p className="text-[14px] text-text-secondary text-center px-4">
+                Tap Refresh to try loading the YMCA schedule.
+              </p>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="mt-1 text-accent-blue text-[15px] font-semibold disabled:opacity-40"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh Schedule'}
+              </button>
             </div>
           ) : sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
