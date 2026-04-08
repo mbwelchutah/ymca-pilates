@@ -407,7 +407,7 @@ async function runBookingJob(job, opts = {}) {
 
     advance(_state, 'AUTH');
     let _session;
-    _authLockAcquired = acquireLock(_runSource);
+    _authLockAcquired = acquireLock(_runSource, 'signing_in');
     try {
       _session = await createSession({ headless: isHeadless });
       // Auth succeeded — update session-status.json so the UI reflects the fresh result.

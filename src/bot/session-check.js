@@ -55,7 +55,7 @@ async function runSessionCheck({ source = 'manual' } = {}) {
       screenshot: null,
     };
   }
-  const lockAcquired = acquireLock(`session-check:${source}`);
+  const lockAcquired = acquireLock(`session-check:${source}`, 'verifying');
   if (!lockAcquired) {
     console.log(`[session-check] Skipping (${source}) — failed to acquire auth lock (race condition).`);
     return {

@@ -4171,7 +4171,7 @@ const server = http.createServer((req, res) => {
       : null;
 
     const { getAuthState } = require('../bot/auth-state');
-    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()), authState: getAuthState() });
+    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()), bookingActive: !!jobState.active, authState: getAuthState() });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Session verification — Tier 2 (HTTP ping) first, Tier 3 (Playwright) as fallback.
@@ -4187,6 +4187,11 @@ const server = http.createServer((req, res) => {
     if (jobState.active) {
       // Return valid:null (not false) — "bot busy" is different from "login failed."
       json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null, label: 'Bot busy', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN', tier: null });
+      return;
+    }
+    // Stage 6: prevent concurrent auth operations from colliding with a session check.
+    if (isAuthLocked()) {
+      json({ valid: null, checkedAt: null, detail: 'Auth operation in progress — try again in a moment', screenshot: null, label: 'Auth busy', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN', tier: null });
       return;
     }
     (async () => {
@@ -4265,7 +4270,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     (async () => {
-      if (!acquireAuthLock('settings-login')) {
+      if (!acquireAuthLock('settings-login', 'signing_in')) {
         json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
         return;
       }
@@ -4299,7 +4304,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     (async () => {
-      if (!acquireAuthLock('settings-refresh')) {
+      if (!acquireAuthLock('settings-refresh', 'refreshing')) {
         json({ success: false, locked: true, detail: 'A booking run is in progress — try again when it finishes.' });
         return;
       }
@@ -4460,7 +4465,7 @@ const server = http.createServer((req, res) => {
       req.on('data', chunk => { body += chunk.toString(); });
       req.on('end', () => {
         (async () => {
-          if (!acquireAuthLock('validate-session')) {
+          if (!acquireAuthLock('validate-session', 'verifying')) {
             json({ success: false, locked: true, valid: false, detail: 'Another auth operation is in progress — try again in a moment.' });
             return;
           }
@@ -5179,13 +5184,13 @@ server.on('error', (err) => {
 });
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
 
-// Stage 2: Clear any stale isAuthInProgress left in auth-state.json by a
-// previous server crash.  The in-memory lock is always false on a fresh
-// process start, so persisted isAuthInProgress: true is always stale.
+// Stage 2: Clear any stale isAuthInProgress/authOperation left in auth-state.json
+// by a previous server crash.  The in-memory lock is always false on a fresh
+// process start, so any persisted in-progress values are always stale.
 (function clearStaleAuthProgress() {
   try {
     const { updateAuthState } = require('../bot/auth-state');
-    updateAuthState({ isAuthInProgress: false });
+    updateAuthState({ isAuthInProgress: false, authOperation: null });
     console.log('[auth-state] Startup: cleared stale isAuthInProgress.');
   } catch (_) {}
 })();

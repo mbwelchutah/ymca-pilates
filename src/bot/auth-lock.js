@@ -24,21 +24,30 @@ const WATCHDOG_MS = 120_000; // 2 minutes — exceeds longest normal Playwright 
 
 let _locked        = false;
 let _lockOwner     = null;
+let _operation     = null;   // Stage 6: canonical operation type for the current holder
 let _watchdogTimer = null;
 
 /**
  * Try to acquire the lock.
- * Sets isAuthInProgress = true in AuthState when successful.
+ * Sets isAuthInProgress = true and authOperation in AuthState when successful.
  * Starts a watchdog that force-releases after WATCHDOG_MS.
- * @param {string} owner — human-readable caller label
+ *
+ * @param {string} owner     — human-readable caller label (for logs)
+ * @param {string|null} operation — canonical operation type surfaced to the UI:
+ *   'signing_in'  full Daxko credential login (Settings > Sign In)
+ *   'refreshing'  background session reuse / re-stamp (Refresh connection)
+ *   'verifying'   lightweight session check initiated by user (Verify connection)
+ *   'recovery'    automated preflight / keepalive recovery
+ *   null          caller did not specify; UI uses fallback heuristic
  * @returns {boolean} true if lock was acquired, false if already held
  */
-function acquireLock(owner) {
+function acquireLock(owner, operation = null) {
   if (_locked) return false;
   _locked    = true;
   _lockOwner = owner || 'unknown';
-  console.log(`[auth-lock] Acquired by "${_lockOwner}"`);
-  updateAuthState({ isAuthInProgress: true });
+  _operation = operation || null;
+  console.log(`[auth-lock] Acquired by "${_lockOwner}"${_operation ? ` (${_operation})` : ''}`);
+  updateAuthState({ isAuthInProgress: true, authOperation: _operation });
 
   // Stage 3: watchdog — if the lock is still held after WATCHDOG_MS, force-release.
   // This prevents isAuthInProgress from staying true forever when a Playwright
@@ -73,8 +82,9 @@ function releaseLock() {
   const prev = _lockOwner;
   _locked    = false;
   _lockOwner = null;
+  _operation = null;
   console.log(`[auth-lock] Released by "${prev}"`);
-  updateAuthState({ isAuthInProgress: false });
+  updateAuthState({ isAuthInProgress: false, authOperation: null });
 }
 
 /** Returns true if the lock is currently held. */

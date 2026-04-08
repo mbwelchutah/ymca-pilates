@@ -32,19 +32,21 @@ export interface AuthState {
   lastCheckedAt:            number | null
   lastRecoveredAt:          number | null
   isAuthInProgress:         boolean
+  authOperation:            'signing_in' | 'refreshing' | 'verifying' | 'recovery' | null
 }
 
 export interface SessionStatus {
-  valid:        boolean | null
-  checkedAt:    string | null
-  detail:       string | null
-  screenshot:   string | null
-  daxko:        DaxkoStatus
-  familyworks:  FamilyWorksStatus
-  overall:      OverallAuthStatus
-  lastVerified: string | null
-  locked?:      boolean
-  authState?:   AuthState
+  valid:         boolean | null
+  checkedAt:     string | null
+  detail:        string | null
+  screenshot:    string | null
+  daxko:         DaxkoStatus
+  familyworks:   FamilyWorksStatus
+  overall:       OverallAuthStatus
+  lastVerified:  string | null
+  locked?:       boolean
+  bookingActive?: boolean   // true when a booking run is currently in flight
+  authState?:    AuthState
 }
 export type LastResult =
   | 'booked'

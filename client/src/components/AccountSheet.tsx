@@ -152,24 +152,36 @@ function deriveOperationInfo(
   signingIn:  boolean,
   refreshing: boolean,
 ): OperationInfo {
-  // Local button state takes precedence — the user just tapped something.
+  const auth         = s?.authState
+  const locked       = s?.locked ?? false
+  const bookingActive = s?.bookingActive ?? false
+
+  // Booking run takes priority over every auth label — prevents mislabeling
+  // a booking-time auth step as "Signing in" from the user's perspective.
+  if (bookingActive) {
+    return { state: 'blocked_by_booking', label: 'Booking run in progress' }
+  }
+
+  // Local button state takes precedence over background / server-pushed state.
   if (signingIn)  return { state: 'signing_in', label: 'Signing in…' }
   if (refreshing) return { state: 'refreshing', label: 'Verifying connection…' }
 
-  const auth   = s?.authState
-  const locked = s?.locked ?? false
-
-  // Auth lock held but not by a local button click.
-  // If the session is already valid, call it 'refreshing' (background reuse).
-  // Only use 'signing_in' when credentials may truly be needed.
+  // Auth lock held — use authOperation for an accurate label instead of
+  // the old session-validity heuristic.
   if (auth?.isAuthInProgress) {
+    const op = auth.authOperation
+    if (op === 'signing_in') return { state: 'signing_in', label: 'Signing in…' }
+    if (op === 'verifying')  return { state: 'verifying',  label: 'Verifying connection…' }
+    if (op === 'refreshing') return { state: 'refreshing', label: 'Refreshing…' }
+    if (op === 'recovery')   return { state: 'refreshing', label: 'Recovering session…' }
+    // Backward-compat fallback when authOperation is not provided.
     const sessionValid = auth.daxkoValid && auth.familyworksValid
     return sessionValid
       ? { state: 'refreshing', label: 'Refreshing session…' }
       : { state: 'signing_in', label: 'Signing in…' }
   }
 
-  // Lock held without auth in progress → booking run owns the lane.
+  // Lock held without auth in progress (old servers without bookingActive).
   if (locked && !auth?.isAuthInProgress) {
     return { state: 'blocked_by_booking', label: 'Booking run in progress' }
   }

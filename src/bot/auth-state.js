@@ -28,6 +28,7 @@ const DEFAULT_STATE = {
   lastCheckedAt:            null,
   lastRecoveredAt:          null,
   isAuthInProgress:         false,
+  authOperation:            null,   // 'signing_in'|'refreshing'|'verifying'|'recovery'|null
 };
 
 // ── File I/O ─────────────────────────────────────────────────────────────────
