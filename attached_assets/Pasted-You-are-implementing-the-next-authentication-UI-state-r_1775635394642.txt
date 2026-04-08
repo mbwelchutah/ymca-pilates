@@ -1,0 +1,419 @@
+You are implementing the next authentication UI/state reliability phase for my YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the remaining auth/login state problems where the Account UI can get stuck or feel misleading.
+
+Current problem:
+The actual connection/authentication is improving, but the UI still sometimes holds or shows the wrong transitional state for too long.
+
+Examples:
+- “Signing in…” remains visible when the system is already effectively connected
+- “Checking…” lingers too long
+- booking-run conflicts look like auth problems
+- “Booking modal not accessible” sounds too final when it may only mean “not yet checked” or “temporarily blocked”
+
+This phase is about making auth state:
+- cleaner
+- more truthful
+- less sticky
+- less confusing
+- better resolved
+
+IMPORTANT PRODUCT DIRECTION
+
+Separate:
+
+1. Connection truth
+   - Connected
+   - Needs attention
+
+from
+
+2. Operation state
+   - Signing in
+   - Verifying
+   - Refreshing
+   - Busy
+   - Failed
+
+The Account UI must prioritize settled truth over temporary transitions.
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not break current working login/session logic
+- Do not weaken booking safety
+- Do not remove current auth checks unless replaced safely
+- Do not expose technical debugging terms in the main Account sheet
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+STAGE 1 — SPLIT CONNECTION STATE FROM OPERATION STATE
+==================================================
+
+Goal:
+Stop mixing real connection truth with temporary action states.
+
+Tasks:
+1. Create separate state models for:
+   - connection truth
+   - operation state
+
+Example:
+
+type ConnectionState =
+  | "connected"
+  | "needs_attention"
+  | "unknown"
+
+type AuthOperationState =
+  | "idle"
+  | "signing_in"
+  | "verifying"
+  | "refreshing"
+  | "blocked_by_booking"
+  | "failed"
+
+2. Ensure UI does not use one broad “busy/auth” state for everything
+3. Make the Account sheet read from both separately
+
+Rules:
+- settled connection truth should be the main status
+- operation state should be secondary / contextual
+
+Success criteria:
+- “Connected” can still be shown even if a secondary verification action is happening
+- booking conflict does not automatically become “Signing in…”
+
+After Stage 1:
+Stop and summarize:
+- what new state types were added
+- how connection vs operation are now separated
+- what UI logic now reads from them
+
+==================================================
+STAGE 2 — ADD EXPLICIT AUTH OPERATION LIFECYCLE
+==================================================
+
+Goal:
+Make auth operations resolve cleanly every time.
+
+Tasks:
+1. Define a clear lifecycle for auth-related operations:
+   - idle
+   - starting
+   - running
+   - succeeded
+   - failed
+   - blocked
+   - back to idle
+
+2. Ensure every entry point follows this lifecycle:
+   - sign in
+   - verify connection
+   - refresh connection
+   - recovery auth
+   - booking-critical auth check
+
+3. Ensure every success, failure, blocked, timeout, cancel, and defer path clears or settles the operation state correctly
+
+4. Audit all exit paths and make sure no branch leaves stale “in progress” state behind
+
+Success criteria:
+- auth operations always settle
+- lingering “Signing in…” / “Checking…” states are reduced
+- no dangling in-progress state after blocked or cancelled paths
+
+After Stage 2:
+Stop and summarize:
+- what lifecycle model was implemented
+- which paths were fixed
+- what stale paths were found
+
+==================================================
+STAGE 3 — ADD STALE OPERATION TIMEOUT / RESOLVER
+==================================================
+
+Goal:
+Prevent temporary operation states from lingering forever.
+
+Tasks:
+1. Add a stale-operation watchdog for auth UI state
+2. If an operation state such as:
+   - signing_in
+   - verifying
+   - refreshing
+   lasts longer than a safe threshold (for example 15–30 seconds), trigger a resolver
+
+3. Resolver behavior:
+   - re-read source-of-truth auth state
+   - settle UI into:
+     - connected
+     - needs_attention
+     - blocked_by_booking
+     - failed
+     - idle
+
+4. Do not let stale temporary UI state remain if real truth can be determined
+
+Success criteria:
+- “Signing in…” and “Checking…” do not stay visible indefinitely
+- stale transitions heal back into a truthful settled state
+
+After Stage 3:
+Stop and summarize:
+- what timeout was added
+- what resolver now does
+- how stale UI states now recover
+
+==================================================
+STAGE 4 — TREAT BOOKING CONFLICT AS ITS OWN STATE
+==================================================
+
+Goal:
+Stop mislabeling booking conflicts as auth failures or sign-in flow.
+
+Tasks:
+1. Add a distinct operation/UI state:
+   - blocked_by_booking
+   or equivalent wording
+2. If booking currently owns the lane, do NOT show:
+   - Signing in…
+   - Authentication in progress
+   unless that is truly what is happening
+
+3. Show calm wording such as:
+   - Busy
+   - Booking run in progress
+   - Connection check will resume when it finishes
+
+4. Ensure:
+   - bookingInProgress
+   - authInProgress
+   - verificationInProgress
+   are handled distinctly
+
+Success criteria:
+- booking conflicts no longer appear as auth confusion
+- user can tell the difference between “busy” and “broken”
+
+After Stage 4:
+Stop and summarize:
+- what blocked-by-booking state was added
+- how booking conflicts are now represented
+- what misleading wording was removed
+
+==================================================
+STAGE 5 — SOFTEN AND CLARIFY BOOKING SURFACE STATUS
+==================================================
+
+Goal:
+Make booking-surface state more precise and less alarming.
+
+Tasks:
+1. Replace overly final wording like:
+   - Not accessible
+when it may actually mean:
+   - not yet checked
+   - deferred
+   - blocked during booking
+   - not confirmed
+
+2. Introduce clearer booking-surface states such as:
+   - Confirmed
+   - Not yet checked
+   - Check deferred
+   - Blocked during booking
+   - Needs attention
+
+3. Update the Account card and expanded detail to use these more truthful states
+
+Success criteria:
+- booking modal/surface status feels accurate, not over-alarming
+- temporary uncertainty is not presented as hard failure
+
+After Stage 5:
+Stop and summarize:
+- what new booking-surface labels were added
+- what old labels were replaced
+- why the wording is now more truthful
+
+==================================================
+STAGE 6 — PRIORITIZE SETTLED TRUTH IN THE ACCOUNT CARD
+==================================================
+
+Goal:
+Make the top Account card feel stable and trustworthy.
+
+Tasks:
+1. The top status card should prioritize connection truth:
+   - Connected
+   - Needs attention
+
+2. Secondary line can show:
+   - Daxko · Schedule · Booking confirmed
+   or
+   - Daxko and schedule active
+   or
+   - Booking check pending
+
+3. Temporary operation state should be visually secondary, not the main truth, unless connection truth is genuinely unknown
+
+4. Do not let a temporary action like “Verifying…” replace “Connected” unless necessary
+
+Success criteria:
+- the card feels stable
+- connection truth is clear
+- temporary actions do not hijack the entire card unnecessarily
+
+After Stage 6:
+Stop and summarize:
+- how the account card hierarchy changed
+- how connection truth is now prioritized
+- what temporary state now looks like
+
+==================================================
+STAGE 7 — CLEAN BUTTON STATE LOGIC
+==================================================
+
+Goal:
+Make Account actions match the real current situation.
+
+Tasks:
+1. Buttons should adapt cleanly based on:
+   - connected
+   - needs attention
+   - blocked by booking
+   - signing in
+   - verifying
+
+2. Example desired behavior:
+   - Connected:
+     Verify connection / Sign in again / Sign out
+   - Needs attention:
+     Sign in / Verify connection / Sign out
+   - Blocked by booking:
+     disable or defer conflicting actions with calm explanation
+   - Signing in:
+     show disabled in-progress button
+   - Verifying:
+     show disabled checking state
+
+3. Avoid contradictory buttons such as:
+   - Sign in while already signing in
+   - Verify while blocked by booking, without explanation
+
+Success criteria:
+- button states feel coherent
+- actions reflect the real state
+- less user confusion
+
+After Stage 7:
+Stop and summarize:
+- how button behavior now changes by state
+- what contradictions were removed
+
+==================================================
+STAGE 8 — EXPANDED DETAIL CLEANUP
+==================================================
+
+Goal:
+Make expanded detail explain state cleanly without adding clutter.
+
+Tasks:
+1. Keep expanded details grouped and human-readable
+2. Suggested sections:
+   - Connections
+   - Status
+   - Last check
+
+3. Show:
+   - Daxko account: Valid / Needs attention
+   - Schedule: Active / Needs attention
+   - Booking surface: Confirmed / Not yet checked / Check deferred / Needs attention
+   - Last verified
+   - Last check result
+
+4. Do not show raw logs or raw internal technical fields here
+
+Success criteria:
+- expanded detail explains what is going on
+- it does not feel like a debug console
+- it supports trust
+
+After Stage 8:
+Stop and summarize:
+- what detail sections now exist
+- what wording was improved
+- how expanded detail now supports transparency
+
+==================================================
+STAGE 9 — FINAL CONSISTENCY PASS
+==================================================
+
+Goal:
+Ensure the auth UI no longer gets stuck or feels misleading.
+
+Tasks:
+1. Verify that:
+   - stale operation states resolve
+   - booking conflicts show as booking conflicts
+   - connected state stays stable
+   - buttons match the real situation
+   - booking surface labels are accurate
+2. Remove or refactor any remaining UI logic that causes temporary operation state to override settled truth unnecessarily
+3. Ensure the final Account experience feels:
+   - stable
+   - truthful
+   - calm
+   - transparent
+
+Success criteria:
+- fewer sticky or held states
+- less confusing auth UI
+- account sheet feels trustworthy
+
+After Stage 9:
+Stop and summarize:
+- what final inconsistencies were removed
+- why the auth state experience is now cleaner and more reliable
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+By the end of this phase:
+
+- connection truth is separated from operation state
+- auth operations always settle cleanly
+- stale in-progress states self-heal
+- booking conflicts are represented clearly
+- booking surface wording is more accurate
+- the account card prioritizes settled truth
+- buttons reflect the actual situation
+- expanded detail stays transparent without clutter
+
+The final Account experience should feel like:
+- calm
+- stable
+- trustworthy
+- Apple-quality
+
+Not like:
+- a sticky loading state
+- a confusing auth/debug panel
+- a state machine leak
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.

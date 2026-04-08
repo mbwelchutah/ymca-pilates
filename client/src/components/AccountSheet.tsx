@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { SessionStatus, AuthState } from '../types'
+import type { SessionStatus, AuthState, ConnectionState, OperationState } from '../types'
 import { StatusDot } from './ui/StatusDot'
 import { api } from '../lib/api'
 
@@ -64,121 +64,144 @@ function formatChecked(iso: string | null): string {
   }
 }
 
-// ── AuthState → display mapping ────────────────────────────────────────────────
+// ── Stage 1: Separate connection truth from operation state ───────────────────
+//
+// ConnectionInfo — the settled truth about whether the session is live.
+// Derived from AuthState validity flags, NOT from isAuthInProgress or local
+// button state. A background re-auth should not change the headline from
+// "Connected" to "Signing in…" if the underlying session is still valid.
+//
+// OperationInfo — what action is currently in flight (if any).
+// Secondary context only; rendered below the headline, never replacing it.
 
-interface DisplayInfo {
+interface ConnectionInfo {
+  state:          ConnectionState
   headline:       string
   subline:        string
-  dotColor:       'green' | 'amber' | 'red' | 'gray' | 'blue'
-  dotPulse:       boolean
+  dotColor:       'green' | 'amber' | 'red' | 'gray'
   headlineCls:    string
   signedIn:       boolean
   needsAttention: boolean
-  inProgress:     boolean
 }
 
-function deriveDisplay(s: SessionStatus | null): DisplayInfo {
-  // ── AuthState path (Stage 1+ canonical source) ─────────────────────────────
-  const auth = s?.authState
-  if (auth) {
-    const inProgress = auth.isAuthInProgress === true
+interface OperationInfo {
+  state: OperationState
+  label: string | null
+}
 
-    if (auth.status === 'connected') return {
+function deriveConnectionInfo(s: SessionStatus | null): ConnectionInfo {
+  const auth = s?.authState
+
+  if (auth) {
+    // Derive connection truth from validity flags, ignoring isAuthInProgress.
+    // During 'recovering', the underlying session may still be valid —
+    // we report the session truth, not the transient operation.
+    const connected = auth.daxkoValid && auth.familyworksValid
+
+    if (connected) return {
+      state:          'connected',
       headline:       'Connected',
       subline:        auth.bookingSurfaceValid
         ? 'Daxko · Schedule · Booking confirmed'
         : 'Daxko and schedule active',
       dotColor:       'green',
-      dotPulse:       false,
       headlineCls:    'text-text-primary',
       signedIn:       true,
       needsAttention: false,
-      inProgress,
     }
 
-    if (auth.status === 'recovering') return {
-      headline:       'Signing in…',
-      subline:        'Authentication in progress',
-      dotColor:       'blue',
-      dotPulse:       true,
-      headlineCls:    'text-accent-blue',
-      signedIn:       false,
-      needsAttention: false,
-      inProgress:     true,
-    }
-
-    if (auth.status === 'needs_refresh') return {
-      headline:       'Needs refresh',
-      subline:        auth.daxkoValid
-        ? 'Schedule connection lost — tap Refresh'
-        : 'Session expired — tap Sign in',
-      dotColor:       'amber',
-      dotPulse:       false,
-      headlineCls:    'text-accent-amber',
-      signedIn:       auth.daxkoValid,
-      needsAttention: true,
-      inProgress,
-    }
-
-    if (auth.status === 'signed_out') return {
+    if (auth.status === 'signed_out' || (!auth.daxkoValid && !auth.familyworksValid && auth.lastCheckedAt === null)) return {
+      state:          'needs_attention',
       headline:       'Signed out',
       subline:        'Sign in to enable booking',
       dotColor:       'red',
-      dotPulse:       false,
       headlineCls:    'text-accent-red',
       signedIn:       false,
       needsAttention: true,
-      inProgress,
+    }
+
+    // needs_refresh — partial or expired
+    return {
+      state:          'needs_attention',
+      headline:       'Needs attention',
+      subline:        auth.daxkoValid
+        ? 'Schedule connection lost'
+        : 'Session expired — sign in to continue',
+      dotColor:       'amber',
+      headlineCls:    'text-accent-amber',
+      signedIn:       auth.daxkoValid,
+      needsAttention: true,
     }
   }
 
   // ── Legacy fallback (pre-AuthState or cold start) ─────────────────────────
   if (!s) return {
+    state:          'unknown',
     headline:       'Checking…',
     subline:        '—',
     dotColor:       'gray',
-    dotPulse:       false,
     headlineCls:    'text-text-secondary',
     signedIn:       false,
     needsAttention: false,
-    inProgress:     false,
   }
 
   const signedIn   = s.daxko       === 'DAXKO_READY'
   const connActive = s.familyworks === 'FAMILYWORKS_READY'
 
   if (!signedIn) return {
+    state:          'needs_attention',
     headline:       'Needs attention',
     subline:        'Sign-in required',
     dotColor:       'amber',
-    dotPulse:       false,
     headlineCls:    'text-accent-red',
     signedIn:       false,
     needsAttention: true,
-    inProgress:     false,
   }
 
   if (!connActive) return {
+    state:          'needs_attention',
     headline:       'Signed in',
     subline:        'Schedule connection lost',
     dotColor:       'amber',
-    dotPulse:       false,
     headlineCls:    'text-text-primary',
     signedIn:       true,
     needsAttention: true,
-    inProgress:     false,
   }
 
   return {
+    state:          'connected',
     headline:       'Connected',
-    subline:        'Daxko and schedule are active',
+    subline:        'Daxko and schedule active',
     dotColor:       'green',
-    dotPulse:       false,
     headlineCls:    'text-text-primary',
     signedIn:       true,
     needsAttention: false,
-    inProgress:     false,
   }
+}
+
+function deriveOperationInfo(
+  s:          SessionStatus | null,
+  signingIn:  boolean,
+  refreshing: boolean,
+): OperationInfo {
+  // Local button state takes precedence — the user just tapped something.
+  if (signingIn)  return { state: 'signing_in', label: 'Signing in…' }
+  if (refreshing) return { state: 'verifying',  label: 'Verifying connection…' }
+
+  const auth   = s?.authState
+  const locked = s?.locked ?? false
+
+  // Auth lock held but not by a local button click — could be background recovery.
+  if (auth?.isAuthInProgress) {
+    return { state: 'signing_in', label: 'Signing in…' }
+  }
+
+  // Lock held without auth in progress → booking run owns the lane.
+  if (locked && !auth?.isAuthInProgress) {
+    return { state: 'blocked_by_booking', label: 'Booking run in progress' }
+  }
+
+  return { state: 'idle', label: null }
 }
 
 // ── Diagnostic helpers ────────────────────────────────────────────────────────
@@ -386,7 +409,8 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
   const tick = useTick(30_000, open)
   void tick
 
-  const info = deriveDisplay(session)
+  const conn = deriveConnectionInfo(session)
+  const op   = deriveOperationInfo(session, signingIn, refreshing)
   const auth = session?.authState ?? null
   const lastCheckedMs = auth?.lastCheckedAt ?? null
 
@@ -428,20 +452,35 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
 
           {/* ── Collapsed status block ────────────────────────────────── */}
           <div className="bg-[#f2f2f7] rounded-2xl px-4 py-4 mb-4">
+
+            {/* Connection truth — always the primary headline */}
             <div className="flex items-center gap-3">
-              <StatusDot color={info.dotColor} pulse={info.dotPulse} size="md" />
+              <StatusDot color={conn.dotColor} pulse={false} size="md" />
               <div className="flex-1 min-w-0">
-                <p className={`text-[17px] font-semibold leading-tight ${info.headlineCls}`}>
-                  {info.headline}
+                <p className={`text-[17px] font-semibold leading-tight ${conn.headlineCls}`}>
+                  {conn.headline}
                 </p>
                 <p className="text-[13px] text-text-secondary mt-0.5 leading-snug">
-                  {info.subline}
+                  {conn.subline}
                 </p>
               </div>
             </div>
 
-            {/* Last checked — shown below the headline */}
-            <p className="text-[12px] text-text-muted mt-3 leading-none">
+            {/* Operation state — secondary, only shown when not idle */}
+            {op.label && (
+              <div className="flex items-center gap-1.5 mt-2.5">
+                {(op.state === 'signing_in' || op.state === 'verifying') && (
+                  <svg className="w-3 h-3 animate-spin text-text-muted flex-shrink-0" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" />
+                    <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                )}
+                <p className="text-[12px] text-text-muted leading-none">{op.label}</p>
+              </div>
+            )}
+
+            {/* Last checked */}
+            <p className="text-[12px] text-text-muted mt-2.5 leading-none">
               {lastCheckedMs
                 ? `Checked ${formatRelative(lastCheckedMs)}`
                 : session?.lastVerified
@@ -449,7 +488,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                   : 'Not yet checked'}
             </p>
 
-            {/* Stage 6: Three-truth rows — always visible */}
+            {/* Three-truth rows — always visible */}
             <ThreeTruths auth={auth} session={session} />
           </div>
 
@@ -506,9 +545,9 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2.5">
                   Status
                 </p>
-                {(auth?.isAuthInProgress || session?.locked) && (
+                {op.state !== 'idle' && op.label && (
                   <>
-                    <DiagRow label="Auth in progress" value="Yes" ok={null} neutral />
+                    <DiagRow label="Activity" value={op.label} ok={null} neutral />
                     <Divider />
                   </>
                 )}
@@ -581,7 +620,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
 
           {/* ── Actions ──────────────────────────────────────────────── */}
           <div className="flex flex-col gap-2.5">
-            {!info.signedIn ? (
+            {!conn.signedIn ? (
               <>
                 <button
                   onClick={handleSignIn}

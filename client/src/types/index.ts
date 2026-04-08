@@ -6,6 +6,20 @@ export type OverallAuthStatus= 'DAXKO_READY' | 'FAMILYWORKS_READY' | 'FAMILYWORK
 
 export type AuthStatusEnum = 'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
 
+// ── Stage 1: Separated state models ───────────────────────────────────────────
+// Connection truth — what the session actually is, independent of what operation
+// is currently running.
+export type ConnectionState = 'connected' | 'needs_attention' | 'unknown'
+
+// Operation state — what auth-related action is currently in flight, if any.
+// Secondary to connection truth; should not override the settled headline.
+export type OperationState =
+  | 'idle'
+  | 'signing_in'
+  | 'verifying'
+  | 'blocked_by_booking'
+  | 'failed'
+
 export interface AuthState {
   status:              AuthStatusEnum
   daxkoValid:          boolean
