@@ -1127,6 +1127,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* Class name */}
           {job ? (
             <>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-1.5">
+                Active from Plan
+              </p>
               <h2 className="text-[28px] font-bold tracking-tighter text-text-primary leading-tight">
                 {job.class_title}
               </h2>

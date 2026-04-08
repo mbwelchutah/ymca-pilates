@@ -1,0 +1,366 @@
+You are polishing the Now tab of the YMCA Booker app so it works seamlessly with the redesigned Plan tab.
+
+PRIMARY GOAL
+
+Make the Now tab feel like:
+- the live execution view
+- the current active target
+- calm, trustworthy, and obvious
+- tightly connected to Plan
+
+Plan now acts like the upcoming booking queue.
+Now must clearly reflect the currently selected class from Plan.
+
+The user should feel:
+- “This is the class the system is focused on now.”
+- “I can see what happens next.”
+- “I do not need to decode the interface.”
+
+IMPORTANT PRODUCT DIRECTION
+
+Plan = upcoming queue
+Now = active selected item from Plan
+
+Now should answer only:
+1. What class is active right now?
+2. When does booking open?
+3. What state is the system in?
+4. Is the system ready?
+5. Do I need to do anything?
+
+Do NOT let Now become a debug panel.
+Do NOT surface technical clutter in the main view.
+Do NOT show overlapping signals that say the same thing.
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not break current booking logic
+- Do not break current Plan → Now card selection flow
+- Preserve strong trust/reliability signals, but simplify presentation
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+STAGE 1 — MAKE NOW CLEARLY TIED TO PLAN SELECTION
+==================================================
+
+Goal:
+Make it obvious that the Now tab is showing the active class selected from Plan.
+
+Tasks:
+1. Ensure the active class shown on Now always matches the selected/current card from Plan
+2. Add a subtle line or cue that makes this relationship clear, such as:
+   - “Active from Plan”
+   - or a small “Now” badge tied to the selected class identity
+3. Do not overdo the explanation
+4. Keep the user focused on the active class and its timing
+
+Success criteria:
+- user understands why this class is here
+- Plan and Now feel like one workflow
+
+After Stage 1:
+Stop and summarize:
+- how Now now reflects Plan selection
+- what visual cue was added
+
+==================================================
+STAGE 2 — SIMPLIFY THE HERO AREA
+==================================================
+
+Goal:
+Make the top of Now instantly readable.
+
+Tasks:
+1. Keep this order only:
+   - class name
+   - day/date/time/instructor
+   - countdown
+2. Make countdown the strongest visual element
+3. Keep “Opens <date/time>” as supporting text
+4. Remove any duplicate timing/date information nearby
+5. Tighten spacing so the hero feels compact and intentional
+
+Success criteria:
+- user can understand the top section in one glance
+- no competition from secondary UI
+
+After Stage 2:
+Stop and summarize:
+- what was simplified in the hero
+- what hierarchy now exists
+
+==================================================
+STAGE 3 — MAKE THE MAIN STATE CARD THE SINGLE SOURCE OF TRUTH
+==================================================
+
+Goal:
+Use one dominant state card instead of multiple competing signals.
+
+Tasks:
+1. Keep only one top-level state card in Now
+2. Main states should be limited to:
+   - Waiting
+   - Armed
+   - Booking
+   - Booked
+   - Needs attention
+3. Use calm human copy only
+
+Preferred examples:
+- Waiting:
+  “Booking will start automatically when the window opens.”
+- Armed:
+  “Everything is ready for the booking window.”
+- Booking:
+  “Attempting registration now.”
+- Booked:
+  “Registration confirmed.”
+- Needs attention:
+  “Something needs review before booking.”
+
+4. Remove duplicate or competing nearby messages
+
+Success criteria:
+- main state is obvious
+- user can trust this card as the top truth
+
+After Stage 3:
+Stop and summarize:
+- what the main state card now does
+- what duplicate messaging was removed
+
+==================================================
+STAGE 4 — CLEAN UP STATUS / TRUST SIGNALS
+==================================================
+
+Goal:
+Keep trust high without clutter.
+
+Tasks:
+1. Keep one compact trust line only, in this structure:
+   State · Confidence · Freshness
+
+Examples:
+- Armed · High confidence · checked just now
+- Waiting · High confidence · checked 1 min ago
+- Needs attention · At risk · checked 2 min ago
+
+2. Remove any duplicate confidence displays, repeated labels, or extra mini-status systems
+3. Keep trust line visually secondary to the main state card
+4. Ensure confidence supports the state instead of competing with it
+
+Success criteria:
+- one clean trust line
+- no layered/confusing confidence systems
+
+After Stage 4:
+Stop and summarize:
+- what trust/confidence UI remains
+- what redundancy was removed
+
+==================================================
+STAGE 5 — SIMPLIFY READINESS CHIPS
+==================================================
+
+Goal:
+Make readiness understandable at a glance.
+
+Tasks:
+1. Keep a simple four-part readiness row only:
+   - Session
+   - Class
+   - Modal
+   - Action
+2. Use clean labels only, such as:
+   - Ready
+   - Found
+   - Reachable
+   - Not open yet
+   - Needs attention
+3. Do not use technical/debug labels
+4. Ensure the row supports the main state, not competes with it
+5. Keep the row compact and easy to scan
+
+Success criteria:
+- readiness row is helpful, not noisy
+- labels are human and stable
+
+After Stage 5:
+Stop and summarize:
+- final readiness labels
+- what complexity was removed
+
+==================================================
+STAGE 6 — DEMOTE SECONDARY CONTROLS
+==================================================
+
+Goal:
+Make the user feel the system is operating automatically.
+
+Tasks:
+1. Demote controls such as:
+   - Verify
+   - Check again
+   - Refresh connection
+2. These should not feel like primary required actions in a healthy state
+3. Keep Live / Test available, but visually secondary
+4. If the system is healthy, controls should feel optional, not central
+
+Success criteria:
+- user does not feel responsible for driving the bot
+- controls no longer compete with state
+
+After Stage 6:
+Stop and summarize:
+- which controls were demoted
+- how the screen now feels more automatic
+
+==================================================
+STAGE 7 — REMOVE DEBUG / TOOLS LEAKAGE FROM NOW
+==================================================
+
+Goal:
+Keep Now focused on trust and execution, not diagnosis.
+
+Tasks:
+1. Remove or demote any debug-ish content that still leaks into Now
+2. Keep deep explanation, run history, raw issues, and diagnostics in Tools
+3. If needed, keep a subtle link only:
+   - “View details in Tools”
+4. Do not allow Now to become a troubleshooting surface
+
+Success criteria:
+- Now feels calm
+- Tools remains the home for detail and diagnosis
+
+After Stage 7:
+Stop and summarize:
+- what debug/tooling leakage was removed
+- how separation from Tools improved
+
+==================================================
+STAGE 8 — IMPROVE EMPTY / EDGE / TRANSITION STATES
+==================================================
+
+Goal:
+Make awkward states feel intentional.
+
+Tasks:
+1. Handle these gracefully:
+   - no class selected yet
+   - booking window closed
+   - class booked and advanced
+   - waiting for next occurrence
+   - issue state
+2. Use calm, plain language
+3. Avoid dead-end or confusing blank states
+4. Keep the user oriented toward what is next
+
+Success criteria:
+- transition states feel designed
+- user is not confused by edge cases
+
+After Stage 8:
+Stop and summarize:
+- what edge states were improved
+- how transitions now feel clearer
+
+==================================================
+STAGE 9 — VISUAL POLISH PASS
+==================================================
+
+Goal:
+Make Now feel premium, calm, and mobile-first.
+
+Tasks:
+1. Tighten spacing and visual rhythm
+2. Reduce heavy dividers or unnecessary lines
+3. Standardize typography and card spacing
+4. Make hierarchy clear:
+   - hero
+   - main state
+   - trust line
+   - readiness
+   - optional controls
+5. Keep everything above the fold as much as reasonably possible
+
+Success criteria:
+- Now feels lighter and more polished
+- the active class and its state are easy to scan quickly
+
+After Stage 9:
+Stop and summarize:
+- what visual polish was applied
+- how the screen feels more premium
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY PASS
+==================================================
+
+Goal:
+Make Now and Plan feel like one coherent product.
+
+Tasks:
+1. Audit the full Now screen for duplication, confusion, or leftover old patterns
+2. Ensure:
+   - Plan selects the active class
+   - Now shows the live execution target
+   - state is clear
+   - trust is clear
+   - readiness is simple
+   - controls are secondary
+3. Remove anything that still feels like:
+   - admin UI
+   - debug UI
+   - duplicate status language
+
+Optional helper text only if truly useful:
+- “Selected from Plan”
+
+Success criteria:
+- Now feels complete
+- Plan and Now feel tightly integrated
+- user understands what is happening without effort
+
+After Stage 10:
+Stop and summarize:
+- what final inconsistencies were removed
+- why the final Now tab is stronger
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+The final Now tab should feel like:
+- the live execution companion to Plan
+- calm
+- obvious
+- trustworthy
+- mobile-first
+- premium
+
+It should clearly show:
+- the active class
+- when it opens
+- the system state
+- whether it is ready
+- what the user should do (usually nothing)
+
+It should not feel like:
+- a debug panel
+- a control console
+- a pile of overlapping signals
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
