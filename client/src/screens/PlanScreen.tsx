@@ -771,61 +771,68 @@ function dayOfWeekNum(job: Job): number {
   return DAY_NAME_TO_NUM[raw as string] ?? 8
 }
 
-function sortJobs(jobs: Job[], mode: SortMode): Job[] {
+type SortDir = 'asc' | 'desc'
+
+function sortJobs(jobs: Job[], mode: SortMode, dir: SortDir): Job[] {
+  const d = dir === 'asc' ? 1 : -1
   return [...jobs].sort((a, b) => {
     if (mode === 'name') {
       const n = a.class_title.localeCompare(b.class_title)
-      if (n !== 0) return n
-      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+      if (n !== 0) return n * d
+      return (timeToMinutes(a.class_time) - timeToMinutes(b.class_time)) * d
     }
     if (mode === 'instructor') {
       const ai = (a.instructor ?? '').toLowerCase()
       const bi = (b.instructor ?? '').toLowerCase()
+      // Empty instructor always last regardless of direction
       if (!ai && bi) return 1
       if (ai && !bi) return -1
       const c = ai.localeCompare(bi)
-      if (c !== 0) return c
-      return a.class_title.localeCompare(b.class_title)
+      if (c !== 0) return c * d
+      return a.class_title.localeCompare(b.class_title) * d
     }
 
-    // 'date' mode — three-bucket sort
-    const today = new Date().toISOString().slice(0, 10)   // 'YYYY-MM-DD'
+    // 'date' mode — three-bucket sort.
+    // Bucket order is FIXED (upcoming always before past) regardless of direction.
+    // Direction only affects ordering WITHIN each bucket.
+    const today = new Date().toISOString().slice(0, 10)
     const da    = a.target_date ?? ''
     const db    = b.target_date ?? ''
-    const aIsPast    = !!da && da < today   // bucket 3
+    const aIsPast    = !!da && da < today
     const bIsPast    = !!db && db < today
-    const aIsUndated = !da                  // bucket 2
+    const aIsUndated = !da
     const bIsUndated = !db
 
-    // Bucket priority: upcoming-specific (0) < undated-recurring (1) < past (2)
     const bucketA = aIsPast ? 2 : aIsUndated ? 1 : 0
     const bucketB = bIsPast ? 2 : bIsUndated ? 1 : 0
     if (bucketA !== bucketB) return bucketA - bucketB
 
-    // Within bucket 0 (upcoming specific): ascending by date, then time
     if (bucketA === 0) {
-      if (da !== db) return da < db ? -1 : 1
-      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+      if (da !== db) return (da < db ? -1 : 1) * d
+      return (timeToMinutes(a.class_time) - timeToMinutes(b.class_time)) * d
     }
-
-    // Within bucket 1 (undated recurring): by day-of-week, then time
     if (bucketA === 1) {
       const dA = dayOfWeekNum(a)
       const dB = dayOfWeekNum(b)
-      if (dA !== dB) return dA - dB
-      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+      if (dA !== dB) return (dA - dB) * d
+      return (timeToMinutes(a.class_time) - timeToMinutes(b.class_time)) * d
     }
-
-    // Within bucket 2 (past): ascending by date (oldest first), then time
-    if (da !== db) return da < db ? -1 : 1
-    return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+    if (da !== db) return (da < db ? -1 : 1) * d
+    return (timeToMinutes(a.class_time) - timeToMinutes(b.class_time)) * d
   })
 }
 
 const SORT_LABELS: Record<SortMode, string> = {
   date:       'Date',
-  name:       'Name',
+  name:       'Class',
   instructor: 'Instructor',
+}
+
+// Active pill label including direction indicator
+function sortPillLabel(mode: SortMode, dir: SortDir): string {
+  if (mode === 'date')       return dir === 'asc' ? 'Date ↑' : 'Date ↓'
+  if (mode === 'name')       return dir === 'asc' ? 'Class A–Z' : 'Class Z–A'
+  /* instructor */           return dir === 'asc' ? 'Instructor A–Z' : 'Instructor Z–A'
 }
 const SORT_MODES: SortMode[] = ['date', 'name', 'instructor']
 
@@ -835,6 +842,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
   const [editingJob, setEditingJob]   = useState<Job | null>(null)
   const [sortMode, setSortMode]       = useState<SortMode>('date')
+  const [sortDir,  setSortDir]        = useState<SortDir>('asc')
 
   // ── Stage 7: bgReadiness polling for the watched job ──────────────────────
   const [bgReadiness, setBgReadiness] = useState<Awaited<ReturnType<typeof api.getReadiness>> | null>(null)
@@ -981,20 +989,30 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         {/* Stage 3: Sort pills — only shown when 2+ classes are loaded */}
         {!showAdd && !loading && appState.jobs.length >= 2 && (
           <div className="flex gap-2">
-            {SORT_MODES.map(mode => (
-              <button
-                key={mode}
-                onClick={() => setSortMode(mode)}
-                className={`
-                  px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors
-                  ${sortMode === mode
-                    ? 'bg-accent-blue text-white'
-                    : 'bg-[#f2f2f7] text-text-secondary active:opacity-70'}
-                `}
-              >
-                {SORT_LABELS[mode]}
-              </button>
-            ))}
+            {SORT_MODES.map(mode => {
+              const active = sortMode === mode
+              return (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    if (active) {
+                      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                    } else {
+                      setSortMode(mode)
+                      setSortDir('asc')
+                    }
+                  }}
+                  className={`
+                    px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap
+                    ${active
+                      ? 'bg-accent-blue text-white'
+                      : 'bg-[#f2f2f7] text-text-secondary active:opacity-70'}
+                  `}
+                >
+                  {active ? sortPillLabel(mode, sortDir) : SORT_LABELS[mode]}
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -1010,7 +1028,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </Card>
         ) : (
           <div className="flex flex-col gap-3">
-            {sortJobs(appState.jobs, sortMode)
+            {sortJobs(appState.jobs, sortMode, sortDir)
               .map(job => (
               <JobCard
                 key={job.id}
