@@ -8,9 +8,10 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { createSession }   = require('./daxko-session');
-const { saveCookies }     = require('./session-ping');
-const { updateAuthState } = require('./auth-state');
+const { createSession }                       = require('./daxko-session');
+const { saveCookies }                         = require('./session-ping');
+const { updateAuthState }                     = require('./auth-state');
+const { acquireLock, releaseLock, isLocked }  = require('./auth-lock');
 
 const DATA_DIR    = path.resolve(__dirname, '../data');
 const STATUS_FILE = path.join(DATA_DIR, 'session-status.json');
@@ -33,8 +34,41 @@ function loadStatus() {
   }
 }
 
-// source: 'manual' | 'keepalive' | 'preflight'
+// source: 'manual' | 'keepalive' | 'preflight' | 'auto-recovery:*' | 'refresh' | 'validator'
 async function runSessionCheck({ source = 'manual' } = {}) {
+  // ── Stage 4: Single auth lane ─────────────────────────────────────────────
+  // All browser-launching auth operations must go through the auth lock so that
+  // concurrent callers (keepalive Tier-3, auto-preflight recovery, manual API,
+  // settings-refresh, session-validator) are serialized and never race.
+  //
+  // If the lock is already held (booking run, settings login, or a concurrent
+  // session check), skip immediately.  The holder will update auth state when
+  // it completes, so the caller's result would be redundant anyway.
+  if (isLocked()) {
+    console.log(`[session-check] Skipping (${source}) — auth lock held by concurrent operation.`);
+    return {
+      valid:      null,
+      blocked:    true,
+      checkedAt:  new Date().toISOString(),
+      source,
+      detail:     'Auth lock held — a concurrent login or session check is already in progress',
+      screenshot: null,
+    };
+  }
+  const lockAcquired = acquireLock(`session-check:${source}`);
+  if (!lockAcquired) {
+    console.log(`[session-check] Skipping (${source}) — failed to acquire auth lock (race condition).`);
+    return {
+      valid:      null,
+      blocked:    true,
+      checkedAt:  new Date().toISOString(),
+      source,
+      detail:     'Failed to acquire auth lock',
+      screenshot: null,
+    };
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   const checkedAt = new Date().toISOString();
   let session = null;
 
@@ -89,6 +123,7 @@ async function runSessionCheck({ source = 'manual' } = {}) {
     if (session) {
       try { await session.close(); } catch (_) {}
     }
+    releaseLock();
   }
 }
 

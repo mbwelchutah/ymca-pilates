@@ -17,6 +17,7 @@ const { recordFailure }               = require('../db/failures');
 const { getAllJobs }                   = require('../db/jobs');
 const { refreshReadiness }            = require('../bot/readiness-state');
 const { pingSessionHttp }             = require('../bot/session-ping');
+const { isLocked }                    = require('../bot/auth-lock');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
@@ -179,6 +180,15 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
   // Don't overlap with another keepalive already in flight.
   if (running) {
     console.log('[session-keepalive] Skipping — already running.');
+    return;
+  }
+
+  // Stage 4: Single auth lane — skip if a booking run, settings login, or
+  // another session check already holds the auth lock.  runSessionCheck() also
+  // guards itself, but checking here avoids even the Tier-1 freshness work and
+  // makes the skip reason visible in the server log.
+  if (isLocked()) {
+    console.log('[session-keepalive] Skipping — auth lock held by concurrent operation.');
     return;
   }
 
