@@ -150,6 +150,14 @@ const fmt = (ms: number) =>
     hour: 'numeric', minute: '2-digit',
   })
 
+// "Apr 11 • 10:20 PM" — bullet separator between date and time, matches Plan tab style.
+const fmtDot = (ms: number) => {
+  const d    = new Date(ms)
+  const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `${date} • ${time}`
+}
+
 // Relative-time label for "last checked" display (Stage 9F).
 function relativeLabel(iso: string | null): string {
   if (!iso) return ''
@@ -185,18 +193,6 @@ function formatPreflightTime(iso: string): string {
   } catch { return '—' }
 }
 
-// Absolute date + a "· in Xd Xh" suffix when the time is in the future.
-function fmtWithRelative(ms: number): string {
-  const abs  = fmt(ms)
-  const diff = ms - Date.now()
-  if (diff <= 0) return abs
-  const d = Math.floor(diff / 86_400_000)
-  const h = Math.floor((diff % 86_400_000) / 3_600_000)
-  const m = Math.floor((diff % 3_600_000) / 60_000)
-  if (d > 0) return `${abs} · in ${d}d ${h}h`
-  if (h > 0) return `${abs} · in ${h}h ${m}m`
-  return `${abs} · in ${m}m`
-}
 
 // ── Primary result derivation (Stage 3) ────────────────────────────────────────
 // Single source of truth for the most important message on the Now screen.
@@ -1226,8 +1222,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {bookingOpenMs != null && (
                 <p className="text-[12px] text-text-muted mt-2">
                   {execPhase === 'warmup'
-                    ? `Opening soon · ${fmt(bookingOpenMs)}`
-                    : `Opens ${fmt(bookingOpenMs)}`}
+                    ? `Opening soon · ${fmtDot(bookingOpenMs)}`
+                    : `Opens at ${fmtDot(bookingOpenMs)}`}
                 </p>
               )}
             </div>
