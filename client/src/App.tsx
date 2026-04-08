@@ -86,6 +86,39 @@ export default function App() {
     setAutoVerifySignal(s => s + 1)
   }, [loading, selectedJobId, state.jobs])
 
+  // ── Auto-advance to Now when the watched class gets booked ────────────────
+  // Detects a transition of last_result → 'booked' across polling cycles.
+  // Uses two refs so switching classes or reloading never fires a false advance:
+  //   watchedJobIdRef:  resets the baseline when selectedJobId changes.
+  //   watchedResultRef: holds the previous result for transition detection.
+  const watchedJobIdRef     = useRef<number | null>(null)
+  const watchedResultRef    = useRef<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (selectedJobId == null) return
+    const job = state.jobs.find(j => j.id === selectedJobId)
+    if (!job) return
+
+    const curr = job.last_result ?? null
+
+    // Selected job changed — record baseline, do not navigate
+    if (watchedJobIdRef.current !== selectedJobId) {
+      watchedJobIdRef.current  = selectedJobId
+      watchedResultRef.current = curr
+      return
+    }
+
+    const prev = watchedResultRef.current
+
+    // Transition to 'booked' from any other state → switch to Now
+    if (prev !== 'booked' && curr === 'booked' && tab !== 'now') {
+      setTab('now')
+      localStorage.setItem('mobileTab', 'now')
+    }
+
+    watchedResultRef.current = curr
+  }, [state.jobs, selectedJobId, tab])
+
   const handleSelectJob = (id: number) => {
     setSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
