@@ -9,12 +9,19 @@
 //
 // The lock is held process-wide — a single Node.js server process is the
 // expected runtime, so no IPC mechanism is needed.
+//
+// Stage 2: acquiring/releasing the lock automatically syncs
+// isAuthInProgress in AuthState so the UI and API always reflect
+// whether a browser auth operation is currently in flight.
+
+const { updateAuthState } = require('./auth-state');
 
 let _locked    = false;
 let _lockOwner = null;
 
 /**
  * Try to acquire the lock.
+ * Sets isAuthInProgress = true in AuthState when successful.
  * @param {string} owner — human-readable caller label
  * @returns {boolean} true if lock was acquired, false if already held
  */
@@ -23,16 +30,22 @@ function acquireLock(owner) {
   _locked    = true;
   _lockOwner = owner || 'unknown';
   console.log(`[auth-lock] Acquired by "${_lockOwner}"`);
+  updateAuthState({ isAuthInProgress: true });
   return true;
 }
 
-/** Release the lock. Safe to call when not held (no-op). */
+/**
+ * Release the lock.
+ * Sets isAuthInProgress = false in AuthState.
+ * Safe to call when not held (no-op).
+ */
 function releaseLock() {
   if (!_locked) return;
   const prev = _lockOwner;
   _locked    = false;
   _lockOwner = null;
   console.log(`[auth-lock] Released by "${prev}"`);
+  updateAuthState({ isAuthInProgress: false });
 }
 
 /** Returns true if the lock is currently held. */
