@@ -511,12 +511,12 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
   const labelClass = 'text-[12px] font-semibold text-text-secondary uppercase tracking-wide mb-1 block'
 
   const formTitle  = isEditing    ? 'Edit Class'
-                   : isFromBrowse ? 'Track This Class'
+                   : isFromBrowse ? 'Add to Plan'
                    :                'Add a Class'
 
   const saveLabel  = saving       ? 'Saving…'
                    : isEditing    ? 'Save Changes'
-                   : isFromBrowse ? 'Use This Class'
+                   : isFromBrowse ? 'Add to Plan'
                    :                'Add Class'
 
   return (
@@ -653,7 +653,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
             <p className="text-[12px] text-accent-red mt-1">{refreshErr}</p>
           )}
           <p className="text-[12px] text-text-muted mt-0.5">
-            Refreshing takes ~20–30 s and requires your YMCA login.
+            Schedule refresh takes ~30 seconds.
           </p>
         </div>
 
