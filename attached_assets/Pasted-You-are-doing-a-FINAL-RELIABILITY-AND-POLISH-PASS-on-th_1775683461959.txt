@@ -1,0 +1,384 @@
+You are doing a FINAL RELIABILITY AND POLISH PASS on the Plan screen of the YMCA Booker app.
+
+IMPORTANT SCOPE RULE
+
+Do NOT add new features.
+Do NOT redesign the product direction.
+Do NOT expand scope.
+
+Assume:
+- Plan architecture is already mostly correct
+- Add flow exists
+- Browse placeholder exists
+- sorting exists
+- Plan → Now connection exists
+- cards exist
+- edit/remove exist
+
+This pass is ONLY about improving what is already there.
+
+PRIMARY GOAL
+
+Make the Plan screen feel:
+- reliable
+- consistent
+- calm
+- polished
+- mobile-first
+- production-ready
+
+This is the final refinement pass, not a feature build.
+
+The Plan screen should feel like:
+→ a trustworthy upcoming booking queue
+→ cleanly connected to Now
+→ easy to scan and use on iPhone
+→ free of awkwardness, duplication, or unfinished-feeling UI
+
+==================================================
+WHAT TO IMPROVE
+==================================================
+
+Focus on these specific areas:
+
+1. Reliability of the visible state
+2. Sort clarity and consistency
+3. Button hierarchy and action clarity
+4. Card consistency
+5. Active/Now selection clarity
+6. Remove stray/debug-ish signals
+7. Visual polish and spacing
+8. Make unfinished Browse/Add states feel intentional, not broken
+
+Do NOT invent new systems.
+
+==================================================
+STAGE 1 — RELIABILITY PASS ON PLAN STATE
+==================================================
+
+Goal:
+Make sure the Plan screen always shows stable, truthful UI.
+
+Tasks:
+1. Audit Plan state rendering for inconsistencies:
+   - selected card highlight
+   - sort state
+   - card status
+   - top summary
+2. Ensure no card shows stale or contradictory state
+3. Ensure the active “Now” card is always correctly derived
+4. Ensure sort choice persists correctly while navigating or refreshing if that is already part of the behavior
+5. Remove any UI flicker, stale labels, or odd state carryover
+
+Success criteria:
+- Plan screen feels stable
+- visible state is truthful and consistent
+- no surprising stale UI remains
+
+After Stage 1:
+Stop and summarize:
+- what stale/inconsistent states were fixed
+- what is now more reliable
+
+==================================================
+STAGE 2 — FINAL SORT POLISH
+==================================================
+
+Goal:
+Make sorting feel finished and obvious.
+
+Tasks:
+1. Confirm Date ascending is the default
+2. Confirm tapping same sort again reverses direction
+3. Make sort direction visually clear
+4. Ensure labels are short, obvious, and consistent:
+   - Date ↑ / Date ↓
+   - Class A–Z / Class Z–A
+   - Instructor A–Z / Instructor Z–A
+5. Make sure the active sort chip is visually balanced and not oversized
+6. Ensure sort row spacing feels clean and not cramped
+
+Success criteria:
+- user instantly understands current sort
+- reverse behavior feels natural
+- sort row looks polished
+
+After Stage 2:
+Stop and summarize:
+- final sort behavior
+- what changed visually
+
+==================================================
+STAGE 3 — ADD / BROWSE / MANUAL ENTRY POLISH
+==================================================
+
+Goal:
+Keep the current add structure, but make it feel more intentional.
+
+Tasks:
+1. Keep Browse Schedule as the primary action
+2. Keep Add Manually as the secondary action
+3. Improve hierarchy and spacing between the two
+4. Ensure Add Manually looks like a real action, not placeholder text
+5. Since Browse is not yet fully hooked up, make its current state feel graceful and intentional
+6. Remove any wording that feels broken, temporary, or awkward
+7. Keep loading/empty states calm and clean
+
+Success criteria:
+- add actions feel intentional
+- Browse does not feel broken
+- the add area looks finished even if Browse is incomplete
+
+After Stage 3:
+Stop and summarize:
+- what was polished in the add area
+- how Browse now feels less awkward
+
+==================================================
+STAGE 4 — CARD CONSISTENCY PASS
+==================================================
+
+Goal:
+Make every Plan card feel consistent and finished.
+
+Tasks:
+1. Standardize card layout across all items
+2. Ensure every card consistently shows:
+   - class name
+   - metadata line
+   - status
+   - opens line
+   - edit
+   - remove
+3. Ensure spacing and typography are identical across cards
+4. Make sure cards with “Now” / active highlight still follow the same base layout
+5. Remove any cards that feel visually different unless intentionally highlighted
+6. Make sure timing lines always use the same structure
+
+Preferred card pattern:
+- Title
+- Day, Date • Time • Instructor
+- Status
+- Opens at [date/time] • in [countdown]
+- Actions
+
+Success criteria:
+- cards look uniform
+- scanning multiple cards feels easy
+- one card does not feel oddly different from another
+
+After Stage 4:
+Stop and summarize:
+- what inconsistencies were corrected
+- how card structure is now more uniform
+
+==================================================
+STAGE 5 — STATUS LANGUAGE CLEANUP
+==================================================
+
+Goal:
+Make Plan status labels calm and useful.
+
+Tasks:
+1. Keep status language simple and human:
+   - Scheduled
+   - Armed
+   - Booked
+   - Issue
+2. Remove any lingering diagnostic-style text
+3. If “Issue” remains on some cards, make sure it feels subtle and not alarming
+4. Ensure the status line does not duplicate other card information
+5. Make sure the status tone fits Plan (planning), not Tools (diagnostics)
+
+Success criteria:
+- statuses are easy to understand
+- statuses do not feel like debug output
+- issue states do not dominate visually
+
+After Stage 5:
+Stop and summarize:
+- final status vocabulary
+- how status presentation improved
+
+==================================================
+STAGE 6 — ACTIVE / NOW CARD POLISH
+==================================================
+
+Goal:
+Make the selected card’s relationship to Now feel clear and refined.
+
+Tasks:
+1. Keep only one active card tied to Now
+2. Ensure its highlight treatment is subtle and intentional
+3. Keep the “Now” badge or equivalent, but make sure it does not feel noisy
+4. Make sure the selected card does not look broken or over-emphasized
+5. Ensure the helper text:
+   - “Tap a class to open it on Now”
+   feels appropriate, or refine/remove if redundant
+
+Success criteria:
+- user can clearly identify the active card
+- Plan → Now relationship feels polished
+- no over-highlighting
+
+After Stage 6:
+Stop and summarize:
+- how the active card was refined
+- whether helper text changed
+
+==================================================
+STAGE 7 — EDIT / REMOVE ACTION BALANCE
+==================================================
+
+Goal:
+Keep actions visible, but reduce visual heaviness.
+
+Tasks:
+1. Keep Edit and Remove visible on every card
+2. Make sure Edit is clearly tappable
+3. Make sure Remove remains available but not overly dominant
+4. Reduce heavy destructive styling if it still pulls too much attention
+5. Ensure the action row feels aligned and balanced across cards
+6. Make sure buttons do not crowd the card visually
+
+Success criteria:
+- actions are easy to use
+- cards do not feel bottom-heavy
+- Remove does not overpower the card
+
+After Stage 7:
+Stop and summarize:
+- what changed in the action row
+- how balance improved
+
+==================================================
+STAGE 8 — SPACING / TYPOGRAPHY / VISUAL RHYTHM
+==================================================
+
+Goal:
+Make the whole Plan screen feel premium and calm.
+
+Tasks:
+1. Tighten vertical rhythm between:
+   - top summary
+   - add actions
+   - sort row
+   - card list
+2. Make spacing feel intentional, not loose or cramped
+3. Standardize typography hierarchy:
+   - section summary
+   - primary CTA
+   - card title
+   - metadata
+   - status/timing
+4. Soften unnecessary borders/dividers if needed
+5. Ensure the full screen feels easy to scan with one hand on mobile
+
+Success criteria:
+- better visual rhythm
+- more premium feel
+- less clutter / less awkward spacing
+
+After Stage 8:
+Stop and summarize:
+- what spacing/typography changes were made
+- how the screen now feels more polished
+
+==================================================
+STAGE 9 — REMOVE “UNFINISHED” FEELING
+==================================================
+
+Goal:
+Eliminate anything that makes Plan feel halfway done.
+
+Tasks:
+1. Audit the screen for:
+   - placeholder-feeling copy
+   - awkward empty states
+   - weak helper text
+   - mismatched hierarchy
+   - accidental debug/admin energy
+2. Refine wording so the screen feels deliberate
+3. Make sure all current behavior feels intentional, even if Browse is not complete yet
+4. Remove or soften anything that draws attention to incomplete implementation
+
+Success criteria:
+- screen feels productized
+- user does not feel unfinished edges
+- no “prototype energy” remains
+
+After Stage 9:
+Stop and summarize:
+- what unfinished-feeling elements were cleaned up
+- why the screen feels more complete
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY + QA PASS
+==================================================
+
+Goal:
+Do one final pass so Plan feels finished.
+
+Tasks:
+1. Verify all of the following together:
+   - Date ascending default works
+   - reverse sort works
+   - active card is correct
+   - cards are consistent
+   - add area is clean
+   - edit/remove are balanced
+   - status language is calm
+   - top summary is accurate
+2. Fix any remaining edge inconsistencies
+3. Make sure the screen communicates clearly:
+   - how many classes
+   - what opens next
+   - what is active on Now
+   - how to add/edit/remove
+4. Final polish for trust and readability
+
+Success criteria:
+- Plan feels complete
+- no major awkwardness remains
+- screen feels reliable and intentionally designed
+
+After Stage 10:
+Stop and summarize:
+- final refinements made
+- why the Plan screen is now more production-ready
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass, the Plan screen should:
+
+- feel stable and truthful
+- be easy to scan
+- default to Date ascending
+- support tap-to-reverse sorting
+- show clear, human status language
+- keep Add Manually visible and useful
+- keep Browse graceful while unfinished
+- show one clear active card tied to Now
+- keep Edit / Remove visible but balanced
+- feel premium, calm, and iPhone-friendly
+
+It should NOT feel:
+- debuggy
+- admin-heavy
+- unfinished
+- cluttered
+- inconsistent
+
+OUTPUT RULES
+
+At each stage:
+1. implement ONLY that stage
+2. keep app runnable
+3. summarize exactly what changed
+4. explain what remains
+5. STOP
+
+Start with STAGE 1 only.
+Do not jump ahead.

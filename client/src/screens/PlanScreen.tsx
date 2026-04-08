@@ -56,6 +56,18 @@ const RESULT_LABEL: Record<string, string> = {
 // Results worth surfacing on the card (transient/noise ones are excluded)
 const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
 
+// A result badge is "current" if the result is still relevant to the next class occurrence.
+//   - error / not_found: always show (actionable regardless of age)
+//   - target_date job:   always show (result is specific to that date)
+//   - recurring job:     only show if the run was within the past 8 days (same booking cycle)
+function isResultCurrent(job: Job): boolean {
+  if (job.last_result === 'error' || job.last_result === 'not_found') return true
+  if (job.target_date) return true
+  const refAt = job.last_result === 'booked' ? job.last_success_at : job.last_run_at
+  if (!refAt) return false
+  return Date.now() - new Date(refAt).getTime() < 8 * 24 * 60 * 60 * 1000
+}
+
 function formatOpens(ms: number): string {
   const now  = Date.now()
   const d    = new Date(ms)
@@ -255,30 +267,40 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
           {detailLine}
         </p>
 
-        {/* Row 3: Status */}
-        {job.is_active && (
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <StatusDot color={PHASE_DOT[phase]} size="sm" />
-              <span className="text-[13px] text-text-secondary font-medium">
-                {PHASE_LABEL[phase]}
-              </span>
+        {/* Row 3: Status
+             Phase label is suppressed for the watched card when sniperRow is present —
+             the sniper row below provides real-time, more precise phase information and
+             the coarse PHASE_LABEL (e.g. "Booking Now") can contradict it ("Monitoring"). */}
+        {job.is_active && (() => {
+          const showPhase = !isWatching || !sniperRow
+          const showBadge = !!(job.last_result && RESULT_SHOW.has(job.last_result) && isResultCurrent(job))
+          if (!showPhase && !showBadge && !toggleErr) return null
+          return (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {showPhase && (
+                <div className="flex items-center gap-1.5">
+                  <StatusDot color={PHASE_DOT[phase]} size="sm" />
+                  <span className="text-[13px] text-text-secondary font-medium">
+                    {PHASE_LABEL[phase]}
+                  </span>
+                </div>
+              )}
+              {showBadge && (
+                <span className={`
+                  text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none
+                  ${job.last_result === 'booked'  ? 'bg-accent-green/10 text-accent-green'
+                  : job.last_result === 'dry_run' ? 'bg-accent-green/10 text-accent-green'
+                  :                                 'bg-[#f2f2f7] text-text-secondary'}
+                `}>
+                  {RESULT_LABEL[job.last_result!]}
+                </span>
+              )}
+              {toggleErr && (
+                <span className="text-[12px] text-accent-red">{toggleErr}</span>
+              )}
             </div>
-            {job.last_result && RESULT_SHOW.has(job.last_result) && (
-              <span className={`
-                text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none
-                ${job.last_result === 'booked'   ? 'bg-accent-green/10 text-accent-green'
-                : job.last_result === 'dry_run'  ? 'bg-accent-green/10 text-accent-green'
-                :                                  'bg-[#f2f2f7] text-text-secondary'}
-              `}>
-                {RESULT_LABEL[job.last_result]}
-              </span>
-            )}
-            {toggleErr && (
-              <span className="text-[12px] text-accent-red">{toggleErr}</span>
-            )}
-          </div>
-        )}
+          )
+        })()}
 
         {/* Row 4: Timing — absolute date + live countdown */}
         {timingLine && (
