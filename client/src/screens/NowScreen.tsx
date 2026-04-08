@@ -1290,7 +1290,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
           {/* Actions section */}
           {job && (
-            <div className="mt-3 pt-3 border-t border-divider">
+            <div className="mt-2 pt-2 border-t border-divider">
 
               {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
               {/* Stage 9: suppressed when the status banner already shows a complete state */}
@@ -1316,7 +1316,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   result.severity === 'info'    ? 'blue'  :
                   'gray'
                 return (
-                  <div className={`rounded-xl px-3.5 py-3 mt-2 mb-2 ${bgClass}`}>
+                  <div className={`rounded-xl px-3.5 py-3 mt-2 mb-1 ${bgClass}`}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <StatusDot color={dotColor} />
                       <span className={`text-[15px] font-semibold ${labelClass}`}>
@@ -1467,7 +1467,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   ) : (
                     <button
                       onClick={handlePauseResume}
-                      className="text-[12px] text-text-muted active:opacity-50 py-1"
+                      className="text-[12px] text-text-muted active:opacity-50 py-2 px-4"
                     >
                       Pause
                     </button>
@@ -1476,7 +1476,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )}
 
               {/* Step 3 — Compact utility row: inline mode toggle + verify button */}
-              <div className="flex items-center justify-between mt-1 pt-2 border-t border-divider">
+              <div className="flex items-center justify-between mt-2">
                 {/* Inline Live / Test toggle — subdued, no heavy background */}
                 <div className="flex items-center gap-0.5 text-[12px]">
                   <button
