@@ -139,21 +139,37 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
-  const dayName = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
-  const phase = (job.phase ?? 'unknown') as Phase
+  const dayName  = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
+  const phase    = (job.phase ?? 'unknown') as Phase
+  const countdown = useCountdown(job.bookingOpenMs ?? null)
+
+  // Details line: "Tue, Apr 14 · 4:20 PM · Gretl" or "Tuesday · 4:20 PM · Gretl"
+  const detailParts = [
+    job.target_date
+      ? `${dayName.slice(0, 3)}, ${formatShortDate(job.target_date)}`
+      : dayName,
+    job.class_time,
+    job.instructor || null,
+  ].filter(Boolean)
+  const detailLine = detailParts.join(' · ')
+
+  // Timing line: "Opens Apr 11 at 10:20 PM" + live countdown when window is upcoming
+  const timingLine = (() => {
+    if (job.bookingOpenMs == null) return null
+    const abs = formatOpens(job.bookingOpenMs)
+    const isFuture = job.bookingOpenMs > Date.now()
+    if (isFuture && countdown) return `${abs}  ·  in ${countdown}`
+    return abs
+  })()
 
   const handleToggleClick = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (toggling) return
     setToggling(true)
     setToggleErr(null)
-    try {
-      await onToggle()
-    } catch {
-      setToggleErr('Could not update — try again')
-    } finally {
-      setToggling(false)
-    }
+    try { await onToggle() }
+    catch { setToggleErr('Could not update — try again') }
+    finally { setToggling(false) }
   }
 
   const handleConfirmDelete = async () => {
@@ -161,223 +177,205 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
     setDeleteErr(null)
     try {
       await onDelete()
-      // On success the card unmounts — no state reset needed
     } catch {
-      setDeleteErr('Could not remove class — try again')
+      setDeleteErr('Could not remove — try again')
       setConfirming(false)
       setDeleting(false)
     }
   }
 
-  const handleCancel = () => {
-    setConfirming(false)
-    setDeleteErr(null)
-  }
-
   return (
-    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-50' : ''}`}>
-      {/* Watching stripe */}
-      {isWatching && (
-        <div className="h-1 bg-accent-blue w-full" />
-      )}
+    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-60' : ''}`}>
+      {/* Active-target accent stripe */}
+      {isWatching && <div className="h-[3px] bg-accent-blue w-full" />}
 
-      {/* Main tappable body — selects the job */}
+      {/* ── Tappable body ────────────────────────────────────────────── */}
       <div
         role="button"
         tabIndex={0}
         onClick={onSelect}
         onKeyDown={e => e.key === 'Enter' && onSelect()}
-        className="px-4 py-3.5 flex items-start gap-3 cursor-pointer active:bg-divider transition-colors"
+        className="px-4 pt-3.5 pb-3 cursor-pointer active:bg-[#f9f9f9] transition-colors"
       >
-        <div className="flex-1 min-w-0">
-          {/* Class name row */}
-          <div className="flex items-center gap-2">
-            <StatusDot color={job.is_active ? 'green' : 'gray'} size="sm" />
-            <span className="text-[16px] font-semibold text-text-primary tracking-tight leading-tight">
+        {/* Row 1: class name + On/Off toggle */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+            <span className="text-[17px] font-bold text-text-primary tracking-tight leading-tight">
               {job.class_title}
             </span>
             {isWatching && (
-              <span className="ml-auto text-[11px] font-semibold text-accent-blue bg-accent-blue/10 px-2 py-0.5 rounded-pill flex-shrink-0">
-                Watching
+              <span className="text-[11px] font-semibold text-accent-blue bg-accent-blue/10 px-2 py-0.5 rounded-full leading-none">
+                Now
               </span>
             )}
           </div>
-
-          {/* Day + time + instructor + target date */}
-          <p className="text-[13px] text-text-secondary mt-0.5">
-            {dayName} at {job.class_time}
-            {job.instructor ? ` · ${job.instructor}` : ''}
-            {job.target_date ? ` · ${formatShortDate(job.target_date)}` : ''}
-          </p>
-
-          {/* Phase + booking window */}
-          {job.is_active && (
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <StatusDot color={PHASE_DOT[phase]} size="sm" />
-              <span className="text-[12px] text-text-secondary">
-                {PHASE_LABEL[phase]}
-                {job.bookingOpenMs != null
-                  ? ` · ${formatOpens(job.bookingOpenMs)}`
-                  : ''}
-              </span>
-            </div>
-          )}
-
-          {/* ── Stage 7: Sniper phase row — watched card only ────────────── */}
-          {isWatching && sniperRow && (() => {
-            const { phase: sp, sessOk, classOk, modalOk, countdown } = sniperRow
-
-            if (sp === 'monitoring') {
-              const anyOk = sessOk || classOk || modalOk
-              const sig = (ok: boolean, label: string) => ok
-                ? <span key={label} className="text-accent-green">{label} ✓</span>
-                : <span key={label} className="text-text-muted/70">{label} —</span>
-              return (
-                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
-                  {anyOk ? (
-                    <span className="text-[12px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
-                      <span>Monitoring</span>
-                      <span className="text-text-muted/40">·</span>
-                      {sig(sessOk, 'Session')}
-                      <span className="text-text-muted/40">·</span>
-                      {sig(classOk, 'Class')}
-                      <span className="text-text-muted/40">·</span>
-                      {sig(modalOk, 'Modal')}
-                    </span>
-                  ) : (
-                    <span className="text-[12px] text-text-secondary font-medium">Monitoring</span>
-                  )}
-                </div>
-              )
-            }
-
-            if (sp === 'locked') {
-              return (
-                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
-                  <span className="text-[12px] text-text-secondary font-medium">
-                    {'Locked on '}
-                    <span className="text-accent-amber font-semibold">{job.class_title}</span>
-                  </span>
-                </div>
-              )
-            }
-
-            if (sp === 'armed') {
-              return (
-                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
-                  <span className="text-[12px] text-text-secondary font-medium">
-                    {'Armed · '}
-                    <span className="text-accent-green">Class</span>
-                    {' · '}
-                    <span className="text-accent-green">Session</span>
-                    {' · '}
-                    <span className="text-accent-green">Modal</span>
-                  </span>
-                </div>
-              )
-            }
-
-            if (sp === 'countdown') {
-              return (
-                <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
-                  <span className="text-[12px] text-text-secondary font-medium">
-                    {'Firing in '}
-                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
-                  </span>
-                </div>
-              )
-            }
-
-            const info     = SNIPER_PHASE_INFO[sp]
-            const dotColor: Record<typeof info.dotColor, string> = {
-              green: 'bg-accent-green',
-              amber: 'bg-accent-amber',
-              gray:  'bg-text-muted/50',
-              blue:  'bg-accent-blue',
-            }
-            return (
-              <div key={sp} className="flex items-center gap-2 mt-1.5 animate-sniper-phase">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${info.pulse ? 'animate-pulse' : ''}`} />
-                <span className="text-[12px] text-text-secondary font-medium">{info.label}</span>
-              </div>
-            )
-          })()}
-
-          {/* Last booking result */}
-          {job.last_result && RESULT_SHOW.has(job.last_result) && (
-            <div className="flex items-center gap-1.5 mt-1">
-              <StatusDot color={RESULT_DOT[job.last_result] ?? 'gray'} size="sm" />
-              <span className="text-[12px] text-text-muted">
-                Last: {RESULT_LABEL[job.last_result] ?? job.last_result}
-              </span>
-            </div>
-          )}
+          <button
+            onClick={handleToggleClick}
+            disabled={toggling}
+            className={`
+              flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold
+              transition-colors active:opacity-70 disabled:opacity-40
+              ${job.is_active
+                ? 'bg-accent-green/10 text-accent-green'
+                : 'bg-[#f2f2f7] text-text-secondary'}
+            `}
+          >
+            {toggling ? '…' : job.is_active ? 'On' : 'Off'}
+          </button>
         </div>
 
-        {/* Active toggle — stop propagation so it doesn't also select the job */}
-        <button
-          onClick={handleToggleClick}
-          disabled={toggling}
-          className={`
-            mt-0.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold flex-shrink-0
-            transition-colors active:opacity-70 disabled:opacity-40
-            ${job.is_active
-              ? 'bg-accent-green/10 text-accent-green'
-              : 'bg-divider text-text-secondary'}
-          `}
-        >
-          {toggling ? '…' : job.is_active ? 'On' : 'Off'}
-        </button>
+        {/* Row 2: Day · Date · Time · Instructor */}
+        <p className="text-[14px] text-text-secondary mt-1.5 leading-snug">
+          {detailLine}
+        </p>
+
+        {/* Row 3: Status */}
+        {job.is_active && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <StatusDot color={PHASE_DOT[phase]} size="sm" />
+              <span className="text-[13px] text-text-secondary font-medium">
+                {PHASE_LABEL[phase]}
+              </span>
+            </div>
+            {job.last_result && RESULT_SHOW.has(job.last_result) && (
+              <span className={`
+                text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none
+                ${job.last_result === 'booked' || job.last_result === 'dry_run'
+                  ? 'bg-accent-green/10 text-accent-green'
+                  : 'bg-accent-red/10 text-accent-red'}
+              `}>
+                {RESULT_LABEL[job.last_result]}
+              </span>
+            )}
+            {toggleErr && (
+              <span className="text-[12px] text-accent-red">{toggleErr}</span>
+            )}
+          </div>
+        )}
+
+        {/* Row 4: Timing — absolute date + live countdown */}
+        {timingLine && (
+          <p className="text-[12px] text-text-muted mt-1 tabular-nums leading-snug">
+            {timingLine}
+          </p>
+        )}
+
+        {/* Sniper detail row — watched card only, unchanged logic */}
+        {isWatching && sniperRow && (() => {
+          const { phase: sp, sessOk, classOk, modalOk, countdown: sniperCountdown } = sniperRow
+
+          if (sp === 'monitoring') {
+            const anyOk = sessOk || classOk || modalOk
+            const sig = (ok: boolean, label: string) => ok
+              ? <span key={label} className="text-accent-green">{label} ✓</span>
+              : <span key={label} className="text-text-muted/70">{label} —</span>
+            return (
+              <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
+                {anyOk ? (
+                  <span className="text-[12px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
+                    <span>Monitoring</span>
+                    <span className="text-text-muted/40">·</span>
+                    {sig(sessOk, 'Session')}
+                    <span className="text-text-muted/40">·</span>
+                    {sig(classOk, 'Class')}
+                    <span className="text-text-muted/40">·</span>
+                    {sig(modalOk, 'Modal')}
+                  </span>
+                ) : (
+                  <span className="text-[12px] text-text-secondary font-medium">Monitoring</span>
+                )}
+              </div>
+            )
+          }
+          if (sp === 'locked') {
+            return (
+              <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-amber" />
+                <span className="text-[12px] text-text-secondary font-medium">
+                  Locked on <span className="text-accent-amber font-semibold">{job.class_title}</span>
+                </span>
+              </div>
+            )
+          }
+          if (sp === 'armed') {
+            return (
+              <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
+                <span className="text-[12px] text-text-secondary font-medium">
+                  Armed · <span className="text-accent-green">Class</span> · <span className="text-accent-green">Session</span> · <span className="text-accent-green">Modal</span>
+                </span>
+              </div>
+            )
+          }
+          if (sp === 'countdown') {
+            return (
+              <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
+                <span className="text-[12px] text-text-secondary font-medium">
+                  Firing in <span className="text-accent-green font-semibold tabular-nums">{sniperCountdown || '—'}</span>
+                </span>
+              </div>
+            )
+          }
+          const info = SNIPER_PHASE_INFO[sp]
+          const dotColor: Record<typeof info.dotColor, string> = {
+            green: 'bg-accent-green', amber: 'bg-accent-amber',
+            gray: 'bg-text-muted/50', blue: 'bg-accent-blue',
+          }
+          return (
+            <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor[info.dotColor]} ${info.pulse ? 'animate-pulse' : ''}`} />
+              <span className="text-[12px] text-text-secondary font-medium">{info.label}</span>
+            </div>
+          )
+        })()}
       </div>
 
-      <div className="h-px bg-divider mx-4" />
+      <div className="h-px bg-divider" />
 
-      {/* Footer: edit + delete */}
-      <div className="px-4 py-2.5 flex flex-col gap-1.5">
-        {toggleErr && (
-          <p className="text-[12px] text-accent-red">{toggleErr}</p>
-        )}
+      {/* ── Action row ───────────────────────────────────────────────── */}
+      <div className="px-3 py-2.5">
         {deleteErr && (
-          <p className="text-[12px] text-accent-red">{deleteErr}</p>
+          <p className="text-[12px] text-accent-red mb-2 px-1">{deleteErr}</p>
         )}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={e => { e.stopPropagation(); onEdit() }}
-            className="text-[13px] text-accent-blue font-medium active:opacity-70"
-          >
-            Edit
-          </button>
-          {confirming ? (
-            <div className="flex items-center gap-3">
-              <span className="text-[13px] text-text-secondary">Remove this class?</span>
+        {confirming ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] text-text-secondary">Remove this class?</span>
+            <div className="flex gap-3">
               <button
-                onClick={handleCancel}
+                onClick={() => { setConfirming(false); setDeleteErr(null) }}
                 disabled={deleting}
-                className="text-[13px] font-semibold text-text-secondary disabled:opacity-40"
+                className="text-[13px] font-semibold text-text-secondary disabled:opacity-40 active:opacity-70"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDelete}
                 disabled={deleting}
-                className="text-[13px] font-semibold text-accent-red disabled:opacity-40"
+                className="text-[13px] font-semibold text-accent-red disabled:opacity-40 active:opacity-70"
               >
                 {deleting ? 'Removing…' : 'Remove'}
               </button>
             </div>
-          ) : (
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={e => { e.stopPropagation(); onEdit() }}
+              className="flex-1 py-2 rounded-xl bg-[#f2f2f7] text-accent-blue text-[14px] font-semibold active:opacity-70 transition-opacity"
+            >
+              Edit
+            </button>
             <button
               onClick={() => setConfirming(true)}
-              className="text-[13px] text-text-muted active:opacity-70"
+              className="flex-1 py-2 rounded-xl bg-accent-red/10 text-accent-red text-[14px] font-semibold active:opacity-70 transition-opacity"
             >
               Remove
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </Card>
   )
