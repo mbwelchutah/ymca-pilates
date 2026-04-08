@@ -4174,68 +4174,82 @@ const server = http.createServer((req, res) => {
     json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()), authState: getAuthState() });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
-    // Runs a dedicated login check — login only, no booking pipeline.
-    // Checks Daxko credentials via a live browser login, then reads the most
-    // recent FamilyWorks session status from persisted files (no FW browser run).
+    // Session verification — Tier 2 (HTTP ping) first, Tier 3 (Playwright) as fallback.
+    // Stage 4: request-first validation avoids launching a browser for the common
+    // case where sessions are still active (HTTP ping confirms in ~1–5 s).
+    //
+    // Escalation (Tier 1 skipped — user asked for active network verification):
+    //   Tier 2: HTTP ping via saved cookies (~1–5 s, no browser) → return immediately
+    //   Tier 3: Full Playwright session check (~30 s) → only when Tier 2 fails
+    //
     // Emits a SESSION_VERIFY event to sniper-state.json so it appears in Tools.
     // Does NOT call setLastRun; does NOT reset the readiness bundle.
     if (jobState.active) {
-      // Return valid:null (not false) so the UI does not show a red auth-failure
-      // notice — "bot busy" is different from "login failed."
-      json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null, label: 'Bot busy', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN' });
+      // Return valid:null (not false) — "bot busy" is different from "login failed."
+      json({ valid: null, checkedAt: null, detail: 'Bot is currently running — try again when it finishes', screenshot: null, label: 'Bot busy', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN', tier: null });
       return;
     }
     (async () => {
       try {
+        const checkedAt = new Date().toISOString();
+
+        // ── Helper: read FW status from persisted file (≤ 6 h) ───────────────
+        function readFwStatusFile() {
+          try {
+            const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
+            if (!fsStatic.existsSync(fwPath)) return 'AUTH_UNKNOWN';
+            const fwData = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
+            const ageMs  = Date.now() - new Date(fwData.checkedAt || 0).getTime();
+            return (ageMs < 6 * 3600 * 1000) ? (fwData.status || 'AUTH_UNKNOWN') : 'AUTH_UNKNOWN';
+          } catch (_) { return 'AUTH_UNKNOWN'; }
+        }
+
+        // ── Helper: emit + respond ────────────────────────────────────────────
+        function finish({ valid, tier, detail, daxko, familyworks, screenshot = null }) {
+          const label = !valid ? (daxko !== 'DAXKO_READY' ? 'Login required' : 'Schedule access missing')
+            : (familyworks === 'FAMILYWORKS_READY' || daxko === 'DAXKO_READY') ? 'Session ready'
+            : 'Session ready';
+          try {
+            const { emitSessionCheck } = require('../bot/sniper-readiness');
+            emitSessionCheck(daxko, familyworks, `Verify Session (Tier ${tier}): ${label} — ${detail}`);
+          } catch (_) { /* non-fatal */ }
+          json({ valid, checkedAt, detail, screenshot, label, daxko, familyworks, tier });
+        }
+
+        // ── Tier 2: HTTP ping via saved cookies ───────────────────────────────
+        console.log('[session-check] Tier-2 HTTP ping...');
+        const { pingSessionHttp } = require('../bot/session-ping');
+        const pingResult = await pingSessionHttp();
+
+        if (pingResult.trusted) {
+          console.log('[session-check] Tier-2 trusted —', pingResult.detail);
+          const familyworks = readFwStatusFile();
+          return finish({
+            valid: true, tier: 2,
+            detail: `Tier 2: ${pingResult.detail}`,
+            daxko: 'DAXKO_READY', familyworks,
+          });
+        }
+
+        // ── Tier 2 miss — escalate to Tier 3 Playwright ──────────────────────
+        console.log('[session-check] Tier-2 miss:', pingResult.detail, '— escalating to Tier 3');
         const { runSessionCheck } = require('../bot/session-check');
         const result = await runSessionCheck();
 
-        // ── Daxko status ────────────────────────────────────────────────────
-        const daxko = result.valid === true  ? 'DAXKO_READY'
-                    : result.valid === false ? 'AUTH_NEEDS_LOGIN'
-                    :                         'AUTH_UNKNOWN';
+        const daxko      = result.valid === true  ? 'DAXKO_READY'
+                         : result.valid === false ? 'AUTH_NEEDS_LOGIN'
+                         :                         'AUTH_UNKNOWN';
+        const familyworks = daxko === 'DAXKO_READY' ? readFwStatusFile() : 'AUTH_UNKNOWN';
 
-        // ── FamilyWorks status (file-based, no additional browser run) ──────
-        // Reads familyworks-session.json written by preflight / Settings login.
-        // Treats entries older than 6 hours as Unknown to avoid stale "Ready".
-        let familyworks = 'AUTH_UNKNOWN';
-        try {
-          const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
-          if (fsStatic.existsSync(fwPath)) {
-            const fwData = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
-            const ageMs  = Date.now() - new Date(fwData.checkedAt || 0).getTime();
-            if (ageMs < 6 * 3600 * 1000) {
-              familyworks = fwData.status || 'AUTH_UNKNOWN';
-            }
-            // else: FW status is stale — leave as AUTH_UNKNOWN
-          }
-        } catch (_) { /* non-fatal — familyworks stays AUTH_UNKNOWN */ }
+        return finish({
+          valid: result.valid === true, tier: 3,
+          detail: result.detail || '',
+          daxko, familyworks, screenshot: result.screenshot || null,
+        });
 
-        // ── Human-readable result label ─────────────────────────────────────
-        let label;
-        if (result.valid === null) {
-          label = 'Bot busy';
-        } else if (daxko !== 'DAXKO_READY') {
-          label = 'Login required';
-        } else if (familyworks === 'FAMILYWORKS_READY') {
-          label = 'Session ready';
-        } else if (familyworks === 'FAMILYWORKS_SESSION_MISSING') {
-          label = 'Schedule access missing';
-        } else {
-          // Daxko confirmed; FW stale or unknown — partial verification
-          label = 'Session ready';
-        }
-
-        // ── Log to Tools (sniper-state event log) ───────────────────────────
-        try {
-          const { emitSessionCheck } = require('../bot/sniper-readiness');
-          emitSessionCheck(daxko, familyworks, `Verify Session: ${label} — ${result.detail || ''}`);
-        } catch (_) { /* non-fatal */ }
-
-        json({ ...result, daxko, familyworks, label });
       } catch (err) {
         console.error('[session-check] route error:', err.message);
-        json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null, label: 'Verification failed', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN' });
+        json({ valid: false, checkedAt: new Date().toISOString(), detail: err.message, screenshot: null, label: 'Verification failed', daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN', tier: null });
       }
     })();
 
