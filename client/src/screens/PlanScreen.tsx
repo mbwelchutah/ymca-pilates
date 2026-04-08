@@ -46,18 +46,11 @@ const PHASE_LABEL: Record<Phase, string> = {
   unknown:   'Scheduled',
 }
 
-const RESULT_DOT: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = {
-  booked:   'green',
-  dry_run:  'blue',
-  error:    'red',
-  not_found:'red',
-}
-
 const RESULT_LABEL: Record<string, string> = {
   booked:   'Booked',
   dry_run:  'Test run',
-  error:    'Error',
-  not_found:'Not found',
+  error:    'Issue',      // "Error" replaced — Plan stays calm, not a debug view
+  not_found:'Issue',      // "Not found" replaced — same rationale
 }
 
 // Results worth surfacing on the card (transient/noise ones are excluded)
@@ -263,9 +256,9 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             {job.last_result && RESULT_SHOW.has(job.last_result) && (
               <span className={`
                 text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none
-                ${job.last_result === 'booked' || job.last_result === 'dry_run'
-                  ? 'bg-accent-green/10 text-accent-green'
-                  : 'bg-accent-red/10 text-accent-red'}
+                ${job.last_result === 'booked'   ? 'bg-accent-green/10 text-accent-green'
+                : job.last_result === 'dry_run'  ? 'bg-accent-green/10 text-accent-green'
+                :                                  'bg-[#f2f2f7] text-text-secondary'}
               `}>
                 {RESULT_LABEL[job.last_result]}
               </span>
