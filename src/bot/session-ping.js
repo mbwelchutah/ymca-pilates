@@ -233,8 +233,10 @@ async function pingSessionHttp() {
       lastCheckedAt:    Date.now(),
     });
     return {
-      trusted: true,
-      detail:  `Tier-2 ping OK — Daxko session active, FamilyWorks session active`,
+      trusted:          true,
+      daxkoConfirmed:   true,
+      fwConfirmed:      true,
+      detail:           `Tier-2 ping OK — Daxko session active, FamilyWorks session active`,
       daxkoResult,
       fwResult,
     };
@@ -257,9 +259,13 @@ async function pingSessionHttp() {
     reason = !daxkoOk ? daxkoResult.detail : fwResult.detail;
   }
 
+  // daxkoConfirmed is true even on partial miss — used by callers to decide
+  // whether saved FW cookies are worth attempting for session reuse.
   return {
-    trusted: false,
-    detail:  `Tier-2 ping miss — ${reason}`,
+    trusted:          false,
+    daxkoConfirmed:   daxkoOk,
+    fwConfirmed:      fwOk,
+    detail:           `Tier-2 ping miss — ${reason}`,
     daxkoResult,
     fwResult,
   };

@@ -6,7 +6,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { chromium } = require('playwright');
 const { updateAuthState } = require('./auth-state');
-const { pingSessionHttp } = require('./session-ping');
+const { pingSessionHttp, loadCookies } = require('./session-ping');
 
 let CHROMIUM_PATH;
 try {
@@ -87,6 +87,27 @@ async function createSession(opts = {}) {
     timezoneId: 'America/Los_Angeles',
     viewport: { width: 1280, height: 800 },
   });
+
+  // ── Stage 1: Inject saved cookies for session reuse ───────────────────────
+  // Load cookies saved from the last successful Playwright login and inject
+  // them into the new browser context.  If the cookies are still valid the
+  // FW schedule modal will show "Register/Waitlist" directly — credentials
+  // are never needed.  If expired, the modal shows "Login to Register" and
+  // the OAuth flow runs as the recovery path.
+  let cookiesInjected = 0;
+  try {
+    const savedCookies = loadCookies();
+    if (savedCookies && savedCookies.length > 0) {
+      await context.addCookies(savedCookies);
+      cookiesInjected = savedCookies.length;
+      console.log(`[session-reuse] Injected ${cookiesInjected} saved cookies — attempting session reuse.`);
+    } else {
+      console.log('[session-reuse] No saved cookies found — fresh login will be required.');
+    }
+  } catch (e) {
+    console.warn('[session-reuse] Cookie injection failed:', e.message, '— continuing without injected cookies.');
+  }
+
   const page = await context.newPage();
 
   // snap — saves a full-page screenshot and trims the directory to 20 files.
@@ -187,7 +208,10 @@ async function createSession(opts = {}) {
       const hasLoginRequired = cleanBtns.some(t => /log\s*in\s+to\s+register|sign\s*in\s+to\s+register|login\s+to\s+register/i.test(t));
 
       if (hasSessionReady) {
-        console.log('[session] FW session already valid — Register/Waitlist button visible.');
+        const reuseMsg = cookiesInjected > 0
+          ? `[session-reuse] ✓ Session reused — Register/Waitlist visible (${cookiesInjected} cookies active, no credentials needed).`
+          : '[session] FW session already valid — Register/Waitlist button visible.';
+        console.log(reuseMsg);
         sessionAlreadyValid = true;
         updateAuthState({
           daxkoValid:          true,
@@ -199,7 +223,10 @@ async function createSession(opts = {}) {
         await page.keyboard.press('Escape').catch(() => {});
         await page.waitForTimeout(500);
       } else if (hasLoginRequired) {
-        console.log('[session] Modal shows "Login to Register" — initiating FW OAuth via Daxko...');
+        const credMsg = cookiesInjected > 0
+          ? '[session-reuse] ✗ Saved cookies expired — Login to Register visible. Using credentials for recovery.'
+          : '[session] Modal shows "Login to Register" — initiating FW OAuth via Daxko...';
+        console.log(credMsg);
 
         // Click "Login to Register" — because we have NO Daxko session yet,
         // this should redirect to Daxko's find_account login page.
