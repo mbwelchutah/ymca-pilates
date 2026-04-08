@@ -248,7 +248,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
       if (result.success) {
         setFeedback({ text: result.detail ?? 'Signed in successfully', cls: 'text-accent-green' })
       } else {
-        setFeedback({ text: result.detail ?? 'Sign-in failed — check credentials in Settings', cls: 'text-accent-red' })
+        setFeedback({ text: result.detail ?? 'Sign-in failed — check server credentials and try again', cls: 'text-accent-red' })
       }
       fetchSession()
     } catch {

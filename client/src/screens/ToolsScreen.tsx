@@ -1147,7 +1147,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           if (sessionStatus?.daxko === 'AUTH_NEEDS_LOGIN') {
             items.push({
               title:  'Session needs login',
-              detail: 'Your YMCA account session has expired. Open Settings and sign in again to re-enable booking.',
+              detail: 'Your YMCA account session has expired. Tap the account icon to sign in again.',
               color:  'red',
             })
           }
@@ -1159,7 +1159,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           ) {
             items.push({
               title:  'Schedule session unavailable',
-              detail: 'FamilyWorks schedule access is missing or expired. Open Settings to reconnect.',
+              detail: 'FamilyWorks schedule access is missing or expired. Tap the account icon to reconnect.',
               color:  'red',
             })
           }

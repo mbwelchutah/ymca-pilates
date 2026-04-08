@@ -282,8 +282,8 @@ function derivePrimaryResult(opts: {
       state:    'issue',
       label:    'Needs attention',
       detail:   isExpired
-        ? 'Your session has expired. Open Settings to log in again.'
-        : 'Login required. Open Settings to connect your account.',
+        ? 'Your session has expired. Tap the account icon to sign in again.'
+        : 'Login required. Tap the account icon to sign in.',
       severity: 'error',
     }
   }
@@ -435,8 +435,8 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   // the lock being held is not itself an auth failure.
   if (sessionStatus?.locked) return null
   // Settings session state takes priority over sniper signals
-  if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — open Settings to log in'
-  if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'Session expired — open Settings to log in again'
+  if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — tap the account icon to sign in'
+  if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'Session expired — tap the account icon to sign in again'
   if (!s) return null
   switch (s.sniperState) {
     case 'SNIPER_BLOCKED_AUTH':      return 'Login required — session unavailable'
@@ -551,7 +551,7 @@ function AccountSessionBlock({
         )}
         {authDetail?.verdict === 'login_required' && !verifying && (
           <p className="text-[12px] text-accent-red mt-0.5 leading-snug">
-            {authDetail.detail ?? 'Credentials rejected — re-enter in Settings'}
+            {authDetail.detail ?? 'Credentials rejected — tap the account icon to sign in again'}
           </p>
         )}
         {authDetail?.verdict === 'ready' && !verifying && (
@@ -572,7 +572,7 @@ function AccountSessionBlock({
         </div>
         {authDetail?.verdict === 'session_expired' && !verifying && (
           <p className="text-[12px] text-accent-amber mt-0.5 leading-snug">
-            {authDetail.detail ?? 'Schedule access requires re-login — use Settings → Log in now'}
+            {authDetail.detail ?? 'Schedule access requires re-login — tap the account icon to sign in again'}
           </p>
         )}
         {authDetail?.verdict === 'ready' && !verifying && (
