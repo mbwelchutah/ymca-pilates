@@ -842,7 +842,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [preflightRunning, setPreflightRunning] = useState(false)
   const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
   const [checkStep,    setCheckStep]    = useState<string | null>(null)
-  const [checkElapsed,         setCheckElapsed]         = useState<number>(0)
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
   const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
   // Stage 4: stable confidence label — separate hysteresis for the label so it
@@ -900,15 +899,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setPreflightRunning(true)
 
     // ── Step progress timer ───────────────────────────────────────────────────
-    // Ticks every 1 s.  Elapsed count is shown live to the user.
-    // Step label advances only when the elapsed threshold for the next step
-    // is crossed — so each stage is visible for its realistic duration.
+    // Ticks every 1 s.  Step label advances once the elapsed-seconds threshold
+    // for the next step is crossed — each stage is visible for its realistic duration.
     let elapsed = 0
-    setCheckElapsed(0)
     setCheckStep(CHECK_STEPS[0].label)
     stepTimerRef.current = setInterval(() => {
       elapsed += 1
-      setCheckElapsed(elapsed)
       const current = [...CHECK_STEPS].reverse().find(s => elapsed >= s.atSec)
       if (current) setCheckStep(current.label)
     }, 1000)
@@ -930,7 +926,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     finally {
       if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
       setCheckStep(null)
-      setCheckElapsed(0)
       setPreflightRunning(false)
     }
   }
@@ -1526,7 +1521,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {preflightRunning && checkStep && (
                 <p className="text-center text-[11px] text-text-muted mt-1">
                   {checkStep}
-                  <span className="opacity-50"> · {checkElapsed}s</span>
                 </p>
               )}
 
