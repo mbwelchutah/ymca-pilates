@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
-import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
@@ -696,6 +695,46 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
   )
 }
 
+// ── Queue summary helpers ─────────────────────────────────────────────────────
+
+function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
+  const now        = Date.now()
+  const active     = jobs.filter(j => j.is_active)
+  const nextWindow = [...active]
+    .filter(j => j.bookingOpenMs != null && j.bookingOpenMs > now)
+    .sort((a, b) => (a.bookingOpenMs ?? Infinity) - (b.bookingOpenMs ?? Infinity))[0] ?? null
+  const nextMs     = nextWindow?.bookingOpenMs ?? null
+  const countdown  = useCountdown(nextMs)
+
+  if (loading) return null
+
+  const count     = jobs.length
+  const countText = count === 0 ? 'No classes yet'
+                  : `${count} class${count !== 1 ? 'es' : ''}`
+
+  return (
+    <div className="mb-4 mt-0.5">
+      <p className="text-[22px] font-bold text-text-primary tracking-tight leading-tight">
+        {countText}
+      </p>
+      {count > 0 && countdown ? (
+        <p className="text-[14px] text-text-secondary mt-0.5">
+          Next opens in{' '}
+          <span className="font-semibold text-text-primary tabular-nums">{countdown}</span>
+        </p>
+      ) : count > 0 && nextMs ? (
+        <p className="text-[14px] text-text-secondary mt-0.5">
+          Next opens {new Date(nextMs).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+        </p>
+      ) : count > 0 ? (
+        <p className="text-[14px] text-text-secondary mt-0.5">
+          No upcoming windows
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention, authStatus }: PlanScreenProps) {
   const [showAdd, setShowAdd]         = useState(false)
   const [showBrowse, setShowBrowse]   = useState(false)
@@ -807,7 +846,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   return (
     <>
       <AppHeader
-        subtitle="Schedule"
+        subtitle="Plan"
         action={showingControls ? { label: 'Add', onClick: () => { setEditingJob(null); setShowAdd(true) } } : undefined}
         secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
         onAccount={onAccount}
@@ -825,7 +864,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           />
         )}
 
-        <SectionHeader title={`${appState.jobs.length} Class${appState.jobs.length !== 1 ? 'es' : ''}`} />
+        {!showAdd && <QueueSummary jobs={appState.jobs} loading={loading} />}
 
         {loading ? (
           <Card className="flex items-center justify-center h-24">

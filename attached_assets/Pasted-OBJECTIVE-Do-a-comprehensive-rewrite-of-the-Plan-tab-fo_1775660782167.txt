@@ -1,0 +1,433 @@
+OBJECTIVE
+
+Do a comprehensive rewrite of the Plan tab for the YMCA Booker app.
+
+The Plan tab should no longer feel like a passive list of saved jobs.
+It should become a clean, mobile-first planning pipeline that works seamlessly with the Now screen.
+
+CORE PRODUCT DIRECTION
+
+Now = execution / live state / current target  
+Plan = upcoming classes / scheduling intent / what happens next
+
+Plan should answer:
+- what classes are coming up?
+- when will each one open?
+- which one is next?
+- what happens if I tap it?
+- how do I edit or remove it quickly?
+
+The Plan tab must feel:
+- simple
+- obvious
+- iPhone-friendly
+- tightly connected to Now
+- calm and modern
+- Apple-clean
+
+Do NOT make it feel like a database or admin panel.
+
+--------------------------------------------------
+PRIMARY DESIGN RULES
+--------------------------------------------------
+
+1. Plan and Now must feel like one workflow
+   - selecting a class in Plan should move to Now
+   - Now should show that selected class as the active focus
+
+2. Default sort must be:
+   - by date/time
+   - earliest upcoming class first
+
+3. Optional sort choices:
+   - Date
+   - Class name
+   - Instructor
+
+4. Each card must show:
+   - class name
+   - day/date
+   - class time
+   - instructor
+   - open time / opens in
+   - status
+   - visible edit
+   - visible delete
+
+5. Edit and delete must be more prominent than they are now
+
+6. “Add” is currently in the wrong place
+   - remove it from the top-right header
+   - replace with a better, context-aware add flow inside the Plan screen
+
+7. Browse / refresh errors or technical messages should not float awkwardly in Plan
+   - if needed, use clean inline empty-state wording
+   - do not show technical error clutter in the main Plan list
+
+8. After successful registration, the recurring class should automatically advance one week
+   - the completed occurrence should no longer be the active future target
+   - the next weekly occurrence should become the planned one
+
+--------------------------------------------------
+TARGET UX MODEL
+--------------------------------------------------
+
+Plan should feel like:
+
+“Here is my upcoming booking queue.”
+
+NOT:
+
+“Here is a list of records.”
+
+Top of Plan:
+- title / lightweight summary
+- next upcoming booking timing
+- Add Class CTA
+- sort control
+
+Main body:
+- upcoming class cards
+- earliest first
+
+Tap card behavior:
+- tapping a class card should make it the active target
+- app should navigate to Now
+- Now should reflect that selected class immediately
+
+--------------------------------------------------
+STAGE 1 — REFRAME PLAN AS AN UPCOMING QUEUE
+--------------------------------------------------
+
+Goal:
+Change the structure and mental model of Plan.
+
+Tasks:
+1. Rewrite Plan header area so it feels like an upcoming queue
+2. Add lightweight summary text such as:
+   - “7 classes”
+   - “Next opens in 2d 3h”
+3. Remove the current feeling of “list of jobs”
+4. Ensure the top of the screen feels clean and forward-looking
+
+Success criteria:
+- Plan feels like upcoming bookings, not stored jobs
+- user understands what is next
+
+After Stage 1:
+Stop and summarize:
+- what changed in the Plan header
+- how the tab now frames the user’s upcoming queue
+
+--------------------------------------------------
+STAGE 2 — MOVE ADD INTO THE PLAN FLOW
+--------------------------------------------------
+
+Goal:
+Fix the Add button placement.
+
+Tasks:
+1. Remove “Add” from the top-right header
+2. Add a clear in-context CTA inside the Plan screen:
+   - “+ Add Class”
+3. Place it near the top of Plan, below the summary area
+4. Make it obvious but not oversized
+5. Tapping it should open the schedule browsing / add flow
+
+Success criteria:
+- Add feels like part of planning, not global nav clutter
+- header is cleaner
+
+After Stage 2:
+Stop and summarize:
+- where Add now lives
+- why the placement is better
+
+--------------------------------------------------
+STAGE 3 — ADD SORT CONTROLS
+--------------------------------------------------
+
+Goal:
+Make list ordering useful and predictable.
+
+Tasks:
+1. Add sort control near the top of Plan
+2. Default sort:
+   - date/time ascending
+   - earliest upcoming class first
+3. Add optional sort modes:
+   - Date
+   - Class name
+   - Instructor
+4. Keep control visually light and iPhone-friendly
+5. Preserve sort selection cleanly in UI state if appropriate
+
+Success criteria:
+- default order is earliest first
+- optional sort is easy and not noisy
+
+After Stage 3:
+Stop and summarize:
+- default sort behavior
+- optional sort choices
+- where sort control appears
+
+--------------------------------------------------
+STAGE 4 — REDESIGN PLAN CARDS
+--------------------------------------------------
+
+Goal:
+Make each card readable, actionable, and tied to booking timing.
+
+Each card must show:
+1. Class name
+2. Day/date
+3. Class time
+4. Instructor
+5. Booking open timing:
+   - “Opens Apr 10 at 3:15 PM”
+   and/or
+   - “Opens in 2d 3h”
+6. Status
+7. Edit button
+8. Delete / Remove button
+9. ON/OFF state if that remains part of your model
+
+Preferred content structure:
+
+Class Name
+Day, Date • Time • Instructor
+
+Status line:
+Waiting / Armed / Opens soon / Booked / Issue
+
+Timing line:
+Opens Apr 10 at 3:15 PM
+or
+Opens in 2d 3h
+
+Action row:
+Edit    Delete
+
+Rules:
+- make Edit and Delete clearly visible
+- do not bury key actions
+- do not use tiny faint controls
+- card should be scannable in 2–3 seconds
+
+Success criteria:
+- user can understand a card immediately
+- edit/delete are easy to find
+- card feels modern and calm
+
+After Stage 4:
+Stop and summarize:
+- the new card layout
+- how visibility of edit/delete improved
+- how timing/status became clearer
+
+--------------------------------------------------
+STAGE 5 — CLEAN UP STATUS LANGUAGE
+--------------------------------------------------
+
+Goal:
+Make status labels more human and useful.
+
+Tasks:
+1. Replace vague or overly technical status language with clean states
+2. Use a simple, consistent set such as:
+   - Scheduled
+   - Waiting
+   - Armed
+   - Opens soon
+   - Running
+   - Booked
+   - Issue
+3. Ensure status means something useful in Plan
+4. Remove or demote internal signal strings like:
+   - Class · Session · Modal
+   unless intentionally shown in an advanced detail view
+
+Success criteria:
+- Plan statuses are understandable
+- status helps planning, not debugging
+
+After Stage 5:
+Stop and summarize:
+- final status vocabulary
+- what noisy status text was removed
+
+--------------------------------------------------
+STAGE 6 — MAKE PLAN → NOW A REAL FLOW
+--------------------------------------------------
+
+Goal:
+Connect the two tabs tightly.
+
+Tasks:
+1. Tapping a class card in Plan should:
+   - set that class as the active target
+   - navigate to Now
+2. Now should immediately show the selected class
+3. Ensure this handoff feels seamless and intentional
+4. If needed, visually indicate in Plan which card is currently feeding Now
+
+Success criteria:
+- Plan selection moves directly into Now
+- Plan and Now feel like one workflow
+
+After Stage 6:
+Stop and summarize:
+- how card selection now works
+- how Now reflects the selected class
+
+--------------------------------------------------
+STAGE 7 — AUTO-ADVANCE AFTER SUCCESSFUL REGISTRATION
+--------------------------------------------------
+
+Goal:
+Make recurring bookings self-maintaining.
+
+Tasks:
+1. After a successful registration, advance that recurring class forward by one week
+2. The booked occurrence should no longer remain the active future target
+3. The next weekly occurrence should become the upcoming planned item
+4. Preserve recurrence logic cleanly
+5. Ensure this update is reflected in both:
+   - Plan
+   - Now
+
+Success criteria:
+- after successful booking, next week becomes the planned target automatically
+- no stale completed occurrence remains as the main future item
+
+After Stage 7:
+Stop and summarize:
+- how auto-advance works
+- how Plan and Now update after success
+
+--------------------------------------------------
+STAGE 8 — REDESIGN THE BROWSE / ADD FLOW
+--------------------------------------------------
+
+Goal:
+Make schedule browsing feel like part of planning.
+
+Tasks:
+1. Replace the current awkward “Browse Schedule” experience with a cleaner add flow
+2. This flow should feel like:
+   - add class
+   - browse schedule
+   - choose class
+   - add to Plan
+3. Keep empty-state copy simple:
+   - “No classes yet”
+   - “Tap Refresh to load classes from the YMCA schedule”
+4. If refresh can take time, explain it calmly
+5. Do NOT surface technical or confusing error text in the main browsing state
+6. Keep this flow lightweight and mobile-friendly
+
+Success criteria:
+- browse/add feels integrated into Plan
+- empty and loading states feel calm and clear
+
+After Stage 8:
+Stop and summarize:
+- how browse/add now works
+- what empty/loading/error text changed
+
+--------------------------------------------------
+STAGE 9 — VISUAL POLISH PASS
+--------------------------------------------------
+
+Goal:
+Make the Plan tab feel premium and consistent with the rest of the product.
+
+Tasks:
+1. Tighten spacing and typography
+2. Make hierarchy clear:
+   - queue summary
+   - Add Class
+   - sort
+   - cards
+3. Reduce visual clutter
+4. Ensure buttons and badges are balanced
+5. Make the screen feel Apple-clean, not admin-heavy
+6. Keep it mobile-first and easy to scan
+
+Success criteria:
+- Plan looks modern and intentional
+- cards feel consistent
+- controls do not fight each other
+
+After Stage 9:
+Stop and summarize:
+- what visual polish was applied
+- how the screen now feels more premium
+
+--------------------------------------------------
+STAGE 10 — FINAL CONSISTENCY PASS
+--------------------------------------------------
+
+Goal:
+Make sure Plan, Now, and add flow all work together as one system.
+
+Tasks:
+1. Audit the whole Plan experience for duplication or confusion
+2. Ensure:
+   - Add belongs to Plan
+   - selecting a class moves to Now
+   - status language is clear
+   - sort defaults to earliest upcoming class
+   - edit/delete are visible
+   - post-booking auto-advance works
+3. Remove or refactor anything that still feels like old “saved jobs” UI
+4. Make the final result feel like a planning pipeline
+
+Success criteria:
+- Plan feels seamless with Now
+- user clearly understands what is next
+- screen feels like part of a polished product
+
+After Stage 10:
+Stop and summarize:
+- what final inconsistencies were removed
+- why the final Plan tab is stronger
+
+--------------------------------------------------
+FINAL SUCCESS CRITERIA
+--------------------------------------------------
+
+The final Plan tab should feel like:
+- a booking queue
+- a planning pipeline
+- a clean list of upcoming actions
+
+It should not feel like:
+- a passive database
+- an admin screen
+- a place where system/debug noise leaks in
+
+The user should be able to:
+- add a class naturally
+- sort upcoming classes clearly
+- see date, day, instructor, and class at a glance
+- edit or delete quickly
+- tap any item and move directly into Now
+- trust that after booking, the next week becomes the new planned target automatically
+
+--------------------------------------------------
+OUTPUT RULES
+--------------------------------------------------
+
+Implement this in stages.
+
+At each stage:
+1. implement only that stage
+2. keep the app runnable
+3. summarize exactly what changed
+4. explain what remains
+5. stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
