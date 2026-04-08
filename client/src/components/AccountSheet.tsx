@@ -151,6 +151,32 @@ function deriveDisplay(s: SessionStatus | null): DisplayInfo {
   }
 }
 
+// ── Diagnostic helpers ────────────────────────────────────────────────────────
+
+function Divider() {
+  return <div className="w-full h-px bg-[#e5e5ea] my-2" />
+}
+
+interface DiagRowProps {
+  label:   string
+  value:   string
+  ok:      boolean | null
+  neutral?: boolean
+}
+
+function DiagRow({ label, value, ok, neutral = false }: DiagRowProps) {
+  let valueCls = 'text-text-primary'
+  if (!neutral && ok === true)  valueCls = 'text-accent-green'
+  if (!neutral && ok === false) valueCls = 'text-accent-red'
+
+  return (
+    <div className="flex items-center justify-between py-0.5">
+      <span className="text-[13px] text-text-secondary">{label}</span>
+      <span className={`text-[13px] font-medium ${valueCls}`}>{value}</span>
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps) {
@@ -309,7 +335,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
             </p>
           </div>
 
-          {/* ── Details expander (Stage 7 will populate the body) ────── */}
+          {/* ── Details expander ─────────────────────────────────────── */}
           <button
             onClick={() => setExpanded(e => !e)}
             className="w-full flex items-center justify-between py-2.5 px-1 mb-3 active:opacity-60 transition-opacity"
@@ -324,33 +350,109 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
             </svg>
           </button>
 
-          {/* ── Expanded details panel (placeholder — Stage 7) ──────── */}
+          {/* ── Expanded diagnostics panel (Stage 7) ─────────────────── */}
           {expanded && (
-            <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3 mb-4">
-              <div className="flex flex-col gap-2.5 text-[13px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">Daxko</span>
-                  <span className={`font-medium ${auth?.daxkoValid ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {auth ? (auth.daxkoValid ? 'Valid' : 'Invalid') : session?.daxko === 'DAXKO_READY' ? 'Valid' : '—'}
-                  </span>
-                </div>
-                <div className="w-full h-px bg-[#e5e5ea]" />
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">Schedule</span>
-                  <span className={`font-medium ${auth?.familyworksValid ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {auth ? (auth.familyworksValid ? 'Active' : 'Inactive') : session?.familyworks === 'FAMILYWORKS_READY' ? 'Active' : '—'}
-                  </span>
-                </div>
-                {auth?.lastRecoveredAt && (
+            <div className="flex flex-col gap-3 mb-4">
+
+              {/* Group 1 — Connections */}
+              <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2.5">
+                  Connections
+                </p>
+                <DiagRow
+                  label="Daxko account"
+                  value={auth ? (auth.daxkoValid ? 'Valid' : 'Invalid') : session?.daxko === 'DAXKO_READY' ? 'Valid' : '—'}
+                  ok={auth ? auth.daxkoValid : session?.daxko === 'DAXKO_READY'}
+                />
+                <Divider />
+                <DiagRow
+                  label="Schedule"
+                  value={auth ? (auth.familyworksValid ? 'Active' : 'Inactive') : session?.familyworks === 'FAMILYWORKS_READY' ? 'Active' : '—'}
+                  ok={auth ? auth.familyworksValid : session?.familyworks === 'FAMILYWORKS_READY'}
+                />
+                {auth && (
                   <>
-                    <div className="w-full h-px bg-[#e5e5ea]" />
-                    <div className="flex items-center justify-between">
-                      <span className="text-text-secondary">Last login</span>
-                      <span className="font-medium text-text-primary">{formatRelative(auth.lastRecoveredAt)}</span>
-                    </div>
+                    <Divider />
+                    <DiagRow
+                      label="Booking surface"
+                      value={auth.bookingSurfaceValid ? 'Confirmed' : 'Not confirmed'}
+                      ok={auth.bookingSurfaceValid}
+                      neutral={!auth.bookingSurfaceValid}
+                    />
                   </>
                 )}
               </div>
+
+              {/* Group 2 — Status */}
+              <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2.5">
+                  Status
+                </p>
+                {(auth?.isAuthInProgress || session?.locked) && (
+                  <>
+                    <DiagRow label="Auth in progress" value="Yes" ok={null} neutral />
+                    <Divider />
+                  </>
+                )}
+                <DiagRow
+                  label="Last verified"
+                  value={lastCheckedMs
+                    ? formatRelative(lastCheckedMs)
+                    : session?.lastVerified
+                      ? formatChecked(session.lastVerified)
+                      : 'Never'}
+                  ok={null}
+                  neutral
+                />
+                {auth?.lastRecoveredAt && (
+                  <>
+                    <Divider />
+                    <DiagRow
+                      label="Last login"
+                      value={formatRelative(auth.lastRecoveredAt)}
+                      ok={null}
+                      neutral
+                    />
+                  </>
+                )}
+              </div>
+
+              {/* Group 3 — Last check (session-check.js result) */}
+              {(session?.valid !== undefined && session?.valid !== null || session?.detail) && (
+                <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3">
+                  <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2.5">
+                    Last check
+                  </p>
+                  <DiagRow
+                    label="Result"
+                    value={session?.valid === true ? 'Pass' : session?.valid === false ? 'Fail' : '—'}
+                    ok={session?.valid === true ? true : session?.valid === false ? false : null}
+                    neutral={session?.valid == null}
+                  />
+                  {session?.detail && (
+                    <>
+                      <Divider />
+                      <div className="pt-1 pb-0.5">
+                        <p className="text-[11px] text-text-muted leading-snug line-clamp-3">
+                          {session.detail}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                  {session?.checkedAt && (
+                    <>
+                      <Divider />
+                      <DiagRow
+                        label="Checked at"
+                        value={formatChecked(session.checkedAt)}
+                        ok={null}
+                        neutral
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
 
