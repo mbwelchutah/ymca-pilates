@@ -16,7 +16,7 @@ const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState }        = require('../bot/sniper-readiness');
-const { loadStatus }       = require('../bot/session-check');
+const { loadStatus, runSessionCheck } = require('../bot/session-check');
 const { isLocked }         = require('../bot/auth-lock');
 const { getAuthState, updateAuthState } = require('../bot/auth-state');
 const { pingSessionHttp }  = require('../bot/session-ping');
@@ -168,50 +168,108 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       // ── Trigger fires ────────────────────────────────────────────────────
       firedThisCycle.add(cycleKey); // mark before await so parallel ticks skip
 
-      // ── Auth-block gate ─────────────────────────────────────────────────
-      // Skip preflight if a concurrent auth operation is in progress, or if
-      // there is fresh evidence that auth is broken.  AuthState is the primary
-      // source of truth; legacy session files are checked as a fallback.
+      // ── Stage 3: Auth-recovery gate ─────────────────────────────────────
+      // Old behaviour: skip the checkpoint entirely if auth looks bad.
+      // New behaviour: if auth is not 'connected', attempt runSessionCheck()
+      // to recover BEFORE running the preflight.  This gives three safety
+      // nets (T-30 / T-10 / T-2 min) where a stale or expired session is
+      // refreshed well before the booking window opens.
+      //
+      // The only hard-skip is when the auth lock is already held (a
+      // concurrent login or booking is in progress — racing it would break
+      // both).  Everything else — signed_out, needs_refresh, BLOCKED_AUTH,
+      // session-check failure — triggers a recovery attempt instead.
+
       if (isLocked()) {
-        console.log(`[auto-preflight] ${trigger.name} skipped — auth lock held (concurrent login/preflight in progress).`);
+        console.log(`[auto-preflight] ${trigger.name} skipped — auth lock held (concurrent operation in progress).`);
         appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: 'Auth lock held — concurrent session operation in progress' });
         continue;
       }
 
-      // Primary: AuthState singleton — fast, no file I/O per-job
+      // ── Recovery decision ──────────────────────────────────────────────
       const authState = getAuthState();
-      if (authState.status === 'signed_out') {
-        console.log(`[auto-preflight] ${trigger.name} skipped — AuthState is signed_out.`);
-        appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: 'Auth signed out — login required before preflight can run' });
-        continue;
-      }
+      const needsRecovery = authState.status !== 'connected';
 
-      // Fallback: legacy session files (sniper-state + session-status) for cases
-      // where AuthState hasn't been updated yet (e.g. after a cold restart).
-      const sniperState   = loadState();
-      const sessionStatus = loadStatus();
-      let authBlockReason = null;
-
-      if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH') {
-        const refTime = sniperState.authBlockedAt || sniperState.updatedAt;
-        if (refTime && (Date.now() - new Date(refTime).getTime()) < AUTH_BLOCK_STALE_MS) {
-          const minAgo = Math.round((Date.now() - new Date(refTime).getTime()) / 60000);
-          authBlockReason = `SNIPER_BLOCKED_AUTH from ${minAgo} min ago — session likely still expired`;
+      // Classify the reason for informational logging.
+      let recoveryReason = null;
+      if (needsRecovery) {
+        if (authState.status === 'signed_out') {
+          recoveryReason = 'signed_out';
+        } else {
+          // needs_refresh / recovering — check legacy signals for more detail.
+          const sniperState   = loadState();
+          const sessionStatus = loadStatus();
+          if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH') {
+            const refTime = sniperState.authBlockedAt || sniperState.updatedAt;
+            if (refTime && (Date.now() - new Date(refTime).getTime()) < AUTH_BLOCK_STALE_MS) {
+              const minAgo = Math.round((Date.now() - new Date(refTime).getTime()) / 60000);
+              recoveryReason = `SNIPER_BLOCKED_AUTH (${minAgo} min ago)`;
+            }
+          }
+          if (!recoveryReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
+            const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+            if (age < AUTH_BLOCK_STALE_MS) {
+              const minAgo = Math.round(age / 60000);
+              recoveryReason = `session-check failed (${minAgo} min ago)`;
+            }
+          }
+          if (!recoveryReason) recoveryReason = `status=${authState.status}`;
         }
       }
 
-      if (!authBlockReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
-        const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
-        if (age < AUTH_BLOCK_STALE_MS) {
-          const minAgo = Math.round(age / 60000);
-          authBlockReason = `Session check failed ${minAgo} min ago — credentials likely invalid`;
+      if (needsRecovery) {
+        console.log(
+          `[auto-preflight] ${trigger.name} — auth not connected (${recoveryReason}); ` +
+          `attempting recovery before preflight.`
+        );
+        appendLog({
+          timestamp:   new Date().toISOString(),
+          jobId:       dbJob.id,
+          classTitle:  dbJob.class_title,
+          triggerName: trigger.name,
+          status:      'recovery_attempt',
+          message:     `Auth recovery triggered — reason: ${recoveryReason}`,
+        });
+        try {
+          const recovery = await runSessionCheck({ source: `auto-recovery:${trigger.name}` });
+          if (recovery.valid) {
+            console.log(`[auto-preflight] ${trigger.name} — recovery succeeded; proceeding with preflight.`);
+            appendLog({
+              timestamp:   new Date().toISOString(),
+              jobId:       dbJob.id,
+              classTitle:  dbJob.class_title,
+              triggerName: trigger.name,
+              status:      'recovery_ok',
+              message:     `Auth recovery succeeded (${recovery.detail})`,
+            });
+          } else {
+            console.warn(
+              `[auto-preflight] ${trigger.name} — recovery failed: ${recovery.detail}. ` +
+              `Proceeding with preflight anyway (Stage-1 cookie injection may still work).`
+            );
+            appendLog({
+              timestamp:   new Date().toISOString(),
+              jobId:       dbJob.id,
+              classTitle:  dbJob.class_title,
+              triggerName: trigger.name,
+              status:      'recovery_failed',
+              message:     `Auth recovery failed — ${recovery.detail}`,
+            });
+          }
+        } catch (recoveryErr) {
+          console.error(`[auto-preflight] ${trigger.name} — recovery threw:`, recoveryErr.message);
+          appendLog({
+            timestamp:   new Date().toISOString(),
+            jobId:       dbJob.id,
+            classTitle:  dbJob.class_title,
+            triggerName: trigger.name,
+            status:      'recovery_error',
+            message:     `Auth recovery error — ${recoveryErr.message}`,
+          });
         }
-      }
-
-      if (authBlockReason) {
-        console.log(`[auto-preflight] ${trigger.name} skipped — auth blocked: ${authBlockReason}`);
-        appendLog({ timestamp: new Date().toISOString(), jobId: dbJob.id, classTitle: dbJob.class_title, triggerName: trigger.name, status: 'skipped', message: `Auth blocked: ${authBlockReason}` });
-        continue;
+        // Whether recovery succeeded or failed, continue to the preflight.
+        // A failed recovery is still useful: if the session was actually OK
+        // (e.g. ping was slow), the preflight will confirm it via bookingSurfaceValid.
       }
       // ───────────────────────────────────────────────────────────────────
 
