@@ -3,13 +3,15 @@
 // for all downstream consumers (API, UI, preflight, booking).
 //
 // AuthState shape:
-//   status             'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
-//   daxkoValid         boolean — Daxko session confirmed valid via HTTP or Playwright
-//   familyworksValid   boolean — FamilyWorks session confirmed valid
-//   bookingAccessConfirmed boolean — schedule embed loaded + Reserve/Waitlist button confirmed
-//   lastCheckedAt      number|null — ms timestamp of last any-tier validation
-//   lastRecoveredAt    number|null — ms timestamp of last full Playwright re-login
-//   isAuthInProgress   boolean — login/recovery is currently in flight
+//   status                  'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
+//   daxkoValid              boolean   — Daxko session confirmed valid via HTTP or Playwright
+//   familyworksValid        boolean   — FamilyWorks session confirmed valid
+//   bookingAccessConfirmed  boolean   — schedule embed loaded + Reserve/Waitlist button confirmed
+//   bookingAccessConfirmedAt number|null — ms timestamp when booking access was last confirmed
+//                                         null = never confirmed or session was lost
+//   lastCheckedAt           number|null — ms timestamp of last any-tier session validation
+//   lastRecoveredAt         number|null — ms timestamp of last full Playwright re-login
+//   isAuthInProgress        boolean   — login/recovery is currently in flight
 
 const fs   = require('fs');
 const path = require('path');
@@ -18,13 +20,14 @@ const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'auth-state.json');
 
 const DEFAULT_STATE = {
-  status:              'signed_out',
-  daxkoValid:          false,
-  familyworksValid:    false,
-  bookingAccessConfirmed: false,
-  lastCheckedAt:       null,
-  lastRecoveredAt:     null,
-  isAuthInProgress:    false,
+  status:                   'signed_out',
+  daxkoValid:               false,
+  familyworksValid:         false,
+  bookingAccessConfirmed:   false,
+  bookingAccessConfirmedAt: null,   // ms epoch — null until first modal confirmation
+  lastCheckedAt:            null,
+  lastRecoveredAt:          null,
+  isAuthInProgress:         false,
 };
 
 // ── File I/O ─────────────────────────────────────────────────────────────────
@@ -106,6 +109,17 @@ function _migrate(stored) {
   if ('bookingSurfaceValid' in stored && !('bookingAccessConfirmed' in stored)) {
     stored.bookingAccessConfirmed = stored.bookingSurfaceValid;
     delete stored.bookingSurfaceValid;
+    changed = true;
+  }
+
+  // bookingAccessConfirmedAt was added in Stage 3.
+  // If booking access was already confirmed, use lastRecoveredAt as a best-effort
+  // timestamp (the last full session run is when it would have been confirmed).
+  // Otherwise default to null (never checked).
+  if (!('bookingAccessConfirmedAt' in stored)) {
+    stored.bookingAccessConfirmedAt = stored.bookingAccessConfirmed
+      ? (stored.lastRecoveredAt ?? stored.lastCheckedAt ?? null)
+      : null;
     changed = true;
   }
 

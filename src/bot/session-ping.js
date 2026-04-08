@@ -296,8 +296,11 @@ async function pingSessionHttp() {
   const patch = { lastCheckedAt: Date.now() };
   if (daxkoResult.valid !== null)  patch.daxkoValid       = daxkoResult.valid === true;
   if (fwResult.valid    !== null)  patch.familyworksValid = fwResult.valid    === true;
-  // Daxko explicitly dead → booking surface is also inaccessible.
-  if (daxkoResult.valid === false) patch.bookingAccessConfirmed = false;
+  // Daxko explicitly dead → booking surface is also inaccessible; clear confirmation.
+  if (daxkoResult.valid === false) {
+    patch.bookingAccessConfirmed   = false;
+    patch.bookingAccessConfirmedAt = null;
+  }
   if (Object.keys(patch).length > 1) updateAuthState(patch);
 
   // Determine the primary reason for not trusting.

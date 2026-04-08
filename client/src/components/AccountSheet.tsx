@@ -250,29 +250,35 @@ interface ThreeTruthsProps {
 
 function ThreeTruths({ auth, session: _session }: ThreeTruthsProps) {
   // All truth derived exclusively from AuthState (canonical).
-  const daxkoValid   = auth?.daxkoValid ?? null
-  const fwValid      = auth?.familyworksValid ?? null
-  const bookingValid = auth?.bookingAccessConfirmed ?? null
+  const daxkoValid      = auth?.daxkoValid ?? null
+  const fwValid         = auth?.familyworksValid ?? null
+  const bookingValid    = auth?.bookingAccessConfirmed ?? null
+  const bookingChecked  = auth?.bookingAccessConfirmedAt ?? null   // null = never checked
 
-  const daxko   = deriveTruthStatus(daxkoValid,   'Expired')
-  const fw      = deriveTruthStatus(fwValid,       'Inactive')
+  const daxko = deriveTruthStatus(daxkoValid, 'Expired')
+  const fw    = deriveTruthStatus(fwValid,    'Inactive')
 
-  // Booking: false when connected just means "not yet checked by preflight" → neutral/amber
-  // false when NOT connected → could be login-required → fail
+  // Booking access — 5 states:
+  //   confirmed:true                 → Confirmed (+ age)
+  //   confirmed:false, checked≠null  → Not confirmed (was checked, surface denied)
+  //   confirmed:false, checked=null  → Not yet checked (never run against the modal)
+  //   auth null                      → Unknown
   let bookingStatus: TruthStatus
   let bookingValue: string
-  if (bookingValid === true) {
-    bookingStatus = 'ok'
-    bookingValue  = 'Confirmed'
-  } else if (bookingValid === false && auth?.status === 'connected') {
-    bookingStatus = 'neutral'
-    bookingValue  = 'Not yet checked'
-  } else if (bookingValid === false) {
-    bookingStatus = 'fail'
-    bookingValue  = 'Not accessible'
-  } else {
+  if (auth === null) {
     bookingStatus = 'unknown'
     bookingValue  = '—'
+  } else if (bookingValid === true) {
+    bookingStatus = 'ok'
+    bookingValue  = `Confirmed ${formatRelative(bookingChecked)}`
+  } else if (bookingChecked !== null) {
+    // Was checked but surface denied (LOGIN_REQUIRED on modal)
+    bookingStatus = 'fail'
+    bookingValue  = 'Not confirmed'
+  } else {
+    // Never been checked — awaiting first preflight or booking run
+    bookingStatus = 'neutral'
+    bookingValue  = 'Not yet checked'
   }
 
   return (
@@ -527,9 +533,14 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 <Divider />
                 <DiagRow
                   label="Booking access"
-                  value={auth ? (auth.bookingAccessConfirmed ? 'Confirmed' : 'Not confirmed') : '—'}
+                  value={
+                    !auth                              ? '—'
+                    : auth.bookingAccessConfirmed      ? `Confirmed ${formatRelative(auth.bookingAccessConfirmedAt)}`
+                    : auth.bookingAccessConfirmedAt !== null ? 'Not confirmed'
+                    : 'Not yet checked'
+                  }
                   ok={auth?.bookingAccessConfirmed ?? null}
-                  neutral={auth ? !auth.bookingAccessConfirmed : false}
+                  neutral={auth ? (!auth.bookingAccessConfirmed && auth.bookingAccessConfirmedAt === null) : false}
                 />
               </div>
 

@@ -337,11 +337,12 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
     // immediately — without waiting for the next keepalive or session check.
     const fwReady = fwResult.ready === true;
     updateAuthState({
-      daxkoValid:          true,
-      familyworksValid:    fwReady,
-      bookingAccessConfirmed: fwReady, // modal confirmed Register/Waitlist → booking surface live
-      lastCheckedAt:       Date.now(),
-      lastRecoveredAt:     Date.now(),
+      daxkoValid:               true,
+      familyworksValid:         fwReady,
+      bookingAccessConfirmed:   fwReady,   // modal confirmed Register/Waitlist → booking surface live
+      bookingAccessConfirmedAt: fwReady ? Date.now() : null,
+      lastCheckedAt:            Date.now(),
+      lastRecoveredAt:          Date.now(),
     });
 
     return { daxko: 'DAXKO_READY', familyworks, lastVerified: checkedAt, detail, screenshot: null };
@@ -368,10 +369,11 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
 
     // Stage 2: Update canonical AuthState on failure so the UI resolves immediately.
     updateAuthState({
-      daxkoValid:          false,
-      familyworksValid:    false,
-      bookingAccessConfirmed: false,
-      lastCheckedAt:       Date.now(),
+      daxkoValid:               false,
+      familyworksValid:         false,
+      bookingAccessConfirmed:   false,
+      bookingAccessConfirmedAt: null,
+      lastCheckedAt:            Date.now(),
     });
 
     console.log('[settings-auth] ─────────────────────────────────────');

@@ -1524,7 +1524,8 @@ async function runBookingJob(job, opts = {}) {
       // surface with the current session.
       const _modalAccessible = _actionState !== 'LOGIN_REQUIRED';
       updateAuthState({
-        bookingAccessConfirmed: _modalAccessible,
+        bookingAccessConfirmed:   _modalAccessible,
+        bookingAccessConfirmedAt: _modalAccessible ? Date.now() : null,
         ...(_modalAccessible
           ? { familyworksValid: true, daxkoValid: true }
           : { familyworksValid: false }),
@@ -1560,7 +1561,7 @@ async function runBookingJob(job, opts = {}) {
               emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible after inline auth');
               _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Register button visible after inline auth' });
               // Inline auth recovered the session — update all three truths.
-              updateAuthState({ bookingAccessConfirmed: true, familyworksValid: true, daxkoValid: true, lastCheckedAt: Date.now() });
+              updateAuthState({ bookingAccessConfirmed: true, bookingAccessConfirmedAt: Date.now(), familyworksValid: true, daxkoValid: true, lastCheckedAt: Date.now() });
               try { const c = await page.context().cookies(); if (c.length) saveCookies(c); } catch {}
               await snap('preflight-pass-after-auth');
               return logRunSummary({ status: 'success', message: 'Preflight passed after inline auth — Register button available', screenshotPath });
@@ -1570,7 +1571,7 @@ async function runBookingJob(job, opts = {}) {
               emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: Waitlist only after inline auth');
               _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible after inline auth' });
               // Inline auth recovered the session — update all three truths.
-              updateAuthState({ bookingAccessConfirmed: true, familyworksValid: true, daxkoValid: true, lastCheckedAt: Date.now() });
+              updateAuthState({ bookingAccessConfirmed: true, bookingAccessConfirmedAt: Date.now(), familyworksValid: true, daxkoValid: true, lastCheckedAt: Date.now() });
               try { const c = await page.context().cookies(); if (c.length) saveCookies(c); } catch {}
               await snap('preflight-waitlist-after-auth');
               return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });

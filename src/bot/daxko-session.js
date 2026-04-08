@@ -174,11 +174,13 @@ async function createSession(opts = {}) {
   if (pingTrusted) {
     console.log('[session] Ping-trusted fast path — skipping OAuth probe, sessions assumed valid.');
     sessionAlreadyValid = true;
+    // Preserve bookingAccessConfirmed — if the HTTP ping confirmed sessions are still
+    // active, the previously confirmed booking access remains valid.  Only booking-code
+    // modal probes or explicit session failures should change this field.
     updateAuthState({
-      daxkoValid:          true,
-      familyworksValid:    true,
-      bookingAccessConfirmed: false, // confirmed later by booking code probing the modal
-      lastCheckedAt:       Date.now(),
+      daxkoValid:    true,
+      familyworksValid: true,
+      lastCheckedAt: Date.now(),
     });
   } else if (cardCount > 0) {
     // Click the first visible, reasonably-sized card
@@ -214,10 +216,11 @@ async function createSession(opts = {}) {
         console.log(reuseMsg);
         sessionAlreadyValid = true;
         updateAuthState({
-          daxkoValid:          true,
-          familyworksValid:    true,
-          bookingAccessConfirmed: true,
-          lastCheckedAt:       Date.now(),
+          daxkoValid:               true,
+          familyworksValid:         true,
+          bookingAccessConfirmed:   true,
+          bookingAccessConfirmedAt: Date.now(),
+          lastCheckedAt:            Date.now(),
         });
         // Close the modal before continuing
         await page.keyboard.press('Escape').catch(() => {});
@@ -273,11 +276,12 @@ async function createSession(opts = {}) {
             await page.waitForTimeout(2000);
             console.log('[session] After Daxko login + FW redirect, URL:', page.url());
             updateAuthState({
-              daxkoValid:          true,
-              familyworksValid:    true,
-              bookingAccessConfirmed: false, // not confirmed until modal probe
-              lastRecoveredAt:     Date.now(),
-              lastCheckedAt:       Date.now(),
+              daxkoValid:               true,
+              familyworksValid:         true,
+              bookingAccessConfirmed:   false,  // not confirmed until modal probe
+              bookingAccessConfirmedAt: null,   // fresh session — previous confirmation stale
+              lastRecoveredAt:          Date.now(),
+              lastCheckedAt:            Date.now(),
             });
 
           } else if (isAccountPg) {
@@ -313,7 +317,7 @@ async function createSession(opts = {}) {
 
   if (!sessionAlreadyValid && stillOnLogin) {
     const screenshotPath = await snap('login-failed');
-    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingAccessConfirmed: false, lastCheckedAt: Date.now() });
+    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingAccessConfirmed: false, bookingAccessConfirmedAt: null, lastCheckedAt: Date.now() });
     await close();
     const loginErr = new Error('Login failed or session not established');
     loginErr.screenshotPath = screenshotPath;

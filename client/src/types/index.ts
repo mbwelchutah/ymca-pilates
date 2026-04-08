@@ -24,13 +24,14 @@ export type OperationState =
   | 'failed'
 
 export interface AuthState {
-  status:                 AuthStatusEnum
-  daxkoValid:             boolean
-  familyworksValid:       boolean
-  bookingAccessConfirmed: boolean  // schedule embed reachable + booking surface verified
-  lastCheckedAt:          number | null
-  lastRecoveredAt:        number | null
-  isAuthInProgress:       boolean
+  status:                   AuthStatusEnum
+  daxkoValid:               boolean
+  familyworksValid:         boolean
+  bookingAccessConfirmed:   boolean     // schedule embed reachable + booking surface verified
+  bookingAccessConfirmedAt: number | null  // ms epoch — null = never confirmed
+  lastCheckedAt:            number | null
+  lastRecoveredAt:          number | null
+  isAuthInProgress:         boolean
 }
 
 export interface SessionStatus {
