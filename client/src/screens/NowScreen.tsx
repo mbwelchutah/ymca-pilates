@@ -616,12 +616,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // non-countdown state, the Stage 1 result card and trust line below it would be
   // redundant.  Suppress both when this flag is true to avoid duplicate messaging.
   // Conditions that make the banner a complete state display (not just a countdown):
-  //   isBooked          → banner shows "Booked"
+  //   isBooked          → banner shows "Confirmed"
   //   isInactive        → banner shows "Scheduling off"
   //   phase === 'sniper'         → banner shows "Booking in progress…"
   //   execPhase === 'confirming' → banner shows "Confirming registration…"
+  //   phase === 'late'           → banner shows "Booking window has closed"
+  //     Without this, the result card falls through to "Scheduled · Booking will
+  //     start automatically when the window opens." — directly contradicting the
+  //     "window has closed" banner.  Session-attention errors still surface via the
+  //     dedicated nudge below (which is outside the bannerIsComplete gate).
   const bannerIsComplete =
-    isBooked || isInactive || phase === 'sniper' || execPhase === 'confirming'
+    isBooked || isInactive || phase === 'sniper' || execPhase === 'confirming' ||
+    phase === 'late'
 
   // The effect re-runs whenever readinessPollMs changes so the interval is
   // always in sync with the current execution phase.
@@ -1298,10 +1304,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   return (
                     <div className="mb-2 flex items-center justify-center gap-1.5">
                       <StatusDot color="gray" size="sm" />
-                      <span className="text-[12px] text-text-secondary">
-                        <span className="font-medium">Checking</span>
-                        <span className="text-text-muted font-normal"> · running</span>
-                      </span>
+                      <span className="text-[12px] text-text-secondary font-medium">Checking…</span>
                     </div>
                   )
                 }
