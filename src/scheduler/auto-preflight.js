@@ -191,13 +191,22 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       }
 
       // ── Recovery decision ──────────────────────────────────────────────
+      // Stage 5: recovery triggers on EITHER session not connected OR booking
+      // access previously denied.  "Never checked" (bookingAccessConfirmedAt=null)
+      // is normal — the browser preflight below will confirm it.  "Checked and
+      // denied" (checkedAt set + confirmed=false) is the signal to try recovery
+      // before we reach the booking window.
       const authState = getAuthState();
-      const needsRecovery = authState.status !== 'connected';
+      const bookingAccessDenied = authState.bookingAccessConfirmedAt !== null && !authState.bookingAccessConfirmed;
+      const needsRecovery       = authState.status !== 'connected' || bookingAccessDenied;
 
       // Classify the reason for informational logging.
       let recoveryReason = null;
       if (needsRecovery) {
-        if (authState.status === 'signed_out') {
+        if (bookingAccessDenied && authState.status === 'connected') {
+          // Session is alive but booking surface was previously denied.
+          recoveryReason = 'booking_access_denied';
+        } else if (authState.status === 'signed_out') {
           recoveryReason = 'signed_out';
         } else {
           // needs_refresh / recovering — check legacy signals for more detail.
@@ -222,8 +231,11 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       }
 
       if (needsRecovery) {
+        const recoveryLabel = recoveryReason === 'booking_access_denied'
+          ? 'booking access previously denied'
+          : `auth not connected (${recoveryReason})`;
         console.log(
-          `[auto-preflight] ${trigger.name} — auth not connected (${recoveryReason}); ` +
+          `[auto-preflight] ${trigger.name} — ${recoveryLabel}; ` +
           `attempting recovery before preflight.`
         );
         appendLog({
@@ -289,16 +301,24 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       console.log(`[auto-preflight] ${trigger.name} preflight — Job #${dbJob.id} (${dbJob.class_title})`);
 
       try {
-        // ── Stage 4: Fast confirmation via HTTP ping ──────────────────────
-        // Before spending 30-60 s on a full browser preflight, run the Tier-2
-        // HTTP ping.  If both sessions are confirmed valid, record the result
-        // and skip the browser entirely.  Only fall through to runBookingJob
-        // when the ping is inconclusive or misses.
+        // ── Stage 4+5: HTTP ping fast path ────────────────────────────────
+        // HTTP ping confirms sessions are alive but cannot probe the booking
+        // surface (modal).  We skip the browser ONLY when both conditions hold:
+        //   1. Sessions are confirmed via HTTP ping (Daxko + FamilyWorks)
+        //   2. Booking access was already confirmed in a prior browser run
+        //
+        // If booking access is not yet confirmed (bookingAccessConfirmedAt=null
+        // = never probed, or confirmed=false = previously denied), we must run
+        // the browser so register-pilates.js can probe the modal and set
+        // bookingAccessConfirmed.  Skipping would leave us without modal
+        // validation until the actual booking window opens.
+        const currentAuthState = getAuthState();
         let pingConfirmed = false;
         try {
           const pingResult = await pingSessionHttp();
-          if (pingResult.trusted) {
-            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping — skipping browser.`);
+          if (pingResult.trusted && currentAuthState.bookingAccessConfirmed) {
+            // Both sessions confirmed AND booking surface was previously verified.
+            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping (booking access confirmed) — skipping browser.`);
             updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
             appendLog({
               timestamp:   firedAt,
@@ -306,9 +326,12 @@ async function checkAutoPreflights({ isActive = false } = {}) {
               classTitle:  dbJob.class_title,
               triggerName: trigger.name,
               status:      'pass',
-              message:     `Session confirmed via HTTP ping — no browser launch needed`,
+              message:     `Session + booking access confirmed via HTTP ping — no browser launch needed`,
             });
             pingConfirmed = true;
+          } else if (pingResult.trusted && !currentAuthState.bookingAccessConfirmed) {
+            // Sessions alive but booking surface not yet confirmed — browser needed to probe modal.
+            console.log(`[auto-preflight] ${trigger.name} ping OK but booking access not confirmed — browser preflight needed to probe modal.`);
           } else {
             console.log(`[auto-preflight] ${trigger.name} ping miss (${pingResult.detail}) — running full preflight.`);
           }
@@ -338,6 +361,32 @@ async function checkAutoPreflights({ isActive = false } = {}) {
             status,
             message:     result.message,
           });
+        }
+
+        // ── Stage 5: T-2 needs-attention signal ───────────────────────────
+        // At the last checkpoint before the booking window, if booking access
+        // is still not confirmed (not yet probed OR probed and denied), surface
+        // a needs_refresh status so the UI shows a warning before the booking
+        // moment arrives.  This gives the user a chance to act (e.g. tap Sign
+        // In Now) rather than discovering the failure during the live booking.
+        if (trigger.name === '2min' && !pingConfirmed) {
+          const postPreflight = getAuthState();
+          if (!postPreflight.bookingAccessConfirmed) {
+            const wasNeverChecked = postPreflight.bookingAccessConfirmedAt === null;
+            const warnMsg = wasNeverChecked
+              ? 'T-2 warning: booking access has never been confirmed — check may fail at booking time'
+              : 'T-2 warning: booking access not confirmed — recovery may have failed';
+            console.warn(`[auto-preflight] ${warnMsg}`);
+            updateAuthState({ status: 'needs_refresh' });
+            appendLog({
+              timestamp:   new Date().toISOString(),
+              jobId:       dbJob.id,
+              classTitle:  dbJob.class_title,
+              triggerName: trigger.name,
+              status:      'needs_attention',
+              message:     warnMsg,
+            });
+          }
         }
       } catch (err) {
         console.error(`[auto-preflight] ${trigger.name} error:`, err.message);
