@@ -8,6 +8,8 @@ import type { AppState, Job, Phase, ScrapedClass, AuthStatusEnum } from '../type
 import { api } from '../lib/api'
 import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
+import { useCountdown } from '../lib/countdown'
+import { formatOpens } from '../lib/timing'
 
 interface PlanScreenProps {
   appState: AppState
@@ -75,27 +77,6 @@ function isResultCurrent(job: Job): boolean {
   return Date.now() - new Date(refAt).getTime() < 6 * 24 * 60 * 60 * 1000
 }
 
-function formatOpens(ms: number): string {
-  const now  = Date.now()
-  const d    = new Date(ms)
-  const time = d.toLocaleString([], { hour: 'numeric', minute: '2-digit' })
-  const date = d.toLocaleString([], { month: 'short', day: 'numeric' })
-
-  if (ms < now) {
-    // Past: just show the date (time is no longer useful)
-    return `Opened ${date}`
-  }
-
-  // Upcoming: use relative day word for today/tomorrow, otherwise "Month Day"
-  // All cases use "at" so the format is identical across every card.
-  const todayMidnight    = new Date(); todayMidnight.setHours(0, 0, 0, 0)
-  const tomorrowMidnight = new Date(todayMidnight); tomorrowMidnight.setDate(todayMidnight.getDate() + 1)
-  const dayAfterMidnight = new Date(tomorrowMidnight); dayAfterMidnight.setDate(tomorrowMidnight.getDate() + 1)
-
-  if (ms < tomorrowMidnight.getTime()) return `Opens today at ${time}`
-  if (ms < dayAfterMidnight.getTime()) return `Opens tomorrow at ${time}`
-  return `Opens ${date} at ${time}`
-}
 
 function formatShortDate(iso: string): string {
   // Parse YYYY-MM-DD as local midnight to avoid UTC off-by-one
@@ -126,29 +107,6 @@ function timeToMinutes(t: string): number {
   return h * 60 + min
 }
 
-// ── Stage 7: Countdown hook — ticks every second, matches NowScreen ───────────
-
-function useCountdown(targetMs: number | null): string {
-  const [display, setDisplay] = useState('')
-  useEffect(() => {
-    if (!targetMs) { setDisplay(''); return }
-    const tick = () => {
-      const diff = targetMs - Date.now()
-      if (diff <= 0) { setDisplay(''); return }
-      const d = Math.floor(diff / 86_400_000)
-      const h = Math.floor((diff % 86_400_000) / 3_600_000)
-      const mn = Math.floor((diff % 3_600_000) / 60_000)
-      const s  = Math.floor((diff % 60_000)   / 1_000)
-      if (d > 0)      setDisplay(`${d}d ${h}h ${mn}m`)
-      else if (h > 0) setDisplay(`${h}h ${mn}m ${s}s`)
-      else            setDisplay(`${mn}m ${s}s`)
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [targetMs])
-  return display
-}
 
 // ── Stage 7: Sniper row data passed to the watched JobCard ────────────────────
 

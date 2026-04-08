@@ -22,6 +22,8 @@ import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
 import { isThisWeekUTC } from '../lib/bookingCycle'
+import { useCountdown } from '../lib/countdown'
+import { formatOpens, formatOpensRelative } from '../lib/timing'
 
 interface NowScreenProps {
   appState: AppState
@@ -118,31 +120,6 @@ function computePhase(bookingOpenMs: number | null): Phase {
   return 'late'
 }
 
-// ── Countdown hook ─────────────────────────────────────────────────────────────
-
-function useCountdown(targetMs: number | null): string {
-  const [display, setDisplay] = useState('')
-  useEffect(() => {
-    if (!targetMs) { setDisplay(''); return }
-    const tick = () => {
-      const diff = targetMs - Date.now()
-      if (diff <= 0) { setDisplay(''); return }
-      const d = Math.floor(diff / 86_400_000)
-      const h = Math.floor((diff % 86_400_000) / 3_600_000)
-      const m = Math.floor((diff % 3_600_000) / 60_000)
-      const s = Math.floor((diff % 60_000) / 1_000)
-      const ss = String(s).padStart(2, '0')
-      if (d > 0)      setDisplay(`${d}d ${h}h ${m}m`)
-      else if (h > 0) setDisplay(`${h}h ${m}m ${ss}s`)
-      else            setDisplay(`${m}m ${ss}s`)
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [targetMs])
-  return display
-}
-
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
 const fmt = (ms: number) =>
@@ -151,13 +128,6 @@ const fmt = (ms: number) =>
     hour: 'numeric', minute: '2-digit',
   })
 
-// "Apr 11 • 10:20 PM" — bullet separator between date and time, matches Plan tab style.
-const fmtDot = (ms: number) => {
-  const d    = new Date(ms)
-  const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  return `${date} • ${time}`
-}
 
 // Relative-time label for "last checked" display (Stage 9F).
 function relativeLabel(iso: string | null): string {
@@ -1203,8 +1173,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {bookingOpenMs != null && (
                 <p className="text-[12px] text-text-muted mt-2">
                   {execPhase === 'warmup'
-                    ? `Opening soon · ${fmtDot(bookingOpenMs)}`
-                    : `Opens at ${fmtDot(bookingOpenMs)}`}
+                    ? `Opening soon · ${formatOpensRelative(bookingOpenMs)}`
+                    : formatOpens(bookingOpenMs)}
                 </p>
               )}
             </div>
