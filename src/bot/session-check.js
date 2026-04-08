@@ -41,22 +41,29 @@ async function runSessionCheck({ source = 'manual' } = {}) {
   console.log(`[session-check] Starting dedicated login check (source: ${source})...`);
 
   try {
-    session = await createSession({ headless: true });
+    session = await createSession({ headless: true, validateOnly: true });
     // If createSession() returned without throwing, auth succeeded.
-    // Save browser cookies for Tier-2 HTTP ping on the next keepalive.
-    try {
-      const allCookies = await session.page.context().cookies();
-      saveCookies(allCookies);
-    } catch (e) {
-      console.warn('[session-check] Failed to save cookies for Tier-2 ping:', e.message);
+    // For a full browser session, save cookies for the next Tier-2 ping.
+    // For a fast-validated stub (_fastValidated), cookies are already saved
+    // from the ping itself — skip re-saving to avoid overwriting with [].
+    if (!session._fastValidated) {
+      try {
+        const allCookies = await session.page.context().cookies();
+        saveCookies(allCookies);
+      } catch (e) {
+        console.warn('[session-check] Failed to save cookies for Tier-2 ping:', e.message);
+      }
     }
     const screenshotRaw = await session.snap('session-check-pass');
     const screenshot = screenshotRaw ? path.basename(screenshotRaw) : null;
+    const fastPath = session._fastValidated === true;
     const status = {
       valid:      true,
       checkedAt,
       source,
-      detail:     'Login successful — credentials valid',
+      detail:     fastPath
+        ? 'Session valid — confirmed via HTTP ping (no browser needed)'
+        : 'Login successful — credentials valid',
       screenshot,
     };
     saveStatus(status);

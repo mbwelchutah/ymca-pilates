@@ -6,6 +6,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { chromium } = require('playwright');
 const { updateAuthState } = require('./auth-state');
+const { pingSessionHttp } = require('./session-ping');
 
 let CHROMIUM_PATH;
 try {
@@ -18,22 +19,62 @@ try {
  * Launch Chromium, log in to Daxko, and return a ready-to-use session.
  *
  * @param {object}  [opts]
- * @param {boolean} [opts.headless=true]       Run headless (false = visible browser)
+ * @param {boolean} [opts.headless=true]        Run headless (false = visible browser)
  * @param {string}  [opts.screenshotDir='screenshots']  Where to save screenshots
+ * @param {boolean} [opts.validateOnly=false]   If true and Tier-2 ping succeeds,
+ *                                              skip the browser entirely and return
+ *                                              a lightweight stub session. Use this
+ *                                              for credential checks (session-check)
+ *                                              where no DOM interaction is needed.
+ * @param {boolean} [opts.skipFastPath=false]   Force a full browser launch even when
+ *                                              a Tier-2 ping would normally short-circuit.
  *
  * @returns {Promise<{
- *   browser: import('playwright').Browser,
- *   page: import('playwright').Page,
+ *   browser: import('playwright').Browser | null,
+ *   page: import('playwright').Page | object,
  *   snap: (label?: string) => Promise<string|null>,
  *   close: () => Promise<void>,
+ *   _fastValidated?: boolean,
  * }>}
  *
  * Throws if login fails. The caller is responsible for calling close() after use
  * (use try/finally).
  */
 async function createSession(opts = {}) {
-  const headless = opts.headless !== false;
+  const headless      = opts.headless !== false;
+  const validateOnly  = opts.validateOnly  === true;
+  const skipFastPath  = opts.skipFastPath  === true;
   const screenshotDir = opts.screenshotDir || 'screenshots';
+
+  // ── Stage 3: Fast validation — try HTTP ping before touching a browser ────
+  // If saved cookies are still valid (Tier-2 HTTP ping), we can skip the entire
+  // Playwright launch + FW OAuth dance.  Only bypassed when skipFastPath is true.
+  let pingTrusted = false;
+  if (!skipFastPath) {
+    try {
+      const pingResult = await pingSessionHttp();
+      pingTrusted = pingResult.trusted === true;
+      if (pingTrusted) {
+        console.log('[session] Tier-2 pre-flight ping trusted — sessions valid.');
+      } else {
+        console.log('[session] Tier-2 pre-flight ping miss:', pingResult.detail);
+      }
+    } catch (e) {
+      console.log('[session] Tier-2 pre-flight ping error:', e.message, '— falling through to browser.');
+    }
+  }
+
+  // validateOnly + trusted → return a stub session, no browser needed.
+  if (pingTrusted && validateOnly) {
+    console.log('[session] validateOnly + ping trusted — skipping browser launch.');
+    return {
+      browser: null,
+      page: { context: () => ({ cookies: async () => [] }) },
+      snap:  async () => null,
+      close: async () => {},
+      _fastValidated: true,
+    };
+  }
 
   const browser = await chromium.launch({
     headless,
@@ -105,9 +146,20 @@ async function createSession(opts = {}) {
   const cardCount = await cardLocator.count();
   console.log(`[session] Class cards visible: ${cardCount}`);
 
+  // ── Fast path: Tier-2 ping already confirmed sessions valid ──────────────
+  // Skip the entire FW OAuth modal probe — sessions are trusted, no login needed.
   let sessionAlreadyValid = false;
 
-  if (cardCount > 0) {
+  if (pingTrusted) {
+    console.log('[session] Ping-trusted fast path — skipping OAuth probe, sessions assumed valid.');
+    sessionAlreadyValid = true;
+    updateAuthState({
+      daxkoValid:          true,
+      familyworksValid:    true,
+      bookingSurfaceValid: false, // confirmed later by booking code probing the modal
+      lastCheckedAt:       Date.now(),
+    });
+  } else if (cardCount > 0) {
     // Click the first visible, reasonably-sized card
     let clicked = false;
     for (let i = 0; i < Math.min(cardCount, 10); i++) {
