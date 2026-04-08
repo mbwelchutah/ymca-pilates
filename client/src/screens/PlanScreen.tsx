@@ -576,10 +576,9 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
     setRefreshErr(null)
     setErr(null)
     try {
-      const r = await api.refreshSchedule()
+      await api.refreshSchedule()
       const updated = await api.getScrapedClasses()
       setClasses(updated.classes)
-      console.log(`[Browse] Refreshed: ${r.count} classes`)
     } catch (e) {
       setRefreshErr(e instanceof Error ? e.message : 'Refresh failed')
     } finally {
@@ -921,13 +920,9 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     setShowAdd(false)
     setPrefill(null)
     setEditingJob(null)
-    console.log('[class-select] commit started', { newJobId })
     await refresh()
-    console.log('[class-select] commit success — job list refreshed')
     if (newJobId != null) {
-      console.log('[class-select] active target updated → job', newJobId)
       onSelectJob(newJobId)
-      console.log('[class-select] now refreshed')
     }
   }
 
@@ -937,7 +932,6 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     setShowAdd(false)
     setPrefill(null)
     setEditingJob(null)
-    console.log('[class-select] form dismissed — no save')
   }
 
   return (
@@ -982,7 +976,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </div>
         )}
 
-        {/* Stage 3: Sort pills — only shown when 2+ classes are loaded */}
+        {/* Sort pills — only shown when 2+ classes are loaded */}
         {!showAdd && !loading && appState.jobs.length >= 2 && (
           <div className="flex gap-2">
             {SORT_MODES.map(mode => {
@@ -1040,10 +1034,10 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </div>
         )}
 
-        {/* Hint — always visible when there are classes, guides user to Now tab */}
+        {/* Hint — guides user to the Plan → Now connection */}
         {appState.jobs.length > 0 && !showAdd && (
           <p className="text-center text-[13px] text-text-muted px-4 pb-1">
-            Tap a class card to view it live on Now
+            Tap a class to open it on Now
           </p>
         )}
       </ScreenContainer>
