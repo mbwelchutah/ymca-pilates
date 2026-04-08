@@ -72,20 +72,22 @@ function formatOpens(ms: number): string {
   const now  = Date.now()
   const d    = new Date(ms)
   const time = d.toLocaleString([], { hour: 'numeric', minute: '2-digit' })
+  const date = d.toLocaleString([], { month: 'short', day: 'numeric' })
 
   if (ms < now) {
     // Past: just show the date (time is no longer useful)
-    return `Opened ${d.toLocaleString([], { month: 'short', day: 'numeric' })}`
+    return `Opened ${date}`
   }
 
-  // Upcoming: use relative day word for today/tomorrow
+  // Upcoming: use relative day word for today/tomorrow, otherwise "Month Day"
+  // All cases use "at" so the format is identical across every card.
   const todayMidnight    = new Date(); todayMidnight.setHours(0, 0, 0, 0)
   const tomorrowMidnight = new Date(todayMidnight); tomorrowMidnight.setDate(todayMidnight.getDate() + 1)
   const dayAfterMidnight = new Date(tomorrowMidnight); dayAfterMidnight.setDate(tomorrowMidnight.getDate() + 1)
 
   if (ms < tomorrowMidnight.getTime()) return `Opens today at ${time}`
   if (ms < dayAfterMidnight.getTime()) return `Opens tomorrow at ${time}`
-  return `Opens ${d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+  return `Opens ${date} at ${time}`
 }
 
 function formatShortDate(iso: string): string {
@@ -186,7 +188,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
     if (job.bookingOpenMs == null) return null
     const abs = formatOpens(job.bookingOpenMs)
     const isFuture = job.bookingOpenMs > Date.now()
-    if (isFuture && countdown) return `${abs}  ·  in ${countdown}`
+    if (isFuture && countdown) return `${abs} · in ${countdown}`
     return abs
   })()
 
