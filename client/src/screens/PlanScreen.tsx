@@ -752,7 +752,7 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
                   : `${count} class${count !== 1 ? 'es' : ''}`
 
   return (
-    <div className="mb-2 mt-0.5">
+    <div>
       <p className="text-[22px] font-bold text-text-primary tracking-tight leading-tight">
         {countText}
       </p>
