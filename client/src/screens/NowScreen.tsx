@@ -232,13 +232,14 @@ function derivePrimaryResult(opts: {
   bookingActive:    boolean
   lastPreflightAt:  string | null
   bgArmedState:     string | null
+  blocked:          string | null
 }): PrimaryResult {
   const {
     isBooked, isInactive, job,
     phase,
     sessionStatus,
     composite, compositeDetail, showComposite,
-    bookingActive, lastPreflightAt, bgArmedState,
+    bookingActive, lastPreflightAt, bgArmedState, blocked,
   } = opts
 
   // ── STATE: booking ─────────────────────────────────────────────────────────
@@ -264,7 +265,7 @@ function derivePrimaryResult(opts: {
       label:    isDryRun ? 'Test run complete' : 'Booked',
       detail:   isDryRun
         ? 'Test mode — class found and action verified. Switch to Live to actually register.'
-        : 'Registration confirmed for this class.',
+        : 'Registration confirmed.',
       severity: 'success',
     }
   }
@@ -317,6 +318,18 @@ function derivePrimaryResult(opts: {
     }
   }
 
+  // ── STATE: issue (sniper block — residual) ─────────────────────────────────
+  // Catches SNIPER_BLOCKED_AUTH / SNIPER_BLOCKED_DISCOVERY when neither auth
+  // errors, inactive state, bgArmedState, nor composite-red fired above.
+  if (blocked) {
+    return {
+      state:    'issue',
+      label:    'Needs attention',
+      detail:   blocked,
+      severity: 'warning',
+    }
+  }
+
   // ── STATE: ready ───────────────────────────────────────────────────────────
   // All checks passed — system will fire automatically at window open.
   // Stage 2: suppress 'ready' card before the window opens (phase too_early).
@@ -325,8 +338,8 @@ function derivePrimaryResult(opts: {
   if (showComposite && composite.color === 'green' && phase !== 'too_early') {
     return {
       state:    'ready',
-      label:    'Ready',
-      detail:   'Everything is set — the system will book automatically when the window opens.',
+      label:    'Armed',
+      detail:   'Everything is ready for the booking window.',
       severity: 'success',
       ts:       lastPreflightAt ?? undefined,
     }
@@ -1053,6 +1066,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     bookingActive: bgReadiness?.armed?.state === 'booking',
     lastPreflightAt,
     bgArmedState: sniperArmed?.state ?? null,
+    blocked,
   }) : null
 
   // Hysteresis effect — runs whenever the derived state or severity changes.
@@ -1329,20 +1343,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             )
           })()}
 
-          {/* Inline blocked callout — suppressed when the primary result card below
-               already communicates the same failure (Stage 7: one main truth).
-               Auth failures are covered by derivePrimaryResult step 5 (sessionStatus).
-               Composite red failures are covered by step 6 (composite card). */}
-          {blocked && !isInactive &&
-           !(sessionStatus?.overall === 'AUTH_NEEDS_LOGIN') &&
-           !(sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') &&
-           !(showComposite && composite.color === 'red') && (
-            <div className="mt-3 rounded-xl px-3.5 py-2.5 bg-accent-red/10">
-              <p className="text-[13px] font-medium text-accent-red">
-                {blocked}
-              </p>
-            </div>
-          )}
 
           {/* Actions section */}
           {job && (
