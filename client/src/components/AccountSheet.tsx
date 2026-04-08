@@ -405,11 +405,12 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
   const auth = session?.authState ?? null
   const lastCheckedMs = auth?.lastCheckedAt ?? null
 
-  // Stage 3: Stale-operation resolver.
-  // While any auth operation is in flight, re-fetch server truth every 30 s so
+  // Stage 7: Stale-operation resolver.
+  // While any auth operation is in flight, re-fetch server truth frequently so
   // the UI picks up the resolved state (isAuthInProgress → false, new validity
-  // flags) as soon as the backend finishes — even if the local signingIn /
-  // refreshing state hasn't cleared yet (e.g. slow network).
+  // flags) within a few seconds of the backend finishing — even if the local
+  // signingIn / refreshing state hasn't cleared yet (e.g. slow network).
+  // 3 s is fast enough to feel responsive but slow enough to not spam the server.
   // The interval clears automatically when op.state returns to 'idle'.
   const _staleOpRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
@@ -420,7 +421,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
       }
       return
     }
-    _staleOpRef.current = setInterval(fetchSession, 30_000)
+    _staleOpRef.current = setInterval(fetchSession, 3_000)
     return () => {
       if (_staleOpRef.current !== null) {
         clearInterval(_staleOpRef.current)
@@ -428,6 +429,58 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
       }
     }
   }, [op.state, fetchSession])
+
+  // Stage 7: Max-staleness guards.
+  // If the local signingIn / refreshing state stays true for longer than the
+  // server-side watchdog could ever take, the HTTP request has likely hung
+  // (network stall, server overload). Force-clear the local state, show an
+  // informative message, and re-read server truth.
+  // Sign-in: 100 s max (server watchdog fires at 120 s — we clear just before).
+  // Refresh/verify: 45 s max (Tier-3 Playwright takes ~30 s at most).
+  const _signInTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const _refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (signingIn) {
+      _signInTimeoutRef.current = setTimeout(() => {
+        setSigningIn(false)
+        setFeedback({ text: 'Sign-in timed out — check server status and try again', cls: 'text-accent-red' })
+        fetchSession()
+      }, 100_000)
+    } else {
+      if (_signInTimeoutRef.current !== null) {
+        clearTimeout(_signInTimeoutRef.current)
+        _signInTimeoutRef.current = null
+      }
+    }
+    return () => {
+      if (_signInTimeoutRef.current !== null) {
+        clearTimeout(_signInTimeoutRef.current)
+        _signInTimeoutRef.current = null
+      }
+    }
+  }, [signingIn, fetchSession])
+
+  useEffect(() => {
+    if (refreshing) {
+      _refreshTimeoutRef.current = setTimeout(() => {
+        setRefreshing(false)
+        setFeedback({ text: 'Verification timed out — try again', cls: 'text-accent-red' })
+        fetchSession()
+      }, 45_000)
+    } else {
+      if (_refreshTimeoutRef.current !== null) {
+        clearTimeout(_refreshTimeoutRef.current)
+        _refreshTimeoutRef.current = null
+      }
+    }
+    return () => {
+      if (_refreshTimeoutRef.current !== null) {
+        clearTimeout(_refreshTimeoutRef.current)
+        _refreshTimeoutRef.current = null
+      }
+    }
+  }, [refreshing, fetchSession])
 
   return (
     <>

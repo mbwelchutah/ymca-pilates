@@ -10,7 +10,7 @@ import { useAppState } from './hooks/useAppState'
 import { api } from './lib/api'
 import type { SessionStatus, AuthStatusEnum } from './types'
 
-const SESSION_POLL_MS = 5 * 60 * 1000  // 5 minutes
+const SESSION_POLL_MS = 90 * 1000  // 90 s — fast enough to settle stale auth dot after background ops
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => {
