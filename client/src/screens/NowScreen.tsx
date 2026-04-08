@@ -1133,7 +1133,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <h2 className="text-[28px] font-bold tracking-tighter text-text-primary leading-tight">
                 {job.class_title}
               </h2>
-              <p className="text-[14px] text-text-secondary mt-1 mb-3">
+              <p className="text-[14px] text-text-secondary mt-1 mb-2">
                 {formatDayTime(job)}
               </p>
             </>
@@ -1206,14 +1206,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           ) : (
             <div className="bg-surface rounded-xl px-4 py-3">
-              <div className="flex items-baseline gap-2">
-                <span className="text-[42px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
-                  {countdown || '—'}
-                </span>
-                <span className="text-[14px] text-text-secondary font-medium">until window opens</span>
-              </div>
+              <span className="text-[48px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
+                {countdown || '—'}
+              </span>
               {bookingOpenMs != null && (
-                <p className="text-[12px] text-text-muted mt-1">
+                <p className="text-[12px] text-text-muted mt-2">
                   {execPhase === 'warmup'
                     ? `Opening soon · ${fmt(bookingOpenMs)}`
                     : `Opens ${fmt(bookingOpenMs)}`}
