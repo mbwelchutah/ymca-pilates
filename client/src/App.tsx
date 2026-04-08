@@ -155,6 +155,7 @@ export default function App() {
             accountAttention={accountAttention}
             authStatus={authStatus}
             autoVerifySignal={autoVerifySignal}
+            polledStatus={polledStatus}
           />
         </div>
         <div style={{ display: tab === 'plan' ? undefined : 'none' }}>

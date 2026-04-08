@@ -36,6 +36,7 @@ interface NowScreenProps {
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
   autoVerifySignal?: number
+  polledStatus?: SessionStatus | null
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -384,21 +385,6 @@ function isBookingCurrentCycle(job: Job | null): boolean {
 
 type DotColor = 'green' | 'gray' | 'red' | 'amber' | 'blue'
 
-function readinessDotColor(value: string): DotColor {
-  if (value.endsWith('_READY'))    return 'green'
-  // SESSION_EXPIRED is a true problem requiring re-login — same severity as red failures.
-  if (value === 'SESSION_EXPIRED') return 'red'
-  // ACTION_BLOCKED means "not open yet" — an expected state, not a failure.
-  // Use amber rather than red so it doesn't read as an error.
-  if (value === 'ACTION_BLOCKED')  return 'amber'
-  if (
-    value.endsWith('_FAILED')   ||
-    value.endsWith('_BLOCKED')  ||
-    value.endsWith('_REQUIRED')
-  ) return 'red'
-  return 'gray'
-}
-
 // Derives a single concise string that describes the current blocker (if any).
 function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | null): string | null {
   // Suppress auth messages when a booking/auth operation is actively running —
@@ -418,141 +404,6 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   }
 }
 
-// ── Readiness row sub-component ────────────────────────────────────────────────
-
-function ReadinessRow({
-  label, value, dotColor, last, detail,
-}: {
-  label:     string
-  value:     string
-  dotColor:  DotColor
-  last?:     boolean
-  detail?:   string
-}) {
-  return (
-    <div className={`px-4 py-3 ${!last ? 'border-b border-divider' : ''}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-[14px] text-text-secondary">{label}</span>
-        <div className="flex items-center gap-2">
-          <StatusDot color={dotColor} />
-          <span className="text-[14px] font-medium text-text-primary">{value}</span>
-        </div>
-      </div>
-      {detail && (
-        <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{detail}</p>
-      )}
-    </div>
-  )
-}
-
-// ── Account & Session block — Session + Schedule + Sniper + Last verified ───────
-
-function daxkoToLabel(s: SessionStatus['daxko'] | undefined): { label: string; dotColor: DotColor } {
-  switch (s) {
-    case 'DAXKO_READY':      return { label: 'Ready',       dotColor: 'green' }
-    case 'AUTH_NEEDS_LOGIN': return { label: 'Needs login', dotColor: 'red'   }
-    default:                 return { label: 'Unknown',     dotColor: 'gray'  }
-  }
-}
-
-function fwToLabel(s: SessionStatus['familyworks'] | undefined): { label: string; dotColor: DotColor } {
-  switch (s) {
-    case 'FAMILYWORKS_READY':           return { label: 'Ready',   dotColor: 'green' }
-    // Missing/expired schedule access requires re-login — treat as red (true problem).
-    case 'FAMILYWORKS_SESSION_MISSING': return { label: 'Missing', dotColor: 'red'   }
-    case 'FAMILYWORKS_SESSION_EXPIRED': return { label: 'Expired', dotColor: 'red'   }
-    default:                            return { label: 'Unknown', dotColor: 'gray'  }
-  }
-}
-
-
-function formatAbsoluteTime(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short', day: 'numeric',
-      hour: 'numeric', minute: '2-digit', hour12: true,
-    }).format(d)
-  } catch { return '—' }
-}
-
-function AccountSessionBlock({
-  sessionStatus, bundleSession, verifying, authDetail,
-}: {
-  sessionStatus: SessionStatus | null
-  bundleSession: string
-  verifying:     boolean
-  authDetail?: {
-    verdict:  'ready' | 'login_required' | 'session_expired'
-    provider: string | null
-    detail:   string | null
-  } | null
-}) {
-  // Session (Daxko) — real auth state; fall back to sniper bundle when status unavailable
-  const sessionLabel = sessionStatus
-    ? daxkoToLabel(sessionStatus.daxko)
-    : { label: SESSION_LABEL[bundleSession as keyof typeof SESSION_LABEL] ?? '—', dotColor: readinessDotColor(bundleSession) as DotColor }
-
-  // Schedule (FamilyWorks embed) — real state
-  const fwLabel = sessionStatus
-    ? fwToLabel(sessionStatus.familyworks)
-    : { label: '—', dotColor: 'gray' as DotColor }
-
-  // Last checked — shown as a subtitle on the Session row
-  const lastVerified = formatAbsoluteTime(sessionStatus?.lastVerified ?? null)
-
-  return (
-    <>
-      {/* Session row (Daxko) */}
-      <div className="border-b border-divider px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[14px] text-text-secondary">Session</span>
-          <div className="flex items-center gap-2">
-            <StatusDot color={verifying ? 'gray' : sessionLabel.dotColor} />
-            <span className="text-[14px] font-medium text-text-primary">
-              {verifying ? 'Checking…' : sessionLabel.label}
-            </span>
-          </div>
-        </div>
-        {/* Last-checked timestamp — informative subtitle, no standalone row */}
-        {lastVerified !== '—' && !verifying && (
-          <p className="text-[11px] text-text-muted mt-0.5">Last checked: {lastVerified}</p>
-        )}
-        {authDetail?.verdict === 'login_required' && !verifying && (
-          <p className="text-[12px] text-accent-red mt-0.5 leading-snug">
-            {authDetail.detail ?? 'Credentials rejected — tap the account icon to sign in again'}
-          </p>
-        )}
-        {authDetail?.verdict === 'ready' && !verifying && (
-          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">Login confirmed</p>
-        )}
-      </div>
-
-      {/* Schedule row (FamilyWorks) */}
-      <div className="border-b border-divider px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[14px] text-text-secondary">Schedule</span>
-          <div className="flex items-center gap-2">
-            <StatusDot color={verifying ? 'gray' : fwLabel.dotColor} />
-            <span className="text-[14px] font-medium text-text-primary">
-              {verifying ? '—' : fwLabel.label}
-            </span>
-          </div>
-        </div>
-        {authDetail?.verdict === 'session_expired' && !verifying && (
-          <p className="text-[12px] text-accent-amber mt-0.5 leading-snug">
-            {authDetail.detail ?? 'Schedule access requires re-login — tap the account icon to sign in again'}
-          </p>
-        )}
-        {authDetail?.verdict === 'ready' && !verifying && (
-          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">Schedule access confirmed</p>
-        )}
-      </div>
-    </>
-  )
-}
-
 // ── Auto-verify tracking (module-level so it survives tab remounts) ────────────
 // Stores the last autoVerifySignal value that NowScreen already acted on so
 // switching tabs and back doesn't retrigger a verify that already ran.
@@ -560,7 +411,7 @@ let _lastAutoVerifyFired = 0
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal, polledStatus }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -700,7 +551,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setStableConfidenceLabel(null) // Stage 4: reset label hysteresis on job switch
     setWhyExpanded(false)          // Stage 11C: collapse "why" panel on job switch
     api.getSniperState().then(setSniperRunState).catch(() => {})
-    api.getSessionStatus().then(setSessionStatus).catch(() => {})
+    api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
     api.getReadiness().then(setBgReadiness).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobId, jobFingerprint])
@@ -722,8 +573,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshotCheckedAt])
 
-  // ── Dedicated session check state ──────────────────────────────────────────
-  const [sessionStatus,   setSessionStatus]   = useState<SessionStatus | null>(null)
+  // ── Session status — shared auth truth ────────────────────────────────────
+  // App.tsx's 90 s poll provides the base; job-switch and post-Check-Now fetches
+  // override it locally when a fresher result is immediately needed.
+  const [localSessionStatus, setLocalSessionStatus] = useState<SessionStatus | null>(null)
+  const sessionStatus = localSessionStatus ?? polledStatus ?? null
 
   // Stage 6 — Sniper armed model (Layer C).
   // Computed client-side from the 5 normalized readiness fields so the model is
@@ -744,10 +598,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       autoRetry:       bgReadiness.armed?.autoRetry       ?? false,
     })
   })()
-
-  useEffect(() => {
-    api.getSessionStatus().then(setSessionStatus).catch(() => {})
-  }, [])
 
   // Unmount cleanup: clear step timer if user navigates away during a Run Check.
   useEffect(() => {
@@ -880,9 +730,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       if (result.modalDetail)     setModalDetail(result.modalDetail)
       if (result.actionDetail)    setActionDetail(result.actionDetail)
       if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
-      // Re-fetch session-status.json so the Session/Schedule access rows reflect
-      // the auth outcome that was just written by the preflight pipeline.
-      api.getSessionStatus().then(setSessionStatus).catch(() => {})
+      // Re-fetch session-status.json so the session chip reflects the auth
+      // outcome just written by the preflight pipeline.
+      api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
       // Refresh background readiness so "Last checked" updates immediately.
       api.getReadiness().then(setBgReadiness).catch(() => {})
     } catch { setPreflightStatus('error') }
