@@ -847,7 +847,6 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     <>
       <AppHeader
         subtitle="Plan"
-        action={showingControls ? { label: 'Add', onClick: () => { setEditingJob(null); setShowAdd(true) } } : undefined}
         secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
         onAccount={onAccount}
         accountAttention={accountAttention}
@@ -866,22 +865,28 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {!showAdd && <QueueSummary jobs={appState.jobs} loading={loading} />}
 
+        {/* Stage 2: in-context Add Class CTA — replaces the header Add button */}
+        {!showAdd && !loading && (
+          <button
+            onClick={() => { setEditingJob(null); setShowAdd(true) }}
+            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold mb-4 active:opacity-70 transition-opacity"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Add Class
+          </button>
+        )}
+
         {loading ? (
           <Card className="flex items-center justify-center h-24">
             <span className="text-text-secondary text-[15px]">Loading…</span>
           </Card>
         ) : appState.jobs.length === 0 ? (
-          <Card className="flex flex-col items-center justify-center gap-2 py-10">
-            <p className="text-[17px] font-semibold text-text-primary">No classes yet</p>
-            <p className="text-[14px] text-text-secondary text-center px-6">
-              Add a class to start automating your registrations
+          <Card className="flex items-center justify-center py-8">
+            <p className="text-[14px] text-text-secondary text-center px-4">
+              Tap Add Class to start automating your registrations.
             </p>
-            <button
-              onClick={() => { setEditingJob(null); setShowAdd(true) }}
-              className="mt-2 text-accent-blue text-[15px] font-semibold"
-            >
-              Add Class
-            </button>
           </Card>
         ) : (
           <div className="flex flex-col gap-2">
