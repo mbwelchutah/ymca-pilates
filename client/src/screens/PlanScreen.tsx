@@ -215,8 +215,8 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   }
 
   return (
-    <Card padding="none" className={`overflow-hidden ${isWatching ? 'ring-2 ring-accent-blue/30' : ''} ${!job.is_active ? 'opacity-60' : ''}`}>
-      {/* Active-target accent stripe — top edge of selected card */}
+    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-60' : ''}`}>
+      {/* Active-target accent stripe — sole selection indicator; ring removed (redundant with stripe + badge) */}
       {isWatching && <div className="h-1 bg-accent-blue w-full" />}
 
       {/* ── Tappable body ────────────────────────────────────────────── */}
@@ -1059,8 +1059,9 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </div>
         )}
 
-        {/* Hint — guides user to the Plan → Now connection */}
-        {appState.jobs.length > 0 && !showAdd && (
+        {/* Hint — only shown before the user has selected a card; once selected, the
+             stripe + Now badge communicate the connection without a redundant instruction */}
+        {appState.jobs.length > 0 && !showAdd && selectedJobId === null && (
           <p className="text-center text-[13px] text-text-muted px-4 pb-1">
             Tap a class to open it on Now
           </p>
