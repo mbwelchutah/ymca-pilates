@@ -1,0 +1,395 @@
+You are performing a FINAL INTEGRATION PASS between the Plan tab and the Now tab of the YMCA Booker app.
+
+IMPORTANT RULES
+
+- Do NOT add new features
+- Do NOT expand scope
+- Do NOT redesign architecture
+- ONLY improve coordination, consistency, and reliability between Plan and Now
+
+Assume:
+- Plan screen is complete and polished
+- Now screen is complete and polished
+- booking engine works
+- class identity system exists
+- scheduler exists
+
+This pass is about making the app feel like ONE SYSTEM.
+
+GOAL
+
+Unify Plan and Now so they feel like:
+
+→ Plan = “what will happen”
+→ Now = “what is happening”
+
+The user should never think:
+“Why does Plan say one thing and Now say another?”
+
+==================================================
+STAGE 1 — SINGLE SOURCE OF TRUTH (CRITICAL)
+==================================================
+
+Goal:
+Ensure both Plan and Now derive state from the same source.
+
+Tasks:
+
+1. Identify canonical state:
+   - selected/active class
+   - booking status
+   - schedule timing
+   - session/auth state
+
+2. Ensure:
+   - Plan does NOT compute its own independent truth
+   - Now does NOT compute a conflicting version
+
+3. Fix any duplication:
+   - remove parallel logic
+   - centralize derived state
+
+4. Ensure Plan card status === Now status for same class
+
+Success criteria:
+- no divergence between Plan and Now
+- same class shows same state everywhere
+
+After Stage 1:
+Summarize:
+- what was unified
+- where duplication was removed
+
+STOP
+
+==================================================
+STAGE 2 — PLAN → NOW SELECTION FLOW
+==================================================
+
+Goal:
+Make selecting a class in Plan feel immediate and reliable.
+
+Tasks:
+
+1. On Plan card tap:
+   - immediately set active class
+   - navigate or sync to Now
+
+2. Ensure:
+   - highlight updates instantly in Plan
+   - Now reflects selection instantly
+
+3. Remove delays, race conditions, or flicker
+
+4. Ensure only ONE active class at a time
+
+Success criteria:
+- tap feels instant
+- Now always reflects Plan selection
+- no double-selection or lag
+
+After Stage 2:
+Summarize:
+- what improved in selection responsiveness
+- any race conditions removed
+
+STOP
+
+==================================================
+STAGE 3 — NOW → PLAN FEEDBACK LOOP
+==================================================
+
+Goal:
+Ensure Now updates Plan correctly in real time.
+
+Tasks:
+
+1. When booking state changes in Now:
+   - update corresponding Plan card immediately
+
+2. Sync these states:
+   - Armed
+   - Booking
+   - Confirmed
+   - Waitlisted
+   - Issue
+
+3. Ensure Plan never lags behind Now
+
+4. Avoid duplicate or conflicting status labels
+
+Success criteria:
+- Plan reflects Now in real time
+- no stale Plan cards after booking events
+
+After Stage 3:
+Summarize:
+- how Plan now reflects live booking state
+- what lag issues were fixed
+
+STOP
+
+==================================================
+STAGE 4 — SUCCESS FLOW (AUTO ADVANCE)
+==================================================
+
+Goal:
+After a successful booking, Plan advances naturally.
+
+Tasks:
+
+1. On Confirmed in Now:
+   - advance that class to next occurrence (weekly logic)
+
+2. Update Plan card:
+   - next date
+   - next open time
+   - reset to Scheduled/Waiting
+
+3. Ensure:
+   - no duplicate entries
+   - no stale previous instance remains
+
+4. Keep selection stable or move intelligently:
+   - either remain selected
+   - or move to next upcoming class (if applicable)
+
+Success criteria:
+- user sees next week automatically
+- no manual cleanup needed
+- no duplicate cards
+
+After Stage 4:
+Summarize:
+- how auto-advance works now
+- what edge cases were handled
+
+STOP
+
+==================================================
+STAGE 5 — TIMING CONSISTENCY
+==================================================
+
+Goal:
+Plan and Now show identical timing information.
+
+Tasks:
+
+1. Ensure same formatting:
+   - “Opens Apr 10 at 3:15 PM”
+   - “in 2d 5h 19m”
+
+2. Ensure:
+   - no timezone drift
+   - no mismatched calculations
+
+3. Avoid duplication:
+   - don’t show conflicting time formats simultaneously
+
+4. Ensure countdown logic is shared, not duplicated
+
+Success criteria:
+- Plan and Now match exactly
+- timing is trustworthy everywhere
+
+After Stage 5:
+Summarize:
+- timing consistency improvements
+- any drift bugs fixed
+
+STOP
+
+==================================================
+STAGE 6 — STATUS LANGUAGE UNIFICATION
+==================================================
+
+Goal:
+Plan and Now speak the SAME language.
+
+Tasks:
+
+1. Use identical vocabulary across both:
+   - Scheduled
+   - Armed
+   - Booking…
+   - Confirmed
+   - Waitlisted
+   - Issue
+
+2. Remove:
+   - synonyms across tabs
+   - mismatched labels
+
+3. Ensure tone is:
+   - calm
+   - human
+   - non-technical
+
+Success criteria:
+- user never sees conflicting terminology
+- system feels coherent
+
+After Stage 6:
+Summarize:
+- vocabulary decisions
+- inconsistencies removed
+
+STOP
+
+==================================================
+STAGE 7 — EMPTY / EDGE STATE ALIGNMENT
+==================================================
+
+Goal:
+Make edge cases consistent across Plan and Now.
+
+Tasks:
+
+1. Align behavior when:
+   - no classes exist
+   - no class selected
+   - session expired
+   - schedule not loaded
+
+2. Ensure:
+   - Plan and Now don’t contradict each other
+   - messaging is consistent
+
+3. Keep tone calm and helpful
+
+Success criteria:
+- no confusing empty states
+- both tabs tell the same story
+
+After Stage 7:
+Summarize:
+- edge cases aligned
+- messaging improved
+
+STOP
+
+==================================================
+STAGE 8 — PERFORMANCE + SMOOTHNESS
+==================================================
+
+Goal:
+Make transitions feel instant and smooth.
+
+Tasks:
+
+1. Remove:
+   - flicker between Plan and Now
+   - redundant re-renders
+   - unnecessary reloads
+
+2. Ensure:
+   - selection is immediate
+   - status updates are smooth
+
+3. Avoid blocking UI during updates
+
+Success criteria:
+- app feels fast and responsive
+- transitions feel native
+
+After Stage 8:
+Summarize:
+- performance improvements
+- UX smoothness gains
+
+STOP
+
+==================================================
+STAGE 9 — REMOVE DUPLICATION + NOISE
+==================================================
+
+Goal:
+Eliminate redundant information across tabs.
+
+Tasks:
+
+1. Avoid showing same info twice:
+   - if Now shows detailed state, Plan stays lighter
+
+2. Remove:
+   - duplicate labels
+   - unnecessary repetition
+
+3. Ensure:
+   - Plan = overview
+   - Now = detail
+
+Success criteria:
+- less cognitive load
+- cleaner UI across both tabs
+
+After Stage 9:
+Summarize:
+- what duplication was removed
+- how clarity improved
+
+STOP
+
+==================================================
+STAGE 10 — FINAL TRUST + PRODUCT FEEL PASS
+==================================================
+
+Goal:
+Make the system feel complete and trustworthy.
+
+Tasks:
+
+1. Verify:
+   - selecting in Plan always updates Now
+   - Now always reflects real state
+   - Plan always reflects latest outcome
+
+2. Ensure:
+   - no conflicting UI
+   - no stale states
+   - no confusing transitions
+
+3. Evaluate overall feel:
+   - calm
+   - predictable
+   - reliable
+
+4. Final polish:
+   - wording consistency
+   - visual consistency
+   - interaction smoothness
+
+Success criteria:
+- user trusts the system
+- no hesitation or confusion
+- feels like a finished product
+
+After Stage 10:
+Summarize:
+- final integration improvements
+- why the app now feels cohesive
+
+STOP
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- Plan and Now feel like one system
+- selecting a class is instant and reliable
+- booking updates propagate everywhere
+- timing is consistent and trustworthy
+- language is unified
+- no duplicate or conflicting UI
+- system feels calm, predictable, and complete
+
+It should NOT feel like:
+- two separate screens
+- a debug tool
+- inconsistent or laggy
+- confusing during booking moments
+
+START WITH STAGE 1 ONLY.
+DO NOT SKIP AHEAD.

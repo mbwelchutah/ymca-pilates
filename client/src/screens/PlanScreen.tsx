@@ -659,9 +659,6 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
           {refreshErr && (
             <p className="text-[12px] text-text-secondary mt-1">Refresh failed — try again.</p>
           )}
-          <p className="text-[12px] text-text-muted mt-0.5">
-            Schedule refresh takes ~30 seconds.
-          </p>
         </div>
 
         <div className="h-px bg-divider flex-shrink-0" />
@@ -692,6 +689,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
               <p className="text-[14px] text-text-secondary text-center px-4">
                 Tap Refresh to load classes from the YMCA schedule.
               </p>
+              <p className="text-[12px] text-text-muted text-center">Takes about 30 seconds.</p>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
@@ -980,6 +978,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         {/* Browse primary + Add Manually secondary */}
         {!showAdd && !loading && (
           <div className="flex flex-col gap-2">
+            {/* Primary — full height, blue accent, icon */}
             <button
               onClick={() => setShowBrowse(true)}
               className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold active:opacity-70 transition-opacity"
@@ -989,9 +988,10 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
               </svg>
               Browse Schedule
             </button>
+            {/* Secondary — shorter, lighter weight, clearly subordinate */}
             <button
               onClick={() => { setEditingJob(null); setPrefill(null); setShowAdd(true) }}
-              className="flex items-center justify-center w-full py-3.5 rounded-2xl bg-[#f2f2f7] text-text-secondary text-[15px] font-semibold active:opacity-70 transition-opacity"
+              className="flex items-center justify-center w-full py-2 rounded-2xl bg-[#f2f2f7] text-text-secondary text-[14px] font-medium active:opacity-70 transition-opacity"
             >
               Add Manually
             </button>
