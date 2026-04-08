@@ -723,11 +723,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
     if (!jobSwitched && !jobEdited) return
 
-    if (jobSwitched) {
-      console.log('[class-select] job switched — clearing stale readiness for job', selectedJobId)
-    } else {
-      console.log('[class-select] job edited — clearing stale readiness for job', selectedJobId, jobFingerprint)
-    }
+    // Stale readiness cleared on job switch or edit — no log needed
     setAuthDetail(null)
     setDiscoveryDetail(null)
     setModalDetail(null)

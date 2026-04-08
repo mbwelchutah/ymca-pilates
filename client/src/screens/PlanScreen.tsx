@@ -919,7 +919,6 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
   }
 
   const handleTrack = (cls: ScrapedClass) => {
-    console.log('[class-select] selected', { classTitle: cls.class_title, day: cls.day_of_week, time: cls.class_time })
     setPrefill({
       classTitle: cls.class_title,
       dayOfWeek: DAY_NAME_TO_NUM[cls.day_of_week] ?? 2,
