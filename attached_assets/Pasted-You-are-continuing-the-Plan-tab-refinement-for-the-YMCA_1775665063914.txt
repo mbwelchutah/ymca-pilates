@@ -1,0 +1,198 @@
+You are continuing the Plan tab refinement for the YMCA Booker app.
+
+This prompt covers ONLY:
+STAGE 6 → STAGE 10
+
+Do NOT redo earlier stages.
+Do NOT change sorting or add button behavior from previous work.
+Focus only on refinement, clarity, and polish.
+
+PRIMARY GOAL
+
+Strengthen:
+- Plan → Now connection
+- card readability
+- status clarity
+- visual balance
+- overall polish
+
+The Plan tab should feel like:
+→ a clean upcoming booking queue
+→ tightly connected to Now
+→ calm and mobile-first
+
+==================================================
+STAGE 6 — MAKE ACTIVE / SELECTED CLASS CLEAR
+==================================================
+
+Goal:
+Make it obvious which class is currently active in Now.
+
+Tasks:
+1. Identify the class currently feeding the Now tab
+2. Apply a clear but subtle visual distinction to that card
+3. Replace vague labels like “Watching” with something clearer:
+   - “Now”
+   - or “Active on Now”
+4. Keep the styling calm:
+   - small badge or pill
+   - do NOT overpower the card
+5. Ensure only ONE card is marked active at a time
+
+Success criteria:
+- user instantly knows which class is active
+- Plan and Now feel connected
+- highlight is visible but not loud
+
+After Stage 6:
+Stop and summarize:
+- how the active class is now shown
+- what visual changes were made
+
+==================================================
+STAGE 7 — STANDARDIZE CARD METADATA LINE
+==================================================
+
+Goal:
+Improve scanability and consistency.
+
+Tasks:
+1. Standardize the metadata line under class name to:
+   → Mon, Apr 13 • 4:15 PM • Cloud
+2. Ensure this format is used across ALL cards
+3. Keep the order consistent:
+   - day + date
+   - time
+   - instructor
+4. Remove any inconsistent formatting across cards
+
+Success criteria:
+- all cards use identical formatting
+- metadata is easy to read in <2 seconds
+- layout feels clean and consistent
+
+After Stage 7:
+Stop and summarize:
+- the final metadata format
+- what inconsistencies were fixed
+
+==================================================
+STAGE 8 — REBALANCE EDIT / REMOVE ACTIONS
+==================================================
+
+Goal:
+Keep actions visible but reduce visual dominance of Remove.
+
+Tasks:
+1. Keep BOTH:
+   - Edit
+   - Remove
+2. Reduce visual weight of Remove:
+   - avoid heavy red blocks
+   - prefer lighter destructive styling or text button
+3. Keep Edit as a neutral secondary action
+4. Ensure both remain easy to tap on mobile
+5. Preserve accessibility and clarity
+
+Success criteria:
+- Edit and Remove are both visible
+- Remove no longer dominates the card
+- overall card feels more balanced
+
+After Stage 8:
+Stop and summarize:
+- how button styling changed
+- why balance improved
+
+==================================================
+STAGE 9 — HANDLE BROWSE (NOT YET HOOKED UP)
+==================================================
+
+Goal:
+Avoid awkward or broken feeling while Browse is incomplete.
+
+Tasks:
+1. Keep “Browse Schedule” visible as primary future action
+2. If not fully implemented:
+   - avoid error states
+   - avoid empty confusing UI
+3. Use calm placeholder behavior:
+   - optional subtle subtext:
+     “Schedule browser coming soon”
+     OR
+     keep behavior clean without messaging
+4. Ensure tapping Browse does NOT feel broken
+5. Keep UI visually consistent even if functionality is partial
+
+Success criteria:
+- Browse does not feel broken
+- Plan still feels polished
+- user is not confused
+
+After Stage 9:
+Stop and summarize:
+- how Browse is handled now
+- how confusion was reduced
+
+==================================================
+STAGE 10 — FINAL POLISH PASS
+==================================================
+
+Goal:
+Make Plan feel like a finished product.
+
+Tasks:
+1. Review full screen for:
+   - visual clutter
+   - duplicate signals
+   - unnecessary text
+2. Ensure hierarchy is clear:
+   - summary (top)
+   - add actions
+   - sort controls
+   - cards
+3. Ensure cards communicate clearly:
+   - what class
+   - when it opens
+   - status
+4. Add optional helper text if useful:
+   → “Tap a class to open it on Now”
+5. Remove anything that feels:
+   - like debug UI
+   - like admin tooling
+   - redundant
+
+Success criteria:
+- Plan feels calm and premium
+- everything has a clear purpose
+- screen is easy to scan quickly
+- Plan and Now feel like one system
+
+After Stage 10:
+Stop and summarize:
+- what final improvements were made
+- why the screen now feels complete
+
+==================================================
+FINAL EXPECTATION
+==================================================
+
+After these stages, Plan should feel:
+
+- clean
+- obvious
+- tightly connected to Now
+- free of debug noise
+- balanced and mobile-friendly
+
+OUTPUT RULES
+
+At each stage:
+1. implement ONLY that stage
+2. keep app runnable
+3. summarize what changed
+4. explain what remains
+5. STOP
+
+Start with STAGE 6 only.
+Do not jump ahead.

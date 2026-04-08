@@ -190,9 +190,9 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   }
 
   return (
-    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-60' : ''}`}>
-      {/* Active-target accent stripe */}
-      {isWatching && <div className="h-[3px] bg-accent-blue w-full" />}
+    <Card padding="none" className={`overflow-hidden ${isWatching ? 'ring-2 ring-accent-blue/30' : ''} ${!job.is_active ? 'opacity-60' : ''}`}>
+      {/* Active-target accent stripe — top edge of selected card */}
+      {isWatching && <div className="h-1 bg-accent-blue w-full" />}
 
       {/* ── Tappable body ────────────────────────────────────────────── */}
       <div
