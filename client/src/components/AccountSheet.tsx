@@ -101,7 +101,7 @@ function deriveConnectionInfo(s: SessionStatus | null): ConnectionInfo {
     if (connected) return {
       state:          'connected',
       headline:       'Connected',
-      subline:        auth.bookingSurfaceValid
+      subline:        auth.bookingAccessConfirmed
         ? 'Daxko · Schedule · Booking confirmed'
         : 'Daxko and schedule active',
       dotColor:       'green',
@@ -134,47 +134,15 @@ function deriveConnectionInfo(s: SessionStatus | null): ConnectionInfo {
     }
   }
 
-  // ── Legacy fallback (pre-AuthState or cold start) ─────────────────────────
-  if (!s) return {
+  // authState is always present in server responses. If we reach here without
+  // it, we haven't received any status yet — treat as unknown.
+  return {
     state:          'unknown',
     headline:       'Checking…',
     subline:        '—',
     dotColor:       'gray',
     headlineCls:    'text-text-secondary',
     signedIn:       false,
-    needsAttention: false,
-  }
-
-  const signedIn   = s.daxko       === 'DAXKO_READY'
-  const connActive = s.familyworks === 'FAMILYWORKS_READY'
-
-  if (!signedIn) return {
-    state:          'needs_attention',
-    headline:       'Needs attention',
-    subline:        'Sign-in required',
-    dotColor:       'amber',
-    headlineCls:    'text-accent-red',
-    signedIn:       false,
-    needsAttention: true,
-  }
-
-  if (!connActive) return {
-    state:          'needs_attention',
-    headline:       'Signed in',
-    subline:        'Schedule connection lost',
-    dotColor:       'amber',
-    headlineCls:    'text-text-primary',
-    signedIn:       true,
-    needsAttention: true,
-  }
-
-  return {
-    state:          'connected',
-    headline:       'Connected',
-    subline:        'Daxko and schedule active',
-    dotColor:       'green',
-    headlineCls:    'text-text-primary',
-    signedIn:       true,
     needsAttention: false,
   }
 }
@@ -186,14 +154,19 @@ function deriveOperationInfo(
 ): OperationInfo {
   // Local button state takes precedence — the user just tapped something.
   if (signingIn)  return { state: 'signing_in', label: 'Signing in…' }
-  if (refreshing) return { state: 'verifying',  label: 'Verifying connection…' }
+  if (refreshing) return { state: 'refreshing', label: 'Verifying connection…' }
 
   const auth   = s?.authState
   const locked = s?.locked ?? false
 
-  // Auth lock held but not by a local button click — could be background recovery.
+  // Auth lock held but not by a local button click.
+  // If the session is already valid, call it 'refreshing' (background reuse).
+  // Only use 'signing_in' when credentials may truly be needed.
   if (auth?.isAuthInProgress) {
-    return { state: 'signing_in', label: 'Signing in…' }
+    const sessionValid = auth.daxkoValid && auth.familyworksValid
+    return sessionValid
+      ? { state: 'refreshing', label: 'Refreshing session…' }
+      : { state: 'signing_in', label: 'Signing in…' }
   }
 
   // Lock held without auth in progress → booking run owns the lane.
@@ -275,11 +248,11 @@ interface ThreeTruthsProps {
   session: SessionStatus | null
 }
 
-function ThreeTruths({ auth, session }: ThreeTruthsProps) {
-  // Derive each truth — prefer AuthState, fall back to legacy session fields
-  const daxkoValid    = auth ? auth.daxkoValid : session?.daxko === 'DAXKO_READY'
-  const fwValid       = auth ? auth.familyworksValid : session?.familyworks === 'FAMILYWORKS_READY'
-  const bookingValid  = auth?.bookingSurfaceValid ?? null
+function ThreeTruths({ auth, session: _session }: ThreeTruthsProps) {
+  // All truth derived exclusively from AuthState (canonical).
+  const daxkoValid   = auth?.daxkoValid ?? null
+  const fwValid      = auth?.familyworksValid ?? null
+  const bookingValid = auth?.bookingAccessConfirmed ?? null
 
   const daxko   = deriveTruthStatus(daxkoValid,   'Expired')
   const fw      = deriveTruthStatus(fwValid,       'Inactive')
@@ -542,26 +515,22 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 </p>
                 <DiagRow
                   label="Daxko account"
-                  value={auth ? (auth.daxkoValid ? 'Valid' : 'Invalid') : session?.daxko === 'DAXKO_READY' ? 'Valid' : '—'}
-                  ok={auth ? auth.daxkoValid : session?.daxko === 'DAXKO_READY'}
+                  value={auth ? (auth.daxkoValid ? 'Valid' : 'Invalid') : '—'}
+                  ok={auth?.daxkoValid ?? null}
                 />
                 <Divider />
                 <DiagRow
                   label="Schedule"
-                  value={auth ? (auth.familyworksValid ? 'Active' : 'Inactive') : session?.familyworks === 'FAMILYWORKS_READY' ? 'Active' : '—'}
-                  ok={auth ? auth.familyworksValid : session?.familyworks === 'FAMILYWORKS_READY'}
+                  value={auth ? (auth.familyworksValid ? 'Active' : 'Inactive') : '—'}
+                  ok={auth?.familyworksValid ?? null}
                 />
-                {auth && (
-                  <>
-                    <Divider />
-                    <DiagRow
-                      label="Booking surface"
-                      value={auth.bookingSurfaceValid ? 'Confirmed' : 'Not confirmed'}
-                      ok={auth.bookingSurfaceValid}
-                      neutral={!auth.bookingSurfaceValid}
-                    />
-                  </>
-                )}
+                <Divider />
+                <DiagRow
+                  label="Booking access"
+                  value={auth ? (auth.bookingAccessConfirmed ? 'Confirmed' : 'Not confirmed') : '—'}
+                  ok={auth?.bookingAccessConfirmed ?? null}
+                  neutral={auth ? !auth.bookingAccessConfirmed : false}
+                />
               </div>
 
               {/* Group 2 — Status */}

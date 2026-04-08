@@ -177,7 +177,7 @@ async function createSession(opts = {}) {
     updateAuthState({
       daxkoValid:          true,
       familyworksValid:    true,
-      bookingSurfaceValid: false, // confirmed later by booking code probing the modal
+      bookingAccessConfirmed: false, // confirmed later by booking code probing the modal
       lastCheckedAt:       Date.now(),
     });
   } else if (cardCount > 0) {
@@ -216,7 +216,7 @@ async function createSession(opts = {}) {
         updateAuthState({
           daxkoValid:          true,
           familyworksValid:    true,
-          bookingSurfaceValid: true,
+          bookingAccessConfirmed: true,
           lastCheckedAt:       Date.now(),
         });
         // Close the modal before continuing
@@ -275,7 +275,7 @@ async function createSession(opts = {}) {
             updateAuthState({
               daxkoValid:          true,
               familyworksValid:    true,
-              bookingSurfaceValid: false, // not confirmed until modal probe
+              bookingAccessConfirmed: false, // not confirmed until modal probe
               lastRecoveredAt:     Date.now(),
               lastCheckedAt:       Date.now(),
             });
@@ -313,7 +313,7 @@ async function createSession(opts = {}) {
 
   if (!sessionAlreadyValid && stillOnLogin) {
     const screenshotPath = await snap('login-failed');
-    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingSurfaceValid: false, lastCheckedAt: Date.now() });
+    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingAccessConfirmed: false, lastCheckedAt: Date.now() });
     await close();
     const loginErr = new Error('Login failed or session not established');
     loginErr.screenshotPath = screenshotPath;

@@ -6,7 +6,7 @@
 //   status             'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
 //   daxkoValid         boolean — Daxko session confirmed valid via HTTP or Playwright
 //   familyworksValid   boolean — FamilyWorks session confirmed valid
-//   bookingSurfaceValid boolean — schedule embed loaded, Reserve/Waitlist visible
+//   bookingAccessConfirmed boolean — schedule embed loaded + Reserve/Waitlist button confirmed
 //   lastCheckedAt      number|null — ms timestamp of last any-tier validation
 //   lastRecoveredAt    number|null — ms timestamp of last full Playwright re-login
 //   isAuthInProgress   boolean — login/recovery is currently in flight
@@ -21,7 +21,7 @@ const DEFAULT_STATE = {
   status:              'signed_out',
   daxkoValid:          false,
   familyworksValid:    false,
-  bookingSurfaceValid: false,
+  bookingAccessConfirmed: false,
   lastCheckedAt:       null,
   lastRecoveredAt:     null,
   isAuthInProgress:    false,
@@ -96,6 +96,23 @@ function _deriveStatus(state) {
   return 'needs_refresh';
 }
 
+// ── Field migrations ──────────────────────────────────────────────────────────
+// Applied on read; persisted so subsequent reads are clean.
+
+function _migrate(stored) {
+  let changed = false;
+
+  // bookingSurfaceValid was renamed to bookingAccessConfirmed.
+  if ('bookingSurfaceValid' in stored && !('bookingAccessConfirmed' in stored)) {
+    stored.bookingAccessConfirmed = stored.bookingSurfaceValid;
+    delete stored.bookingSurfaceValid;
+    changed = true;
+  }
+
+  if (changed) _write(stored);
+  return stored;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -104,7 +121,7 @@ function _deriveStatus(state) {
  */
 function getAuthState() {
   const stored = _read();
-  if (stored) return { ...DEFAULT_STATE, ...stored };
+  if (stored) return { ...DEFAULT_STATE, ..._migrate(stored) };
 
   // First run — bootstrap from legacy files and persist.
   const derived = _deriveFromLegacy();

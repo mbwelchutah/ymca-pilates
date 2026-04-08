@@ -269,7 +269,7 @@ async function checkAutoPreflights({ isActive = false } = {}) {
         }
         // Whether recovery succeeded or failed, continue to the preflight.
         // A failed recovery is still useful: if the session was actually OK
-        // (e.g. ping was slow), the preflight will confirm it via bookingSurfaceValid.
+        // (e.g. ping was slow), the preflight will confirm it via bookingAccessConfirmed.
       }
       // ───────────────────────────────────────────────────────────────────
 

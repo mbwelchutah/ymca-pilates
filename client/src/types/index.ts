@@ -13,21 +13,24 @@ export type ConnectionState = 'connected' | 'needs_attention' | 'unknown'
 
 // Operation state — what auth-related action is currently in flight, if any.
 // Secondary to connection truth; should not override the settled headline.
+// refreshing = background session reuse/revalidation (no credentials needed)
+// signing_in = full credential-based login (Daxko + FamilyWorks OAuth)
 export type OperationState =
   | 'idle'
   | 'signing_in'
+  | 'refreshing'
   | 'verifying'
   | 'blocked_by_booking'
   | 'failed'
 
 export interface AuthState {
-  status:              AuthStatusEnum
-  daxkoValid:          boolean
-  familyworksValid:    boolean
-  bookingSurfaceValid: boolean
-  lastCheckedAt:       number | null
-  lastRecoveredAt:     number | null
-  isAuthInProgress:    boolean
+  status:                 AuthStatusEnum
+  daxkoValid:             boolean
+  familyworksValid:       boolean
+  bookingAccessConfirmed: boolean  // schedule embed reachable + booking surface verified
+  lastCheckedAt:          number | null
+  lastRecoveredAt:        number | null
+  isAuthInProgress:       boolean
 }
 
 export interface SessionStatus {

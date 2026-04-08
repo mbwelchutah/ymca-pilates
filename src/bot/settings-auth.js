@@ -339,7 +339,7 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
     updateAuthState({
       daxkoValid:          true,
       familyworksValid:    fwReady,
-      bookingSurfaceValid: fwReady, // modal confirmed Register/Waitlist → booking surface live
+      bookingAccessConfirmed: fwReady, // modal confirmed Register/Waitlist → booking surface live
       lastCheckedAt:       Date.now(),
       lastRecoveredAt:     Date.now(),
     });
@@ -370,7 +370,7 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
     updateAuthState({
       daxkoValid:          false,
       familyworksValid:    false,
-      bookingSurfaceValid: false,
+      bookingAccessConfirmed: false,
       lastCheckedAt:       Date.now(),
     });
 
