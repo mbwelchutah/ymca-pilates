@@ -5165,6 +5165,17 @@ server.on('error', (err) => {
 });
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
 
+// Stage 2: Clear any stale isAuthInProgress left in auth-state.json by a
+// previous server crash.  The in-memory lock is always false on a fresh
+// process start, so persisted isAuthInProgress: true is always stale.
+(function clearStaleAuthProgress() {
+  try {
+    const { updateAuthState } = require('../bot/auth-state');
+    updateAuthState({ isAuthInProgress: false });
+    console.log('[auth-state] Startup: cleared stale isAuthInProgress.');
+  } catch (_) {}
+})();
+
 // ---------------------------------------------------------------------------
 // Built-in scheduler loop — fires a tick every 60 s so booking jobs auto-run
 // when their window opens without needing a separate process.

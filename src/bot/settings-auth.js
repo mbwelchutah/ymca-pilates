@@ -15,8 +15,9 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { createSession } = require('./daxko-session');
-const { saveCookies }   = require('./session-ping');
+const { createSession }  = require('./daxko-session');
+const { saveCookies }    = require('./session-ping');
+const { updateAuthState } = require('./auth-state');
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const DAXKO_FILE = path.join(DATA_DIR, 'session-status.json');
@@ -332,6 +333,17 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
     console.log('[settings-auth] Result:', detail);
     console.log('[settings-auth] ─────────────────────────────────────');
 
+    // Stage 2: Update canonical AuthState so the UI reflects the new session
+    // immediately — without waiting for the next keepalive or session check.
+    const fwReady = fwResult.ready === true;
+    updateAuthState({
+      daxkoValid:          true,
+      familyworksValid:    fwReady,
+      bookingSurfaceValid: fwReady, // modal confirmed Register/Waitlist → booking surface live
+      lastCheckedAt:       Date.now(),
+      lastRecoveredAt:     Date.now(),
+    });
+
     return { daxko: 'DAXKO_READY', familyworks, lastVerified: checkedAt, detail, screenshot: null };
 
   } catch (err) {
@@ -352,6 +364,14 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
       checkedAt,
       source,
       detail:    'Daxko login failed — FamilyWorks session not established',
+    });
+
+    // Stage 2: Update canonical AuthState on failure so the UI resolves immediately.
+    updateAuthState({
+      daxkoValid:          false,
+      familyworksValid:    false,
+      bookingSurfaceValid: false,
+      lastCheckedAt:       Date.now(),
     });
 
     console.log('[settings-auth] ─────────────────────────────────────');
