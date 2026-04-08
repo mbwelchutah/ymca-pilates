@@ -1103,7 +1103,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="mb-3">
               <p className="text-[22px] font-semibold text-text-primary">No class selected</p>
               <p className="text-[13px] text-text-secondary mt-1">
-                Add a class in the Plan tab to start watching
+                {appState.jobs.length === 0
+                  ? 'Add a class in the Plan tab to get started.'
+                  : 'Tap a class in the Plan tab to watch it.'}
               </p>
             </div>
           )}
