@@ -733,7 +733,7 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
                   : `${count} class${count !== 1 ? 'es' : ''}`
 
   return (
-    <div className="mb-4 mt-0.5">
+    <div className="mb-2 mt-0.5">
       <p className="text-[22px] font-bold text-text-primary tracking-tight leading-tight">
         {countText}
       </p>
@@ -926,7 +926,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {/* Stage 8: unified Browse/Add entry — Browse is primary, manual is escape */}
         {!showAdd && !loading && (
-          <div className="flex flex-col items-center gap-2 mb-4">
+          <div className="flex flex-col items-center gap-2">
             <button
               onClick={() => setShowBrowse(true)}
               className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold active:opacity-70 transition-opacity"
@@ -947,7 +947,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {/* Stage 3: Sort pills — only shown when 2+ classes are loaded */}
         {!showAdd && !loading && appState.jobs.length >= 2 && (
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2">
             {SORT_MODES.map(mode => (
               <button
                 key={mode}
@@ -972,11 +972,11 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         ) : appState.jobs.length === 0 ? (
           <Card className="flex items-center justify-center py-8">
             <p className="text-[14px] text-text-secondary text-center px-4">
-              Tap Add Class to start automating your registrations.
+              Tap Browse Schedule to add your first class.
             </p>
           </Card>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {sortJobs(appState.jobs, sortMode)
               .map(job => (
               <JobCard
@@ -995,7 +995,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {/* Hint — always visible when there are classes, guides user to Now tab */}
         {appState.jobs.length > 0 && !showAdd && (
-          <p className="text-center text-[12px] text-text-muted px-4 pb-1">
+          <p className="text-center text-[13px] text-text-muted px-4 pb-1">
             Tap a class card to view it live on Now
           </p>
         )}
