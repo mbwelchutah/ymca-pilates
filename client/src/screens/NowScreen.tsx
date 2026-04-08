@@ -1275,40 +1275,33 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           })()}
 
           {/* ── Confidence Ring ───────────────────────────────────────────────────
-               Stage 4: wired to real confidenceScore (0-100 or null).
-               Fill formula: frac = score / 100  (continuous, 0–1 range).
-               Thresholds used for colour/label only — the arc itself is linear.
-               Arc animates via stroke-dashoffset CSS transition (0.6s ease).
-               Hidden entirely when confidenceScore is null (no data yet).    */}
+               Stage 11A: purely visual arc — no text label below it.
+               Arc color uses the same 80/60 thresholds as the trust line's
+               scoreToLabel so ring and text can never visually contradict.
+               Fill = score/100 (continuous). Animates via stroke transition. */}
           {job && !isBooked && !isInactive && confidenceScore != null && (() => {
             const R    = 16
             const circ = 2 * Math.PI * R   // ≈ 100.53
 
-            const score = confidenceScore   // live value from readiness poller
-            const frac  = Math.max(0, Math.min(1, score / 100))
+            const score  = confidenceScore
+            const frac   = Math.max(0, Math.min(1, score / 100))
             const offset = circ * (1 - frac)
 
-            // Stage 3 + 5: label and arc color from score bucket (calm iOS tones)
-            const ringLabel     = score >= 70 ? 'High'  : score >= 40 ? 'Likely'  : 'At risk'
-            const arcColor      = score >= 70
+            // Thresholds match scoreToLabel (confidence.ts): 80+ green, 60+ amber, else red
+            const arcColor = score >= 80
               ? 'var(--color-accent-green)'
-              : score >= 40
+              : score >= 60
               ? 'var(--color-accent-amber)'
               : 'var(--color-accent-red)'
-            const labelClass    = score >= 70
-              ? 'text-accent-green'
-              : score >= 40
-              ? 'text-accent-amber'
-              : 'text-accent-red'
 
             return (
-              <div className="mt-3 flex flex-col items-center gap-1">
+              <div className="mt-3 flex items-center justify-center">
                 <svg
                   width="44" height="44" viewBox="0 0 40 40"
                   className="-rotate-90"
                   aria-hidden="true"
                 >
-                  {/* Track — always neutral */}
+                  {/* Track */}
                   <circle
                     cx="20" cy="20" r={R}
                     fill="none"
@@ -1316,7 +1309,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     strokeWidth="3"
                     className="text-divider"
                   />
-                  {/* Arc — stroke set directly so CSS stroke transition animates color */}
+                  {/* Arc */}
                   <circle
                     cx="20" cy="20" r={R}
                     fill="none"
@@ -1330,8 +1323,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     }}
                   />
                 </svg>
-                {/* Label — small, matches arc color, secondary to the ring */}
-                <span className={`text-[11px] tracking-wide ${labelClass}`}>{ringLabel}</span>
               </div>
             )
           })()}
