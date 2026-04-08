@@ -4170,7 +4170,8 @@ const server = http.createServer((req, res) => {
       ? candidates.reduce((a, b) => (a > b ? a : b))
       : null;
 
-    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()) });
+    const { getAuthState } = require('../bot/auth-state');
+    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()), authState: getAuthState() });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Runs a dedicated login check — login only, no booking pipeline.
@@ -4520,6 +4521,8 @@ const server = http.createServer((req, res) => {
       sniper.bundle.session = 'SESSION_UNKNOWN';
       fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
 
+      const { clearAuthState } = require('../bot/auth-state');
+      clearAuthState();
       console.log('[settings-clear] Auth state cleared.');
       json({
         success: true,

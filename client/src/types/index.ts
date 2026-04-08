@@ -4,6 +4,18 @@ export type DaxkoStatus      = 'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOW
 export type FamilyWorksStatus= 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_UNKNOWN'
 export type OverallAuthStatus= 'DAXKO_READY' | 'FAMILYWORKS_READY' | 'FAMILYWORKS_SESSION_MISSING' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
 
+export type AuthStatusEnum = 'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
+
+export interface AuthState {
+  status:              AuthStatusEnum
+  daxkoValid:          boolean
+  familyworksValid:    boolean
+  bookingSurfaceValid: boolean
+  lastCheckedAt:       number | null
+  lastRecoveredAt:     number | null
+  isAuthInProgress:    boolean
+}
+
 export interface SessionStatus {
   valid:        boolean | null
   checkedAt:    string | null
@@ -14,6 +26,7 @@ export interface SessionStatus {
   overall:      OverallAuthStatus
   lastVerified: string | null
   locked?:      boolean
+  authState?:   AuthState
 }
 export type LastResult =
   | 'booked'

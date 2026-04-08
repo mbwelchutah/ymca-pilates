@@ -12,6 +12,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { updateAuthState } = require('./auth-state');
 
 const DATA_DIR     = path.resolve(__dirname, '../data');
 const COOKIES_FILE = path.join(DATA_DIR, 'session-cookies.json');
@@ -226,6 +227,11 @@ async function pingSessionHttp() {
 
   if (daxkoOk && fwOk) {
     refreshStatusTimestamps();
+    updateAuthState({
+      daxkoValid:       true,
+      familyworksValid: true,
+      lastCheckedAt:    Date.now(),
+    });
     return {
       trusted: true,
       detail:  `Tier-2 ping OK — Daxko session active, FamilyWorks session active`,
@@ -233,6 +239,13 @@ async function pingSessionHttp() {
       fwResult,
     };
   }
+
+  // Partial or full failure — update known validity flags.
+  // Only update if the ping gave a definitive answer (not null/inconclusive).
+  const patch = { lastCheckedAt: Date.now() };
+  if (daxkoResult.valid !== null)  patch.daxkoValid       = daxkoResult.valid === true;
+  if (fwResult.valid    !== null)  patch.familyworksValid = fwResult.valid    === true;
+  if (Object.keys(patch).length > 1) updateAuthState(patch);
 
   // Determine the primary reason for missing.
   let reason;

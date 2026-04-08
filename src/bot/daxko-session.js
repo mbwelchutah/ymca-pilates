@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { chromium } = require('playwright');
+const { updateAuthState } = require('./auth-state');
 
 let CHROMIUM_PATH;
 try {
@@ -136,6 +137,12 @@ async function createSession(opts = {}) {
       if (hasSessionReady) {
         console.log('[session] FW session already valid — Register/Waitlist button visible.');
         sessionAlreadyValid = true;
+        updateAuthState({
+          daxkoValid:          true,
+          familyworksValid:    true,
+          bookingSurfaceValid: true,
+          lastCheckedAt:       Date.now(),
+        });
         // Close the modal before continuing
         await page.keyboard.press('Escape').catch(() => {});
         await page.waitForTimeout(500);
@@ -186,6 +193,13 @@ async function createSession(opts = {}) {
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForTimeout(2000);
             console.log('[session] After Daxko login + FW redirect, URL:', page.url());
+            updateAuthState({
+              daxkoValid:          true,
+              familyworksValid:    true,
+              bookingSurfaceValid: false, // not confirmed until modal probe
+              lastRecoveredAt:     Date.now(),
+              lastCheckedAt:       Date.now(),
+            });
 
           } else if (isAccountPg) {
             // Already authenticated somehow — wait for OAuth redirect to FW
@@ -220,6 +234,7 @@ async function createSession(opts = {}) {
 
   if (!sessionAlreadyValid && stillOnLogin) {
     const screenshotPath = await snap('login-failed');
+    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingSurfaceValid: false });
     await close();
     const loginErr = new Error('Login failed or session not established');
     loginErr.screenshotPath = screenshotPath;

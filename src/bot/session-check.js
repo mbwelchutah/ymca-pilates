@@ -8,8 +8,9 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { createSession } = require('./daxko-session');
-const { saveCookies }   = require('./session-ping');
+const { createSession }   = require('./daxko-session');
+const { saveCookies }     = require('./session-ping');
+const { updateAuthState } = require('./auth-state');
 
 const DATA_DIR    = path.resolve(__dirname, '../data');
 const STATUS_FILE = path.join(DATA_DIR, 'session-status.json');
@@ -59,6 +60,7 @@ async function runSessionCheck({ source = 'manual' } = {}) {
       screenshot,
     };
     saveStatus(status);
+    updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
     console.log('[session-check] Login succeeded — credentials valid.');
     return status;
   } catch (err) {
@@ -74,6 +76,7 @@ async function runSessionCheck({ source = 'manual' } = {}) {
       screenshot,
     };
     saveStatus(status);
+    updateAuthState({ daxkoValid: false, familyworksValid: false, lastCheckedAt: Date.now() });
     return status;
   } finally {
     if (session) {
