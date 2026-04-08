@@ -278,29 +278,13 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
 
         {/* Sniper detail row — watched card only, unchanged logic */}
         {isWatching && sniperRow && (() => {
-          const { phase: sp, sessOk, classOk, modalOk, countdown: sniperCountdown } = sniperRow
+          const { phase: sp, countdown: sniperCountdown } = sniperRow
 
           if (sp === 'monitoring') {
-            const anyOk = sessOk || classOk || modalOk
-            const sig = (ok: boolean, label: string) => ok
-              ? <span key={label} className="text-accent-green">{label} ✓</span>
-              : <span key={label} className="text-text-muted/70">{label} —</span>
             return (
               <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-text-muted/50" />
-                {anyOk ? (
-                  <span className="text-[12px] text-text-secondary font-medium flex items-center gap-1.5 flex-wrap">
-                    <span>Monitoring</span>
-                    <span className="text-text-muted/40">·</span>
-                    {sig(sessOk, 'Session')}
-                    <span className="text-text-muted/40">·</span>
-                    {sig(classOk, 'Class')}
-                    <span className="text-text-muted/40">·</span>
-                    {sig(modalOk, 'Modal')}
-                  </span>
-                ) : (
-                  <span className="text-[12px] text-text-secondary font-medium">Monitoring</span>
-                )}
+                <span className="text-[12px] text-text-secondary font-medium">Monitoring</span>
               </div>
             )
           }
@@ -318,9 +302,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             return (
               <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
-                <span className="text-[12px] text-text-secondary font-medium">
-                  Armed · <span className="text-accent-green">Class</span> · <span className="text-accent-green">Session</span> · <span className="text-accent-green">Modal</span>
-                </span>
+                <span className="text-[12px] text-accent-green font-medium">Armed</span>
               </div>
             )
           }
