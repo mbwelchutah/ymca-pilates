@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { SessionStatus, AuthState, ConnectionState, OperationState } from '../types'
 import { StatusDot } from './ui/StatusDot'
 import { api } from '../lib/api'
@@ -413,6 +413,30 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
   const op   = deriveOperationInfo(session, signingIn, refreshing)
   const auth = session?.authState ?? null
   const lastCheckedMs = auth?.lastCheckedAt ?? null
+
+  // Stage 3: Stale-operation resolver.
+  // While any auth operation is in flight, re-fetch server truth every 30 s so
+  // the UI picks up the resolved state (isAuthInProgress → false, new validity
+  // flags) as soon as the backend finishes — even if the local signingIn /
+  // refreshing state hasn't cleared yet (e.g. slow network).
+  // The interval clears automatically when op.state returns to 'idle'.
+  const _staleOpRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    if (op.state === 'idle') {
+      if (_staleOpRef.current !== null) {
+        clearInterval(_staleOpRef.current)
+        _staleOpRef.current = null
+      }
+      return
+    }
+    _staleOpRef.current = setInterval(fetchSession, 30_000)
+    return () => {
+      if (_staleOpRef.current !== null) {
+        clearInterval(_staleOpRef.current)
+        _staleOpRef.current = null
+      }
+    }
+  }, [op.state, fetchSession])
 
   return (
     <>
