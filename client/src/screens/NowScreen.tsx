@@ -1454,6 +1454,31 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
+              {/* ── Primary action: Pause / Resume ───────────────────────────────── */}
+              {/* Shown only when the system is active and waiting — not during     */}
+              {/* booking, confirmed, or inactive states. Resume is prominent        */}
+              {/* (amber pill) because it is urgent; Pause is muted (system runs    */}
+              {/* automatically — user rarely needs to stop it).                     */}
+              {!bannerIsComplete && (
+                <div className="flex justify-center py-1">
+                  {appState.schedulerPaused ? (
+                    <button
+                      onClick={handlePauseResume}
+                      className="px-5 py-1.5 rounded-full text-[13px] font-semibold text-accent-amber bg-accent-amber/10 active:opacity-70 transition-opacity"
+                    >
+                      Resume
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePauseResume}
+                      className="text-[12px] text-text-muted active:opacity-50 py-1"
+                    >
+                      Pause
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Step 3 — Compact utility row: inline mode toggle + verify button */}
               <div className="flex items-center justify-between mt-1 pt-2 border-t border-divider">
                 {/* Inline Live / Test toggle — subdued, no heavy background */}
@@ -1725,19 +1750,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </SecondaryButton>
         )}
 
-        {/* ── Pause / Resume — quiet text link (Stage 7) ──────────── */}
-        <div className="flex justify-center pb-2">
-          <button
-            onClick={handlePauseResume}
-            className={
-              appState.schedulerPaused
-                ? 'text-[13px] font-medium text-accent-amber active:opacity-60'
-                : 'text-[12px] text-text-muted active:opacity-50'
-            }
-          >
-            {appState.schedulerPaused ? 'Resume scheduler' : 'Pause scheduler'}
-          </button>
-        </div>
       </ScreenContainer>
     </>
   )
