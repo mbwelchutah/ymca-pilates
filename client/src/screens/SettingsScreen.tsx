@@ -33,33 +33,6 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
       <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
       <ScreenContainer>
 
-        {/* Account */}
-        <SectionHeader title="Account" />
-        <Card padding="none">
-          <button
-            onClick={onAccount}
-            className="w-full flex items-center justify-between py-3.5 px-4 active:bg-surface transition-colors"
-          >
-            <span className="text-[14px] text-text-primary">Signed-in account</span>
-            <div className="flex items-center gap-1.5 text-text-muted">
-              <span className="text-[14px]">Manage</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </div>
-          </button>
-        </Card>
-
         {/* Scheduler */}
         <SectionHeader title="Scheduler" />
         <Card padding="none">
