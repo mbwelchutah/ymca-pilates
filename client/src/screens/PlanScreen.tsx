@@ -735,11 +735,53 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
   )
 }
 
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+type SortMode = 'date' | 'name' | 'instructor'
+
+function sortJobs(jobs: Job[], mode: SortMode): Job[] {
+  return [...jobs].sort((a, b) => {
+    if (mode === 'name') {
+      const n = a.class_title.localeCompare(b.class_title)
+      if (n !== 0) return n
+      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+    }
+    if (mode === 'instructor') {
+      const ai = (a.instructor ?? '').toLowerCase()
+      const bi = (b.instructor ?? '').toLowerCase()
+      // Empty instructor sorts last
+      if (!ai && bi) return 1
+      if (ai && !bi) return -1
+      const c = ai.localeCompare(bi)
+      if (c !== 0) return c
+      return a.class_title.localeCompare(b.class_title)
+    }
+    // Default: 'date' — target_date ascending, nulls last, then class_time
+    const da = a.target_date ?? ''
+    const db = b.target_date ?? ''
+    if (da !== db) {
+      if (!da) return 1
+      if (!db) return -1
+      if (da < db) return -1
+      if (da > db) return 1
+    }
+    return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+  })
+}
+
+const SORT_LABELS: Record<SortMode, string> = {
+  date:       'Date',
+  name:       'Name',
+  instructor: 'Instructor',
+}
+const SORT_MODES: SortMode[] = ['date', 'name', 'instructor']
+
 export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention, authStatus }: PlanScreenProps) {
   const [showAdd, setShowAdd]         = useState(false)
   const [showBrowse, setShowBrowse]   = useState(false)
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
   const [editingJob, setEditingJob]   = useState<Job | null>(null)
+  const [sortMode, setSortMode]       = useState<SortMode>('date')
 
   // ── Stage 7: bgReadiness polling for the watched job ──────────────────────
   const [bgReadiness, setBgReadiness] = useState<Awaited<ReturnType<typeof api.getReadiness>> | null>(null)
@@ -878,6 +920,26 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </button>
         )}
 
+        {/* Stage 3: Sort pills — only shown when 2+ classes are loaded */}
+        {!showAdd && !loading && appState.jobs.length >= 2 && (
+          <div className="flex gap-2 mb-3">
+            {SORT_MODES.map(mode => (
+              <button
+                key={mode}
+                onClick={() => setSortMode(mode)}
+                className={`
+                  px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors
+                  ${sortMode === mode
+                    ? 'bg-accent-blue text-white'
+                    : 'bg-[#f2f2f7] text-text-secondary active:opacity-70'}
+                `}
+              >
+                {SORT_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <Card className="flex items-center justify-center h-24">
             <span className="text-text-secondary text-[15px]">Loading…</span>
@@ -890,20 +952,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
           </Card>
         ) : (
           <div className="flex flex-col gap-2">
-            {[...appState.jobs]
-              .sort((a, b) => {
-                // Primary: target_date ascending; nulls sort after dated jobs
-                const da = a.target_date ?? ''
-                const db = b.target_date ?? ''
-                if (da !== db) {
-                  if (!da) return 1
-                  if (!db) return -1
-                  if (da < db) return -1
-                  if (da > db) return 1
-                }
-                // Secondary: class_time ascending (within the same date)
-                return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
-              })
+            {sortJobs(appState.jobs, sortMode)
               .map(job => (
               <JobCard
                 key={job.id}
