@@ -313,7 +313,7 @@ async function createSession(opts = {}) {
 
   if (!sessionAlreadyValid && stillOnLogin) {
     const screenshotPath = await snap('login-failed');
-    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingSurfaceValid: false });
+    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingSurfaceValid: false, lastCheckedAt: Date.now() });
     await close();
     const loginErr = new Error('Login failed or session not established');
     loginErr.screenshotPath = screenshotPath;

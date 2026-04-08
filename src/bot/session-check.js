@@ -117,7 +117,7 @@ async function runSessionCheck({ source = 'manual' } = {}) {
       screenshot,
     };
     saveStatus(status);
-    updateAuthState({ daxkoValid: false, familyworksValid: false, lastCheckedAt: Date.now() });
+    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingSurfaceValid: false, lastCheckedAt: Date.now() });
     return status;
   } finally {
     if (session) {

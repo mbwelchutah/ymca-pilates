@@ -18,6 +18,7 @@ const { getAllJobs }                   = require('../db/jobs');
 const { refreshReadiness }            = require('../bot/readiness-state');
 const { pingSessionHttp }             = require('../bot/session-ping');
 const { isLocked }                    = require('../bot/auth-lock');
+const { updateAuthState }             = require('../bot/auth-state');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
@@ -202,6 +203,9 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
   if (freshness.trusted) {
     console.log('[session-keepalive] Tier 1 trust —', freshness.detail);
     appendLog({ timestamp, valid: true, detail: freshness.detail, screenshot: null, tier: 1 });
+    // Bump lastCheckedAt so the UI "Checked X ago" stays current even when
+    // Tier-1 is confirming trust without launching a browser.
+    updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
     try {
       const jobs   = getAllJobs().filter(j => j.is_active === 1);
       const topJob = jobs[0] ?? null;
