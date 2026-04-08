@@ -350,7 +350,7 @@ function isTransitionAllowed(from: TopLevelState, to: TopLevelState, severity: R
 const PHASE_CONFIG: Record<Phase, { label: string }> = {
   too_early: { label: 'Scheduled'     }, // matches Plan's PHASE_LABEL — canonical term
   warmup:    { label: 'Opens Soon'    }, // matches Plan's PHASE_LABEL warmup exactly
-  sniper:    { label: 'Booking'       },
+  sniper:    { label: 'Booking…'      }, // matches canonical vocabulary (ellipsis = in-progress)
   late:      { label: 'Window Closed' },
   unknown:   { label: 'Scheduled'     }, // matches Plan's PHASE_LABEL unknown
 }

@@ -719,12 +719,15 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
       <p className="text-[22px] font-bold text-text-primary tracking-tight leading-tight">
         {countText}
       </p>
-      {count > 0 && countdown ? (
+      {/* With 1 class the card below already shows the same countdown — suppress here.
+           With 2+ classes this summarises the EARLIEST window across all active jobs,
+           which is genuinely different information from any individual card. */}
+      {count > 1 && countdown ? (
         <p className="text-[14px] text-text-secondary mt-0.5">
           Next opens in{' '}
           <span className="font-semibold text-text-primary tabular-nums">{countdown}</span>
         </p>
-      ) : count > 0 && nextMs ? (
+      ) : count > 1 && nextMs ? (
         <p className="text-[14px] text-text-secondary mt-0.5">
           Next opens {new Date(nextMs).toLocaleDateString([], { month: 'short', day: 'numeric' })}
         </p>
