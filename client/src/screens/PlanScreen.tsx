@@ -755,9 +755,21 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
   )
 }
 
-// ── Sort helpers ──────────────────────────────────────────────────────────────
+// ── Sort helpers — 'date' puts upcoming first, past last ──────────────────────
 
 type SortMode = 'date' | 'name' | 'instructor'
+
+// Three buckets for 'date' mode (always ascending within each bucket):
+//   1. Upcoming with a specific target_date (target_date >= today)
+//   2. Undated recurring (no target_date) — sorted by day-of-week, then time
+//   3. Past-dated (target_date < today) — sorted by date so oldest sits last
+//
+// 'name' and 'instructor' are simple alphabetical sorts unchanged from before.
+function dayOfWeekNum(job: Job): number {
+  const raw = job.day_of_week as unknown
+  if (typeof raw === 'number') return raw
+  return DAY_NAME_TO_NUM[raw as string] ?? 8
+}
 
 function sortJobs(jobs: Job[], mode: SortMode): Job[] {
   return [...jobs].sort((a, b) => {
@@ -769,22 +781,43 @@ function sortJobs(jobs: Job[], mode: SortMode): Job[] {
     if (mode === 'instructor') {
       const ai = (a.instructor ?? '').toLowerCase()
       const bi = (b.instructor ?? '').toLowerCase()
-      // Empty instructor sorts last
       if (!ai && bi) return 1
       if (ai && !bi) return -1
       const c = ai.localeCompare(bi)
       if (c !== 0) return c
       return a.class_title.localeCompare(b.class_title)
     }
-    // Default: 'date' — target_date ascending, nulls last, then class_time
-    const da = a.target_date ?? ''
-    const db = b.target_date ?? ''
-    if (da !== db) {
-      if (!da) return 1
-      if (!db) return -1
-      if (da < db) return -1
-      if (da > db) return 1
+
+    // 'date' mode — three-bucket sort
+    const today = new Date().toISOString().slice(0, 10)   // 'YYYY-MM-DD'
+    const da    = a.target_date ?? ''
+    const db    = b.target_date ?? ''
+    const aIsPast    = !!da && da < today   // bucket 3
+    const bIsPast    = !!db && db < today
+    const aIsUndated = !da                  // bucket 2
+    const bIsUndated = !db
+
+    // Bucket priority: upcoming-specific (0) < undated-recurring (1) < past (2)
+    const bucketA = aIsPast ? 2 : aIsUndated ? 1 : 0
+    const bucketB = bIsPast ? 2 : bIsUndated ? 1 : 0
+    if (bucketA !== bucketB) return bucketA - bucketB
+
+    // Within bucket 0 (upcoming specific): ascending by date, then time
+    if (bucketA === 0) {
+      if (da !== db) return da < db ? -1 : 1
+      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
     }
+
+    // Within bucket 1 (undated recurring): by day-of-week, then time
+    if (bucketA === 1) {
+      const dA = dayOfWeekNum(a)
+      const dB = dayOfWeekNum(b)
+      if (dA !== dB) return dA - dB
+      return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
+    }
+
+    // Within bucket 2 (past): ascending by date (oldest first), then time
+    if (da !== db) return da < db ? -1 : 1
     return timeToMinutes(a.class_time) - timeToMinutes(b.class_time)
   })
 }

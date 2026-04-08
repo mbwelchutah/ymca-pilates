@@ -1,0 +1,346 @@
+You are refining the rewritten Plan tab of the YMCA Booker app.
+
+PRIMARY GOAL
+
+Polish the new Plan screen so it feels clearer, calmer, and more intentional.
+
+The current rewrite is substantially better than before.
+Now this pass should improve:
+- sort behavior
+- action clarity
+- status simplicity
+- Plan → Now relationship
+- visual balance
+
+The Plan tab should feel like a clean upcoming booking queue, not a job list or debug screen.
+
+IMPORTANT PRODUCT DIRECTION
+
+Plan = upcoming booking pipeline
+Now = active selected class / live execution
+
+Plan should focus on:
+- what classes are coming up
+- when each one opens
+- what is selected for Now
+- how to edit or remove a class quickly
+- how to add a new class clearly
+
+Do NOT add technical clutter.
+Do NOT surface error/debug messaging in the main Plan list.
+Do NOT regress the good improvements already made.
+
+STRICT RULES
+
+- Keep app runnable after every stage
+- Do not break current Plan → Now selection flow
+- Do not break current add/browse architecture
+- Browse is not fully hooked up yet, so handle it gracefully
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+STAGE 1 — MAKE DATE ASCENDING THE DEFAULT SORT
+==================================================
+
+Goal:
+The default Plan sort should always be the most useful one.
+
+Tasks:
+1. Set default sort to:
+   - Date ascending
+   - earliest upcoming class first
+2. Make sure this is the default on first load
+3. Make sure the list reads naturally as an upcoming queue
+
+Success criteria:
+- default sort is Date ascending
+- earliest upcoming class appears first
+- Plan feels naturally chronological
+
+After Stage 1:
+Stop and summarize:
+- what the default sort now is
+- how card ordering changed
+
+==================================================
+STAGE 2 — ADD TAP-TO-REVERSE SORT BEHAVIOR
+==================================================
+
+Goal:
+Make sorting more useful without adding clutter.
+
+Tasks:
+1. Keep sort options:
+   - Date
+   - Class
+   - Instructor
+2. Tapping a sort option selects that field
+3. Tapping the same selected sort option again reverses the direction
+4. Use simple visual labeling like:
+   - Date ↑ / Date ↓
+   - Class A–Z / Class Z–A
+   - Instructor A–Z / Instructor Z–A
+5. Make the active sort and direction clear in the UI
+
+Success criteria:
+- sort field is clear
+- reverse sort works by tapping again
+- user can understand sort direction instantly
+
+After Stage 2:
+Stop and summarize:
+- how reverse sort now works
+- how sort direction is shown
+
+==================================================
+STAGE 3 — MAKE “ADD MANUALLY” A REAL BUTTON
+==================================================
+
+Goal:
+Make manual add visible and intentional.
+
+Tasks:
+1. Replace the current weak “or add manually” text treatment
+2. Turn it into a real secondary action button:
+   - “Add Manually”
+3. Keep Browse Schedule as the primary add path
+4. Place Add Manually directly below or near Browse Schedule so both feel like related actions
+5. Make Add Manually visually lighter than Browse Schedule, but clearly tappable
+
+Success criteria:
+- Add Manually is easy to notice
+- it looks like an action, not helper text
+- the add flow feels intentional
+
+After Stage 3:
+Stop and summarize:
+- where Add Manually now appears
+- how it is visually distinguished from Browse Schedule
+
+==================================================
+STAGE 4 — REMOVE ERROR MESSAGING FROM PLAN CARDS
+==================================================
+
+Goal:
+Keep Plan clean and planning-focused.
+
+Tasks:
+1. Remove visible “Error” badges or similar technical/problem labels from the main card body
+2. Do not show debug/problem states directly in Plan cards unless absolutely necessary
+3. If a class truly needs attention, use a calmer and simpler label such as:
+   - Issue
+   - Needs attention
+4. Prefer moving deeper error context to Tools or Now, not Plan
+
+Success criteria:
+- Plan cards no longer show technical error clutter
+- Plan stays calm and forward-looking
+
+After Stage 4:
+Stop and summarize:
+- what error labels were removed
+- how problem states now appear more cleanly
+
+==================================================
+STAGE 5 — SIMPLIFY PLAN STATUS LANGUAGE
+==================================================
+
+Goal:
+Make statuses human and useful.
+
+Tasks:
+1. Remove diagnostic-style status strings such as:
+   - Armed · Class · Session · Modal
+2. Use a simpler status vocabulary appropriate for Plan:
+   - Scheduled
+   - Waiting
+   - Armed
+   - Opens soon
+   - Booked
+   - Issue
+3. Keep status helpful for planning, not debugging
+4. Ensure status text does not duplicate information already shown elsewhere
+
+Success criteria:
+- Plan status feels human
+- cards are easier to scan
+- no diagnostic noise remains in status lines
+
+After Stage 5:
+Stop and summarize:
+- what status labels remain
+- what diagnostic status text was removed
+
+==================================================
+STAGE 6 — MAKE THE ACTIVE / SELECTED CLASS MORE OBVIOUS
+==================================================
+
+Goal:
+Strengthen the Plan → Now connection.
+
+Tasks:
+1. Keep visual highlight for the class currently feeding Now
+2. Replace vague or ambiguous labeling like “Watching” if needed with something more explicit, such as:
+   - Now
+   - Active on Now
+3. Ensure the highlighted card clearly communicates why it is different
+4. Keep the treatment visually clean and not too loud
+
+Success criteria:
+- user can easily tell which Plan card is active on Now
+- Plan and Now feel connected
+
+After Stage 6:
+Stop and summarize:
+- how the active card is now indicated
+- how the Plan → Now relationship is clearer
+
+==================================================
+STAGE 7 — STANDARDIZE THE METADATA LINE
+==================================================
+
+Goal:
+Make class details easier to scan.
+
+Tasks:
+1. Standardize the line under the class name to this style:
+   - Mon, Apr 13 • 4:15 PM • Cloud
+2. Apply consistently across all cards
+3. Keep date/day/time/instructor readable and uniform
+4. Preserve the required information:
+   - date
+   - day
+   - instructor
+   - class time
+
+Success criteria:
+- metadata reads consistently
+- each card is easier to scan quickly
+
+After Stage 7:
+Stop and summarize:
+- how the metadata line is now formatted
+- how consistency improved
+
+==================================================
+STAGE 8 — SOFTEN EDIT / REMOVE VISUAL BALANCE
+==================================================
+
+Goal:
+Keep Edit and Remove visible without letting Remove dominate the card.
+
+Tasks:
+1. Keep both Edit and Remove clearly visible
+2. Slightly reduce the visual aggressiveness of Remove
+3. Preserve destructive meaning, but do not let it overpower the card
+4. Keep Edit easy to see and use
+5. Maintain strong usability on mobile
+
+Success criteria:
+- Edit and Remove are both easy to find
+- Remove no longer pulls too much attention
+- cards feel more balanced
+
+After Stage 8:
+Stop and summarize:
+- how Edit/Remove styling changed
+- how visual balance improved
+
+==================================================
+STAGE 9 — HANDLE BROWSE AS A NOT-YET-HOOKED-UP FLOW GRACEFULLY
+==================================================
+
+Goal:
+Acknowledge Browse is not fully live yet without making the screen feel broken.
+
+Tasks:
+1. Keep Browse Schedule visible as the primary future path
+2. If it is not fully wired yet, handle that gracefully
+3. Use calm, honest copy if needed, such as:
+   - Browse Schedule
+   - Schedule browser coming next
+   or a subtle non-broken placeholder approach
+4. Do not let unfinished browse behavior feel like an error state
+5. Keep the screen clean even while Browse is still incomplete
+
+Success criteria:
+- unfinished browse flow does not feel broken or awkward
+- Plan still feels polished
+
+After Stage 9:
+Stop and summarize:
+- how Browse is now handled while incomplete
+- how awkward placeholder/error feeling was reduced
+
+==================================================
+STAGE 10 — FINAL PLAN POLISH PASS
+==================================================
+
+Goal:
+Make the final Plan tab feel polished and coherent.
+
+Tasks:
+1. Audit for any remaining duplication or confusion
+2. Ensure the final Plan top area feels like:
+   - queue summary
+   - clear add actions
+   - clear sort controls
+3. Ensure cards feel:
+   - readable
+   - chronological
+   - actionable
+4. Make sure the screen communicates:
+   - upcoming classes
+   - what opens next
+   - what is active on Now
+   - how to edit/remove
+   - how to add more classes
+
+Optional helper text:
+- “Tap a class to open it on Now”
+
+Success criteria:
+- Plan feels clean and intentional
+- no debug/admin energy remains
+- the tab feels tightly integrated with Now
+
+After Stage 10:
+Stop and summarize:
+- what final inconsistencies were removed
+- why the final Plan tab is stronger
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+The final Plan tab should have:
+
+- default sort = Date ascending
+- tap same sort again = reverse direction
+- visible Add Manually button
+- no technical error clutter in cards
+- simpler status language
+- clear active/selected card for Now
+- consistent date/day/time/instructor formatting
+- visible but balanced Edit/Remove actions
+- graceful Browse placeholder behavior while it is still unfinished
+
+The final experience should feel:
+- calm
+- obvious
+- mobile-first
+- premium
+- tightly connected to Now
+
+OUTPUT STYLE REQUIRED
+
+At each stage:
+1. Implement only that stage
+2. Keep app runnable
+3. Summarize exactly what changed
+4. Explain what remains
+5. Stop and wait
+
+Start with STAGE 1 only.
+Do not jump ahead.
