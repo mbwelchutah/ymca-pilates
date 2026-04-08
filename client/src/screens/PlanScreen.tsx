@@ -41,8 +41,8 @@ const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
 const PHASE_LABEL: Record<Phase, string> = {
   too_early: 'Scheduled',
   warmup:    'Opens Soon',
-  sniper:    'Booking Now',
-  late:      'Window Closed',
+  sniper:    'Armed',
+  late:      '',          // suppressed — timing line + result badge carry the messaging
   unknown:   'Scheduled',
 }
 
@@ -271,10 +271,11 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
 
         {/* Row 3: Status
              Phase label is suppressed for the watched card when sniperRow is present —
-             the sniper row below provides real-time, more precise phase information and
-             the coarse PHASE_LABEL (e.g. "Booking Now") can contradict it ("Monitoring"). */}
+             the sniper row below provides real-time phase information and
+             the coarse PHASE_LABEL (e.g. "Armed") can contradict it ("Monitoring"). */}
         {job.is_active && (() => {
-          const showPhase = !isWatching || !sniperRow
+          // late phase: timing line already says "Opened [date]"; result badge covers outcome
+          const showPhase = phase !== 'late' && (!isWatching || !sniperRow)
           const showBadge = !!(job.last_result && RESULT_SHOW.has(job.last_result) && isResultCurrent(job))
           if (!showPhase && !showBadge && !toggleErr) return null
           return (
