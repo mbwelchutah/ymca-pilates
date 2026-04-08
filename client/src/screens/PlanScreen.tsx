@@ -49,10 +49,10 @@ const PHASE_LABEL: Record<Phase, string> = {
 }
 
 const RESULT_LABEL: Record<string, string> = {
-  booked:   'Booked',
+  booked:   'Confirmed', // matches Now's headline — canonical term per spec
   dry_run:  'Test run',
-  error:    'Issue',      // "Error" replaced — Plan stays calm, not a debug view
-  not_found:'Issue',      // "Not found" replaced — same rationale
+  error:    'Issue',     // "Error" replaced — Plan stays calm, not a debug view
+  not_found:'Issue',     // "Not found" replaced — same rationale
 }
 
 // Results worth surfacing on the card (transient/noise ones are excluded)
