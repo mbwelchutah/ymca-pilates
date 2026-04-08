@@ -251,8 +251,8 @@ function derivePrimaryResult(opts: {
       state:    'issue',
       label:    'Issue',
       detail:   isExpired
-        ? 'Your session has expired. Tap the account icon to sign in again.'
-        : 'Login required. Tap the account icon to sign in.',
+        ? 'Session expired — tap the account icon to sign in again'
+        : 'Login required — tap the account icon to sign in',
       severity: 'error',
     }
   }
@@ -390,8 +390,9 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   // Suppress auth messages when a booking/auth operation is actively running —
   // the lock being held is not itself an auth failure.
   if (sessionStatus?.locked) return null
-  // Settings session state takes priority over sniper signals
-  if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return sessionStatus.detail ?? 'Login required — tap the account icon to sign in'
+  // Settings session state takes priority over sniper signals.
+  // Always use canonical messages — raw session.detail may be a technical string.
+  if (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN')            return 'Login required — tap the account icon to sign in'
   if (sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') return 'Session expired — tap the account icon to sign in again'
   if (!s) return null
   switch (s.sniperState) {

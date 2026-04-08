@@ -263,7 +263,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
       if (result.success) {
         setFeedback({ text: result.detail ?? 'Signed in successfully', cls: 'text-accent-green' })
       } else {
-        setFeedback({ text: result.detail ?? 'Sign-in failed — check server credentials and try again', cls: 'text-accent-red' })
+        setFeedback({ text: result.detail ?? 'Sign-in failed — check your credentials and try again', cls: 'text-accent-red' })
       }
       fetchSession()
     } catch {
@@ -280,12 +280,9 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
     try {
       const result = await api.settingsRefresh()
       if (result.success) {
-        const text = result.tier === 2
-          ? 'Connection verified'
-          : 'Connection confirmed (full check)'
-        setFeedback({ text, cls: 'text-accent-green' })
+        setFeedback({ text: 'Connection verified', cls: 'text-accent-green' })
       } else {
-        setFeedback({ text: result.detail ?? 'Could not confirm connection', cls: 'text-accent-amber' })
+        setFeedback({ text: result.detail ?? 'Could not verify connection', cls: 'text-accent-amber' })
       }
       fetchSession()
     } catch {
