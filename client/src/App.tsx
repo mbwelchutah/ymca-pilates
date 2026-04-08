@@ -139,7 +139,11 @@ export default function App() {
       <TabBar active={tab} onChange={handleTabChange} />
 
       <main className="flex-1 overflow-y-auto pt-content-top">
-        {tab === 'now' && (
+        {/* Now and Plan stay mounted at all times so their local state (readiness
+            scores, sniper data, countdown ticks) is preserved across tab switches.
+            The active tab is shown via display; the inactive one is hidden.
+            This eliminates the flicker + re-fetch that occurred on every switch. */}
+        <div style={{ display: tab === 'now' ? undefined : 'none' }}>
           <NowScreen
             appState={state}
             selectedJobId={selectedJobId}
@@ -152,8 +156,8 @@ export default function App() {
             authStatus={authStatus}
             autoVerifySignal={autoVerifySignal}
           />
-        )}
-        {tab === 'plan' && (
+        </div>
+        <div style={{ display: tab === 'plan' ? undefined : 'none' }}>
           <PlanScreen
             appState={state}
             selectedJobId={selectedJobId}
@@ -164,7 +168,7 @@ export default function App() {
             accountAttention={accountAttention}
             authStatus={authStatus}
           />
-        )}
+        </div>
         {tab === 'tools' && (
           <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} authStatus={authStatus} scrollTo={toolsSection} />
         )}
