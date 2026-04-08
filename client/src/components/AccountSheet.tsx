@@ -3,6 +3,34 @@ import type { SessionStatus, AuthStatusEnum } from '../types'
 import { StatusDot } from './ui/StatusDot'
 import { api } from '../lib/api'
 
+// ── Live tick — refreshes relative time labels while sheet is open ─────────────
+
+function useTick(intervalMs: number, active: boolean) {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setTick(t => t + 1), intervalMs)
+    return () => clearInterval(id)
+  }, [active, intervalMs])
+  return tick
+}
+
+// ── Inline spinner for busy buttons ───────────────────────────────────────────
+
+function Spinner() {
+  return (
+    <svg
+      className="inline w-3.5 h-3.5 mr-1.5 animate-spin align-[-2px]"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="2" strokeOpacity="0.3" />
+      <path d="M7 1.5A5.5 5.5 0 0 1 12.5 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 interface AccountSheetProps {
   open: boolean
   onClose: () => void
@@ -271,6 +299,10 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
     }
   }
 
+  // Tick every 30 s while open — re-renders the relative time labels
+  const tick = useTick(30_000, open)
+  void tick
+
   const info = deriveDisplay(session)
   const auth = session?.authState ?? null
   const lastCheckedMs = auth?.lastCheckedAt ?? null
@@ -468,16 +500,16 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 <button
                   onClick={handleSignIn}
                   disabled={busy}
-                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`}
                 >
-                  {signingIn ? 'Signing in…' : 'Sign in'}
+                  {signingIn ? <><Spinner />Signing in…</> : 'Sign in'}
                 </button>
                 <button
                   onClick={handleRefresh}
                   disabled={busy}
-                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`}
                 >
-                  {refreshing ? 'Checking…' : 'Verify connection'}
+                  {refreshing ? <><Spinner />Checking…</> : 'Verify connection'}
                 </button>
               </>
             ) : (
@@ -485,16 +517,16 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 <button
                   onClick={handleRefresh}
                   disabled={busy}
-                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                  className={`w-full py-3 rounded-xl bg-accent-blue text-white text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`}
                 >
-                  {refreshing ? 'Checking…' : 'Verify connection'}
+                  {refreshing ? <><Spinner />Checking…</> : 'Verify connection'}
                 </button>
                 <button
                   onClick={handleSignIn}
                   disabled={busy}
-                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+                  className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-text-primary text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`}
                 >
-                  {signingIn ? 'Signing in…' : 'Sign in again'}
+                  {signingIn ? <><Spinner />Signing in…</> : 'Sign in again'}
                 </button>
               </>
             )}
@@ -502,9 +534,9 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
             <button
               onClick={handleSignOut}
               disabled={busy}
-              className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-accent-red text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50' : 'active:opacity-80'}`}
+              className={`w-full py-3 rounded-xl bg-[#f2f2f7] text-accent-red text-[15px] font-semibold transition-opacity ${busy ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`}
             >
-              {signingOut ? 'Signing out…' : 'Sign out'}
+              {signingOut ? <><Spinner />Signing out…</> : 'Sign out'}
             </button>
           </div>
 
