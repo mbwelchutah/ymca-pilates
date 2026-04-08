@@ -16,10 +16,14 @@ const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState }        = require('../bot/sniper-readiness');
-const { loadStatus, runSessionCheck } = require('../bot/session-check');
+const { loadStatus }       = require('../bot/session-check');
 const { isLocked }         = require('../bot/auth-lock');
 const { getAuthState, updateAuthState } = require('../bot/auth-state');
 const { pingSessionHttp }  = require('../bot/session-ping');
+// Stage 2: Use tiered validation (Tier 1→2→3) for recovery so session reuse
+// is the default path.  runSessionCheck() skips Tier 1; validateSessionFastThenFallback()
+// tries file freshness first and only escalates to HTTP ping or Playwright when needed.
+const { validateSessionFastThenFallback } = require('../bot/session-validator');
 
 // If a real auth run produced a failure within this window, skip preflight
 // (same threshold as tick.js warmup gate).
@@ -231,21 +235,27 @@ async function checkAutoPreflights({ isActive = false } = {}) {
           message:     `Auth recovery triggered — reason: ${recoveryReason}`,
         });
         try {
-          const recovery = await runSessionCheck({ source: `auto-recovery:${trigger.name}` });
+          // Stage 2: Use validateSessionFastThenFallback (Tier 1→2→3) so
+          // session reuse is the default path.  Fresh session files (Tier 1)
+          // or a fast HTTP ping (Tier 2) resolve without any browser launch.
+          // Only Tier 3 (Playwright) is used when truly needed.
+          const recovery = await validateSessionFastThenFallback();
+          const tierLabel = recovery.tier ? `Tier ${recovery.tier}` : 'unknown';
+          const modeLabel = recovery.mode === 'recovery' ? 'credentials used' : 'session reused';
           if (recovery.valid) {
-            console.log(`[auto-preflight] ${trigger.name} — recovery succeeded; proceeding with preflight.`);
+            console.log(`[auto-preflight] ${trigger.name} — recovery succeeded via ${tierLabel} (${modeLabel}); proceeding with preflight.`);
             appendLog({
               timestamp:   new Date().toISOString(),
               jobId:       dbJob.id,
               classTitle:  dbJob.class_title,
               triggerName: trigger.name,
               status:      'recovery_ok',
-              message:     `Auth recovery succeeded (${recovery.detail})`,
+              message:     `Auth recovery succeeded via ${tierLabel} (${modeLabel}): ${recovery.detail}`,
             });
           } else {
             console.warn(
-              `[auto-preflight] ${trigger.name} — recovery failed: ${recovery.detail}. ` +
-              `Proceeding with preflight anyway (Stage-1 cookie injection may still work).`
+              `[auto-preflight] ${trigger.name} — recovery failed via ${tierLabel}: ${recovery.detail}. ` +
+              `Proceeding with preflight anyway (cookie injection may still work).`
             );
             appendLog({
               timestamp:   new Date().toISOString(),
@@ -253,7 +263,7 @@ async function checkAutoPreflights({ isActive = false } = {}) {
               classTitle:  dbJob.class_title,
               triggerName: trigger.name,
               status:      'recovery_failed',
-              message:     `Auth recovery failed — ${recovery.detail}`,
+              message:     `Auth recovery failed via ${tierLabel} — ${recovery.detail}`,
             });
           }
         } catch (recoveryErr) {

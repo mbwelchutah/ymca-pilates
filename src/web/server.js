@@ -5176,6 +5176,40 @@ server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + 
   } catch (_) {}
 })();
 
+// Stage 2: Startup session validation — immediately confirm whether saved
+// sessions are still valid using a Tier-2 HTTP ping (no browser launch).
+// Runs after a short delay so the server is fully listening before any
+// network requests go out.  Updates authState so the UI reflects the true
+// session state from the first poll rather than relying on a potentially
+// stale auth-state.json.
+setTimeout(async () => {
+  try {
+    const { pingSessionHttp }  = require('../bot/session-ping');
+    const { updateAuthState }  = require('../bot/auth-state');
+    const { isLocked }         = require('../bot/auth-lock');
+
+    if (isLocked()) {
+      console.log('[auth-state] Startup ping skipped — auth lock already held.');
+      return;
+    }
+
+    console.log('[auth-state] Startup ping: validating saved sessions (Tier 2)...');
+    const result = await pingSessionHttp();
+
+    if (result.trusted) {
+      updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
+      console.log('[auth-state] Startup ping: sessions valid —', result.detail);
+    } else {
+      // Don't overwrite authState on failure — keepalive will handle recovery.
+      // Just log the miss so it's visible in server output.
+      console.log('[auth-state] Startup ping: sessions unconfirmed —', result.detail,
+        '— keepalive will retry.');
+    }
+  } catch (err) {
+    console.log('[auth-state] Startup ping error (non-fatal):', err.message);
+  }
+}, 10_000); // 10 s delay — server is warm, first scheduler tick is still 30 s away
+
 // ---------------------------------------------------------------------------
 // Built-in scheduler loop — fires a tick every 60 s so booking jobs auto-run
 // when their window opens without needing a separate process.

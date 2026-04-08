@@ -154,15 +154,17 @@ function readFwStatus() {
  *
  * Returns:
  *   {
- *     valid:        boolean,       true = session confirmed active
- *     tier:         1 | 2 | 3,    which tier resolved the result
- *     detail:       string,        human-readable summary
- *     daxko:        string,        'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
- *     familyworks:  string,        'FAMILYWORKS_READY' | 'AUTH_UNKNOWN' | etc.
- *     checkedAt:    string,        ISO timestamp of this check
- *     strictMode:   boolean,       true if booking window forced a higher minimum tier
- *     minTier:      1 | 2 | 3,    effective minimum tier that was enforced
- *     urgentPhase:  string|null,   most urgent phase across active jobs (or null)
+ *     valid:        boolean,              true = session confirmed active
+ *     tier:         1 | 2 | 3,           which tier resolved the result
+ *     mode:         'reuse'|'recovery',  'reuse' = no browser/credentials needed (Tier 1/2);
+ *                                        'recovery' = browser was launched (Tier 3)
+ *     detail:       string,              human-readable summary
+ *     daxko:        string,              'DAXKO_READY' | 'AUTH_NEEDS_LOGIN' | 'AUTH_UNKNOWN'
+ *     familyworks:  string,              'FAMILYWORKS_READY' | 'AUTH_UNKNOWN' | etc.
+ *     checkedAt:    string,              ISO timestamp of this check
+ *     strictMode:   boolean,             true if booking window forced a higher minimum tier
+ *     minTier:      1 | 2 | 3,          effective minimum tier that was enforced
+ *     urgentPhase:  string|null,         most urgent phase across active jobs (or null)
  *   }
  */
 async function validateSessionFastThenFallback({ forceMinTier } = {}) {
@@ -180,6 +182,7 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
   );
 
   // ── Tier 1: File freshness ────────────────────────────────────────────────
+  // mode: 'reuse' — no network request, no browser, no credentials
   if (minTier <= 1) {
     const freshness = checkFreshness();
     if (freshness.trusted) {
@@ -187,7 +190,7 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
       if (!suspicion) {
         console.log('[session-validator] Tier 1 trusted —', freshness.detail);
         return {
-          valid: true, tier: 1,
+          valid: true, tier: 1, mode: 'reuse',
           detail: `Tier 1: ${freshness.detail}`,
           daxko: 'DAXKO_READY', familyworks: 'FAMILYWORKS_READY',
           checkedAt, strictMode, minTier, urgentPhase,
@@ -203,12 +206,13 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
   }
 
   // ── Tier 2: HTTP ping ─────────────────────────────────────────────────────
+  // mode: 'reuse' — network request only, no browser, no credentials
   if (minTier <= 2) {
     const pingResult = await pingSessionHttp();
     if (pingResult.trusted) {
       console.log('[session-validator] Tier 2 trusted —', pingResult.detail);
       return {
-        valid: true, tier: 2,
+        valid: true, tier: 2, mode: 'reuse',
         detail: `Tier 2: ${pingResult.detail}`,
         daxko: 'DAXKO_READY', familyworks: 'FAMILYWORKS_READY',
         checkedAt, strictMode, minTier, urgentPhase,
@@ -220,6 +224,10 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
   }
 
   // ── Tier 3: Full Playwright login ─────────────────────────────────────────
+  // mode: 'recovery' — browser launched; credentials may have been used.
+  // (Tier 3 attempts cookie injection first and only uses credentials if the
+  // FW modal shows "Login to Register" — but from the validator's perspective
+  // launching the browser at all is a recovery event.)
   console.log('[session-validator] Running Tier 3 (Playwright)...');
   try {
     const checkResult = await runSessionCheck({ source: 'validator' });
@@ -232,7 +240,7 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
       `familyworks=${familyworks}`
     );
     return {
-      valid, tier: 3,
+      valid, tier: 3, mode: 'recovery',
       detail: `Tier 3: ${checkResult.detail}`,
       daxko, familyworks,
       checkedAt, strictMode, minTier, urgentPhase,
@@ -240,7 +248,7 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
   } catch (err) {
     console.error('[session-validator] Tier 3 error:', err.message);
     return {
-      valid: false, tier: 3,
+      valid: false, tier: 3, mode: 'recovery',
       detail: `Tier 3 error: ${err.message}`,
       daxko: 'AUTH_UNKNOWN', familyworks: 'AUTH_UNKNOWN',
       checkedAt, strictMode, minTier, urgentPhase,
