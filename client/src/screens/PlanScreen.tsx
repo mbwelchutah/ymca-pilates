@@ -39,11 +39,11 @@ const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
-  too_early: 'Waiting',
-  warmup:    'Opening Soon',
+  too_early: 'Scheduled',
+  warmup:    'Opens Soon',
   sniper:    'Booking Now',
   late:      'Window Closed',
-  unknown:   'Waiting',
+  unknown:   'Scheduled',
 }
 
 const RESULT_DOT: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = {
@@ -55,7 +55,7 @@ const RESULT_DOT: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = 
 
 const RESULT_LABEL: Record<string, string> = {
   booked:   'Booked',
-  dry_run:  'Simulated',
+  dry_run:  'Test run',
   error:    'Error',
   not_found:'Not found',
 }
@@ -64,11 +64,23 @@ const RESULT_LABEL: Record<string, string> = {
 const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
 
 function formatOpens(ms: number): string {
-  const now = Date.now()
-  if (ms < now) return `Opened ${new Date(ms).toLocaleString([], { month: 'short', day: 'numeric' })}`
-  return `Opens ${new Date(ms).toLocaleString([], {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  })}`
+  const now  = Date.now()
+  const d    = new Date(ms)
+  const time = d.toLocaleString([], { hour: 'numeric', minute: '2-digit' })
+
+  if (ms < now) {
+    // Past: just show the date (time is no longer useful)
+    return `Opened ${d.toLocaleString([], { month: 'short', day: 'numeric' })}`
+  }
+
+  // Upcoming: use relative day word for today/tomorrow
+  const todayMidnight    = new Date(); todayMidnight.setHours(0, 0, 0, 0)
+  const tomorrowMidnight = new Date(todayMidnight); tomorrowMidnight.setDate(todayMidnight.getDate() + 1)
+  const dayAfterMidnight = new Date(tomorrowMidnight); dayAfterMidnight.setDate(tomorrowMidnight.getDate() + 1)
+
+  if (ms < tomorrowMidnight.getTime()) return `Opens today at ${time}`
+  if (ms < dayAfterMidnight.getTime()) return `Opens tomorrow at ${time}`
+  return `Opens ${d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
 }
 
 function formatShortDate(iso: string): string {
