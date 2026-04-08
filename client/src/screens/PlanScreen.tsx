@@ -473,7 +473,6 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
   }
 
   const handleCancel = () => {
-    console.log('[class-select] cancelled', { isEditing, isFromBrowse, classTitle })
     onCancelled()
   }
 
@@ -487,7 +486,6 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
       setErr('Enter time like 10:45 AM')
       return
     }
-    console.log('[class-select] save confirmed', { isEditing, isFromBrowse, classTitle })
     setSaving(true)
     setErr(null)
     try {
@@ -557,7 +555,7 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
           <input className={inputClass} placeholder="Gretl" value={instructor} onChange={e => setInstructor(e.target.value)} />
         </div>
         <div>
-          <label className={labelClass}>Target date</label>
+          <label className={labelClass}>Target Date</label>
           <input type="date" className={inputClass} value={targetDate} onChange={e => setTargetDate(e.target.value)} />
           <p className="text-[11px] text-text-muted mt-1">Leave blank to book weekly on the day above</p>
         </div>
@@ -764,10 +762,6 @@ function QueueSummary({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
       ) : count > 0 && nextMs ? (
         <p className="text-[14px] text-text-secondary mt-0.5">
           Next opens {new Date(nextMs).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-        </p>
-      ) : count > 0 ? (
-        <p className="text-[14px] text-text-secondary mt-0.5">
-          No upcoming windows
         </p>
       ) : null}
     </div>
@@ -1039,7 +1033,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         ) : appState.jobs.length === 0 ? (
           <Card className="flex items-center justify-center py-8">
             <p className="text-[14px] text-text-secondary text-center px-4">
-              Tap Browse Schedule to add your first class.
+              Add a class above to get started.
             </p>
           </Card>
         ) : (
