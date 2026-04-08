@@ -703,7 +703,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
                     onClick={() => onTrack(cls)}
                     className="flex-shrink-0 text-[13px] font-semibold text-accent-blue bg-accent-blue/10 px-3 py-1.5 rounded-pill active:opacity-70"
                   >
-                    Track
+                    Add to Plan
                   </button>
                 </div>
               ))}
@@ -903,13 +903,10 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     console.log('[class-select] form dismissed — no save')
   }
 
-  const showingControls = !showAdd
-
   return (
     <>
       <AppHeader
         subtitle="Plan"
-        secondaryAction={showingControls ? { label: 'Browse', onClick: () => setShowBrowse(true) } : undefined}
         onAccount={onAccount}
         accountAttention={accountAttention}
         authStatus={authStatus}
@@ -927,17 +924,25 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
 
         {!showAdd && <QueueSummary jobs={appState.jobs} loading={loading} />}
 
-        {/* Stage 2: in-context Add Class CTA — replaces the header Add button */}
+        {/* Stage 8: unified Browse/Add entry — Browse is primary, manual is escape */}
         {!showAdd && !loading && (
-          <button
-            onClick={() => { setEditingJob(null); setShowAdd(true) }}
-            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold mb-4 active:opacity-70 transition-opacity"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Add Class
-          </button>
+          <div className="flex flex-col items-center gap-2 mb-4">
+            <button
+              onClick={() => setShowBrowse(true)}
+              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-accent-blue/10 text-accent-blue text-[15px] font-semibold active:opacity-70 transition-opacity"
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/>
+              </svg>
+              Browse Schedule
+            </button>
+            <button
+              onClick={() => { setEditingJob(null); setPrefill(null); setShowAdd(true) }}
+              className="text-[13px] text-text-muted active:opacity-70 transition-opacity"
+            >
+              or add manually
+            </button>
+          </div>
         )}
 
         {/* Stage 3: Sort pills — only shown when 2+ classes are loaded */}
