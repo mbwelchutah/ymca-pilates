@@ -21,6 +21,7 @@ import { computeArmedModel } from '../lib/sniperArmed'
 import type { ArmedModel } from '../lib/sniperArmed'
 import { deriveSniperPhase } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
+import { isThisWeekUTC } from '../lib/bookingCycle'
 
 interface NowScreenProps {
   appState: AppState
@@ -397,17 +398,6 @@ function formatDayTime(job: Job) {
 }
 
 // ── Cycle-aware booking helpers ────────────────────────────────────────────────
-
-function isThisWeekUTC(isoStr: string | null | undefined): boolean {
-  if (!isoStr) return false
-  const successDate  = new Date(isoStr)
-  const now          = new Date()
-  const daysSinceMon = (now.getUTCDay() + 6) % 7
-  const weekStart    = new Date(now)
-  weekStart.setUTCHours(0, 0, 0, 0)
-  weekStart.setUTCDate(weekStart.getUTCDate() - daysSinceMon)
-  return successDate >= weekStart
-}
 
 function isBookingCurrentCycle(job: Job | null): boolean {
   if (!job) return false
