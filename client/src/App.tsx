@@ -10,7 +10,8 @@ import { useAppState } from './hooks/useAppState'
 import { api } from './lib/api'
 import type { SessionStatus, AuthStatusEnum } from './types'
 
-const SESSION_POLL_MS = 90 * 1000  // 90 s — fast enough to settle stale auth dot after background ops
+const SESSION_POLL_MS      = 90 * 1000  // 90 s — background steady-state
+const AUTH_ACTIVE_POLL_MS  =  3 * 1000  // 3 s — while an auth op is in progress
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => {
@@ -29,6 +30,12 @@ export default function App() {
   const startupVerified = useRef(false)
 
   const { state, loading, error, refresh } = useAppState()
+
+  // Speed up the poll while an auth operation is running so the header icon
+  // clears promptly (within 3 s) once the lock is released.
+  const activePollMs = polledStatus?.authState?.isAuthInProgress
+    ? AUTH_ACTIVE_POLL_MS
+    : SESSION_POLL_MS
 
   // ── Session status polling — derives attention dot ────────────────────────
   // Only lights up the dot for explicit known failures (DAXKO_READY and
@@ -49,9 +56,9 @@ export default function App() {
       }
     }
     check()
-    const id = setInterval(check, SESSION_POLL_MS)
+    const id = setInterval(check, activePollMs)
     return () => clearInterval(id)
-  }, [])
+  }, [activePollMs])
 
   // ── Single source of truth for the watched class ─────────────────────────
   // Stored in localStorage so it survives page reload.
