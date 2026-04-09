@@ -435,6 +435,15 @@ async function runBookingJob(job, opts = {}) {
       });
       return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
+
+    // Auth phase complete — release the lock immediately.
+    // Discovery and modal checking don't use credentials and must not block
+    // user-initiated actions like "Verify connection" for the next ~90 seconds.
+    if (_authLockAcquired) {
+      releaseLock();
+      _authLockAcquired = false;
+    }
+
     browser = _session.browser;
     const page = _session.page;
     // Wrap session snap so screenshotPath in this closure stays current.
