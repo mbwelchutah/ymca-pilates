@@ -13,7 +13,7 @@ const {
 const { saveStatus: saveSessionStatus } = require('./session-check');
 const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
 const { updateAuthState } = require('./auth-state');
-const { saveCookies } = require('./session-ping');
+const { saveCookies, pingSessionHttp } = require('./session-ping');
 const replayStore = require('./replay-store');
 
 // ── Session-file helpers ──────────────────────────────────────────────────────
@@ -398,16 +398,37 @@ async function runBookingJob(job, opts = {}) {
     // and verifies the auth cookie before returning.
     const _runSource = PREFLIGHT_ONLY ? 'preflight' : 'booking';
 
-    // Guard: if another auth operation (Settings login, a concurrent preflight)
-    // is already running, skip this run rather than open a second browser.
-    if (isLocked()) {
-      console.log(`[auth-lock] ${_runSource} skipped — auth lock held. Another browser session is in progress.`);
-      return logRunSummary({ status: 'error', message: 'Auth lock held — concurrent login already in progress', screenshotPath, phase: 'auth', reason: 'concurrent_auth', category: 'system', label: 'Auth lock held by another process' });
+    advance(_state, 'AUTH');
+
+    // ── Tier-2 pre-check (no lock needed) ────────────────────────────────────
+    // Run a fast HTTP ping first.  If it passes, the session is valid and no
+    // credentials will be used — the auth lock is never acquired.  Only when
+    // the ping misses do we need to do a full Playwright sign-in (and only
+    // then do we need to hold the lock to prevent concurrent auth attempts).
+    let _tier2Trusted = false;
+    try {
+      const pingResult = await pingSessionHttp();
+      _tier2Trusted = pingResult.trusted === true;
+      if (_tier2Trusted) {
+        console.log(`[auth-lock] ${_runSource} — Tier-2 ping trusted, skipping auth lock.`);
+      } else {
+        console.log(`[auth-lock] ${_runSource} — Tier-2 ping miss (${pingResult.detail}), will need full auth.`);
+      }
+    } catch (pingErr) {
+      console.log(`[auth-lock] ${_runSource} — Tier-2 ping error (${pingErr.message}), falling back to full auth.`);
     }
 
-    advance(_state, 'AUTH');
+    // ── Auth lock — only when credentials are actually needed ─────────────────
+    if (!_tier2Trusted) {
+      // Guard: if another auth operation is already running, skip this run.
+      if (isLocked()) {
+        console.log(`[auth-lock] ${_runSource} skipped — auth lock held. Another browser session is in progress.`);
+        return logRunSummary({ status: 'error', message: 'Auth lock held — concurrent login already in progress', screenshotPath, phase: 'auth', reason: 'concurrent_auth', category: 'system', label: 'Auth lock held by another process' });
+      }
+      _authLockAcquired = acquireLock(_runSource, 'signing_in');
+    }
+
     let _session;
-    _authLockAcquired = acquireLock(_runSource, 'signing_in');
     try {
       _session = await createSession({ headless: isHeadless });
       // Auth succeeded — update session-status.json so the UI reflects the fresh result.
@@ -436,9 +457,8 @@ async function runBookingJob(job, opts = {}) {
       return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
     }
 
-    // Auth phase complete — release the lock immediately.
-    // Discovery and modal checking don't use credentials and must not block
-    // user-initiated actions like "Verify connection" for the next ~90 seconds.
+    // Auth phase complete — release the lock immediately so user-initiated
+    // actions (e.g. "Verify connection") are never blocked by class discovery.
     if (_authLockAcquired) {
       releaseLock();
       _authLockAcquired = false;
