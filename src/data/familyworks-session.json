@@ -1,7 +1,7 @@
 {
   "ready": true,
   "status": "FAMILYWORKS_READY",
-  "checkedAt": "2026-04-09T04:06:10.825Z",
+  "checkedAt": "2026-04-09T04:10:11.179Z",
   "source": "keepalive-tier2",
   "detail": "FamilyWorks session active — Register button visible after inline auth"
 }

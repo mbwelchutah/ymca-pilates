@@ -1,7 +1,7 @@
 {
   "valid": true,
-  "checkedAt": "2026-04-09T04:06:19.848Z",
-  "source": "preflight",
+  "checkedAt": "2026-04-09T04:10:11.179Z",
+  "source": "keepalive-tier2",
   "detail": "Daxko login succeeded",
   "screenshot": null
 }
