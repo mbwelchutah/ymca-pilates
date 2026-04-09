@@ -656,9 +656,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Timestamp of the last user-triggered Check Now (persisted in sniper-state.json).
   const lastPreflightAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
 
+  // Reconcile bundle.session with bgReadiness.session (HTTP-ping derived).
+  // The HTTP ping is more authoritative than the Playwright sniper bundle —
+  // when they disagree, trust the HTTP result so the card stays consistent
+  // with the green Session dot in the milestones strip below.
+  const reconciledBundle = (() => {
+    const b = bundle ?? DEFAULT_READINESS
+    if (!isReadinessForSelectedJob) return b
+    const bgSess = bgReadiness?.session
+    if (bgSess === 'ready')  return { ...b, session: 'SESSION_READY'   as const }
+    if (bgSess === 'error')  return { ...b, session: 'SESSION_EXPIRED' as const }
+    return b
+  })()
+
   // Replaces the old per-call mapPreflightResult() priority chain.
   const composite: CompositeReadiness = computeCompositeReadiness(
-    bundle ?? DEFAULT_READINESS,
+    reconciledBundle,
     effectivePreflightStatus,
     sniperRunState?.sniperState ?? null,
   )
