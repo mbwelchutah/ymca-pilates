@@ -116,5 +116,12 @@
     "detail": "Session data fresh — Daxko verified 20m ago, FamilyWorks 20m ago (threshold 30m)",
     "screenshot": null,
     "tier": 1
+  },
+  {
+    "timestamp": "2026-04-09T04:17:09.183Z",
+    "valid": true,
+    "detail": "Session data fresh — Daxko verified 3m ago, FamilyWorks 3m ago (threshold 30m)",
+    "screenshot": null,
+    "tier": 1
   }
 ]

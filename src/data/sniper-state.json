@@ -1,5 +1,5 @@
 {
-  "runId": "2026-04-09T04:06:08.888Z",
+  "runId": "2026-04-09T04:22:09.312Z",
   "jobId": 16,
   "phase": "VERIFY",
   "bundle": {
@@ -16,7 +16,7 @@
       "phase": "AUTH",
       "failureType": null,
       "message": "Auth valid on schedule page",
-      "timestamp": "2026-04-09T04:06:26.944Z",
+      "timestamp": "2026-04-09T04:22:27.950Z",
       "screenshot": null,
       "evidence": null
     },
@@ -24,7 +24,7 @@
       "phase": "DISCOVERY",
       "failureType": null,
       "message": "Class found on schedule",
-      "timestamp": "2026-04-09T04:06:33.021Z",
+      "timestamp": "2026-04-09T04:22:34.036Z",
       "screenshot": null,
       "evidence": {
         "matched": "Hatha YogaMovement Studio • Eugene Y9:00 a - 10:00 aAnders K.0/20",
@@ -37,7 +37,7 @@
       "phase": "VERIFY",
       "failureType": "VERIFY_INSTRUCTOR_MISMATCH",
       "message": "Instructor mismatch",
-      "timestamp": "2026-04-09T04:06:37.557Z",
+      "timestamp": "2026-04-09T04:22:35.241Z",
       "screenshot": null,
       "evidence": {
         "candidateLabel": "best candidate",
@@ -49,7 +49,7 @@
       "phase": "ACTION",
       "failureType": "ACTION_FORCE_CLICK_USED",
       "message": "Normal click failed — force-click fallback (second-best candidate)",
-      "timestamp": "2026-04-09T04:06:45.122Z",
+      "timestamp": "2026-04-09T04:22:42.965Z",
       "screenshot": null,
       "evidence": null
     },
@@ -57,7 +57,7 @@
       "phase": "VERIFY",
       "failureType": "VERIFY_INSTRUCTOR_MISMATCH",
       "message": "Instructor mismatch",
-      "timestamp": "2026-04-09T04:06:48.501Z",
+      "timestamp": "2026-04-09T04:22:46.309Z",
       "screenshot": null,
       "evidence": {
         "candidateLabel": "second-best candidate",
@@ -66,7 +66,7 @@
       }
     }
   ],
-  "updatedAt": "2026-04-09T04:06:48.501Z",
+  "updatedAt": "2026-04-09T04:22:46.309Z",
   "lastPreflightSnapshot": {
     "checkedAt": "2026-04-09T03:37:26.133Z",
     "status": "found_not_open_yet",
