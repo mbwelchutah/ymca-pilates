@@ -169,6 +169,13 @@ export const api = {
       body: JSON.stringify({ id }),
     }),
 
+  clearEscalation: (id: number): Promise<{ success: boolean }> =>
+    apiFetch('/clear-escalation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }),
+
   getSniperState: (): Promise<SniperRunState> =>
     apiFetch('/api/sniper-state'),
 

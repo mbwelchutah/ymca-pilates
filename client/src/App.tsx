@@ -26,6 +26,7 @@ export default function App() {
   // Derived from polledStatus.authState — drives the header status dot color.
   const authStatus: AuthStatusEnum | null = polledStatus?.authState?.status ?? null
   const [autoVerifySignal, setAutoVerifySignal] = useState(0)
+  const [bgRefreshSignal, setBgRefreshSignal] = useState(0)
   const [toolsSection, setToolsSection] = useState<string | undefined>(undefined)
   const startupVerified = useRef(false)
 
@@ -41,6 +42,7 @@ export default function App() {
   // Only lights up the dot for explicit known failures (DAXKO_READY and
   // FAMILYWORKS_READY are the only "clear" states). AUTH_UNKNOWN is ambiguous —
   // dot stays off. On network error: reset to false (silent fail).
+  const checkSessionRef = useRef<(() => Promise<void>) | null>(null)
   useEffect(() => {
     const check = async () => {
       try {
@@ -55,6 +57,7 @@ export default function App() {
         setAccountAttention(false)
       }
     }
+    checkSessionRef.current = check
     check()
     const id = setInterval(check, activePollMs)
     return () => clearInterval(id)
@@ -142,7 +145,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
-      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} polledStatus={polledStatus} />
+      <AccountSheet
+        open={accountOpen}
+        onClose={() => {
+          setAccountOpen(false)
+          setTimeout(() => checkSessionRef.current?.(), 500)
+        }}
+        polledStatus={polledStatus}
+      />
       <TabBar active={tab} onChange={handleTabChange} />
 
       <main className="flex-1 overflow-y-auto pt-content-top">
@@ -163,6 +173,12 @@ export default function App() {
             authStatus={authStatus}
             autoVerifySignal={autoVerifySignal}
             polledStatus={polledStatus}
+            onDismissEscalation={async (jobId) => {
+              await api.clearEscalation(jobId)
+              setBgRefreshSignal(v => v + 1)
+              refresh()
+            }}
+            bgRefreshSignal={bgRefreshSignal}
           />
         </div>
         <div style={{ display: tab === 'plan' ? undefined : 'none' }}>

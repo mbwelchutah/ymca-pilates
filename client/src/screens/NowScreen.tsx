@@ -37,6 +37,8 @@ interface NowScreenProps {
   authStatus?: AuthStatusEnum | null
   autoVerifySignal?: number
   polledStatus?: SessionStatus | null
+  onDismissEscalation?: (jobId: number) => void
+  bgRefreshSignal?: number
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -412,7 +414,7 @@ let _lastAutoVerifyFired = 0
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal, polledStatus }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal, polledStatus, onDismissEscalation, bgRefreshSignal }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -488,6 +490,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     const id = setInterval(() => api.getReadiness().then(setBgReadiness).catch(() => {}), readinessPollMs)
     return () => clearInterval(id)
   }, [readinessPollMs])
+
+  // Imperative refresh — parent bumps bgRefreshSignal to force an immediate re-fetch
+  // (used after dismiss escalation so the banner clears without waiting for the next poll).
+  useEffect(() => {
+    if (!bgRefreshSignal) return
+    api.getReadiness().then(setBgReadiness).catch(() => {})
+  }, [bgRefreshSignal])
 
   // Live relative label — auto-refreshes every 30 s
   const lastCheckedLabel = useRelativeTime(bgReadiness?.lastCheckedAt ?? null)
@@ -1385,6 +1394,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   Attempted at {formatPreflightTime(bgReadiness.escalation.escalatedAt)}
                 </p>
               </div>
+              {job && onDismissEscalation && (
+                <button
+                  onClick={() => onDismissEscalation(job.id)}
+                  className="flex-shrink-0 p-1 -mr-1 rounded-lg text-accent-amber/60 hover:text-accent-amber active:opacity-50 transition-opacity"
+                  aria-label="Dismiss"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -4782,6 +4782,24 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ success: true }));
     });
 
+  } else if (req.method === 'POST' && path === '/clear-escalation') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      let id;
+      try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      if (!id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Invalid job ID' }));
+        return;
+      }
+      const { clearEscalation } = require('../scheduler/escalation');
+      clearEscalation(id);
+      console.log(`[escalation] Dismissed by user — Job #${id}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    });
+
   } else if (req.method === 'POST' && path === '/add-job') {
     const isJson = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
