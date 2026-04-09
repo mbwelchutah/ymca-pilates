@@ -605,7 +605,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     sniperRunState?.jobId == null || sniperRunState.jobId === selectedJobId
 
   const bundle  = isReadinessForCurrentJob ? sniperRunState?.bundle : undefined
-  const blocked = isReadinessForCurrentJob ? blockedReason(sniperRunState, sessionStatus) : null
+  const blocked = (() => {
+    if (!isReadinessForCurrentJob) return null
+    const raw = blockedReason(sniperRunState, sessionStatus)
+    // HTTP tier-2 ping is more authoritative than Playwright-written auth state.
+    // When bgReadiness confirms the session is active, suppress stale session-block messages.
+    if (raw !== null && isReadinessForSelectedJob && bgReadiness?.session === 'ready') return null
+    return raw
+  })()
 
 
   // True only when there's useful readiness data for the current job.
@@ -1102,7 +1109,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
              Shown only when accountAttention is true (explicit known-failure:
              AUTH_NEEDS_LOGIN or FAMILYWORKS_SESSION_MISSING). No dismiss —
              it disappears naturally once the session is fixed.              */}
-        {accountAttention && (
+        {accountAttention && !(isReadinessForSelectedJob && bgReadiness?.session === 'ready') && (
           <button
             onClick={onAccount}
             className="w-full rounded-2xl bg-accent-amber/10 border border-accent-amber/20 px-4 py-3 flex items-center gap-3 text-left active:opacity-70 transition-opacity"
