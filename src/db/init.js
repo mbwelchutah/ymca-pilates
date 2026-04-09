@@ -74,6 +74,34 @@ function openDb() {
     }
   }
 
+  // Seed jobs from data/seed-jobs.json if the table is empty.
+  // This ensures a fresh production deployment starts with the correct class list.
+  const jobCount = db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n;
+  if (jobCount === 0) {
+    const seedPath = path.join(DATA_DIR, 'seed-jobs.json');
+    if (fs.existsSync(seedPath)) {
+      try {
+        const seeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        const insert = db.prepare(`
+          INSERT INTO jobs (class_title, instructor, day_of_week, class_time, target_date, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        const now = new Date().toISOString();
+        const seedAll = db.transaction((rows) => {
+          for (const r of rows) {
+            insert.run(r.class_title, r.instructor ?? null, r.day_of_week ?? null,
+                       r.class_time ?? null, r.target_date ?? null,
+                       r.is_active !== undefined ? (r.is_active ? 1 : 0) : 1, now);
+          }
+        });
+        seedAll(seeds);
+        console.log(`[db] Seeded ${seeds.length} job(s) from seed-jobs.json`);
+      } catch (err) {
+        console.error('[db] Failed to seed from seed-jobs.json:', err.message);
+      }
+    }
+  }
+
   return db;
 }
 

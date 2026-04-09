@@ -7,7 +7,7 @@ Node.js app that automates registration for the Wednesday 7:45 AM Core Pilates c
 - **`src/web/server.js`** — HTTP server on port 5000. Serves the web UI and three API routes (`/register`, `/run-job`, `/status`). Jobs run in the background; the browser polls `/status` every 2 seconds so the UI never freezes.
 - **`src/bot/register-pilates.js`** — Playwright booking bot. Exported as `runBookingJob(job)`. Accepts `maxAttempts` in the job object (defaults to 20; web UI passes 1). Uses the system Chromium binary (detected via `which chromium`) to avoid shared-library issues with the bundled Playwright browser.
 - **`src/bot/run-from-db.js`** — Loads job id=1 from the database and calls `runBookingJob`.
-- **`src/db/init.js`** — Opens / creates `jobs.db` (SQLite via better-sqlite3).
+- **`src/db/init.js`** — Opens / creates `data/app.db` (SQLite via better-sqlite3). On first run with an empty DB, seeds jobs from `data/seed-jobs.json` so production always starts with the correct class list.
 - **`src/db/jobs.js`** — CRUD: `createJob`, `getAllJobs`, `getJobById`.
 - **`src/db/create-test-job.js`** — Creates a fake test job whose booking window opens in ~15 min.
 - **`src/db/cleanup-test-jobs.js`** — Deletes Core Pilates test jobs older than 24h.

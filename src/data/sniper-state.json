@@ -1,0 +1,106 @@
+{
+  "runId": "2026-04-09T04:06:08.888Z",
+  "jobId": 16,
+  "phase": "VERIFY",
+  "bundle": {
+    "session": "SESSION_READY",
+    "discovery": "DISCOVERY_FAILED",
+    "action": "ACTION_NOT_TESTED",
+    "modal": "MODAL_NOT_TESTED"
+  },
+  "sniperState": "SNIPER_BLOCKED_DISCOVERY",
+  "authBlockedAt": null,
+  "timing": null,
+  "events": [
+    {
+      "phase": "AUTH",
+      "failureType": null,
+      "message": "Auth valid on schedule page",
+      "timestamp": "2026-04-09T04:06:26.944Z",
+      "screenshot": null,
+      "evidence": null
+    },
+    {
+      "phase": "DISCOVERY",
+      "failureType": null,
+      "message": "Class found on schedule",
+      "timestamp": "2026-04-09T04:06:33.021Z",
+      "screenshot": null,
+      "evidence": {
+        "matched": "Hatha YogaMovement Studio • Eugene Y9:00 a - 10:00 aAnders K.0/20",
+        "score": "10",
+        "signals": "title+5, time+5",
+        "second": "Hatha YogaMovement Studio • Eugene Y9:00 a - 10:00 aAnders K.0/20"
+      }
+    },
+    {
+      "phase": "VERIFY",
+      "failureType": "VERIFY_INSTRUCTOR_MISMATCH",
+      "message": "Instructor mismatch",
+      "timestamp": "2026-04-09T04:06:37.557Z",
+      "screenshot": null,
+      "evidence": {
+        "candidateLabel": "best candidate",
+        "verifyTime": true,
+        "verifyInst": false
+      }
+    },
+    {
+      "phase": "ACTION",
+      "failureType": "ACTION_FORCE_CLICK_USED",
+      "message": "Normal click failed — force-click fallback (second-best candidate)",
+      "timestamp": "2026-04-09T04:06:45.122Z",
+      "screenshot": null,
+      "evidence": null
+    },
+    {
+      "phase": "VERIFY",
+      "failureType": "VERIFY_INSTRUCTOR_MISMATCH",
+      "message": "Instructor mismatch",
+      "timestamp": "2026-04-09T04:06:48.501Z",
+      "screenshot": null,
+      "evidence": {
+        "candidateLabel": "second-best candidate",
+        "verifyTime": true,
+        "verifyInst": false
+      }
+    }
+  ],
+  "updatedAt": "2026-04-09T04:06:48.501Z",
+  "lastPreflightSnapshot": {
+    "checkedAt": "2026-04-09T03:37:26.133Z",
+    "status": "found_not_open_yet",
+    "authDetail": {
+      "verdict": "ready",
+      "provider": null,
+      "detail": "Auth valid on schedule page"
+    },
+    "discoveryDetail": {
+      "found": true,
+      "matched": "Gentle YogaYoga Studio • Eugene Y4:15 p - 5:15 pCloud S.0/30",
+      "score": "13",
+      "signals": "title+5, time+5, instr+3",
+      "second": "Gentle YogaYoga Studio • Eugene Y4:15 p - 5:15 pCloud S.0/30",
+      "nearMisses": null
+    },
+    "modalDetail": {
+      "verdict": "reachable",
+      "detail": "Preflight: modal opened and verified",
+      "screenshot": null,
+      "buttonsVisible": [
+        "2  d until open registration "
+      ],
+      "modalPreview": "ay april 13 4:15 pm - 5:15 pm yoga studio • eugene y 30 s"
+    },
+    "actionDetail": {
+      "verdict": "full",
+      "actionState": "UNKNOWN_ACTION",
+      "buttonsVisible": [
+        "2  d until open registration "
+      ],
+      "registerStrategy": "not found",
+      "waitlistStrategy": "not found",
+      "detail": "Preflight: no booking button visible — registration not open yet"
+    }
+  }
+}

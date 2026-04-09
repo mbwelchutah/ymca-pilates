@@ -1,0 +1,32 @@
+{
+  "jobId": "14",
+  "runId": "2026-04-08T06:11:21.990Z",
+  "outcome": "success",
+  "events": [
+    {
+      "timestamp": "2026-04-08T06:11:45.450Z",
+      "type": "target_acquired",
+      "label": "Class identified",
+      "detail": "Core Pilates"
+    },
+    {
+      "timestamp": "2026-04-08T06:11:46.940Z",
+      "type": "modal_opened",
+      "label": "Booking form opened",
+      "detail": "Core Pilates"
+    },
+    {
+      "timestamp": "2026-04-08T06:12:10.398Z",
+      "type": "action_attempt",
+      "label": "Clicked Register",
+      "detail": "Attempt 1"
+    },
+    {
+      "timestamp": "2026-04-08T06:12:12.564Z",
+      "type": "success",
+      "label": "Booking confirmed",
+      "detail": "Core Pilates"
+    }
+  ],
+  "capturedAt": "2026-04-08T06:12:12.564Z"
+}

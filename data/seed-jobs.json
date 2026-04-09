@@ -1,0 +1,66 @@
+[
+  {
+    "class_title": "Core Pilates",
+    "instructor": "Gretl",
+    "day_of_week": "Tuesday",
+    "class_time": "4:20 PM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Gentle Yoga",
+    "instructor": "Cloud",
+    "day_of_week": "Monday",
+    "class_time": "4:15 PM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Gentle Yoga",
+    "instructor": "Brynne",
+    "day_of_week": "Tuesday",
+    "class_time": "10:45 AM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Core Pilates",
+    "instructor": "Stephanie",
+    "day_of_week": "Wednesday",
+    "class_time": "7:45 AM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Core Pilates",
+    "instructor": "Stephanie",
+    "day_of_week": "Friday",
+    "class_time": "7:30 AM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Core Pilates",
+    "instructor": "Stephanie",
+    "day_of_week": "Friday",
+    "class_time": "12:00 PM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Gentle Yoga",
+    "instructor": "Stephanie",
+    "day_of_week": "Wednesday",
+    "class_time": "10:35 AM",
+    "target_date": null,
+    "is_active": 1
+  },
+  {
+    "class_title": "Hatha Yoga",
+    "instructor": null,
+    "day_of_week": "Sunday",
+    "class_time": "9:00 AM",
+    "target_date": null,
+    "is_active": 1
+  }
+]

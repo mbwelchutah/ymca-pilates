@@ -1,0 +1,17 @@
+{
+  "lastCheckedAt": "2026-04-09T04:06:08.887Z",
+  "jobId": 16,
+  "classTitle": "Hatha Yoga",
+  "outcome": "fail",
+  "status": "error",
+  "message": "Modal verification failed (instructor): expected time=\"9:00 a\" (found:true) instructor=\"stephanie\" (found:false)",
+  "minsUntilOpen": 654,
+  "retryContext": {
+    "failureType": "click_failed",
+    "attemptNumber": 1,
+    "retryDelayMs": 180000,
+    "phase": "waiting",
+    "shouldRetry": false,
+    "note": "escalate to fallback strategy (Stage 10D)"
+  }
+}

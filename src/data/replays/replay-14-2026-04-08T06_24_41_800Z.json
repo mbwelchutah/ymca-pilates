@@ -1,0 +1,20 @@
+{
+  "jobId": "14",
+  "runId": "2026-04-08T06:24:41.800Z",
+  "outcome": "failure",
+  "events": [
+    {
+      "timestamp": "2026-04-08T06:25:07.719Z",
+      "type": "target_acquired",
+      "label": "Class identified",
+      "detail": "Core Pilates"
+    },
+    {
+      "timestamp": "2026-04-08T06:25:09.061Z",
+      "type": "modal_opened",
+      "label": "Booking form opened",
+      "detail": "Core Pilates"
+    }
+  ],
+  "capturedAt": "2026-04-08T06:25:16.684Z"
+}
