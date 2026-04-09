@@ -316,10 +316,11 @@ async function runBookingJob(job, opts = {}) {
   const classTimeNorm = classTime
     ? classTime.trim().toLowerCase().replace(/^(\d+:\d+)\s*(am|pm).*/, (_, t, ap) => t + ' ' + ap[0])
     : null;
-  // First name only for fuzzy instructor matching ("Stephanie Sanders" → "stephanie")
+  // First name only for fuzzy instructor matching ("Stephanie Sanders" → "stephanie").
+  // null means no instructor was specified on the job — skip instructor verification.
   const instructorFirstName = instructor
     ? instructor.trim().split(/\s+/)[0].toLowerCase()
-    : 'stephanie';
+    : null;
   let browser;
   let screenshotPath      = null;
   let _authLockAcquired   = false;
@@ -1354,7 +1355,8 @@ async function runBookingJob(job, opts = {}) {
           ? modalText.slice(Math.max(0, _tmIdx - 12), _tmIdx + 45).replace(/\s+/g, ' ').trim()
           : modalText.slice(0, 60);
         const verifyTime = !!classTimeNorm && modalText.includes(classTimeNorm);
-        const verifyInst = modalText.includes(instructorFirstName);
+        // Skip instructor check when no instructor was specified on the job (instructorFirstName === null).
+        const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
         console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
 
         if (!verifyTime || !verifyInst) {
