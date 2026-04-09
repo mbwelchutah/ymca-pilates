@@ -49,8 +49,10 @@ export default function App() {
         const status = await api.getSessionStatus()
         setPolledStatus(status)
         const needsAttention =
-          status.daxko === 'AUTH_NEEDS_LOGIN' ||
-          status.familyworks === 'FAMILYWORKS_SESSION_MISSING'
+          !status.authState?.isAuthInProgress && (
+            status.daxko === 'AUTH_NEEDS_LOGIN' ||
+            status.familyworks === 'FAMILYWORKS_SESSION_MISSING'
+          )
         setAccountAttention(needsAttention)
       } catch {
         // Ambiguous / unreachable — reset dot, do not alarm

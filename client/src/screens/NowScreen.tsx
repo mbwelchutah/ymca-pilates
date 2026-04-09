@@ -203,6 +203,9 @@ function derivePrimaryResult(opts: {
   lastPreflightAt:  string | null
   bgArmedState:     string | null
   blocked:          string | null
+  bgSession?:       string | null
+  bgDiscovery?:     string | null
+  bgModal?:         string | null
 }): PrimaryResult {
   const {
     isBooked, isInactive, job,
@@ -210,6 +213,7 @@ function derivePrimaryResult(opts: {
     sessionStatus,
     composite, compositeDetail, showComposite,
     bookingActive, lastPreflightAt, bgArmedState, blocked,
+    bgSession, bgDiscovery, bgModal,
   } = opts
 
   // ── STATE: booking ─────────────────────────────────────────────────────────
@@ -271,10 +275,22 @@ function derivePrimaryResult(opts: {
 
   // Auto-check or composite signals a real problem (red = blocking error).
   if (bgArmedState === 'needs_attention') {
+    let detail: string
+    let label = 'Issue'
+    if (bgDiscovery === 'missing') {
+      detail = 'Class not found on the schedule — will check again before the window opens.'
+    } else if (bgModal === 'blocked') {
+      detail = 'Booking link not accessible — retrying automatically.'
+    } else if (bgSession === 'error') {
+      detail = 'Sign-in check timed out — the bot is retrying. Tap the account icon if this persists.'
+    } else {
+      label  = 'Checking'
+      detail = 'A recent preflight timed out — retrying automatically. No action needed.'
+    }
     return {
       state:    'issue',
-      label:    'Issue',
-      detail:   'Something needs review before booking.',
+      label,
+      detail,
       severity: 'warning',
     }
   }
@@ -881,6 +897,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     lastPreflightAt,
     bgArmedState: sniperArmed?.state ?? null,
     blocked,
+    bgSession:    bgReadiness?.session   ?? null,
+    bgDiscovery:  bgReadiness?.discovery ?? null,
+    bgModal:      bgReadiness?.modal     ?? null,
   }) : null
 
   // Hysteresis effect — runs whenever the derived state or severity changes.
