@@ -225,6 +225,19 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
   if (pingResult.trusted) {
     console.log('[session-keepalive] Tier 2 trust —', pingResult.detail);
     appendLog({ timestamp, valid: true, detail: pingResult.detail, screenshot: null, tier: 2 });
+    // Clear stale SESSION_EXPIRED from sniper bundle so the card doesn't show
+    // "Login required" when an HTTP ping has confirmed the session is valid.
+    try {
+      const sniperPath = path.join(DATA_DIR, 'sniper-state.json');
+      if (fs.existsSync(sniperPath)) {
+        const sniper = JSON.parse(fs.readFileSync(sniperPath, 'utf8'));
+        if (sniper.bundle?.session === 'SESSION_EXPIRED' || sniper.bundle?.session === 'SESSION_REQUIRED') {
+          sniper.bundle.session = 'SESSION_UNKNOWN';
+          fs.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+          console.log('[session-keepalive] Tier 2: cleared stale SESSION_EXPIRED from sniper bundle.');
+        }
+      }
+    } catch (_) { /* non-fatal */ }
     try {
       const jobs   = getAllJobs().filter(j => j.is_active === 1);
       const topJob = jobs[0] ?? null;

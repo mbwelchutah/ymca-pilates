@@ -5235,6 +5235,19 @@ setTimeout(async () => {
 
     if (result.trusted) {
       updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
+      // Clear stale SESSION_EXPIRED from the sniper bundle so the card stops
+      // showing "Login required" based on an old failed Playwright check.
+      try {
+        const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
+        if (fsStatic.existsSync(sniperPath)) {
+          const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+          if (sniper.bundle?.session === 'SESSION_EXPIRED' || sniper.bundle?.session === 'SESSION_REQUIRED') {
+            sniper.bundle.session = 'SESSION_UNKNOWN';
+            fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+            console.log('[auth-state] Startup ping: cleared stale SESSION_EXPIRED from sniper bundle.');
+          }
+        }
+      } catch (_) {}
       console.log('[auth-state] Startup ping: sessions valid —', result.detail);
     } else {
       // Don't overwrite authState on failure — keepalive will handle recovery.

@@ -564,7 +564,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     // Stale readiness cleared on job switch or edit — no log needed
     setStableResult(null)          // Stage 2: reset hysteresis on job switch
     setStableConfidenceLabel(null) // Stage 4: reset label hysteresis on job switch
-    setWhyExpanded(false)          // Stage 11C: collapse "why" panel on job switch
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
     api.getReadiness().then(setBgReadiness).catch(() => {})
@@ -646,8 +645,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Stage 4: stable confidence label — separate hysteresis for the label so it
   // doesn't oscillate from small score changes.
   const [stableConfidenceLabel, setStableConfidenceLabel] = useState<ConfidenceLabel | null>(null)
-
-  const [whyExpanded, setWhyExpanded] = useState(false) // Stage 11C
 
   // ── Composite readiness (Stage 10) ─────────────────────────────────────────
   // Derived at render time from the live bundle + last preflight status.
@@ -1036,93 +1033,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* ── Stage 11C: "Why?" expandable confidence breakdown ── */}
-              {/* Populated from background-loop readiness — always reflects latest check. */}
-              {!bannerIsComplete && isReadinessForSelectedJob && bgReadiness && (() => {
-                type WhyRow = { label: string; value: string; color: string }
-                const rows: WhyRow[] = []
 
-                const s = bgReadiness.session
-                if (s && s !== 'unknown') rows.push({
-                  label: 'Account',
-                  value: s === 'ready' ? 'Active' : 'Login needed',
-                  color: s === 'ready' ? 'text-green-600' : 'text-red-500',
-                })
-
-                const d = bgReadiness.discovery
-                if (d && d !== 'unknown') rows.push({
-                  label: 'Class',
-                  value: d === 'found' ? 'Found' : 'Not found',
-                  color: d === 'found' ? 'text-green-600' : 'text-red-500',
-                })
-
-                const m = bgReadiness.modal
-                if (m && m !== 'unknown') rows.push({
-                  label: 'Booking',
-                  value: m === 'reachable' ? 'Ready' : m === 'blocked' ? 'Blocked' : 'Unknown',
-                  color: m === 'reachable' ? 'text-green-600' : m === 'blocked' ? 'text-red-500' : 'text-text-muted',
-                })
-
-                const a = bgReadiness.action
-                if (a && a !== 'unknown') rows.push({
-                  label: 'Action',
-                  value: a === 'ready' ? 'Open' : a === 'waitlist_only' ? 'Waitlist' : a === 'full' ? 'Full' : 'Not open yet',
-                  color: a === 'ready' ? 'text-green-600' : a === 'waitlist_only' ? 'text-amber-500' : a === 'full' ? 'text-red-500' : 'text-text-muted',
-                })
-
-                if (rows.length === 0) return null
-                return (
-                  <div className="mb-2">
-                    <button
-                      onClick={() => setWhyExpanded(x => !x)}
-                      className="mx-auto flex items-center gap-0.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
-                    >
-                      <span>Why?</span>
-                      <span className={`transition-transform duration-200 ${whyExpanded ? 'rotate-180' : ''}`}>›</span>
-                    </button>
-
-                    {whyExpanded && (
-                      <div className="mt-1.5 mx-auto w-fit min-w-[160px] rounded-lg bg-surface px-4 py-2 space-y-1">
-                        {rows.map(r => (
-                          <div key={r.label} className="flex items-center justify-between gap-4">
-                            <span className="text-[11px] text-text-muted">{r.label}</span>
-                            <span className={`text-[11px] font-medium ${r.color}`}>{r.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* ── Primary action: Pause / Resume ───────────────────────────────── */}
-              {/* Shown only when the system is active and waiting — not during     */}
-              {/* booking, confirmed, or inactive states. Resume is prominent        */}
-              {/* (amber pill) because it is urgent; Pause is muted (system runs    */}
-              {/* automatically — user rarely needs to stop it).                     */}
-              {!bannerIsComplete && (
-                <div className="flex justify-center py-1">
-                  {appState.schedulerPaused ? (
-                    <button
-                      onClick={handlePauseResume}
-                      className="px-5 py-1.5 rounded-full text-[13px] font-semibold text-accent-amber bg-accent-amber/10 active:opacity-70 transition-opacity"
-                    >
-                      Resume
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handlePauseResume}
-                      className="text-[12px] text-text-muted active:opacity-50 py-2 px-4"
-                    >
-                      Pause
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Compact utility row: inline mode toggle */}
-              <div className="flex items-center justify-center mt-2">
-                {/* Inline Live / Test toggle — subdued, no heavy background */}
+              {/* ── Bottom utility row: Live/Test toggle + Pause/Resume ───────────── */}
+              {/* Resume is shown as an amber pill (urgent); Pause is muted text.    */}
+              {/* Live/Test is always visible; Pause/Resume only when banner active.  */}
+              <div className="flex items-center justify-between mt-2 px-1">
+                {/* Live / Test toggle — left side */}
                 <div className="flex items-center gap-0.5 text-[12px]">
                   <button
                     onClick={() => handleDryRun(false)}
@@ -1144,6 +1060,25 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     Test
                   </button>
                 </div>
+
+                {/* Pause / Resume — right side, only when banner is active */}
+                {!bannerIsComplete && (
+                  appState.schedulerPaused ? (
+                    <button
+                      onClick={handlePauseResume}
+                      className="px-4 py-1.5 rounded-full text-[12px] font-semibold text-accent-amber bg-accent-amber/10 active:opacity-70 transition-opacity"
+                    >
+                      Resume
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePauseResume}
+                      className="text-[12px] text-text-muted active:opacity-50 py-1 px-2"
+                    >
+                      Pause
+                    </button>
+                  )
+                )}
               </div>
 
             </div>
