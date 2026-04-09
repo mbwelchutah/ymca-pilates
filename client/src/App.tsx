@@ -25,10 +25,8 @@ export default function App() {
 
   // Derived from polledStatus.authState — drives the header status dot color.
   const authStatus: AuthStatusEnum | null = polledStatus?.authState?.status ?? null
-  const [autoVerifySignal, setAutoVerifySignal] = useState(0)
   const [bgRefreshSignal, setBgRefreshSignal] = useState(0)
   const [toolsSection, setToolsSection] = useState<string | undefined>(undefined)
-  const startupVerified = useRef(false)
 
   const { state, loading, error, refresh } = useAppState()
 
@@ -88,15 +86,6 @@ export default function App() {
     }
   }, [state.jobs, selectedJobId])
 
-  // ── Auto-verify on startup ────────────────────────────────────────────────
-  // Fires once, as soon as we have a valid job loaded, to check class readiness
-  // immediately without the user having to tap "Verify".
-  useEffect(() => {
-    if (loading || startupVerified.current) return
-    if (selectedJobId == null || !state.jobs.some(j => j.id === selectedJobId)) return
-    startupVerified.current = true
-    setAutoVerifySignal(s => s + 1)
-  }, [loading, selectedJobId, state.jobs])
 
   // ── Auto-advance to Now when the watched class gets booked ────────────────
   // Detects a transition of last_result → 'booked' across polling cycles.
@@ -136,8 +125,6 @@ export default function App() {
     localStorage.setItem('selectedJobId', String(id))
     setTab('now')
     localStorage.setItem('mobileTab', 'now')
-    // Verify the newly selected class automatically
-    setAutoVerifySignal(s => s + 1)
   }
 
   const handleTabChange = (t: Tab) => {
@@ -173,7 +160,6 @@ export default function App() {
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
             authStatus={authStatus}
-            autoVerifySignal={autoVerifySignal}
             polledStatus={polledStatus}
             onDismissEscalation={async (jobId) => {
               await api.clearEscalation(jobId)

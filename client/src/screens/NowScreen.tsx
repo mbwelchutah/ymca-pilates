@@ -35,7 +35,6 @@ interface NowScreenProps {
   onAccount?: () => void
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
-  autoVerifySignal?: number
   polledStatus?: SessionStatus | null
   onDismissEscalation?: (jobId: number) => void
   bgRefreshSignal?: number
@@ -423,14 +422,9 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
   }
 }
 
-// ── Auto-verify tracking (module-level so it survives tab remounts) ────────────
-// Stores the last autoVerifySignal value that NowScreen already acted on so
-// switching tabs and back doesn't retrigger a verify that already ran.
-let _lastAutoVerifyFired = 0
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, autoVerifySignal, polledStatus, onDismissEscalation, bgRefreshSignal }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -568,11 +562,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (!jobSwitched && !jobEdited) return
 
     // Stale readiness cleared on job switch or edit — no log needed
-    setAuthDetail(null)
-    setDiscoveryDetail(null)
-    setModalDetail(null)
-    setActionDetail(null)
-    setPreflightStatus(null)
     setStableResult(null)          // Stage 2: reset hysteresis on job switch
     setStableConfidenceLabel(null) // Stage 4: reset label hysteresis on job switch
     setWhyExpanded(false)          // Stage 11C: collapse "why" panel on job switch
@@ -581,23 +570,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     api.getReadiness().then(setBgReadiness).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobId, jobFingerprint])
-
-  // Restore per-stage details from the persisted snapshot so the enriched
-  // composite detail text survives page refreshes.  Guards prevent overwriting
-  // a fresh Check Now result if a new snapshot arrives during the same session.
-  // Only restore when the snapshot belongs to the currently selected job —
-  // prevents cross-job data bleed when sniper state is still for the old run.
-  const snapshotCheckedAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
-  useEffect(() => {
-    const snap = sniperRunState?.lastPreflightSnapshot
-    if (!snap) return
-    if (sniperRunState?.jobId != null && sniperRunState.jobId !== selectedJobId) return
-    if (!authDetail      && snap.authDetail)      setAuthDetail(snap.authDetail as AuthDetail)
-    if (!discoveryDetail && snap.discoveryDetail) setDiscoveryDetail(snap.discoveryDetail as DiscoveryDetail)
-    if (!modalDetail     && snap.modalDetail)     setModalDetail(snap.modalDetail as ModalDetail)
-    if (!actionDetail    && snap.actionDetail)    setActionDetail(snap.actionDetail as ActionDetail)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshotCheckedAt])
 
   // ── Session status — shared auth truth ────────────────────────────────────
   // App.tsx's 90 s poll provides the base; job-switch and post-Check-Now fetches
@@ -625,12 +597,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     })
   })()
 
-  // Unmount cleanup: clear step timer if user navigates away during a Run Check.
-  useEffect(() => {
-    return () => {
-      if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
-    }
-  }, [])
 
 
   // Sniper state is global (last-run-wins).  Only treat it as applicable to the
@@ -675,119 +641,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }
 
   // ── Check Now (preflight) ──────────────────────────────────────────────────
-  // preflightStatus: raw status string from the last logRunSummary call.
-  // Stored separately so computeCompositeReadiness() can distinguish
-  // waitlist_only from action_blocked (both use ACTION_BLOCKED in the bundle).
-  const [preflightRunning, setPreflightRunning] = useState(false)
-  const [preflightStatus,  setPreflightStatus]  = useState<string | null>(null)
-  const [checkStep,    setCheckStep]    = useState<string | null>(null)
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
   const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
   // Stage 4: stable confidence label — separate hysteresis for the label so it
   // doesn't oscillate from small score changes.
   const [stableConfidenceLabel, setStableConfidenceLabel] = useState<ConfidenceLabel | null>(null)
-  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Time-gated step labels — each activates once the elapsed seconds threshold is crossed.
-  // Thresholds are approximate real-world timings for the Playwright preflight pipeline.
-  const CHECK_STEPS: { label: string; atSec: number }[] = [
-    { label: 'Connecting…',       atSec: 0  },
-    { label: 'Checking login…',   atSec: 4  },
-    { label: 'Loading schedule…', atSec: 11 },
-    { label: 'Finding class…',    atSec: 23 },
-    { label: 'Opening modal…',    atSec: 36 },
-  ]
-
-  // Auth, Modal, and Discovery details — populated after Check Now; persist for the session.
-  type AuthDetail = {
-    verdict:  'ready' | 'login_required' | 'session_expired'
-    provider: string | null
-    detail:   string | null
-  }
-  type ModalDetail = {
-    verdict:        'reachable' | 'login_required' | 'blocked'
-    detail:         string | null
-    screenshot:     string | null
-    buttonsVisible: string[] | null
-    modalPreview:   string | null
-  }
-  type ActionDetail = {
-    verdict:          'ready' | 'waitlist_only' | 'login_required' | 'full' | 'unknown'
-    actionState:      string | null
-    buttonsVisible:   string[] | null
-    registerStrategy: string | null
-    waitlistStrategy: string | null
-    detail:           string | null
-  }
-  type DiscoveryDetail = {
-    found:      boolean
-    matched:    string | null
-    score:      string | null
-    signals:    string | null
-    second:     string | null
-    nearMisses: string | null
-  }
-  const [authDetail,      setAuthDetail]      = useState<AuthDetail | null>(null)
-  const [modalDetail,     setModalDetail]     = useState<ModalDetail | null>(null)
-  const [actionDetail,    setActionDetail]    = useState<ActionDetail | null>(null)
-  const [discoveryDetail, setDiscoveryDetail] = useState<DiscoveryDetail | null>(null)
-  const [whyExpanded,     setWhyExpanded]     = useState(false) // Stage 11C
-
-  const handleCheckNow = async () => {
-    if (!job || preflightRunning || bgReadiness?.armed?.state === 'booking') return
-    setPreflightRunning(true)
-
-    // ── Step progress timer ───────────────────────────────────────────────────
-    // Ticks every 1 s.  Step label advances once the elapsed-seconds threshold
-    // for the next step is crossed — each stage is visible for its realistic duration.
-    let elapsed = 0
-    setCheckStep(CHECK_STEPS[0].label)
-    stepTimerRef.current = setInterval(() => {
-      elapsed += 1
-      const current = [...CHECK_STEPS].reverse().find(s => elapsed >= s.atSec)
-      if (current) setCheckStep(current.label)
-    }, 1000)
-
-    try {
-      const result = await api.runPreflight(job.id)
-      if (result.sniperState) setSniperRunState(result.sniperState)
-      setPreflightStatus(result.status ?? null)
-      if (result.authDetail)      setAuthDetail(result.authDetail)
-      if (result.modalDetail)     setModalDetail(result.modalDetail)
-      if (result.actionDetail)    setActionDetail(result.actionDetail)
-      if (result.discoveryDetail) setDiscoveryDetail(result.discoveryDetail)
-      // Re-fetch session-status.json so the session chip reflects the auth
-      // outcome just written by the preflight pipeline.
-      api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
-      // Refresh background readiness so "Last checked" updates immediately.
-      api.getReadiness().then(setBgReadiness).catch(() => {})
-    } catch { setPreflightStatus('error') }
-    finally {
-      if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
-      setCheckStep(null)
-      setPreflightRunning(false)
-    }
-  }
-
-  // ── Auto-verify on startup / class change ──────────────────────────────────
-  // Parent increments autoVerifySignal when it wants a verify triggered (once
-  // on first load, and again each time the user selects a different class).
-  // lastFiredSignal persists across remounts via ref so tab-switching doesn't
-  // retrigger a verify that already ran at this signal level.
-  const handleCheckNowRef = useRef(handleCheckNow)
-  handleCheckNowRef.current = handleCheckNow
-  useEffect(() => {
-    if (!autoVerifySignal || autoVerifySignal <= _lastAutoVerifyFired) return
-    _lastAutoVerifyFired = autoVerifySignal
-    handleCheckNowRef.current()
-  }, [autoVerifySignal])
+  const [whyExpanded, setWhyExpanded] = useState(false) // Stage 11C
 
   // ── Composite readiness (Stage 10) ─────────────────────────────────────────
   // Derived at render time from the live bundle + last preflight status.
   // Effective preflight status — prefer the current session value; fall back to
   // the persisted snapshot so the composite stays accurate across page refreshes.
   const effectivePreflightStatus =
-    preflightStatus ?? sniperRunState?.lastPreflightSnapshot?.status ?? null
+    sniperRunState?.lastPreflightSnapshot?.status ?? null
 
   // Timestamp of the last user-triggered Check Now (persisted in sniper-state.json).
   const lastPreflightAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
@@ -801,51 +668,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Show the composite badge only when there is something meaningful to say.
   const showComposite = effectivePreflightStatus !== null || Boolean(hasReadinessData)
 
-  // ── Stage 8: Enriched composite detail ─────────────────────────────────────
-  // Replaces the generic composite.detail with the most specific evidence from
-  // per-stage detail objects populated by Check Now.  Falls back to
-  // composite.detail when no stage detail is available (e.g. page refresh).
-  const compositeDetail: string = (() => {
-    switch (composite.status) {
-      case 'COMPOSITE_READY': {
-        const parts: string[] = []
-        const btn = Array.isArray(actionDetail?.buttonsVisible)
-          ? actionDetail!.buttonsVisible.find(b => /register|reserve/i.test(b))
-          : null
-        if (btn) parts.push(`"${btn}" button visible`)
-        const match = discoveryDetail?.matched
-        if (match) parts.push(match.length > 42 ? match.slice(0, 42) + '…' : match)
-        return parts.length > 0 ? parts.join(' · ') : composite.detail
-      }
-
-      case 'COMPOSITE_WAITLIST': {
-        const match = discoveryDetail?.matched
-        const matchStr = match ? ` · ${match.length > 36 ? match.slice(0, 36) + '…' : match}` : ''
-        return `Everything is working — class is full, waitlist is open${matchStr}`
-      }
-
-      case 'COMPOSITE_LOGIN_REQUIRED':
-        // Modal login-required is more specific than a general session error
-        if (composite.detail.includes('modal') && modalDetail?.detail) return modalDetail.detail
-        return authDetail?.detail ?? composite.detail
-
-      case 'COMPOSITE_CLASS_NOT_FOUND':
-        if (discoveryDetail?.nearMisses) return `No exact match — nearest: ${discoveryDetail.nearMisses}`
-        if (discoveryDetail?.found === false) return 'Class not visible on this day\'s schedule'
-        return composite.detail
-
-      case 'COMPOSITE_ACTION_BLOCKED':
-        // Prefer the reassurance-forward composite message; fall back only if
-        // actionDetail provides something genuinely more useful.
-        return composite.detail
-
-      case 'COMPOSITE_MODAL_ISSUE':
-        return modalDetail?.detail ?? composite.detail
-
-      default:
-        return composite.detail
-    }
-  })()
+  // ── Stage 8: Composite detail ───────────────────────────────────────────────
+  // Uses the computed composite message directly. Background-loop readiness
+  // provides all necessary context without a manual preflight.
+  const compositeDetail: string = composite.detail
 
   // ── Stage 3: Confidence score ───────────────────────────────────────────────
   // Computed client-side from all 5 normalized readiness signals in bgReadiness.
@@ -1178,16 +1004,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {!bannerIsComplete && (() => {
                 if (!isReadinessForSelectedJob) return null
 
-                // While actively checking — show running indicator
-                if (preflightRunning) {
-                  return (
-                    <div className="mb-2 flex items-center justify-center gap-1.5">
-                      <StatusDot color="gray" size="sm" />
-                      <span className="text-[12px] text-text-secondary font-medium">Checking…</span>
-                    </div>
-                  )
-                }
-
                 // Steady state — Confidence · Freshness
                 // State is already shown in the card above; trust line provides supporting context only.
                 const result = stableResult ?? currentResult
@@ -1221,46 +1037,40 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               })()}
 
               {/* ── Stage 11C: "Why?" expandable confidence breakdown ── */}
-              {/* Only visible when at least one phase detail is available and we're not */}
-              {/* in an active check (preflightRunning). Collapses on job switch. */}
-              {!preflightRunning && !bannerIsComplete && isReadinessForSelectedJob &&
-                (authDetail || discoveryDetail || modalDetail || actionDetail) && (() => {
-                // Build phase rows — only show phases where detail data exists.
+              {/* Populated from background-loop readiness — always reflects latest check. */}
+              {!bannerIsComplete && isReadinessForSelectedJob && bgReadiness && (() => {
                 type WhyRow = { label: string; value: string; color: string }
                 const rows: WhyRow[] = []
 
-                if (authDetail) {
-                  const v = authDetail.verdict
-                  rows.push({
-                    label: 'Account',
-                    value: v === 'ready' ? 'Active' : v === 'login_required' ? 'Login needed' : v === 'session_expired' ? 'Expired' : v,
-                    color: v === 'ready' ? 'text-green-600' : 'text-red-500',
-                  })
-                }
-                if (discoveryDetail) {
-                  rows.push({
-                    label: 'Class',
-                    value: discoveryDetail.found ? (discoveryDetail.matched ?? 'Found') : 'Not found',
-                    color: discoveryDetail.found ? 'text-green-600' : 'text-red-500',
-                  })
-                }
-                if (modalDetail) {
-                  const v = modalDetail.verdict
-                  rows.push({
-                    label: 'Booking',
-                    value: v === 'reachable' ? 'Ready' : v === 'blocked' ? 'Blocked' : v === 'login_required' ? 'Login needed' : v,
-                    color: v === 'reachable' ? 'text-green-600' : v === 'blocked' ? 'text-red-500' : 'text-text-muted',
-                  })
-                }
-                if (actionDetail) {
-                  const v = actionDetail.verdict
-                  rows.push({
-                    label: 'Action',
-                    value: v === 'ready' ? 'Open' : v === 'waitlist_only' ? 'Waitlist' : v === 'full' ? 'Full' : v === 'login_required' ? 'Login needed' : 'Not open yet',
-                    color: v === 'ready' ? 'text-green-600' : v === 'waitlist_only' ? 'text-amber-500' : v === 'full' || v === 'login_required' ? 'text-red-500' : 'text-text-muted',
-                  })
-                }
+                const s = bgReadiness.session
+                if (s && s !== 'unknown') rows.push({
+                  label: 'Account',
+                  value: s === 'ready' ? 'Active' : 'Login needed',
+                  color: s === 'ready' ? 'text-green-600' : 'text-red-500',
+                })
 
+                const d = bgReadiness.discovery
+                if (d && d !== 'unknown') rows.push({
+                  label: 'Class',
+                  value: d === 'found' ? 'Found' : 'Not found',
+                  color: d === 'found' ? 'text-green-600' : 'text-red-500',
+                })
+
+                const m = bgReadiness.modal
+                if (m && m !== 'unknown') rows.push({
+                  label: 'Booking',
+                  value: m === 'reachable' ? 'Ready' : m === 'blocked' ? 'Blocked' : 'Unknown',
+                  color: m === 'reachable' ? 'text-green-600' : m === 'blocked' ? 'text-red-500' : 'text-text-muted',
+                })
+
+                const a = bgReadiness.action
+                if (a && a !== 'unknown') rows.push({
+                  label: 'Action',
+                  value: a === 'ready' ? 'Open' : a === 'waitlist_only' ? 'Waitlist' : a === 'full' ? 'Full' : 'Not open yet',
+                  color: a === 'ready' ? 'text-green-600' : a === 'waitlist_only' ? 'text-amber-500' : a === 'full' ? 'text-red-500' : 'text-text-muted',
+                })
+
+                if (rows.length === 0) return null
                 return (
                   <div className="mb-2">
                     <button
@@ -1310,14 +1120,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
               )}
 
-              {/* Step 3 — Compact utility row: inline mode toggle + verify button */}
-              <div className="flex items-center justify-between mt-2">
+              {/* Compact utility row: inline mode toggle */}
+              <div className="flex items-center justify-center mt-2">
                 {/* Inline Live / Test toggle — subdued, no heavy background */}
                 <div className="flex items-center gap-0.5 text-[12px]">
                   <button
                     onClick={() => handleDryRun(false)}
-                    disabled={preflightRunning}
-                    className={`px-2 py-1 rounded-md transition-all disabled:opacity-40
+                    className={`px-2 py-1 rounded-md transition-all
                       ${!appState.dryRun
                         ? 'bg-surface font-semibold text-text-primary'
                         : 'text-text-muted'}`}
@@ -1327,8 +1136,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   <span className="text-text-muted opacity-30 select-none">/</span>
                   <button
                     onClick={() => handleDryRun(true)}
-                    disabled={preflightRunning}
-                    className={`px-2 py-1 rounded-md transition-all disabled:opacity-40
+                    className={`px-2 py-1 rounded-md transition-all
                       ${appState.dryRun
                         ? 'bg-surface font-semibold text-text-primary'
                         : 'text-text-muted'}`}
@@ -1336,33 +1144,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     Test
                   </button>
                 </div>
-
-                {/* Verify — secondary reassurance action (Stage 8: demoted from primary) */}
-                <button
-                  onClick={handleCheckNow}
-                  disabled={preflightRunning || bgReadiness?.armed?.state === 'booking'}
-                  className={`flex items-center gap-1.5 text-[12px] font-normal transition-opacity
-                    ${preflightRunning || bgReadiness?.armed?.state === 'booking'
-                      ? 'text-text-muted opacity-50 cursor-not-allowed'
-                      : 'text-text-secondary active:opacity-50'
-                    }`}
-                >
-                  {preflightRunning && (
-                    <svg className="animate-spin h-3 w-3 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                  )}
-                  {preflightRunning ? 'Checking…' : 'Verify'}
-                </button>
               </div>
-
-              {/* Step progress text — shown while preflight is running */}
-              {preflightRunning && checkStep && (
-                <p className="text-center text-[11px] text-text-muted mt-1">
-                  {checkStep}
-                </p>
-              )}
 
             </div>
           )}
