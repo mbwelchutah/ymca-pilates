@@ -5235,16 +5235,27 @@ setTimeout(async () => {
 
     if (result.trusted) {
       updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
-      // Clear stale SESSION_EXPIRED from the sniper bundle so the card stops
-      // showing "Login required" based on an old failed Playwright check.
+      // Clear stale SESSION_EXPIRED / SNIPER_BLOCKED_AUTH so the card and
+      // preflight loop both recover immediately on server restart when the
+      // startup ping confirms the session is valid.
       try {
         const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
         if (fsStatic.existsSync(sniperPath)) {
           const sniper = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
+          let changed = false;
           if (sniper.bundle?.session === 'SESSION_EXPIRED' || sniper.bundle?.session === 'SESSION_REQUIRED') {
             sniper.bundle.session = 'SESSION_UNKNOWN';
+            changed = true;
+          }
+          if (sniper.sniperState === 'SNIPER_BLOCKED_AUTH') {
+            sniper.sniperState   = 'SNIPER_WAITING';
+            sniper.authBlockedAt = null;
+            changed = true;
+          }
+          if (changed) {
+            sniper.updatedAt = new Date().toISOString();
             fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
-            console.log('[auth-state] Startup ping: cleared stale SESSION_EXPIRED from sniper bundle.');
+            console.log('[auth-state] Startup ping: cleared stale auth-block from sniper state.');
           }
         }
       } catch (_) {}

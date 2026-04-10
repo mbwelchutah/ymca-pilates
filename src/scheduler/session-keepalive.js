@@ -225,16 +225,26 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
   if (pingResult.trusted) {
     console.log('[session-keepalive] Tier 2 trust —', pingResult.detail);
     appendLog({ timestamp, valid: true, detail: pingResult.detail, screenshot: null, tier: 2 });
-    // Clear stale SESSION_EXPIRED from sniper bundle so the card doesn't show
-    // "Login required" when an HTTP ping has confirmed the session is valid.
+    // Clear stale SESSION_EXPIRED / SNIPER_BLOCKED_AUTH from sniper state so
+    // the card and preflight loop both recover when HTTP ping confirms session valid.
     try {
       const sniperPath = path.join(DATA_DIR, 'sniper-state.json');
       if (fs.existsSync(sniperPath)) {
         const sniper = JSON.parse(fs.readFileSync(sniperPath, 'utf8'));
+        let changed = false;
         if (sniper.bundle?.session === 'SESSION_EXPIRED' || sniper.bundle?.session === 'SESSION_REQUIRED') {
           sniper.bundle.session = 'SESSION_UNKNOWN';
+          changed = true;
+        }
+        if (sniper.sniperState === 'SNIPER_BLOCKED_AUTH') {
+          sniper.sniperState   = 'SNIPER_WAITING';
+          sniper.authBlockedAt = null;
+          changed = true;
+        }
+        if (changed) {
+          sniper.updatedAt = new Date().toISOString();
           fs.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
-          console.log('[session-keepalive] Tier 2: cleared stale SESSION_EXPIRED from sniper bundle.');
+          console.log('[session-keepalive] Tier 2: cleared stale auth-block from sniper state (session confirmed via HTTP ping).');
         }
       }
     } catch (_) { /* non-fatal */ }

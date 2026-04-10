@@ -345,6 +345,26 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
       lastRecoveredAt:          Date.now(),
     });
 
+    // Stage 3: Clear the SNIPER_BLOCKED_AUTH lock so the preflight loop can
+    // resume immediately — without this the 20-minute block window persists
+    // even after a successful re-login via Settings.
+    if (fwReady) {
+      try {
+        const { loadState, saveState } = require('./sniper-readiness');
+        const st = loadState();
+        if (st && st.sniperState === 'SNIPER_BLOCKED_AUTH') {
+          st.bundle        = { ...st.bundle, session: 'SESSION_READY' };
+          st.sniperState   = 'SNIPER_WAITING';
+          st.authBlockedAt = null;
+          st.updatedAt     = new Date().toISOString();
+          saveState(st);
+          console.log('[settings-auth] Cleared SNIPER_BLOCKED_AUTH — preflight loop unblocked.');
+        }
+      } catch (e) {
+        console.warn('[settings-auth] Failed to clear auth-block from sniper state:', e.message);
+      }
+    }
+
     return { daxko: 'DAXKO_READY', familyworks, lastVerified: checkedAt, detail, screenshot: null };
 
   } catch (err) {
