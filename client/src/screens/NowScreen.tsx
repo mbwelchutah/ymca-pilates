@@ -762,15 +762,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         return r.success ? null : 3
       })()
       finalizeSteps(PREFLIGHT_STEP_LIST, failIdx)
+      // Derive text from failIdx (structured) not msg (string-match) to avoid
+      // "Class not found" appearing when failure was actually at the modal step.
       const text = r.success
         ? 'Ready to book'
-        : msg.includes('session') || msg.includes('auth') || msg.includes('login')
-          ? 'Session expired — sign in again'
-          : msg.includes('class') || msg.includes('not found') || msg.includes('discovery')
-            ? 'Class not found on schedule'
-            : msg.includes('modal')
-              ? 'Could not access booking link'
-              : (r.message ?? 'Preflight blocked')
+        : failIdx === 0 ? 'Session expired — sign in again'
+        : failIdx === 2 ? 'Class not found on schedule'
+        : failIdx === 3 ? 'Could not access booking link'
+        : (r.message ?? 'Preflight blocked')
       setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
     } catch (e) {
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
@@ -1472,7 +1471,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         )}
 
         {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
-        {(sessionStatus || hasReadinessData || (isReadinessForSelectedJob && bgReadiness)) && (
+        {/* Hidden when booking is confirmed — live session dot would contradict the Confirmed banner. */}
+        {!isBooked && (sessionStatus || hasReadinessData || (isReadinessForSelectedJob && bgReadiness)) && (
           <Card padding="none">
             {/* ── Readiness milestones — 4-column strip (Session | Class | Modal | Action) ─── */}
             {(() => {
