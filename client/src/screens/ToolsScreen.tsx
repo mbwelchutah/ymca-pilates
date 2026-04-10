@@ -1121,10 +1121,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
 
         {/* ── Automation Health ─────────────────────────────── */}
+        <SectionHeader title="Automation Health" />
         <Card padding="none">
-          <div className="px-4 pt-3 pb-2.5 border-b border-divider">
-            <p className="text-[12px] font-semibold text-text-secondary uppercase tracking-wide">Automation Health</p>
-          </div>
 
           {/* ── Auto Preflight row ──────────────────────────── */}
           {(() => {
@@ -1134,33 +1132,33 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               const d = Math.floor(apfMs / 86_400_000)
               const h = Math.floor((apfMs % 86_400_000) / 3_600_000)
               const m = Math.floor((apfMs % 3_600_000) / 60_000)
-              return d > 0 ? `Next in ${d}d ${h}h` : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
-            })() : cfg?.enabled ? 'None scheduled' : null
+              return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`
+            })() : null
 
             let apfHealth = 'Off'
-            let apfDot    = 'bg-text-muted/40'
+            let apfDot    = 'bg-divider'
             let apfColor  = 'text-text-muted'
             if (cfg?.enabled) {
-              if (!cfg.lastRun)                         { apfHealth = 'Enabled'; apfDot = 'bg-accent-blue'; apfColor = 'text-text-secondary' }
-              else if (cfg.lastRun.status === 'pass')   { apfHealth = 'Healthy';        apfDot = 'bg-accent-green'; apfColor = 'text-accent-green' }
-              else if (cfg.lastRun.status === 'fail')   { apfHealth = 'Last run failed'; apfDot = 'bg-accent-red';   apfColor = 'text-accent-red'   }
-              else                                      { apfHealth = 'Needs review';   apfDot = 'bg-accent-amber'; apfColor = 'text-accent-amber' }
+              if (!cfg.lastRun)                         { apfHealth = 'On'; apfDot = 'bg-accent-blue'; apfColor = 'text-text-muted' }
+              else if (cfg.lastRun.status === 'pass')   { apfHealth = 'Healthy'; apfDot = 'bg-accent-green'; apfColor = 'text-accent-green' }
+              else if (cfg.lastRun.status === 'fail')   { apfHealth = 'Failed';  apfDot = 'bg-accent-red';   apfColor = 'text-accent-red'   }
+              else                                      { apfHealth = 'Review';  apfDot = 'bg-accent-amber'; apfColor = 'text-accent-amber' }
             }
 
             return (
               <button
                 onClick={handleAutoPreflightToggle}
                 disabled={apfToggling || cfg === null}
-                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
+                className="flex items-center justify-between w-full px-4 py-3 text-left active:opacity-60 transition-opacity border-b border-divider"
               >
                 <div className="flex-1 mr-4 min-w-0">
-                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                  <p className="text-[13px] font-medium text-text-primary leading-tight">
                     {apfToggling ? 'Updating…' : 'Auto Preflight'}
                   </p>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${apfDot}`} />
-                    <span className={`text-[12px] font-medium ${apfColor}`}>{apfHealth}</span>
-                    {apfNext && <span className="text-[12px] text-text-muted">· {apfNext}</span>}
+                    <span className={`text-[12px] ${apfColor}`}>{apfHealth}</span>
+                    {apfNext && <span className="text-[12px] text-text-muted">· next {apfNext}</span>}
                   </div>
                 </div>
                 <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
@@ -1181,32 +1179,32 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             const kaNext = kaMs != null ? (() => {
               const h = Math.floor(kaMs / 3_600_000)
               const m = Math.floor((kaMs % 3_600_000) / 60_000)
-              return kaMs < 60_000 ? 'Due now' : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
-            })() : cfg?.enabled ? 'None scheduled' : null
+              return kaMs < 60_000 ? 'now' : h > 0 ? `${h}h ${m}m` : `${m}m`
+            })() : null
 
             let kaHealth = 'Off'
-            let kaDot    = 'bg-text-muted/40'
+            let kaDot    = 'bg-divider'
             let kaColor  = 'text-text-muted'
             if (cfg?.enabled) {
-              if (!cfg.lastRun)              { kaHealth = 'Enabled';      kaDot = 'bg-accent-blue';  kaColor = 'text-text-secondary' }
-              else if (cfg.lastRun.valid)    { kaHealth = 'Healthy';      kaDot = 'bg-accent-green'; kaColor = 'text-accent-green'   }
-              else                           { kaHealth = 'Needs review'; kaDot = 'bg-accent-red';   kaColor = 'text-accent-red'     }
+              if (!cfg.lastRun)              { kaHealth = 'On';      kaDot = 'bg-accent-blue';  kaColor = 'text-text-muted'   }
+              else if (cfg.lastRun.valid)    { kaHealth = 'Healthy'; kaDot = 'bg-accent-green'; kaColor = 'text-accent-green' }
+              else                           { kaHealth = 'Failed';  kaDot = 'bg-accent-red';   kaColor = 'text-accent-red'   }
             }
 
             return (
               <button
                 onClick={handleKeepaliveToggle}
                 disabled={kaToggling || cfg === null}
-                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity"
+                className="flex items-center justify-between w-full px-4 py-3 text-left active:opacity-60 transition-opacity"
               >
                 <div className="flex-1 mr-4 min-w-0">
-                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                  <p className="text-[13px] font-medium text-text-primary leading-tight">
                     {kaToggling ? 'Updating…' : 'Session Check'}
                   </p>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kaDot}`} />
-                    <span className={`text-[12px] font-medium ${kaColor}`}>{kaHealth}</span>
-                    {kaNext && <span className="text-[12px] text-text-muted">· {kaNext}</span>}
+                    <span className={`text-[12px] ${kaColor}`}>{kaHealth}</span>
+                    {kaNext && <span className="text-[12px] text-text-muted">· next {kaNext}</span>}
                   </div>
                 </div>
                 <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
