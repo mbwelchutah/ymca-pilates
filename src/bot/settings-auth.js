@@ -16,7 +16,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { createSession }  = require('./daxko-session');
-const { saveCookies }    = require('./session-ping');
+const { saveCookies, pingSessionHttp } = require('./session-ping');
 const { updateAuthState } = require('./auth-state');
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
@@ -270,6 +270,31 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
   console.log('[settings-auth] Starting Settings login flow...');
 
   try {
+    // ── Fast path: Tier-2 HTTP ping ───────────────────────────────────────
+    // If saved cookies are still valid (both Daxko + FamilyWorks), skip the
+    // browser launch entirely and return success immediately (~1–3 s vs ~30 s).
+    try {
+      const pingResult = await pingSessionHttp();
+      if (pingResult.trusted) {
+        console.log('[settings-auth] Tier-2 ping trusted — sessions active, skipping browser login.');
+        const fwDetail = `FamilyWorks session active (confirmed via Tier-2 HTTP ping)`;
+        saveDaxkoStatus({ valid: true, checkedAt, source, detail: 'Session active (Tier-2 ping)', screenshot: null });
+        saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt, source, detail: fwDetail });
+        updateAuthState({
+          daxkoValid: true, familyworksValid: true,
+          bookingAccessConfirmed: true, bookingAccessConfirmedAt: Date.now(),
+          lastCheckedAt: Date.now(),
+        });
+        const detail = `Daxko: OK | FamilyWorks: FAMILYWORKS_READY — ${fwDetail}`;
+        console.log('[settings-auth] Result (fast path):', detail);
+        console.log('[settings-auth] ─────────────────────────────────────');
+        return { daxko: 'DAXKO_READY', familyworks: 'FAMILYWORKS_READY', lastVerified: checkedAt, detail, screenshot: null };
+      }
+      console.log('[settings-auth] Tier-2 ping miss:', pingResult.detail, '— launching browser for full login.');
+    } catch (pingErr) {
+      console.log('[settings-auth] Tier-2 ping error:', pingErr.message, '— falling through to browser login.');
+    }
+
     // ── Step 1: Daxko login ───────────────────────────────────────────────
     sess = await createSession({ headless: true });
     console.log('[settings-auth] Daxko login: OK');
