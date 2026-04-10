@@ -52,6 +52,11 @@ const ACTION_SELECTORS = {
     ['button:has-text("aitlist")',            'button (Waitlist)'],
     ['[role="button"]:has-text("aitlist")',   'role=button (Waitlist)'],
   ],
+  // "Cancel" button appearing means a booking/waitlist-join was successfully completed.
+  cancel: [
+    ['button:has-text("Cancel")',            'button (Cancel)'],
+    ['[role="button"]:has-text("Cancel")',   'role=button (Cancel)'],
+  ],
   // Combined selector used for the signal-driven modal wait.
   modalReady: [
     'button:has-text("Register")', 'button:has-text("Reserve")',
@@ -66,8 +71,8 @@ const ACTION_SELECTORS = {
 // Detects which action buttons are present in the current page state.
 // Tries each selector strategy in order; stops at first match.
 // Returns:
-//   { hasRegister, hasWaitlist, hasLoginRequired,
-//     registerBtn, waitlistBtn, allBtnTexts,
+//   { hasRegister, hasWaitlist, hasCancel, hasLoginRequired,
+//     registerBtn, waitlistBtn, cancelBtn, allBtnTexts,
 //     registerStrategy, waitlistStrategy }
 async function detectActionButtons(page) {
   const allBtnTexts = await page.locator(ACTION_SELECTORS.allVisible).allTextContents().catch(() => []);
@@ -94,13 +99,93 @@ async function detectActionButtons(page) {
     }
   }
 
+  // "Cancel" button appearing after a click means the booking completed successfully.
+  let cancelBtn = null;
+  for (const [sel] of ACTION_SELECTORS.cancel) {
+    const loc = page.locator(sel);
+    if ((await loc.count()) > 0) {
+      cancelBtn = loc;
+      break;
+    }
+  }
+
   const hasLoginRequired = allBtnTexts.some(t => ACTION_SELECTORS.loginRequired.test(t));
   const hasRegister = registerBtn !== null;
   const hasWaitlist = waitlistBtn !== null;
+  const hasCancel   = cancelBtn   !== null;
 
-  console.log(`[action-detect] register: ${registerStrategy} | waitlist: ${waitlistStrategy}`);
+  console.log(`[action-detect] register: ${registerStrategy} | waitlist: ${waitlistStrategy} | cancel: ${hasCancel ? 'found' : 'not found'}`);
 
-  return { hasRegister, hasWaitlist, hasLoginRequired, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy };
+  return { hasRegister, hasWaitlist, hasCancel, hasLoginRequired, registerBtn, waitlistBtn, cancelBtn, allBtnTexts, registerStrategy, waitlistStrategy };
+}
+
+// ── Post-click booking confirmation ───────────────────────────────────────────
+// After clicking Register / Waitlist (and optionally a "Reserve" popup), this
+// checks whether the booking actually completed on the YMCA server.
+//
+// Success signals (in priority order):
+//   1. A "Cancel" button appeared — the modal now shows "Cancel [Waitlist]",
+//      meaning you are enrolled / waitlisted.
+//   2. The Register AND Waitlist buttons both disappeared — the modal state
+//      changed to something other than "available to book".
+//   3. Confirmation text in the page body (strict patterns only).
+//
+// If none of these fire, the function tries to click a "Reserve" popup once,
+// then re-checks. Returns { confirmed, viaPopup, cancelFound }.
+async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayStore) {
+  await page.waitForTimeout(2000);
+
+  async function readSignals() {
+    const btns = await detectActionButtons(page);
+    const body = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+    const textConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to/i.test(body);
+    return { btns, body, textConfirm };
+  }
+
+  const step1 = await readSignals();
+  console.log(`[confirm-check] after ${actionLabel}: cancel=${step1.btns.hasCancel} register=${step1.btns.hasRegister} waitlist=${step1.btns.hasWaitlist} textOK=${step1.textConfirm}`);
+
+  // Primary positive signal: Cancel button appeared
+  if (step1.btns.hasCancel) {
+    console.log(`✅ Booking confirmed (Cancel button appeared) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: true };
+  }
+  // Secondary: strict text confirmation
+  if (step1.textConfirm) {
+    console.log(`✅ Booking confirmed (text match) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: false };
+  }
+  // Register/Waitlist buttons gone and no Cancel — ambiguous close (schedule page?)
+  // But if a "Reserve" popup button is still present → click it as the confirm step.
+  if (step1.btns.hasRegister && step1.btns.registerBtn) {
+    console.log(`[confirm-check] confirmation popup still open — clicking Reserve to finalize...`);
+    replayStore.addEvent(_jobId, 'action_attempt', `Clicked Reserve (popup confirmation after ${actionLabel})`, `Attempt ${attempt}`);
+    await step1.btns.registerBtn.first().click();
+    await page.waitForTimeout(2000);
+
+    const step2 = await readSignals();
+    console.log(`[confirm-check] after popup click: cancel=${step2.btns.hasCancel} register=${step2.btns.hasRegister} waitlist=${step2.btns.hasWaitlist} textOK=${step2.textConfirm}`);
+
+    if (step2.btns.hasCancel) {
+      console.log(`✅ Booking confirmed via popup (Cancel button appeared)`);
+      return { confirmed: true, viaPopup: true, cancelFound: true };
+    }
+    if (step2.textConfirm) {
+      console.log(`✅ Booking confirmed via popup (text match)`);
+      return { confirmed: true, viaPopup: true, cancelFound: false };
+    }
+    // If Register button is gone but no Cancel either — genuinely ambiguous. Treat as failure.
+    if (!step2.btns.hasRegister && !step2.btns.hasWaitlist) {
+      console.log(`⚠️ Post-popup: action buttons gone but no Cancel — state ambiguous, treating as incomplete.`);
+    } else {
+      console.log(`⚠️ Post-popup: Register/Waitlist still present — booking did not complete.`);
+    }
+    return { confirmed: false, viaPopup: true, cancelFound: false };
+  }
+
+  // Register/Waitlist gone but no Cancel either — ambiguous. Treat as failure to be safe.
+  console.log(`⚠️ After ${actionLabel}: no Cancel, no Register/Waitlist — state ambiguous.`);
+  return { confirmed: false, viaPopup: false, cancelFound: false };
 }
 
 // ── Inline Familyworks authentication ─────────────────────────────────────
@@ -1711,33 +1796,18 @@ async function runBookingJob(job, opts = {}) {
           replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
           _tc.actionClickAt = new Date().toISOString();
           await registerBtn.first().click();
-          // Wait for page to settle — may show a "Reserve / Close" confirmation popup.
-          await page.waitForTimeout(1500);
-          let postWlBody2 = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-          let hasWlConfirm2 = /waitlist|confirmed|success|you.?re on|enrolled|added to/i.test(postWlBody2);
-          if (!hasWlConfirm2) {
-            // Check for a confirmation popup (e.g. "Reserve / Close" dialog).
-            const wlConfirmCheck = await detectActionButtons(page);
-            if (wlConfirmCheck.hasRegister && wlConfirmCheck.registerBtn) {
-              console.log('Post-click (full class): confirmation popup detected — clicking Reserve to finalize waitlist join...');
-              replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Reserve (waitlist confirmation popup)', `Attempt ${attempt}`);
-              await wlConfirmCheck.registerBtn.first().click();
-              await page.waitForTimeout(1500);
-              postWlBody2 = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-              hasWlConfirm2 = /waitlist|confirmed|success|you.?re on|enrolled|added to|reserve/i.test(postWlBody2);
-            }
-          }
-          if (hasWlConfirm2) {
-            replayStore.addEvent(_jobId, 'confirm', 'Waitlist enrollment confirmed (via Register button)');
+          const wlResult2 = await checkBookingConfirmed(page, _jobId, attempt, 'Register(full→waitlist)', replayStore);
+          if (wlResult2.confirmed) {
+            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (via Register button${wlResult2.viaPopup ? ' + popup' : ''}) — Cancel button: ${wlResult2.cancelFound}`);
             console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
             registered = true;
             break;
           } else {
-            console.log('⚠️ Post-waitlist (via Register): no confirmation text — waitlist join did not complete. Retrying...');
+            console.log('⚠️ Post-waitlist (via Register): booking did not complete. Retrying...');
             await snap('post-click-unclear');
-            _replayAction = null;  // reset so next attempt doesn't assume waitlist
+            _replayAction = null;
             await page.waitForTimeout(3000);
-            continue;  // retry
+            continue;
           }
         }
         // ─────────────────────────────────────────────────────────────────
@@ -1745,54 +1815,27 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
-        // ── POINT 6: post_click — confirm registration took effect ─────────
-        // Wait for page to settle (may show a second confirmation popup).
-        await page.waitForTimeout(1500);
-        let postRegBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-        let hasRegConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to/i.test(postRegBody);
+        const regResult = await checkBookingConfirmed(page, _jobId, attempt, 'Register', replayStore);
 
-        if (!hasRegConfirm) {
-          // Some YMCA/FamilyWorks classes show a two-step confirmation popup after
-          // clicking Register: a "Reserve" / "Close" dialog that requires a second click.
-          // Detect and click the confirmation button before giving up.
-          const confirmCheck = await detectActionButtons(page);
-          if (confirmCheck.hasRegister && confirmCheck.registerBtn) {
-            console.log('Post-click: confirmation popup detected — clicking Reserve to finalize booking...');
-            replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Reserve (confirmation popup)', `Attempt ${attempt}`);
-            await confirmCheck.registerBtn.first().click();
-            await page.waitForTimeout(1500);
-            postRegBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-            hasRegConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to|waitlist|you.?re on/i.test(postRegBody);
-            if (hasRegConfirm) {
-              replayStore.addEvent(_jobId, 'confirm', 'Registration confirmed via popup');
-            } else {
-              console.log('⚠️ Post-confirm-popup: still no confirmation text — booking did not complete.');
-              await snap('post-click-unclear');
-            }
-          } else {
-            console.log('⚠️ Post-register: no confirmation text and no follow-up popup — booking did not complete.');
-            await snap('post-click-unclear');
-          }
-        }
-
-        if (!hasRegConfirm) {
+        if (!regResult.confirmed) {
           // Booking genuinely did not complete — record the failure and retry next attempt.
+          await snap('post-click-unclear');
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: 'registration_unclear',
-            category: 'post_click', label: 'No confirmation text after Register click',
-            message:  'Register button clicked but no confirmation text detected — booking did not complete',
+            category: 'post_click', label: 'No confirmation after Register click',
+            message:  'Register button clicked but booking not confirmed (no Cancel button appeared, no action buttons changed)',
             classTitle,
             screenshot: screenshotPath ? path.basename(screenshotPath) : null,
             url:      page.url(),
-            context:  { attempt, preview: postRegBody.slice(0, 200) },
+            context:  { attempt, viaPopup: regResult.viaPopup },
           });
           await page.waitForTimeout(3000);
           continue;  // retry this attempt
         }
         // ─────────────────────────────────────────────────────────────────
-        console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'}`);
-        replayStore.addEvent(_jobId, 'confirm', 'Registration confirmed');
+        console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'} (cancelFound=${regResult.cancelFound}, viaPopup=${regResult.viaPopup})`);
+        replayStore.addEvent(_jobId, 'confirm', `Registration confirmed — Cancel button: ${regResult.cancelFound}`);
         registered = true;
         break;
       } else if (hasWaitlist) {
@@ -1805,39 +1848,24 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
-        // ── POINT 6: post_click — confirm waitlist enrollment took effect ──
-        await page.waitForTimeout(1500);
-        let postWlBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-        let hasWlConfirm = /waitlist|confirmed|success|you.?re on|enrolled|added to/i.test(postWlBody);
-        if (!hasWlConfirm) {
-          // Check for a "Reserve / Close" confirmation popup that needs a second click.
-          const wlPopup = await detectActionButtons(page);
-          if (wlPopup.hasRegister && wlPopup.registerBtn) {
-            console.log('Post-click (waitlist): confirmation popup detected — clicking Reserve to finalize...');
-            replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Reserve (waitlist confirmation popup)', `Attempt ${attempt}`);
-            await wlPopup.registerBtn.first().click();
-            await page.waitForTimeout(1500);
-            postWlBody = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-            hasWlConfirm = /waitlist|confirmed|success|you.?re on|enrolled|added to|reserve/i.test(postWlBody);
-          }
-        }
-        if (hasWlConfirm) {
-          replayStore.addEvent(_jobId, 'confirm', 'Waitlist enrollment confirmed');
-          console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
+        const wlResult = await checkBookingConfirmed(page, _jobId, attempt, 'Waitlist', replayStore);
+        if (wlResult.confirmed) {
+          replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (cancelFound=${wlResult.cancelFound}, viaPopup=${wlResult.viaPopup})`);
+          console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
           registered = true;
           break;
         } else {
-          console.log('⚠️ Post-waitlist: no confirmation text — waitlist join did not complete. Retrying...');
+          console.log('⚠️ Post-waitlist: booking did not complete. Retrying...');
           await snap('post-click-unclear');
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: 'registration_unclear',
-            category: 'post_click', label: 'No confirmation text after Waitlist click',
-            message:  'Waitlist button clicked but no confirmation text detected — waitlist join did not complete',
+            category: 'post_click', label: 'No confirmation after Waitlist click',
+            message:  'Waitlist button clicked but booking not confirmed (no Cancel button appeared)',
             classTitle,
             screenshot: screenshotPath ? path.basename(screenshotPath) : null,
             url:      page.url(),
-            context:  { attempt, preview: postWlBody.slice(0, 200) },
+            context:  { attempt, viaPopup: wlResult.viaPopup },
           });
           _replayAction = null;
           await page.waitForTimeout(3000);
@@ -2007,7 +2035,7 @@ async function runBookingJob(job, opts = {}) {
     }
     emitSuccess(_state);
     _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Booking completed successfully — FamilyWorks session confirmed active' });
-    return logRunSummary({ status: 'booked', message: successMsg, screenshotPath });
+    return logRunSummary({ status: _replayAction === 'waitlist' ? 'waitlist' : 'booked', message: successMsg, screenshotPath });
 
   } catch (err) {
     console.error('❌ Error:', err.message);
