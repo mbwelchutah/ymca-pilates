@@ -164,6 +164,7 @@ const RESULT_LABELS: Record<string, string> = {
   dry_run:            'Simulated',
   found_not_open_yet: 'Not Open Yet',
   not_found:          'Class Not Found',
+  failed:             'Failed',
   error:              'Error',
   skipped:            'Skipped',
 }
@@ -845,7 +846,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
           return (
             <>
-              <SectionHeader title="Failure Insights" />
+              <SectionHeader title={alerts.length === 0 ? `Failure Insights · ${causeWin}` : 'Failure Insights'} />
               <Card padding="none">
                 {/* Alerts */}
                 {alerts.map((a, i) => {
@@ -884,7 +885,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         })()}
 
         {/* ── Failure Trends ────────────────────────────────── */}
-        {(() => {
+        {failures !== null && (() => {
           const h1Total  = failures?.trends?.h1?.total  ?? 0
           const h6Total  = failures?.trends?.h6?.total  ?? 0
           const h24Total = failures?.trends?.h24?.total ?? 0
@@ -963,14 +964,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               <SectionHeader title="Per-Class Reliability" />
               <Card padding="none">
                 {scored.map(({ job, rel, fails, isDown }, i) => {
-                  // Status dot color
-                  let dot = 'bg-accent-green'
-                  let statusText = 'Healthy'
-                  let statusColor = 'text-accent-green'
+                  const neverRun = !job.last_result
+
+                  // Status: worst condition wins
+                  let dot: string, statusText: string, statusColor: string
                   if (fails >= 3 || isDown) {
-                    dot = 'bg-accent-red'; statusText = 'At risk'; statusColor = 'text-accent-red'
+                    dot = 'bg-accent-red';   statusText = 'At risk'; statusColor = 'text-accent-red'
                   } else if (fails >= 1) {
-                    dot = 'bg-accent-amber'; statusText = 'Issue'; statusColor = 'text-accent-amber'
+                    dot = 'bg-accent-amber'; statusText = 'Issue';   statusColor = 'text-accent-amber'
+                  } else if (neverRun) {
+                    dot = 'bg-divider';      statusText = 'Not run'; statusColor = 'text-text-muted'
+                  } else {
+                    dot = 'bg-accent-green'; statusText = 'Healthy'; statusColor = 'text-accent-green'
                   }
 
                   const lastLabel = job.last_result
@@ -1118,7 +1123,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             </Card>
           </>
         )}
-
 
         {/* ── Automation Health ─────────────────────────────── */}
         <SectionHeader title="Automation Health" />
