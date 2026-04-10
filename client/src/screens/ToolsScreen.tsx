@@ -11,7 +11,6 @@ import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
 import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL } from '../lib/readinessResolver'
-import { generateSuggestions } from '../lib/suggestions'
 
 interface FailureEntry {
   id:           number | null
@@ -708,7 +707,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [activityShowAll, setActivityShowAll]   = useState(false)
-  const [insightsShowAll, setInsightsShowAll]   = useState(false)
   const [lightboxSrc, setLightboxSrc]         = useState<string | null>(null)
 
   // ── Auto-preflight config (Stage 9.2) ─────────────────────────────────────
@@ -774,12 +772,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   const recentFailures = failures?.recent ?? []
 
-  const suggestions = generateSuggestions({
-    trends7d:    failures?.trends?.d7 ?? null,
-    sessionValid: sessionStatus?.valid ?? null,
-    sniperState:  sniperRunState?.sniperState ?? null,
-  })
-
   // ── Readiness dot helpers ────────────────────────────────────────────────
   const daxkoToLabel = (s: SessionStatus['daxko'] | undefined): { label: string; dot: string } => {
     switch (s) {
@@ -818,136 +810,73 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           onViewScreenshot={setLightboxSrc}
         />
 
-        {/* ── Needs Attention ──────────────────────────────── */}
+        {/* ── Failure Insights ──────────────────────────────── */}
         {(() => {
-          type AttentionItem = { title: string; detail: string; color: 'red' | 'amber' }
-          const items: AttentionItem[] = []
+          // Cause data: prefer h24, fall back to d7
+          const h24Data   = failures?.trends?.h24
+          const d7Data    = failures?.trends?.d7
+          const causeData = (h24Data?.total ?? 0) > 0 ? h24Data : d7Data
+          const causeWin  = (h24Data?.total ?? 0) > 0 ? '24h' : '7d'
+          const topCauses = (causeData?.byReason ?? []).slice(0, 5)
 
-          // 1. Daxko session expired / needs login
-          if (sessionStatus?.daxko === 'AUTH_NEEDS_LOGIN') {
-            items.push({
-              title:  'Session needs login',
-              detail: 'Your YMCA account session has expired. Tap the account icon to sign in again.',
-              color:  'red',
-            })
-          }
+          // Session / health alerts
+          type Alert = { title: string; detail: string; color: 'red' | 'amber' }
+          const alerts: Alert[] = []
 
-          // 2. FamilyWorks session missing or expired
-          if (
-            sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_MISSING' ||
-            sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_EXPIRED'
-          ) {
-            items.push({
-              title:  'Schedule session unavailable',
-              detail: 'FamilyWorks schedule access is missing or expired. Tap the account icon to reconnect.',
-              color:  'red',
-            })
-          }
+          if (sessionStatus?.daxko === 'AUTH_NEEDS_LOGIN')
+            alerts.push({ title: 'Session needs login', detail: 'Tap the account icon to sign in.', color: 'red' })
 
-          // 3. Last auto-preflight failed
-          if (autoPreflightConfig?.lastRun?.status === 'fail') {
-            items.push({
-              title:  'Last preflight failed',
-              detail: `${autoPreflightConfig.lastRun.triggerName ? `"${autoPreflightConfig.lastRun.triggerName}" ` : 'The automatic '}preflight check failed — use Preflight in the Now tab to re-verify.`,
-              color:  'amber',
-            })
-          }
+          if (sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_MISSING' ||
+              sessionStatus?.familyworks === 'FAMILYWORKS_SESSION_EXPIRED')
+            alerts.push({ title: 'Schedule session unavailable', detail: 'Tap the account icon to reconnect.', color: 'red' })
 
-          // 4. Session keepalive check failed
-          if (keepaliveConfig?.lastRun?.valid === false) {
-            items.push({
-              title:  'Session check failed',
-              detail: 'The automatic session check could not verify your login. A new check will run shortly, or trigger one manually.',
-              color:  'amber',
-            })
-          }
+          if (autoPreflightConfig?.lastRun?.status === 'fail')
+            alerts.push({ title: 'Last preflight failed', detail: 'Use Preflight in the Now tab to re-verify.', color: 'amber' })
 
-          // 5. Repeated failures in last 24h (threshold: 5+)
-          const h24 = failures?.trends?.h24
-          if (h24 && h24.total >= 5) {
-            const topReason = h24.byReason[0]
-            items.push({
-              title:  'Repeated failures detected',
-              detail: `${h24.total} failures in the last 24 hours. Most common issue: ${REASON_LABELS[topReason?.reason] ?? topReason?.reason ?? 'unknown'}.`,
-              color:  'amber',
-            })
-          }
+          if (keepaliveConfig?.lastRun?.valid === false)
+            alerts.push({ title: 'Session check failed', detail: 'A new check will run shortly.', color: 'amber' })
 
-          if (items.length === 0) return null
-
-          const visible = items.slice(0, 3)
+          if (alerts.length === 0 && topCauses.length === 0) return null
 
           return (
             <>
-              <SectionHeader title="Needs Attention" />
-              <div className="space-y-2">
-                {visible.map((item, i) => (
-                  <Card
-                    key={i}
-                    padding="sm"
-                    className={`shadow-none border ${
-                      item.color === 'red'
-                        ? 'border-accent-red/30 bg-accent-red/5'
-                        : 'border-accent-amber/30 bg-accent-amber/5'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <span className="text-[15px] flex-shrink-0 mt-px">
-                        {item.color === 'red' ? '🔴' : '⚠️'}
-                      </span>
+              <SectionHeader title="Failure Insights" />
+              <Card padding="none">
+                {/* Alerts */}
+                {alerts.map((a, i) => {
+                  const last = i === alerts.length - 1 && topCauses.length === 0
+                  return (
+                    <div key={i} className={`flex items-start gap-3 px-4 py-3 ${last ? '' : 'border-b border-divider'}`}>
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-[5px] ${a.color === 'red' ? 'bg-accent-red' : 'bg-accent-amber'}`} />
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-text-primary leading-snug">
-                          {item.title}
-                        </p>
-                        <p className="text-[12px] text-text-secondary mt-0.5 leading-relaxed">
-                          {item.detail}
-                        </p>
+                        <p className="text-[13px] font-semibold text-text-primary">{a.title}</p>
+                        <p className="text-[12px] text-text-secondary mt-0.5">{a.detail}</p>
                       </div>
                     </div>
-                  </Card>
+                  )
+                })}
+
+                {/* Top causes sub-header (only when alerts also present) */}
+                {topCauses.length > 0 && alerts.length > 0 && (
+                  <div className="px-4 pt-3 pb-1.5 border-t border-divider">
+                    <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Top causes · {causeWin}</p>
+                  </div>
+                )}
+
+                {/* Cause rows */}
+                {topCauses.map((r, i) => (
+                  <div
+                    key={r.reason}
+                    className={`flex items-center justify-between px-4 py-2.5 ${i < topCauses.length - 1 ? 'border-b border-divider' : ''}`}
+                  >
+                    <p className="text-[13px] text-text-primary">{REASON_LABELS[r.reason] ?? r.reason}</p>
+                    <span className="text-[13px] font-semibold text-text-secondary ml-3 flex-shrink-0">— {r.count}</span>
+                  </div>
                 ))}
-              </div>
+              </Card>
             </>
           )
         })()}
-
-        {/* ── Insights ─────────────────────────────────────── */}
-        {suggestions.length > 0 && (
-          <>
-            <SectionHeader title="Insights" />
-            <div className="space-y-2">
-              {(insightsShowAll ? suggestions : suggestions.slice(0, 2)).map(s => (
-                <Card key={s.id} padding="sm" className="border border-divider shadow-none bg-surface">
-                  <div className="flex items-start gap-2.5">
-                    <span className="text-[14px] flex-shrink-0 mt-px">💡</span>
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-medium text-text-primary leading-snug">
-                        {s.text}
-                      </p>
-                      {s.detail && (
-                        <p className="text-[12px] text-text-secondary mt-0.5 leading-relaxed">
-                          {s.detail}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              ))}
-              {suggestions.length > 2 && (
-                <button
-                  onClick={() => setInsightsShowAll(v => !v)}
-                  className="w-full text-left px-1 py-1"
-                >
-                  <span className="text-[13px] font-medium text-accent-blue">
-                    {insightsShowAll
-                      ? 'Show less'
-                      : `Show ${suggestions.length - 2} more insight${suggestions.length - 2 === 1 ? '' : 's'}`}
-                  </span>
-                </button>
-              )}
-            </div>
-          </>
-        )}
 
         {/* ── Failure Trends (collapsible) ─────────────────── */}
         {(() => {
