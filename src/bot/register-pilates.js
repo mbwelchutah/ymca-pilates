@@ -174,17 +174,25 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
       console.log(`✅ Booking confirmed via popup (text match)`);
       return { confirmed: true, viaPopup: true, cancelFound: false };
     }
-    // If Register button is gone but no Cancel either — genuinely ambiguous. Treat as failure.
+    // Buttons gone after popup → modal closed = booking went through.
     if (!step2.btns.hasRegister && !step2.btns.hasWaitlist) {
-      console.log(`⚠️ Post-popup: action buttons gone but no Cancel — state ambiguous, treating as incomplete.`);
-    } else {
-      console.log(`⚠️ Post-popup: Register/Waitlist still present — booking did not complete.`);
+      console.log(`✅ Booking confirmed via popup (action buttons gone — modal closed after Reserve)`);
+      return { confirmed: true, viaPopup: true, cancelFound: false };
     }
+    // Register/Waitlist still present → booking did not complete.
+    console.log(`⚠️ Post-popup: Register/Waitlist still present — booking did not complete.`);
     return { confirmed: false, viaPopup: true, cancelFound: false };
   }
 
-  // Register/Waitlist gone but no Cancel either — ambiguous. Treat as failure to be safe.
-  console.log(`⚠️ After ${actionLabel}: no Cancel, no Register/Waitlist — state ambiguous.`);
+  // No popup appeared: action buttons are gone, no Cancel either.
+  // State changed from before the click → booking went through (modal closed).
+  if (!step1.btns.hasRegister && !step1.btns.hasWaitlist) {
+    console.log(`✅ Booking confirmed (action buttons gone — modal closed after ${actionLabel})`);
+    return { confirmed: true, viaPopup: false, cancelFound: false };
+  }
+
+  // Waitlist button still present but no Register and no Cancel — edge case.
+  console.log(`⚠️ After ${actionLabel}: no Cancel, Register gone but Waitlist visible — state unclear, treating as incomplete.`);
   return { confirmed: false, viaPopup: false, cancelFound: false };
 }
 
