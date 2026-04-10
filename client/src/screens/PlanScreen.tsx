@@ -51,13 +51,14 @@ const PHASE_LABEL: Record<Phase, string> = {
 const RESULT_LABEL: Record<string, string> = {
   booked:   'Confirmed', // matches Now's headline — canonical term per spec
   success:  'Confirmed', // legacy status name used before rename to 'booked'
+  waitlist: 'Waitlisted',// class was full — joined waitlist via Register button
   dry_run:  'Test run',
   error:    'Issue',     // "Error" replaced — Plan stays calm, not a debug view
   not_found:'Issue',     // "Not found" replaced — same rationale
 }
 
 // Results worth surfacing on the card (transient/noise ones are excluded)
-const RESULT_SHOW = new Set(['booked', 'success', 'dry_run', 'error', 'not_found'])
+const RESULT_SHOW = new Set(['booked', 'success', 'waitlist', 'dry_run', 'error', 'not_found'])
 
 // A result badge is "current" if the result is still relevant to the next class occurrence.
 //   - error / not_found: always show (actionable regardless of age)
@@ -257,9 +258,11 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
               {showBadge && (
                 <span className={`
                   text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none
-                  ${job.last_result === 'booked'  ? 'bg-accent-green/10 text-accent-green'
-                  : job.last_result === 'dry_run' ? 'bg-accent-green/10 text-accent-green'
-                  :                                 'bg-[#f2f2f7] text-text-secondary'}
+                  ${job.last_result === 'booked'   ? 'bg-accent-green/10 text-accent-green'
+                  : job.last_result === 'success'  ? 'bg-accent-green/10 text-accent-green'
+                  : job.last_result === 'dry_run'  ? 'bg-accent-green/10 text-accent-green'
+                  : job.last_result === 'waitlist' ? 'bg-amber-500/10 text-amber-600'
+                  :                                  'bg-[#f2f2f7] text-text-secondary'}
                 `}>
                   {RESULT_LABEL[job.last_result!]}
                 </span>

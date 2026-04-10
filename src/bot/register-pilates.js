@@ -1696,6 +1696,34 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         }
+        // ── Full-class detection ───────────────────────────────────────────
+        // On Bubble.io/FamilyWorks web, a class that is full still shows a
+        // "Register" button (no separate Waitlist button), but clicking it
+        // joins the waitlist rather than registering.  The mobile YMCA app
+        // correctly labels this as "Waitlist".  Detect by checking the modal
+        // body for "0 sp" (0 spots) or "full" before clicking, and treat the
+        // action as a waitlist join so the status is reported accurately.
+        const _modalBodyForSpots = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const _classIsFullModal  = /\b0\s*sp(ot)?s?\b|\bfull\b|\b0\/\d+\b/.test(_modalBodyForSpots);
+        if (_classIsFullModal) {
+          console.log(`⚠️ Class appears full (0 spots detected in modal) — Register button will join the waitlist.`);
+          _replayAction = 'waitlist';
+          replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
+          _tc.actionClickAt = new Date().toISOString();
+          await registerBtn.first().click();
+          console.log(`WAITLIST: Class full — joined waitlist via Register button for ${classTitle} ${classTimeNorm || classTime}`);
+          await page.waitForTimeout(1500);
+          const postWlBody2 = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+          const hasWlConfirm2 = /waitlist|confirmed|success|you.?re on|enrolled|added to|reserve/i.test(postWlBody2);
+          if (hasWlConfirm2) replayStore.addEvent(_jobId, 'confirm', 'Waitlist enrollment confirmed (via Register button)');
+          if (!hasWlConfirm2) {
+            console.log('⚠️ Post-waitlist (via Register): no obvious confirmation text — state may be unclear.');
+            await snap('post-click-unclear');
+          }
+          registered = true;
+          break;
+        }
+        // ─────────────────────────────────────────────────────────────────
         _replayAction = 'register';
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();

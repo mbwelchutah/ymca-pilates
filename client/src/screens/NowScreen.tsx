@@ -390,8 +390,10 @@ function formatDayTime(job: Job) {
 
 function isBookingCurrentCycle(job: Job | null): boolean {
   if (!job) return false
-  // Accept both 'booked' (new) and 'success' (legacy DB records) as confirmed.
-  const isConfirmed = job.last_result === 'booked' || job.last_result === 'success' || job.last_result === 'dry_run'
+  // Accept booked/success/dry_run as confirmed, and waitlist as an active outcome
+  // (class full — joined waitlist). All suppress the booking countdown.
+  const isConfirmed = job.last_result === 'booked' || job.last_result === 'success' ||
+                      job.last_result === 'dry_run' || job.last_result === 'waitlist'
   if (!isConfirmed) return false
   if (job.target_date) {
     const today = new Date().toLocaleDateString('en-CA')
@@ -855,14 +857,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Status banner — booked / off / sniper / late / countdown */}
+          {/* Status banner — booked / waitlist / off / sniper / late / countdown */}
           {isBooked ? (
-            <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
-              <StatusDot color="green" />
-              <span className="text-[17px] font-semibold text-accent-green">
-                {job?.last_result === 'dry_run' ? 'Test run' : 'Confirmed'}
-              </span>
-            </div>
+            job?.last_result === 'waitlist' ? (
+              <div className="bg-amber-500/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+                <StatusDot color="amber" />
+                <span className="text-[17px] font-semibold text-amber-600">
+                  Waitlisted
+                </span>
+              </div>
+            ) : (
+              <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+                <StatusDot color="green" />
+                <span className="text-[17px] font-semibold text-accent-green">
+                  {job?.last_result === 'dry_run' ? 'Test run' : 'Confirmed'}
+                </span>
+              </div>
+            )
           ) : isInactive ? (
             <div className="bg-surface rounded-xl px-4 py-3">
               <div className="flex items-center gap-2.5">

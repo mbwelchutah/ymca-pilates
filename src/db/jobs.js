@@ -38,7 +38,7 @@ function getJobById(id) {
 //
 // last_success_at: set to now on "success"/"already_registered"; COALESCE preserves it otherwise.
 // last_error_message: set to errorMessage for non-success statuses; NULL on success.
-const SUCCESS_STATUSES = ['booked', 'success', 'already_registered'];
+const SUCCESS_STATUSES = ['booked', 'success', 'waitlist', 'already_registered'];
 // Statuses that carry an informational message to show in the dashboard
 const MESSAGE_STATUSES = ['error', 'found_not_open_yet', 'not_found'];
 

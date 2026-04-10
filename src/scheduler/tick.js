@@ -100,7 +100,7 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       // AND the target_date is still upcoming.  This covers the normal case where the booking
       // window opens 3 days before the class — last_success_at is April 10 but target_date is
       // April 13, so startsWith() would never match.
-      const SUCCESS_STATUSES_GUARD = ['booked', 'success', 'already_registered'];
+      const SUCCESS_STATUSES_GUARD = ['booked', 'success', 'waitlist', 'already_registered'];
       const isRecentSuccess = SUCCESS_STATUSES_GUARD.includes(dbJob.last_result) &&
                               dbJob.last_success_at &&
                               Date.now() - new Date(dbJob.last_success_at).getTime() < 7 * 24 * 60 * 60 * 1000;
