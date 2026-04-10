@@ -817,223 +817,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           onViewScreenshot={setLightboxSrc}
         />
 
-        {/* ── Automation Health ─────────────────────────────── */}
-        <Card padding="none">
-          <div className="px-4 pt-3 pb-2.5 border-b border-divider">
-            <p className="text-[12px] font-semibold text-text-secondary uppercase tracking-wide">Automation Health</p>
-          </div>
-
-          {/* ── Auto Preflight row ──────────────────────────── */}
-          {(() => {
-            const cfg = autoPreflightConfig
-            const apfMs   = cfg?.nextTrigger?.msUntil
-            const apfNext = apfMs != null ? (() => {
-              const d = Math.floor(apfMs / 86_400_000)
-              const h = Math.floor((apfMs % 86_400_000) / 3_600_000)
-              const m = Math.floor((apfMs % 3_600_000) / 60_000)
-              return d > 0 ? `Next in ${d}d ${h}h` : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
-            })() : cfg?.enabled ? 'None scheduled' : null
-
-            let apfHealth = 'Off'
-            let apfDot    = 'bg-text-muted/40'
-            let apfColor  = 'text-text-muted'
-            if (cfg?.enabled) {
-              if (!cfg.lastRun)                         { apfHealth = 'Enabled'; apfDot = 'bg-accent-blue'; apfColor = 'text-text-secondary' }
-              else if (cfg.lastRun.status === 'pass')   { apfHealth = 'Healthy';        apfDot = 'bg-accent-green'; apfColor = 'text-accent-green' }
-              else if (cfg.lastRun.status === 'fail')   { apfHealth = 'Last run failed'; apfDot = 'bg-accent-red';   apfColor = 'text-accent-red'   }
-              else                                      { apfHealth = 'Needs review';   apfDot = 'bg-accent-amber'; apfColor = 'text-accent-amber' }
-            }
-
-            return (
-              <button
-                onClick={handleAutoPreflightToggle}
-                disabled={apfToggling || cfg === null}
-                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
-              >
-                <div className="flex-1 mr-4 min-w-0">
-                  <p className="text-[14px] font-medium text-text-primary leading-tight">
-                    {apfToggling ? 'Updating…' : 'Auto Preflight'}
-                  </p>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${apfDot}`} />
-                    <span className={`text-[12px] font-medium ${apfColor}`}>{apfHealth}</span>
-                    {apfNext && <span className="text-[12px] text-text-muted">· {apfNext}</span>}
-                  </div>
-                </div>
-                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
-                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
-                }`}>
-                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </div>
-              </button>
-            )
-          })()}
-
-          {/* ── Session Check row ───────────────────────────── */}
-          {(() => {
-            const cfg = keepaliveConfig
-            const kaMs   = cfg?.next?.msUntil
-            const kaNext = kaMs != null ? (() => {
-              const h = Math.floor(kaMs / 3_600_000)
-              const m = Math.floor((kaMs % 3_600_000) / 60_000)
-              return kaMs < 60_000 ? 'Due now' : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
-            })() : cfg?.enabled ? 'None scheduled' : null
-
-            let kaHealth = 'Off'
-            let kaDot    = 'bg-text-muted/40'
-            let kaColor  = 'text-text-muted'
-            if (cfg?.enabled) {
-              if (!cfg.lastRun)              { kaHealth = 'Enabled';      kaDot = 'bg-accent-blue';  kaColor = 'text-text-secondary' }
-              else if (cfg.lastRun.valid)    { kaHealth = 'Healthy';      kaDot = 'bg-accent-green'; kaColor = 'text-accent-green'   }
-              else                           { kaHealth = 'Needs review'; kaDot = 'bg-accent-red';   kaColor = 'text-accent-red'     }
-            }
-
-            return (
-              <button
-                onClick={handleKeepaliveToggle}
-                disabled={kaToggling || cfg === null}
-                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity"
-              >
-                <div className="flex-1 mr-4 min-w-0">
-                  <p className="text-[14px] font-medium text-text-primary leading-tight">
-                    {kaToggling ? 'Updating…' : 'Session Check'}
-                  </p>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kaDot}`} />
-                    <span className={`text-[12px] font-medium ${kaColor}`}>{kaHealth}</span>
-                    {kaNext && <span className="text-[12px] text-text-muted">· {kaNext}</span>}
-                  </div>
-                </div>
-                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
-                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
-                }`}>
-                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </div>
-              </button>
-            )
-          })()}
-
-        </Card>
-
-        {/* ── Technical Details (collapsible) ─────────────── */}
-        {(() => {
-          const { label: daxkoLabel } = daxkoToLabel(sessionStatus?.daxko)
-          const { label: fwLabel }    = fwToLabel(sessionStatus?.familyworks)
-          const evCount = sniperRunState?.events?.length ?? 0
-          const techSummary = [
-            `Session: ${daxkoLabel}`,
-            `Schedule: ${fwLabel}`,
-            evCount > 0 ? `${evCount} event${evCount === 1 ? '' : 's'}` : null,
-          ].filter(Boolean).join(' · ')
-
-          return (
-            <>
-              <Card padding="none">
-                <button
-                  onClick={() => setTechExpanded(e => !e)}
-                  className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Technical Details</p>
-                    <p className="text-[13px] text-text-muted mt-0.5 truncate">{techSummary}</p>
-                  </div>
-                  <ChevronIcon rotated={techExpanded} />
-                </button>
-              </Card>
-
-              {techExpanded && (
-                <div className="space-y-4">
-                  {/* Readiness */}
-                  <SectionHeader title="Readiness" id="tools-readiness" />
-                  <Card padding="none">
-                    {(() => {
-                      const { label, dot } = daxkoToLabel(sessionStatus?.daxko)
-                      return (
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                          <span className="text-[14px] text-text-secondary">Session</span>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                    {(() => {
-                      const { label, dot } = fwToLabel(sessionStatus?.familyworks)
-                      return (
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                          <span className="text-[14px] text-text-secondary">Schedule</span>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
-                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                    {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
-                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                        <span className="text-[14px] text-text-secondary">Class</span>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.discovery)}`} />
-                          <span className="text-[14px] font-medium text-text-primary">
-                            {DISCOVERY_LABEL[sniperRunState.bundle.discovery] ?? sniperRunState.bundle.discovery}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {sniperRunState?.bundle && sniperRunState.bundle.modal &&
-                     sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
-                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                        <span className="text-[14px] text-text-secondary">Modal</span>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
-                          <span className="text-[14px] font-medium text-text-primary">
-                            {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
-                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                        <span className="text-[14px] text-text-secondary">Action</span>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.action)}`} />
-                          <span className="text-[14px] font-medium text-text-primary">
-                            {ACTION_LABEL[sniperRunState.bundle.action] ?? sniperRunState.bundle.action}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[14px] text-text-secondary">Last checked</span>
-                      <span className="text-[13px] text-text-muted">
-                        {sniperRunState?.runId ? fmtStr(sniperRunState.runId) : sessionStatus?.lastVerified ? fmtStr(sessionStatus.lastVerified) : '—'}
-                      </span>
-                    </div>
-                  </Card>
-
-                  {/* Run Events */}
-                  <SectionHeader
-                    id="tools-run-events"
-                    title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
-                  />
-                  <LastRunEvents sniperRunState={sniperRunState} />
-
-                  {/* Last Check Now (per-phase diagnostics) */}
-                  <LastCheckNowSection sniperRunState={sniperRunState} />
-                </div>
-              )}
-            </>
-          )
-        })()}
-
-        {/* ── Zone spacer: Monitoring → Alerts ─────────────── */}
-        <div className="h-1" />
-
         {/* ── Needs Attention ──────────────────────────────── */}
         {(() => {
           type AttentionItem = { title: string; detail: string; color: 'red' | 'amber' }
@@ -1399,6 +1182,220 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           </>
         )}
 
+
+        {/* ── Automation Health ─────────────────────────────── */}
+        <Card padding="none">
+          <div className="px-4 pt-3 pb-2.5 border-b border-divider">
+            <p className="text-[12px] font-semibold text-text-secondary uppercase tracking-wide">Automation Health</p>
+          </div>
+
+          {/* ── Auto Preflight row ──────────────────────────── */}
+          {(() => {
+            const cfg = autoPreflightConfig
+            const apfMs   = cfg?.nextTrigger?.msUntil
+            const apfNext = apfMs != null ? (() => {
+              const d = Math.floor(apfMs / 86_400_000)
+              const h = Math.floor((apfMs % 86_400_000) / 3_600_000)
+              const m = Math.floor((apfMs % 3_600_000) / 60_000)
+              return d > 0 ? `Next in ${d}d ${h}h` : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
+            })() : cfg?.enabled ? 'None scheduled' : null
+
+            let apfHealth = 'Off'
+            let apfDot    = 'bg-text-muted/40'
+            let apfColor  = 'text-text-muted'
+            if (cfg?.enabled) {
+              if (!cfg.lastRun)                         { apfHealth = 'Enabled'; apfDot = 'bg-accent-blue'; apfColor = 'text-text-secondary' }
+              else if (cfg.lastRun.status === 'pass')   { apfHealth = 'Healthy';        apfDot = 'bg-accent-green'; apfColor = 'text-accent-green' }
+              else if (cfg.lastRun.status === 'fail')   { apfHealth = 'Last run failed'; apfDot = 'bg-accent-red';   apfColor = 'text-accent-red'   }
+              else                                      { apfHealth = 'Needs review';   apfDot = 'bg-accent-amber'; apfColor = 'text-accent-amber' }
+            }
+
+            return (
+              <button
+                onClick={handleAutoPreflightToggle}
+                disabled={apfToggling || cfg === null}
+                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity border-b border-divider"
+              >
+                <div className="flex-1 mr-4 min-w-0">
+                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                    {apfToggling ? 'Updating…' : 'Auto Preflight'}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${apfDot}`} />
+                    <span className={`text-[12px] font-medium ${apfColor}`}>{apfHealth}</span>
+                    {apfNext && <span className="text-[12px] text-text-muted">· {apfNext}</span>}
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
+                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </div>
+              </button>
+            )
+          })()}
+
+          {/* ── Session Check row ───────────────────────────── */}
+          {(() => {
+            const cfg = keepaliveConfig
+            const kaMs   = cfg?.next?.msUntil
+            const kaNext = kaMs != null ? (() => {
+              const h = Math.floor(kaMs / 3_600_000)
+              const m = Math.floor((kaMs % 3_600_000) / 60_000)
+              return kaMs < 60_000 ? 'Due now' : h > 0 ? `Next in ${h}h ${m}m` : `Next in ${m}m`
+            })() : cfg?.enabled ? 'None scheduled' : null
+
+            let kaHealth = 'Off'
+            let kaDot    = 'bg-text-muted/40'
+            let kaColor  = 'text-text-muted'
+            if (cfg?.enabled) {
+              if (!cfg.lastRun)              { kaHealth = 'Enabled';      kaDot = 'bg-accent-blue';  kaColor = 'text-text-secondary' }
+              else if (cfg.lastRun.valid)    { kaHealth = 'Healthy';      kaDot = 'bg-accent-green'; kaColor = 'text-accent-green'   }
+              else                           { kaHealth = 'Needs review'; kaDot = 'bg-accent-red';   kaColor = 'text-accent-red'     }
+            }
+
+            return (
+              <button
+                onClick={handleKeepaliveToggle}
+                disabled={kaToggling || cfg === null}
+                className="flex items-center justify-between w-full px-4 py-3.5 text-left active:opacity-60 transition-opacity"
+              >
+                <div className="flex-1 mr-4 min-w-0">
+                  <p className="text-[14px] font-medium text-text-primary leading-tight">
+                    {kaToggling ? 'Updating…' : 'Session Check'}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kaDot}`} />
+                    <span className={`text-[12px] font-medium ${kaColor}`}>{kaHealth}</span>
+                    {kaNext && <span className="text-[12px] text-text-muted">· {kaNext}</span>}
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
+                  cfg?.enabled ? 'bg-accent-blue' : 'bg-divider'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+                    cfg?.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </div>
+              </button>
+            )
+          })()}
+
+        </Card>
+
+        {/* ── Technical Details (collapsible) ─────────────── */}
+        {(() => {
+          const { label: daxkoLabel } = daxkoToLabel(sessionStatus?.daxko)
+          const { label: fwLabel }    = fwToLabel(sessionStatus?.familyworks)
+          const evCount = sniperRunState?.events?.length ?? 0
+          const techSummary = [
+            `Session: ${daxkoLabel}`,
+            `Schedule: ${fwLabel}`,
+            evCount > 0 ? `${evCount} event${evCount === 1 ? '' : 's'}` : null,
+          ].filter(Boolean).join(' · ')
+
+          return (
+            <>
+              <Card padding="none">
+                <button
+                  onClick={() => setTechExpanded(e => !e)}
+                  className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Technical Details</p>
+                    <p className="text-[13px] text-text-muted mt-0.5 truncate">{techSummary}</p>
+                  </div>
+                  <ChevronIcon rotated={techExpanded} />
+                </button>
+              </Card>
+
+              {techExpanded && (
+                <div className="space-y-4">
+                  {/* Readiness */}
+                  <SectionHeader title="Readiness" id="tools-readiness" />
+                  <Card padding="none">
+                    {(() => {
+                      const { label, dot } = daxkoToLabel(sessionStatus?.daxko)
+                      return (
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Session</span>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {(() => {
+                      const { label, dot } = fwToLabel(sessionStatus?.familyworks)
+                      return (
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Schedule</span>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                            <span className="text-[14px] font-medium text-text-primary">{label}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Class</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.discovery)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {DISCOVERY_LABEL[sniperRunState.bundle.discovery] ?? sniperRunState.bundle.discovery}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {sniperRunState?.bundle && sniperRunState.bundle.modal &&
+                     sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Modal</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                        <span className="text-[14px] text-text-secondary">Action</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.action)}`} />
+                          <span className="text-[14px] font-medium text-text-primary">
+                            {ACTION_LABEL[sniperRunState.bundle.action] ?? sniperRunState.bundle.action}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <span className="text-[14px] text-text-secondary">Last checked</span>
+                      <span className="text-[13px] text-text-muted">
+                        {sniperRunState?.runId ? fmtStr(sniperRunState.runId) : sessionStatus?.lastVerified ? fmtStr(sessionStatus.lastVerified) : '—'}
+                      </span>
+                    </div>
+                  </Card>
+
+                  {/* Run Events */}
+                  <SectionHeader
+                    id="tools-run-events"
+                    title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
+                  />
+                  <LastRunEvents sniperRunState={sniperRunState} />
+
+                  {/* Last Check Now (per-phase diagnostics) */}
+                  <LastCheckNowSection sniperRunState={sniperRunState} />
+                </div>
+              )}
+            </>
+          )
+        })()}
       </ScreenContainer>
 
       <ScreenshotLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
