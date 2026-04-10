@@ -153,8 +153,9 @@ function formatEvidenceValue(v: unknown): string {
 }
 
 const RESULT_LABELS: Record<string, string> = {
-  booked:             'Booked',
-  dry_run:            'Simulated Booking',
+  booked:             'Confirmed',
+  waitlisted:         'Waitlisted',
+  dry_run:            'Simulated',
   found_not_open_yet: 'Not Open Yet',
   not_found:          'Class Not Found',
   error:              'Error',
@@ -586,17 +587,19 @@ function resultToOutcome(result: string | null): {
 } {
   switch (result) {
     case 'booked':
-      return { label: 'Booked',      reason: 'Booked successfully',             color: 'text-accent-green', dot: 'bg-accent-green' }
+      return { label: 'Confirmed',   reason: 'Spot reserved successfully',       color: 'text-accent-green', dot: 'bg-accent-green' }
+    case 'waitlisted':
+      return { label: 'Waitlisted',  reason: 'Added to the waitlist',            color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'dry_run':
       return { label: 'Simulated',   reason: 'Simulated booking (test mode)',    color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'found_not_open_yet':
-      return { label: 'Waiting',     reason: 'Registration not open yet',        color: 'text-text-muted',   dot: 'bg-text-muted'   }
+      return { label: 'Not Open Yet',reason: 'Registration not open yet — will retry', color: 'text-text-muted', dot: 'bg-text-muted' }
     case 'not_found':
       return { label: 'Not Found',   reason: 'Class not found on schedule',      color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'skipped':
-      return { label: 'Skipped',     reason: 'Booking check was skipped',        color: 'text-text-muted',   dot: 'bg-text-muted'   }
+      return { label: 'Skipped',     reason: 'Class skipped — already booked or paused', color: 'text-text-muted', dot: 'bg-text-muted' }
     default:
-      return { label: 'Failed',      reason: 'Booking attempt failed',           color: 'text-accent-red',   dot: 'bg-accent-red'   }
+      return { label: 'Failed',      reason: 'Booking failed — see reason below', color: 'text-accent-red',   dot: 'bg-accent-red'   }
   }
 }
 
@@ -632,8 +635,8 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
 
   const { label, reason: baseReason, color, dot } = resultToOutcome(lastRunJob.last_result)
   const errorShort = lastRunJob.last_error_message
-    ? (lastRunJob.last_error_message.length > 55
-        ? lastRunJob.last_error_message.slice(0, 55) + '…'
+    ? (lastRunJob.last_error_message.length > 80
+        ? lastRunJob.last_error_message.slice(0, 80) + '…'
         : lastRunJob.last_error_message)
     : null
   const reason = errorShort ?? baseReason
@@ -646,12 +649,13 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
         className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
       >
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
-            <span className={`text-[16px] font-semibold leading-tight ${color}`}>{label}</span>
-            <span className="text-[12px] text-text-muted">{fmtStr(lastRunJob.last_run_at)}</span>
+          <p className="text-[15px] font-semibold text-text-primary truncate">{lastRunJob.class_title}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+            <span className={`text-[13px] font-medium ${color}`}>{label}</span>
+            <span className="text-[12px] text-text-muted">· {fmtStr(lastRunJob.last_run_at)}</span>
           </div>
-          <p className="text-[13px] text-text-secondary mt-1 truncate">{reason}</p>
+          <p className="text-[12px] text-text-secondary mt-0.5 truncate">{reason}</p>
         </div>
         <ChevronIcon rotated={expanded} />
       </button>
@@ -659,16 +663,13 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
       {/* ── Expanded detail ─────────────────────────────────── */}
       {expanded && (
         <div className="border-t border-divider">
-          <DetailRow label="Class"      value={lastRunJob.class_title ?? '—'} />
-          <DetailRow label="Job"        value={`#${lastRunJob.id}`} />
-          <DetailRow label="Scheduler"  value={botStatus?.active ? 'Running' : 'Idle'} />
           <DetailRow
             label="Result"
             value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
             last={!lastRunJob.last_error_message && !screenshot}
           />
           {lastRunJob.last_error_message && (
-            <DetailRow label="Error" value={lastRunJob.last_error_message} last={!screenshot} />
+            <DetailRow label="Reason" value={lastRunJob.last_error_message} last={!screenshot} />
           )}
           {screenshot && (
             <button
@@ -680,7 +681,7 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
               </p>
               <img
                 src={screenshot}
-                alt="Run screenshot"
+                alt="Screenshot"
                 className="w-full rounded-lg border border-divider"
                 loading="lazy"
               />
@@ -847,7 +848,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           if (autoPreflightConfig?.lastRun?.status === 'fail') {
             items.push({
               title:  'Last preflight failed',
-              detail: `${autoPreflightConfig.lastRun.triggerName ? `"${autoPreflightConfig.lastRun.triggerName}" ` : 'The automatic '}preflight check failed — use Preflight Check in Actions to re-verify.`,
+              detail: `${autoPreflightConfig.lastRun.triggerName ? `"${autoPreflightConfig.lastRun.triggerName}" ` : 'The automatic '}preflight check failed — use Preflight in the Now tab to re-verify.`,
               color:  'amber',
             })
           }
