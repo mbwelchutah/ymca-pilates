@@ -776,6 +776,12 @@ async function runBookingJob(job, opts = {}) {
 
           // Collect all card-sized nodes for diagnostic logging
           const r = el.getBoundingClientRect();
+          // Skip truly hidden elements (display:none / collapsed to 0×0).
+          // Bubble.io's virtual repeating-group recycles DOM nodes: when you switch
+          // date tabs, old entries get hidden (width=0, height=0) but keep their
+          // previous text content.  Scoring these stale nodes leads to clicking
+          // invisible elements and crashing the booking attempt.
+          if (r.width === 0 && r.height === 0) continue;
           const looks_card = r.width >= 100 && r.height >= 30;
           if (looks_card && (hasTitle || hasTime || hasInstr)) {
             allTexts.push({ desc, txt: txt.slice(0, 150), hasTime, hasTitle, hasInstr });
@@ -811,8 +817,13 @@ async function runBookingJob(job, opts = {}) {
           });
         }
 
-        // Sort: highest score first; tie-break on fewest descendants (most specific)
-        allRows.sort((a, b) => b.score - a.score || a.desc - b.desc);
+        // Sort: highest score first; prefer visible (looks_card) within same score;
+        // tie-break on fewest descendants (most specific element).
+        allRows.sort((a, b) =>
+          b.score - a.score ||
+          (b.visible ? 1 : 0) - (a.visible ? 1 : 0) ||
+          a.desc - b.desc
+        );
 
         if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
 
@@ -1359,20 +1370,18 @@ async function runBookingJob(job, opts = {}) {
         const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
         console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
 
-        if (!verifyTime || !verifyInst) {
-          const reasons = [];
-          if (!verifyTime) reasons.push('time');
-          if (!verifyInst) reasons.push('instructor');
-          const reasonTag   = reasons.join('-');
-          const reasonLabel = { 'time': 'Time mismatch', 'instructor': 'Instructor mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Unknown mismatch';
+        // Time mismatch = definitive fail (we clicked the wrong class / window not open yet).
+        // Instructor mismatch only = soft warning — instructor may be a substitute this week;
+        // class title + time match is sufficient to confirm identity, so we proceed.
+        if (!verifyTime) {
+          const reasonTag   = verifyInst ? 'time' : 'time-instructor';
+          const reasonLabel = { 'time': 'Time mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Time mismatch';
           console.log(`❌ Modal verification failed (${candidateLabel}):`, reasonLabel);
-          // ── taxonomy: emit verify failure ──
-          const _ftMap = { 'time': 'VERIFY_TIME_MISMATCH', 'instructor': 'VERIFY_INSTRUCTOR_MISMATCH', 'time-instructor': 'VERIFY_MISMATCH' };
+          const _ftMap = { 'time': 'VERIFY_TIME_MISMATCH', 'time-instructor': 'VERIFY_MISMATCH' };
           emitEvent(_state, 'VERIFY', _ftMap[reasonTag] || 'VERIFY_MISMATCH', reasonLabel, { evidence: { candidateLabel, verifyTime, verifyInst } });
           console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
           console.log('Modal preview:', modalText.slice(0, 300));
           await snap(`verify-${reasonTag}`);
-          // Write JSON sidecar so the dashboard can show contextual trace details
           if (screenshotPath) {
             try {
               const meta = {
@@ -1386,7 +1395,6 @@ async function runBookingJob(job, opts = {}) {
             } catch (e) { console.log('Meta write failed:', e.message); }
           }
           const failMsg = `Modal verification failed (${reasonTag}): expected time="${classTimeNorm}" (found:${verifyTime}) instructor="${instructorFirstName}" (found:${verifyInst})`;
-          // ── POINT 3: verify — identity mismatch (inline, rich context) ────
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'verify', reason: REASONTAG_TO_REASON[reasonTag] || 'unexpected_error',
@@ -1399,8 +1407,14 @@ async function runBookingJob(job, opts = {}) {
             actual:   modalText.slice(0, 300),
             context:  { candidateLabel, verifyTime, verifyInst, reasonTag, modalPreview: _lastModalPreview },
           });
-          // ─────────────────────────────────────────────────────────────────
           return { ok: false, failMsg, reasonTag, recorded: true };
+        }
+
+        if (!verifyInst) {
+          // Instructor mismatch with correct time — likely a substitute instructor.
+          // Log a warning but do NOT block the booking / waitlist attempt.
+          console.log(`⚠️ Modal: instructor mismatch for ${candidateLabel} (expected "${instructorFirstName}") — may be a substitute. Time verified; proceeding.`);
+          emitEvent(_state, 'VERIFY', 'VERIFY_INSTRUCTOR_MISMATCH', 'Instructor mismatch (substitute?) — continuing', { evidence: { candidateLabel, verifyTime, verifyInst } });
         }
 
         console.log(`✅ Modal verified (${candidateLabel}) — proceeding to booking.`);
