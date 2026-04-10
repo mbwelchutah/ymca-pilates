@@ -1,0 +1,364 @@
+You are performing a FINAL REFINEMENT PASS on the TOOLS tab of the YMCA Booker app.
+
+CRITICAL RULE (NEW)
+
+Tools must become a pure observability / diagnostic dashboard.
+
+- REMOVE or MOVE OUT all execution actions:
+  - Preflight Check
+  - Book Now
+  - Check Now
+  - Any run-triggering controls
+
+- Tools must NOT trigger behavior.
+- Tools must ONLY explain:
+  - what happened
+  - what is failing
+  - why it failed
+  - what to do next
+
+All execution actions belong in the NOW tab.
+
+--------------------------------------------------
+EXECUTION RULES (IMPORTANT)
+--------------------------------------------------
+
+You MUST follow this pattern:
+
+- Implement ONLY ONE stage at a time
+- After completing a stage:
+  1. Summarize what you changed
+  2. Explain what remains
+  3. STOP execution
+  4. WAIT for user to say “continue”
+
+DO NOT:
+- Continue automatically
+- Preview future stages
+- Batch multiple stages
+
+If you complete a stage, you must end with:
+
+👉 "Stage complete. Say 'continue' to proceed."
+
+--------------------------------------------------
+PRIMARY GOAL
+--------------------------------------------------
+
+Tools should instantly answer:
+
+- What just happened?
+- What’s going wrong?
+- Is it getting better or worse?
+- Which classes are risky?
+- What should I do?
+
+WITHOUT:
+- clutter
+- duplicate info
+- execution buttons
+- debug noise
+
+--------------------------------------------------
+STAGE 1 — REMOVE / RELOCATE ALL ACTIONS
+--------------------------------------------------
+
+Goal:
+Ensure Tools is NOT an execution surface.
+
+Tasks:
+
+1. Remove or relocate:
+   - Preflight Check
+   - Book Now
+   - Check Now
+   - Any run-triggering buttons
+
+2. If needed, replace with subtle text:
+   - “Run from Now tab”
+
+3. Ensure:
+   - ZERO buttons trigger execution
+
+4. Tools must be read-only
+
+Success criteria:
+- no execution actions remain
+- Tools cannot trigger runs
+
+After Stage 1:
+1. Summarize changes
+2. Explain what remains
+
+Then STOP and WAIT for user input.
+
+--------------------------------------------------
+STAGE 2 — CLEAN SECTION HIERARCHY
+--------------------------------------------------
+
+Goal:
+Make layout intuitive and diagnostic-focused.
+
+Tasks:
+
+Ensure final section order:
+
+1. Last Run  
+2. Failure Insights  
+3. Failure Trends  
+4. Per-Class Reliability  
+5. Recent Failures  
+6. Automation Health  
+7. Technical Details (collapsed)  
+
+Remove:
+- leftover action sections
+- duplicated content
+
+Success criteria:
+- clean top-down diagnostic flow
+
+After Stage 2:
+1. Summarize changes
+2. Explain what remains
+
+Then STOP and WAIT.
+
+--------------------------------------------------
+STAGE 3 — REFINE LAST RUN
+--------------------------------------------------
+
+Goal:
+Make Last Run immediately clear.
+
+Tasks:
+
+Show:
+- class name
+- result (Confirmed / Waitlisted / Failed / Issue)
+- time
+- short reason
+
+If failed:
+- show SPECIFIC reason (not “failed”)
+
+If screenshot exists:
+- show “View screenshot”
+
+Remove vague text
+
+Success criteria:
+- instant understanding of last run
+
+After Stage 3:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 4 — SIMPLIFY FAILURE INSIGHTS
+--------------------------------------------------
+
+Goal:
+Surface top issues only.
+
+Tasks:
+
+- show top 3–5 failure causes
+- use clean format:
+
+  Booking modal not found — X  
+  Class not found — X  
+  Session expired — X  
+
+Remove:
+- long lists
+- low-value noise
+
+Success criteria:
+- main issues obvious immediately
+
+After Stage 4:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 5 — POLISH FAILURE TRENDS
+--------------------------------------------------
+
+Goal:
+Make trends obvious.
+
+Tasks:
+
+Show:
+- Last hour
+- Last 6 hours
+- Last 24 hours
+
+Add:
+- Improving / Stable / Worsening
+
+Remove extra metrics
+
+Success criteria:
+- readable in 2 seconds
+
+After Stage 5:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 6 — CLEAN PER-CLASS RELIABILITY
+--------------------------------------------------
+
+Goal:
+Highlight risk clearly.
+
+Tasks:
+
+Show per class:
+- success rate
+- last result
+- most common issue
+
+Limit to:
+- active classes OR top 3–5
+
+Sort:
+- worst first OR upcoming first
+
+Success criteria:
+- risky classes obvious
+
+After Stage 6:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 7 — REFINE RECENT FAILURES
+--------------------------------------------------
+
+Goal:
+Make failures useful.
+
+Tasks:
+
+Show:
+- class
+- reason
+- time
+- screenshot link
+
+Limit:
+- last 5–10 entries
+
+Remove:
+- duplicates
+- vague labels
+
+Success criteria:
+- quick scan, high value
+
+After Stage 7:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 8 — REBALANCE AUTOMATION HEALTH
+--------------------------------------------------
+
+Goal:
+Keep it secondary.
+
+Tasks:
+
+Show:
+- Auto Preflight
+- Session Check
+- next run timing
+
+Use:
+- Healthy
+- Needs attention
+
+Reduce visual weight
+
+Success criteria:
+- informative but not dominant
+
+After Stage 8:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 9 — COLLAPSE TECHNICAL DETAILS
+--------------------------------------------------
+
+Goal:
+Hide complexity by default.
+
+Tasks:
+
+Ensure:
+- collapsed by default
+- clearly labeled
+
+Include:
+- session state
+- schedule state
+- event counts
+
+Success criteria:
+- power without clutter
+
+After Stage 9:
+Summarize → Explain → STOP and WAIT
+
+--------------------------------------------------
+STAGE 10 — FINAL DIAGNOSTIC POLISH
+--------------------------------------------------
+
+Goal:
+Make Tools feel complete.
+
+Tasks:
+
+Verify user can answer:
+- what failed?
+- why?
+- how often?
+- what to do next?
+
+Remove:
+- duplicates
+- stale states
+- awkward wording
+
+Polish:
+- spacing
+- hierarchy
+- tone
+
+Success criteria:
+- calm, professional observability dashboard
+
+After Stage 10:
+Summarize final improvements
+
+Then STOP.
+
+--------------------------------------------------
+FINAL SUCCESS CRITERIA
+--------------------------------------------------
+
+Tools is now:
+
+- 100% diagnostic
+- zero execution actions
+- clear failure insight
+- clean trends and reliability
+- screenshot-enabled
+- calm and polished
+
+NOT:
+- a control panel
+- a debug console
+- a second Now tab
+
+END EACH STAGE WITH:
+
+👉 "Stage complete. Say 'continue' to proceed."

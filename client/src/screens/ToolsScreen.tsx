@@ -4,6 +4,7 @@ import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
+import { ScreenshotLightbox } from '../components/ui/ScreenshotLightbox'
 import type { AppState, SessionStatus, AuthStatusEnum } from '../types'
 import type { SniperRunState, SniperTiming } from '../lib/api'
 import { api } from '../lib/api'
@@ -633,10 +634,11 @@ interface JobLike {
   last_error_message: string | null
 }
 
-function LastRunSummaryCard({ lastRunJob, botStatus, screenshot }: {
-  lastRunJob: JobLike | null
-  botStatus:  BotStatus | null
-  screenshot: string | null
+function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreenshot }: {
+  lastRunJob:        JobLike | null
+  botStatus:         BotStatus | null
+  screenshot:        string | null
+  onViewScreenshot?: (src: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -695,7 +697,10 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot }: {
             <DetailRow label="Error" value={lastRunJob.last_error_message} last={!screenshot} />
           )}
           {screenshot && (
-            <a href={screenshot} target="_blank" rel="noreferrer" className="block px-4 pb-4 pt-3">
+            <button
+              onClick={() => onViewScreenshot?.(screenshot)}
+              className="block w-full px-4 pb-4 pt-3 text-left"
+            >
               <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
                 Failure screenshot <CameraIcon />
               </p>
@@ -705,7 +710,7 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot }: {
                 className="w-full rounded-lg border border-divider"
                 loading="lazy"
               />
-            </a>
+            </button>
           )}
         </div>
       )}
@@ -729,6 +734,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [activityShowAll, setActivityShowAll]   = useState(false)
   const [insightsShowAll, setInsightsShowAll]   = useState(false)
+  const [lightboxSrc, setLightboxSrc]         = useState<string | null>(null)
   const [forceLoading, setForceLoading]       = useState(false)
   const [forceMsg, setForceMsg]               = useState<{ ok: boolean; text: string } | null>(null)
   const [runOnceLoading, setRunOnceLoading]   = useState(false)
@@ -883,7 +889,12 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         {/* ── Last Run (compact, tap to expand) ───────────── */}
         <SectionHeader title="Last Run" id="tools-last-run" />
-        <LastRunSummaryCard lastRunJob={lastRunJob} botStatus={botStatus} screenshot={screenshotSrc(sniperRunState?.screenshotPath)} />
+        <LastRunSummaryCard
+          lastRunJob={lastRunJob}
+          botStatus={botStatus}
+          screenshot={screenshotSrc(sniperRunState?.screenshotPath)}
+          onViewScreenshot={setLightboxSrc}
+        />
 
         {/* ── Actions ──────────────────────────────────────── */}
         <SectionHeader title="Actions" id="tools-actions" />
@@ -1473,7 +1484,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                 </div>
                               )}
                               {f.screenshot && (
-                                <a href={screenshotSrc(f.screenshot) ?? '#'} target="_blank" rel="noreferrer" className="block">
+                                <button
+                                  onClick={() => { const s = screenshotSrc(f.screenshot); if (s) setLightboxSrc(s) }}
+                                  className="block w-full text-left"
+                                >
                                   <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
                                     Failure screenshot <CameraIcon />
                                   </p>
@@ -1483,7 +1497,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                     className="w-full rounded-xl border border-divider"
                                     loading="lazy"
                                   />
-                                </a>
+                                </button>
                               )}
                             </div>
                           )}
@@ -1517,6 +1531,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         )}
 
       </ScreenContainer>
+
+      <ScreenshotLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </>
   )
 }
