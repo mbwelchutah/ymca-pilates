@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 interface Props {
   src:     string | null
@@ -14,6 +14,11 @@ function CloseIcon() {
 }
 
 export function ScreenshotLightbox({ src, onClose }: Props) {
+  const [imgError, setImgError] = useState(false)
+
+  // Reset error state whenever a new screenshot is opened.
+  useEffect(() => { setImgError(false) }, [src])
+
   useEffect(() => {
     if (!src) return
     const prev = document.body.style.overflow
@@ -43,12 +48,23 @@ export function ScreenshotLightbox({ src, onClose }: Props) {
         <CloseIcon />
       </button>
 
-      <img
-        src={src}
-        alt="Failure screenshot"
-        className="max-w-[calc(100vw-32px)] max-h-[calc(100dvh-64px)] object-contain rounded-lg shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      />
+      {imgError ? (
+        <div
+          className="text-center px-8 py-10"
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="text-white/60 text-[15px]">Screenshot no longer available</p>
+          <p className="text-white/35 text-[12px] mt-1">It may have been removed by the retention policy.</p>
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt="Failure screenshot"
+          className="max-w-[calc(100vw-32px)] max-h-[calc(100dvh-64px)] object-contain rounded-lg shadow-2xl"
+          onClick={e => e.stopPropagation()}
+          onError={() => setImgError(true)}
+        />
+      )}
     </div>
   )
 }

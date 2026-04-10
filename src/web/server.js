@@ -5313,3 +5313,20 @@ setTimeout(() => {
   setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
 }, 30 * 1000);
 console.log(`Scheduler loop armed — ticking every ${SCHEDULER_INTERVAL_MS / 1000}s (first tick in 30s).`);
+
+// ── Screenshot retention — prune data/screenshots/ on startup + daily ────────
+{
+  const { pruneOldScreenshots } = require('../bot/screenshot-retention');
+  const runPrune = () => {
+    try {
+      const { deleted, kept } = pruneOldScreenshots();
+      if (deleted > 0) console.log(`[screenshot-retention] Pruned ${deleted} file(s); ${kept} remaining.`);
+    } catch (e) {
+      console.error('[screenshot-retention] Unexpected error:', e.message);
+    }
+  };
+  // Short startup delay so the DB and disk are fully ready first.
+  setTimeout(runPrune, 10 * 1000);
+  // Re-run daily so screenshots never accumulate across long-running deployments.
+  setInterval(runPrune, 24 * 60 * 60 * 1000);
+}
