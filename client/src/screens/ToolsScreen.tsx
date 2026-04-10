@@ -1006,50 +1006,46 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           )
         })()}
 
-        {/* ── Recent Activity ───────────────────────────────── */}
+        {/* ── Recent Failures ───────────────────────────────── */}
         {recentFailures.length > 0 && (
           <>
-            <SectionHeader title="Recent Activity" />
+            <SectionHeader title="Recent Failures" />
             <Card padding="none">
               {(() => {
-                const visible = activityShowAll ? recentFailures : recentFailures.slice(0, 3)
-                const hidden  = recentFailures.length - visible.length
+                const PAGE = 5
+                const MAX  = 10
+                const capped  = recentFailures.slice(0, MAX)
+                const visible = activityShowAll ? capped : capped.slice(0, PAGE)
+                const canMore = !activityShowAll && capped.length > PAGE
+                const moreCount = capped.length - PAGE
 
                 return (
                   <>
                     {visible.map((f, i) => {
                       const entryKey = f.id != null ? String(f.id) : f.occurred_at
                       const isOpen   = expandedKey === entryKey
-                      const primary  = f.label ?? REASON_LABELS[f.reason] ?? f.reason
-                      const msgSnip  = f.message
-                        ? (f.message.length > 60 ? f.message.slice(0, 60) + '…' : f.message)
-                        : null
+                      const reason   = f.label ?? REASON_LABELS[f.reason] ?? f.reason
 
                       return (
                         <div key={entryKey}>
                           {/* ── Collapsed row ──────────────── */}
                           <button
                             onClick={() => setExpandedKey(isOpen ? null : entryKey)}
-                            className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider transition-colors"
+                            className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-divider/40 transition-colors"
                           >
                             <div className="flex-1 mr-3 min-w-0">
-                              <p className="text-[14px] font-medium text-text-primary flex items-center">
-                                <span className="truncate">{primary}</span>
+                              {f.class_title && (
+                                <p className="text-[12px] text-text-muted truncate">{f.class_title}</p>
+                              )}
+                              <p className="flex items-center gap-1 text-[14px] font-medium text-text-primary">
+                                <span className="truncate">{reason}</span>
                                 {f.screenshot && (
-                                  <span title="Screenshot available" className="inline-flex">
+                                  <span title="Screenshot available" className="inline-flex flex-shrink-0">
                                     <CameraIcon />
                                   </span>
                                 )}
                               </p>
-                              <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <span className="text-[11px] font-medium text-text-secondary bg-divider rounded px-1.5 py-0.5 leading-tight">
-                                  {PHASE_LABELS[f.phase] ?? f.phase}
-                                </span>
-                                <span className="text-[12px] text-text-muted">{fmtStr(f.occurred_at)}</span>
-                              </p>
-                              {msgSnip && (
-                                <p className="text-[11px] text-text-muted mt-0.5 break-words">{msgSnip}</p>
-                              )}
+                              <p className="text-[12px] text-text-muted mt-0.5">{fmtStr(f.occurred_at)}</p>
                             </div>
                             <ChevronIcon rotated={isOpen} />
                           </button>
@@ -1059,8 +1055,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                             <div className="px-4 pb-4 space-y-3">
                               {f.message && (
                                 <div className="bg-surface rounded-lg p-3 border border-divider">
-                                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Message</p>
-                                  <p className="text-[12px] text-text-secondary leading-relaxed break-words font-mono">{f.message}</p>
+                                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1">Reason</p>
+                                  <p className="text-[12px] text-text-secondary leading-relaxed break-words">{f.message}</p>
                                 </div>
                               )}
                               {f.expected != null && f.actual != null && (
@@ -1076,12 +1072,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                   </div>
                                 </div>
                               )}
-                              {f.url && (
-                                <div className="flex gap-2 items-start">
-                                  <span className="text-[10px] font-semibold text-text-muted w-8 flex-shrink-0 pt-px">URL</span>
-                                  <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
-                                </div>
-                              )}
                               {f.screenshot ? (
                                 <button
                                   onClick={() => { const s = screenshotSrc(f.screenshot); if (s) setLightboxSrc(s) }}
@@ -1092,7 +1082,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                   </p>
                                   <img
                                     src={screenshotSrc(f.screenshot) ?? ''}
-                                    alt={f.reason}
+                                    alt="Screenshot"
                                     className="w-full rounded-xl border border-divider"
                                     loading="lazy"
                                   />
@@ -1108,8 +1098,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                       )
                     })}
 
-                    {/* ── Show all / collapse toggle ──────── */}
-                    {(hidden > 0 || activityShowAll) && (
+                    {/* ── Show more / collapse ────────────── */}
+                    {(canMore || activityShowAll) && (
                       <>
                         <div className="h-px bg-divider mx-4" />
                         <button
@@ -1117,9 +1107,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                           className="w-full px-4 py-3 text-left active:bg-divider/40 transition-colors"
                         >
                           <span className="text-[13px] font-medium text-accent-blue">
-                            {activityShowAll
-                              ? 'Show less'
-                              : `Show all ${recentFailures.length} incidents`}
+                            {activityShowAll ? 'Show less' : `Show ${moreCount} more`}
                           </span>
                         </button>
                       </>
