@@ -95,6 +95,21 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
 
     // Already-booked guard.
     if (dbJob.target_date) {
+      const today = new Date().toISOString().slice(0, 10);
+      // Primary: last_result is a success status AND the booking was made recently (within 7 days)
+      // AND the target_date is still upcoming.  This covers the normal case where the booking
+      // window opens 3 days before the class — last_success_at is April 10 but target_date is
+      // April 13, so startsWith() would never match.
+      const SUCCESS_STATUSES_GUARD = ['booked', 'success', 'already_registered'];
+      const isRecentSuccess = SUCCESS_STATUSES_GUARD.includes(dbJob.last_result) &&
+                              dbJob.last_success_at &&
+                              Date.now() - new Date(dbJob.last_success_at).getTime() < 7 * 24 * 60 * 60 * 1000;
+      if (isRecentSuccess && dbJob.target_date >= today) {
+        console.log(`  => SKIPPING Job #${dbJob.id} — already booked for target date ${dbJob.target_date} (booked ${dbJob.last_success_at.slice(0,10)})`);
+        results.push({ jobId: dbJob.id, phase, status: 'skipped', message: 'already booked (target date)' });
+        continue;
+      }
+      // Fallback: legacy check where booking was made on the same day as the class
       if (dbJob.last_success_at && dbJob.last_success_at.startsWith(dbJob.target_date)) {
         console.log(`  => SKIPPING Job #${dbJob.id} — already booked for target date ${dbJob.target_date}`);
         results.push({ jobId: dbJob.id, phase, status: 'skipped', message: 'already booked (target date)' });
