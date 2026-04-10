@@ -576,6 +576,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [localSessionStatus, setLocalSessionStatus] = useState<SessionStatus | null>(null)
   const sessionStatus = localSessionStatus ?? polledStatus ?? null
 
+  // Reconcile bgReadiness.session with sessionStatus for armed-model and
+  // derivePrimaryResult.  bgReadiness reflects the last preflight/keepalive
+  // run, which can fail with 'error' due to a network timeout even when the
+  // session is genuinely active.  sessionStatus is polled independently every
+  // 90 s — when it says the session is valid, a fresh bgReadiness 'error' is
+  // more likely a transient network issue than a real expired session, so
+  // downgrade it to 'unknown' to avoid false "Sign-in check timed out" alerts.
+  const reconciledBgSession: 'ready' | 'error' | 'unknown' | null = (() => {
+    const raw = isReadinessForSelectedJob ? (bgReadiness?.session ?? null) : null
+    if (raw !== 'error') return raw
+    const sessOk = sessionStatus?.daxko === 'DAXKO_READY' ||
+                   sessionStatus?.familyworks === 'FAMILYWORKS_READY'
+    return sessOk ? 'unknown' : raw
+  })()
+
   // Stage 6 — Sniper armed model (Layer C).
   // Computed client-side from the 5 normalized readiness fields so the model is
   // independently typed and doesn't require the server's `armed` sub-object to
@@ -583,9 +598,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // are still used as context inputs since the client can't compute them locally.
   const sniperArmed: ArmedModel | null = (() => {
     if (!isReadinessForSelectedJob || !bgReadiness) return null
-    const { session, schedule, discovery, modal } = bgReadiness
+    const { schedule, discovery, modal } = bgReadiness
     return computeArmedModel({
-      session,
+      session:  reconciledBgSession ?? 'unknown',
       schedule,
       discovery,
       modal,
@@ -740,7 +755,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     lastPreflightAt,
     bgArmedState: sniperArmed?.state ?? null,
     blocked,
-    bgSession:    bgReadiness?.session   ?? null,
+    bgSession:    reconciledBgSession    ?? null,
     bgDiscovery:  bgReadiness?.discovery ?? null,
     bgModal:      bgReadiness?.modal     ?? null,
   }) : null

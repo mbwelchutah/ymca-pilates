@@ -19,7 +19,7 @@ const COOKIES_FILE = path.join(DATA_DIR, 'session-cookies.json');
 const STATUS_FILE  = path.join(DATA_DIR, 'session-status.json');
 const FW_FILE      = path.join(DATA_DIR, 'familyworks-session.json');
 
-const PING_TIMEOUT_MS = 10000;
+const PING_TIMEOUT_MS = 20000;
 
 // Daxko: an authenticated page. With valid cookies it returns 200.
 // With an expired session it redirects (302) to find_account / login.
