@@ -19,6 +19,7 @@ export interface SniperRunState {
   sniperState:    SniperState
   authBlockedAt:  string | null   // set by real booking runs; never by skip events
   timing:         SniperTiming | null
+  screenshotPath: string | null
   events:                 SniperEvent[]
   updatedAt:              string | null
   lastPreflightSnapshot: {

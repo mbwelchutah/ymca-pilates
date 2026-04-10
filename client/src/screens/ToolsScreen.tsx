@@ -633,9 +633,10 @@ interface JobLike {
   last_error_message: string | null
 }
 
-function LastRunSummaryCard({ lastRunJob, botStatus }: {
+function LastRunSummaryCard({ lastRunJob, botStatus, screenshot }: {
   lastRunJob: JobLike | null
   botStatus:  BotStatus | null
+  screenshot: string | null
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -688,10 +689,23 @@ function LastRunSummaryCard({ lastRunJob, botStatus }: {
           <DetailRow
             label="Result"
             value={lastRunJob.last_result ? (RESULT_LABELS[lastRunJob.last_result] ?? lastRunJob.last_result) : '—'}
-            last={!lastRunJob.last_error_message}
+            last={!lastRunJob.last_error_message && !screenshot}
           />
           {lastRunJob.last_error_message && (
-            <DetailRow label="Error" value={lastRunJob.last_error_message} last />
+            <DetailRow label="Error" value={lastRunJob.last_error_message} last={!screenshot} />
+          )}
+          {screenshot && (
+            <a href={screenshot} target="_blank" rel="noreferrer" className="block px-4 pb-4 pt-3">
+              <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
+                Failure screenshot <CameraIcon />
+              </p>
+              <img
+                src={screenshot}
+                alt="Run screenshot"
+                className="w-full rounded-lg border border-divider"
+                loading="lazy"
+              />
+            </a>
           )}
         </div>
       )}
@@ -869,7 +883,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         {/* ── Last Run (compact, tap to expand) ───────────── */}
         <SectionHeader title="Last Run" id="tools-last-run" />
-        <LastRunSummaryCard lastRunJob={lastRunJob} botStatus={botStatus} />
+        <LastRunSummaryCard lastRunJob={lastRunJob} botStatus={botStatus} screenshot={screenshotSrc(sniperRunState?.screenshotPath)} />
 
         {/* ── Actions ──────────────────────────────────────── */}
         <SectionHeader title="Actions" id="tools-actions" />
