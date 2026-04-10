@@ -1,0 +1,357 @@
+You are adding LIVE STAGE PROGRESSION to the NOW tab of the YMCA Booker app.
+
+PRIMARY GOAL
+
+Transform the Now tab into:
+
+→ a live execution control center  
+→ a transparent step-by-step viewer of what the system is doing  
+
+When the user runs:
+- Preflight Check
+- Book Now
+
+They should SEE exactly where the system is in real time.
+
+The experience should feel like:
+tap → see → understand → trust
+
+NOT:
+tap → wait → hope
+
+IMPORTANT RULES
+
+- Do NOT redesign the Now tab layout broadly
+- Do NOT add unrelated features
+- ONLY add:
+  - action placement
+  - live stage progression
+  - clear result states
+
+- Keep UI calm and human-readable
+- Do NOT show raw logs or technical errors
+- Keep everything mobile-first and simple
+
+Stop after each stage and summarize what changed.
+
+==================================================
+STAGE 1 — ADD ACTIONS INTO NOW CARD
+==================================================
+
+Goal:
+Move execution controls into the Now experience.
+
+Tasks:
+
+1. Add two buttons inside the Now card:
+   - Primary: Book Now
+   - Secondary: Preflight Check
+
+2. Placement:
+   - below class info
+   - above any readiness/status indicators
+
+3. Ensure:
+   - buttons are always visible when appropriate
+   - buttons reflect current state (disabled when running)
+
+4. Do NOT rely on Tools for these actions anymore
+
+Success criteria:
+- user can trigger Preflight and Book directly from Now
+- actions feel part of the live workflow
+
+After Stage 1:
+Summarize:
+- where buttons were placed
+- how state affects them
+
+STOP
+
+==================================================
+STAGE 2 — DEFINE LIVE EXECUTION STAGE MODEL
+==================================================
+
+Goal:
+Create a shared stage system for all runs.
+
+Tasks:
+
+1. Define stages:
+
+- session
+- schedule
+- class
+- modal
+- action
+- result
+
+2. Each stage supports:
+
+- pending
+- running
+- success
+- failed
+
+3. Support two run types:
+
+- preflight
+- booking
+
+4. Add human-readable labels:
+
+- Session verified
+- Schedule loaded
+- Class found
+- Modal reached
+- Booking action
+- Confirmation detected
+
+Success criteria:
+- stage system exists
+- readable labels are defined
+- supports both flows
+
+After Stage 2:
+Summarize:
+- stage structure
+- label system
+
+STOP
+
+==================================================
+STAGE 3 — SHOW LIVE STAGE PROGRESSION
+==================================================
+
+Goal:
+Display step-by-step progress during execution.
+
+Tasks:
+
+1. When user taps:
+   - Preflight Check → start preflight run
+   - Book Now → start booking run
+
+2. Replace static status area with:
+
+"Running Preflight..." or "Booking..."
+
+3. Display vertical stage list:
+
+✓ Session verified  
+✓ Schedule loaded  
+⏳ Locating class  
+⬜ Checking modal  
+⬜ Performing action  
+
+Rules:
+- only one stage is running at a time
+- completed = checkmark
+- future = dim
+- running = highlighted
+
+Success criteria:
+- user sees progress live
+- no black box execution
+
+After Stage 3:
+Summarize:
+- how stage list is rendered
+- how progression updates
+
+STOP
+
+==================================================
+STAGE 4 — DIFFERENTIATE PREFLIGHT VS BOOKING
+==================================================
+
+Goal:
+Make flows accurate and not misleading.
+
+Tasks:
+
+Preflight:
+- stops at readiness
+- does NOT include booking click
+
+Flow:
+- Session
+- Schedule
+- Class
+- Modal
+- Result: Ready / Needs attention
+
+Booking:
+- includes action + result
+
+Flow:
+- Session
+- Schedule
+- Class
+- Modal
+- Action
+- Result: Confirmed / Waitlisted / Failed
+
+Success criteria:
+- preflight ≠ booking visually
+- flows feel correct
+
+After Stage 4:
+Summarize:
+- differences between flows
+- result states
+
+STOP
+
+==================================================
+STAGE 5 — SHOW CLEAR RESULT STATES
+==================================================
+
+Goal:
+Make outcomes obvious and calm.
+
+Tasks:
+
+Preflight results:
+- Ready to book
+- Needs attention
+
+Booking results:
+- Confirmed
+- Waitlisted
+- Failed
+
+Replace vague messages like:
+- "Booking failed"
+
+With:
+- "Could not access booking modal"
+- "Class not found"
+- "Session expired"
+
+Success criteria:
+- results are specific
+- user understands outcome immediately
+
+After Stage 5:
+Summarize:
+- result messaging improvements
+
+STOP
+
+==================================================
+STAGE 6 — HANDLE RUNNING / BLOCK STATES
+==================================================
+
+Goal:
+Prevent conflicting actions and confusion.
+
+Tasks:
+
+1. While running:
+- disable both buttons
+- show:
+  "Preflight running…" or "Booking in progress…"
+
+2. If booking is running:
+- disable preflight
+- explain clearly
+
+3. Do NOT show:
+- “Signing in…” incorrectly
+- misleading auth states
+
+Success criteria:
+- no conflicting actions
+- clear running state
+
+After Stage 6:
+Summarize:
+- how running states are handled
+
+STOP
+
+==================================================
+STAGE 7 — COLLAPSE BACK TO CLEAN STATE
+==================================================
+
+Goal:
+Keep Now simple when not running.
+
+Tasks:
+
+1. When run completes:
+- hide stage list
+- return to clean summary state
+
+2. Keep only:
+- current status
+- readiness indicators
+- next window timing
+
+3. Do NOT persist long stage logs here
+
+4. Optional:
+- add subtle link:
+  "View details in Tools"
+
+Success criteria:
+- Now stays clean when idle
+- no clutter from previous runs
+
+After Stage 7:
+Summarize:
+- how UI resets after run
+
+STOP
+
+==================================================
+STAGE 8 — MICRO POLISH (HIGH VALUE)
+==================================================
+
+Goal:
+Make interaction feel alive and smooth.
+
+Tasks:
+
+1. Add subtle transitions:
+- stage changes animate lightly
+
+2. Keep timing visible:
+- “Opens in 2d 5h”
+
+3. Optional:
+- show confidence hint:
+  "Ready — likely to succeed"
+
+4. Ensure layout stays compact and mobile-friendly
+
+Success criteria:
+- UI feels responsive
+- no visual heaviness
+
+After Stage 8:
+Summarize:
+- polish improvements
+
+STOP
+
+==================================================
+FINAL RESULT
+
+Now tab becomes:
+
+- execution control center
+- real-time progress viewer
+- trust-building interface
+
+User experience:
+
+tap → see stages → understand → trust
+
+NOT:
+
+tap → wait → guess
+
+STOP AFTER EACH STAGE.
+DO NOT SKIP AHEAD.

@@ -1,0 +1,398 @@
+You are adding PLAYWRIGHT FAILURE CAPTURE + TOOLS INTEGRATION to the YMCA Booker app.
+
+PRIMARY GOAL
+
+When a Playwright-based run fails or becomes uncertain, automatically capture a screenshot and make it available from the Tools tab.
+
+This should make debugging dramatically easier without cluttering the main UI.
+
+The user should be able to:
+- see that a run failed
+- open Tools
+- see the failed run
+- tap to view the screenshot
+
+IMPORTANT RULES
+
+- Keep app runnable after every stage
+- Do not break booking/preflight logic
+- Do not capture screenshots on every successful step by default
+- Do not flood storage
+- Do not show raw technical logs in the main UI by default
+- Keep screenshot access clean and secondary
+- Stop after each stage and summarize exactly what changed
+- Do not jump ahead
+
+==================================================
+STAGE 1 — ADD A REUSABLE SCREENSHOT CAPTURE UTILITY
+==================================================
+
+Goal:
+Create one safe utility for Playwright failure screenshots.
+
+Tasks:
+
+1. Add a helper such as:
+   captureFailureScreenshot(page, context)
+
+2. Context should include:
+   - jobId
+   - className if available
+   - phase (preflight / booking / verify / auth)
+   - reason
+   - timestamp
+
+3. Save screenshots to a structured path such as:
+   /data/screenshots/{date}/{filename}.png
+
+4. Use clean file naming, for example:
+   {jobId}_{phase}_{reason}_{timestamp}.png
+
+5. Ensure:
+   - directory is created automatically
+   - file naming is safe
+   - screenshot failure does not crash the run
+
+Success criteria:
+- screenshot utility exists
+- files are saved in a predictable structure
+- capture failure is non-fatal
+
+After Stage 1:
+Summarize:
+- what utility was added
+- where screenshots are saved
+- how filenames are structured
+
+STOP
+
+==================================================
+STAGE 2 — CAPTURE SCREENSHOTS ON HARD PLAYWRIGHT FAILURES
+==================================================
+
+Goal:
+Automatically capture screenshots when the most important failures happen.
+
+Tasks:
+
+1. Add screenshot capture for these failure types:
+   - modal not found
+   - class not found
+   - click failure
+   - navigation failure
+   - booking result unknown
+   - auth/login flow failure
+   - schedule not rendered when expected
+
+2. Ensure screenshot happens as close as possible to the point of failure
+
+3. Do not capture on every success
+
+4. Add clear reason codes such as:
+   - modal_not_found
+   - class_not_found
+   - click_failed
+   - navigation_failed
+   - result_unknown
+   - auth_failed
+   - schedule_not_rendered
+
+Success criteria:
+- every major Playwright failure captures a screenshot
+- screenshot reason is clear and structured
+
+After Stage 2:
+Summarize:
+- what failure points now capture screenshots
+- what reason codes are used
+
+STOP
+
+==================================================
+STAGE 3 — CAPTURE SCREENSHOTS ON UNCERTAIN / AMBIGUOUS STATES
+==================================================
+
+Goal:
+Capture screenshots not only for hard failures, but also for high-value uncertainty.
+
+Tasks:
+
+1. Add screenshot capture for ambiguous states such as:
+   - identity confidence too low
+   - fallback path used during matching
+   - verification uncertain
+   - confirmation unclear after click
+
+2. Use a clear reason such as:
+   - uncertain_state
+   - uncertain_identity
+   - uncertain_confirmation
+   - fallback_used
+
+3. Keep this targeted — do not capture on every harmless warning
+
+Success criteria:
+- uncertain runs are visually inspectable
+- screenshot volume remains controlled
+
+After Stage 3:
+Summarize:
+- what uncertain cases now capture screenshots
+- how noise is controlled
+
+STOP
+
+==================================================
+STAGE 4 — ATTACH SCREENSHOT PATH TO RUN EVENTS / FAILURES
+==================================================
+
+Goal:
+Make screenshots discoverable through the existing run/failure model.
+
+Tasks:
+
+1. Extend run event / failure event data to include:
+   - screenshotPath
+   - screenshotAvailable boolean if useful
+
+2. For any failure or uncertain event with a screenshot, store the path on the event
+
+3. Example shape:
+   {
+     type: "failure",
+     reason: "modal_not_found",
+     message: "Booking modal not found",
+     screenshotPath: "/data/screenshots/2026-04-10/..."
+   }
+
+4. Ensure this integrates cleanly with:
+   - Last Run
+   - Recent failures
+   - Replay / run details if present
+
+Success criteria:
+- failures know whether a screenshot exists
+- screenshot paths are available to the UI
+
+After Stage 4:
+Summarize:
+- what data model changed
+- how screenshot paths are attached to events
+
+STOP
+
+==================================================
+STAGE 5 — SURFACE SCREENSHOTS IN TOOLS: LAST RUN
+==================================================
+
+Goal:
+Expose screenshot access where the user naturally looks first.
+
+Tasks:
+
+1. In Tools → Last Run, if the last run failed and a screenshot exists:
+   - show a secondary action:
+     “View screenshot”
+
+2. Keep this visually secondary to the main run summary
+3. If helpful, add a small preview thumbnail later, but start with a simple link/button
+4. Ensure mobile-friendly viewing
+
+Success criteria:
+- user can open the latest failure screenshot directly from Last Run
+- no clutter added to the main summary
+
+After Stage 5:
+Summarize:
+- how Last Run now exposes screenshots
+- what the user sees when a screenshot exists
+
+STOP
+
+==================================================
+STAGE 6 — SURFACE SCREENSHOTS IN TOOLS: RECENT FAILURES / RUN DETAILS
+==================================================
+
+Goal:
+Make screenshots available from historical failed runs too.
+
+Tasks:
+
+1. In Recent Failures / Recent Activity / Run Details:
+   - add “View screenshot” when a screenshot exists
+
+2. If the run expands, include screenshot access inside the expanded view
+3. Keep screenshot access secondary, not visually dominant
+4. Do not show broken links when no screenshot exists
+
+Success criteria:
+- historical failures with screenshots are easy to inspect
+- screenshot access is consistent across Tools
+
+After Stage 6:
+Summarize:
+- where screenshots are exposed in historical failure views
+- how consistency was maintained
+
+STOP
+
+==================================================
+STAGE 7 — ADD OPTIONAL SCREENSHOT PREVIEW / VIEWER
+==================================================
+
+Goal:
+Make screenshot viewing practical on mobile.
+
+Tasks:
+
+1. Add a clean viewer behavior:
+   - tap “View screenshot”
+   - open image in modal, sheet, or dedicated view
+2. Keep it simple and mobile-friendly
+3. Optionally support:
+   - thumbnail preview in run detail
+4. Do not make the image viewer feel like a debugging console
+
+Success criteria:
+- screenshots are easy to open and inspect on mobile
+- viewing feels integrated into the product
+
+After Stage 7:
+Summarize:
+- how screenshots are viewed
+- whether preview/thumbnail support was added
+
+STOP
+
+==================================================
+STAGE 8 — ADD SCREENSHOT RETENTION / STORAGE CONTROL
+==================================================
+
+Goal:
+Prevent screenshot storage from growing forever.
+
+Tasks:
+
+1. Add a retention policy such as:
+   - keep last 3–5 days
+   OR
+   - keep last 100 screenshots
+
+2. Delete oldest screenshots automatically
+3. Ensure runs without screenshots are unaffected
+4. If a screenshot is removed, UI should fail gracefully
+
+Success criteria:
+- storage remains controlled
+- screenshot feature remains sustainable
+
+After Stage 8:
+Summarize:
+- what retention policy was added
+- how cleanup works
+
+STOP
+
+==================================================
+STAGE 9 — OPTIONAL DEBUG MODE FOR EXTRA SCREENSHOT CAPTURE
+==================================================
+
+Goal:
+Allow more aggressive capture when debugging intentionally.
+
+Tasks:
+
+1. Add an optional debug flag such as:
+   DEBUG_SCREENSHOTS=true
+
+2. When enabled:
+   - capture more screenshots
+   - optionally include intermediate steps
+3. Default behavior should remain:
+   - failure + uncertainty only
+
+4. Ensure production/default remains lean
+
+Success criteria:
+- debugging mode is stronger
+- default behavior stays lightweight
+
+After Stage 9:
+Summarize:
+- what debug mode does
+- how default behavior remains controlled
+
+STOP
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY + TRUST PASS
+==================================================
+
+Goal:
+Make screenshot capture feel like a polished reliability feature, not a hack.
+
+Tasks:
+
+1. Verify:
+   - hard failures capture screenshots
+   - uncertain states capture screenshots
+   - event data stores screenshot paths
+   - Tools surfaces screenshots in Last Run and Recent Failures
+   - missing screenshots fail gracefully
+   - storage is controlled
+
+2. Make wording consistent:
+   - View screenshot
+   - Screenshot available
+   - No screenshot
+
+3. Ensure the feature helps answer:
+   - what failed?
+   - what did the browser actually look like?
+   - how do I debug this quickly?
+
+Success criteria:
+- screenshots are reliably captured and accessible
+- feature feels calm, useful, and integrated
+
+After Stage 10:
+Summarize:
+- final improvements made
+- why the screenshot system now improves observability
+
+STOP
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- Playwright failures automatically capture screenshots
+- uncertain runs can capture screenshots too
+- screenshot paths are attached to failure/run events
+- Tools → Last Run exposes screenshots
+- Tools → recent failures / run details expose screenshots
+- screenshot viewing is mobile-friendly
+- storage is controlled
+- debugging becomes much faster
+
+The user experience should become:
+
+Failure → open Tools → open Last Run → view screenshot → understand
+
+Instead of:
+
+Failure → guess → rerun → guess again
+
+OUTPUT RULES
+
+At each stage:
+1. implement ONLY that stage
+2. keep app runnable
+3. summarize exactly what changed
+4. explain what remains
+5. STOP
+
+START WITH STAGE 1 ONLY.
+DO NOT SKIP AHEAD.

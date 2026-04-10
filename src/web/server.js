@@ -5158,6 +5158,18 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: err.message }));
       });
 
+  } else if (req.method === 'GET' && path.startsWith('/api/screenshots/')) {
+    // Serve structured failure screenshots from data/screenshots/{date}/{file}.
+    const fsM = require('fs'), pathM = require('path');
+    const { SCREENSHOTS_DIR } = require('../bot/screenshot-capture');
+    const rel  = path.slice('/api/screenshots/'.length);
+    const file = pathM.resolve(pathM.join(SCREENSHOTS_DIR, rel));
+    // Prevent directory traversal.
+    if (!file.startsWith(pathM.resolve(SCREENSHOTS_DIR))) { res.writeHead(403); res.end(); return; }
+    if (!fsM.existsSync(file)) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=86400' });
+    fsM.createReadStream(file).pipe(res);
+
   } else if (req.method === 'GET' && path.startsWith('/screenshots/')) {
     // Serve screenshot images statically.
     const fsM = require('fs'), pathM = require('path');
