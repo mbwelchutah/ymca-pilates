@@ -4,6 +4,7 @@
 // with a visible browser without clicking Register/Waitlist.
 const fs   = require('fs');
 const path = require('path');
+const { captureFailureScreenshot, screenshotRelPath } = require('./screenshot-capture');
 const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 const { recordFailure }  = require('../db/failures');
@@ -37,6 +38,15 @@ const REASONTAG_TO_REASON = {
   'time-instructor': 'modal_mismatch',
   'error':           'unexpected_error',
 };
+
+// Convert an absolute screenshot path to the compact reference stored in DB.
+// New-style paths (under data/screenshots/{date}/) → "date/filename.png"
+// Old-style paths (flat screenshots/ dir) → "filename.png"
+function _screenshotRef(filePath) {
+  if (!filePath) return null;
+  const rel = screenshotRelPath(filePath);
+  return rel || path.basename(filePath);
+}
 
 // ── Action-button selector strategies ────────────────────────────────────────
 // Each entry is [playwrightSelector, humanLabel]. Strategies are tried in order;
@@ -455,7 +465,7 @@ async function runBookingJob(job, opts = {}) {
         label:      result.label     || null,
         message:    result.message   || null,
         classTitle: classTitle       || null,
-        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        screenshot: _screenshotRef(screenshotPath),
         expected:   result.expected  || null,
         actual:     result.actual    || null,
         url:        result.url       || null,
@@ -565,6 +575,17 @@ async function runBookingJob(job, opts = {}) {
       const p = await _session.snap(label);
       if (p) screenshotPath = p;
     };
+    // Structured failure capture — saves to data/screenshots/{date}/{jobId}_{phase}_{reason}_{ts}.png
+    // and updates screenshotPath so logRunSummary / recordFailure pick it up.
+    const captureFailure = async (phase, reason) => {
+      const p = await captureFailureScreenshot(page, {
+        jobId:  job.id || job.jobId || null,
+        phase,
+        reason,
+      });
+      if (p) screenshotPath = p;
+      return p;
+    };
 
     // Step 2: Go to schedule and filter by the job's instructor
     advance(_state, 'NAVIGATION');
@@ -578,7 +599,7 @@ async function runBookingJob(job, opts = {}) {
     const loginPrompt = await page.locator('text=/login to register/i').count();
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
-      await snap();
+      await captureFailure('auth', 'session_expired');
       emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED',
         'Session not established — schedule page requires login', {
         evidence: {
@@ -728,14 +749,14 @@ async function runBookingJob(job, opts = {}) {
     // ── POINT 2: navigate — filter application failure ────────────────────────
     if (!categoryApplied && !instructorApplied) {
       console.log('⚠️ Both filters failed — schedule unfiltered; scan may be noisy.');
-      await snap('filter-miss');
+      await captureFailure('navigate', 'filter_apply_failed');
       recordFailure({
         jobId:    job.id || job.jobId || null,
         phase:    'navigate', reason: 'filter_apply_failed',
         category: 'navigate', label: 'Both schedule filters failed to apply',
         message:  'Category and Instructor filters both had no effect — schedule is unfiltered',
         classTitle,
-        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        screenshot: _screenshotRef(screenshotPath),
         url:      page.url(),
         context:  { categoryApplied, instructorApplied },
       });
@@ -759,14 +780,14 @@ async function runBookingJob(job, opts = {}) {
 
     if (!scheduleHasRows) {
       console.log('⚠️ Schedule appears empty (0 time-bearing card-sized rows) — possible render failure.');
-      await snap('schedule-empty');
+      await captureFailure('navigate', 'schedule_not_rendered');
       recordFailure({
         jobId:    job.id || job.jobId || null,
         phase:    'navigate', reason: 'schedule_not_rendered',
         category: 'navigate', label: 'Schedule rendered 0 rows after filter',
         message:  'No time-containing card-sized elements visible after filter application',
         classTitle,
-        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        screenshot: _screenshotRef(screenshotPath),
         url:      page.url(),
         context:  { categoryApplied, instructorApplied },
       });
@@ -1331,7 +1352,7 @@ async function runBookingJob(job, opts = {}) {
     if (!targetCard) {
       const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
-      await snap('not-found');
+      await captureFailure('scan', 'class_not_found');
       const _topSignals = (_lastAllTexts || []).slice(0, 3).map(r => r.txt.slice(0, 60)).join(' | ');
       emitEvent(_state, 'DISCOVERY', 'DISCOVERY_EMPTY', msg, {
         evidence: { ...(_topSignals ? { nearMisses: _topSignals } : {}) }
@@ -1427,7 +1448,7 @@ async function runBookingJob(job, opts = {}) {
             category: 'click', label: 'Normal click failed — using force click',
             message:  clickErr.message.split('\n')[0],
             classTitle,
-            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
             context:  { candidateLabel, clickDesc },
           });
@@ -1474,7 +1495,7 @@ async function runBookingJob(job, opts = {}) {
           emitEvent(_state, 'VERIFY', _ftMap[reasonTag] || 'VERIFY_MISMATCH', reasonLabel, { evidence: { candidateLabel, verifyTime, verifyInst } });
           console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
           console.log('Modal preview:', modalText.slice(0, 300));
-          await snap(`verify-${reasonTag}`);
+          await captureFailure('verify', REASONTAG_TO_REASON[reasonTag] || 'unexpected_error');
           if (screenshotPath) {
             try {
               const meta = {
@@ -1494,7 +1515,7 @@ async function runBookingJob(job, opts = {}) {
             category: 'verify', label: reasonLabel,
             message:  failMsg,
             classTitle,
-            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
             expected: JSON.stringify({ time: classTimeNorm, instructor: instructorFirstName }),
             actual:   modalText.slice(0, 300),
@@ -1530,7 +1551,7 @@ async function runBookingJob(job, opts = {}) {
           category: 'click', label: 'Unexpected error during card click/verify',
           message:  err.message,
           classTitle,
-          screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+          screenshot: _screenshotRef(screenshotPath),
           url:      (() => { try { return page.url(); } catch { return null; } })(),
           context:  { candidateLabel },
         });
@@ -1542,7 +1563,7 @@ async function runBookingJob(job, opts = {}) {
               url:            (() => { try { return page.url(); } catch { return ''; } })(),
               error:          err.message.split('\n')[0],
               candidateLabel,
-              screenshot:     screenshotPath ? path.basename(screenshotPath) : null,
+              screenshot:     _screenshotRef(screenshotPath),
             }
           });
         }
@@ -1584,7 +1605,7 @@ async function runBookingJob(job, opts = {}) {
           if (isTimeMismatch(secondResult)) {
             const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
-            await snap('not-found-time-mismatch');
+            await captureFailure('scan', 'class_not_found');
             return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'All candidates showed wrong time', url: page.url() });
           }
           // Verify failure already recorded inline in attemptClickAndVerify
@@ -1601,7 +1622,7 @@ async function runBookingJob(job, opts = {}) {
         if (isTimeMismatch(firstResult)) {
           const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
-          await snap('not-found-time-mismatch');
+          await captureFailure('scan', 'class_not_found');
           return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Best candidate showed wrong time', url: page.url() });
         }
         // Verify failure already recorded inline in attemptClickAndVerify
@@ -1718,9 +1739,9 @@ async function runBookingJob(job, opts = {}) {
         }
         // Capture screenshot BEFORE emitting event so the filename is available
         // as evidence in the Tools timeline (e.g. "preflight-auth-fail-<ts>.png").
-        await snap('preflight-auth-fail');
+        await captureFailure('auth', 'session_expired');
         emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register', {
-          evidence: { screenshot: screenshotPath ? path.basename(screenshotPath) : null }
+          evidence: { screenshot: _screenshotRef(screenshotPath) }
         });
         _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
@@ -1776,7 +1797,7 @@ async function runBookingJob(job, opts = {}) {
         }
         if (hasLoginButton) {
           console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
-          await snap();
+          await captureFailure('auth', 'session_expired');
           emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
           _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Login to Register shown in booking modal — FamilyWorks session missing' });
           return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
@@ -1812,7 +1833,7 @@ async function runBookingJob(job, opts = {}) {
             break;
           } else {
             console.log('⚠️ Post-waitlist (via Register): booking did not complete. Retrying...');
-            await snap('post-click-unclear');
+            await captureFailure('post_click', 'result_unknown');
             _replayAction = null;
             await page.waitForTimeout(3000);
             continue;
@@ -1827,14 +1848,14 @@ async function runBookingJob(job, opts = {}) {
 
         if (!regResult.confirmed) {
           // Booking genuinely did not complete — record the failure and retry next attempt.
-          await snap('post-click-unclear');
+          await captureFailure('post_click', 'result_unknown');
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: 'registration_unclear',
             category: 'post_click', label: 'No confirmation after Register click',
             message:  'Register button clicked but booking not confirmed (no Cancel button appeared, no action buttons changed)',
             classTitle,
-            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
             context:  { attempt, viaPopup: regResult.viaPopup },
           });
@@ -1864,14 +1885,14 @@ async function runBookingJob(job, opts = {}) {
           break;
         } else {
           console.log('⚠️ Post-waitlist: booking did not complete. Retrying...');
-          await snap('post-click-unclear');
+          await captureFailure('post_click', 'result_unknown');
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: 'registration_unclear',
             category: 'post_click', label: 'No confirmation after Waitlist click',
             message:  'Waitlist button clicked but booking not confirmed (no Cancel button appeared)',
             classTitle,
-            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
             context:  { attempt, viaPopup: wlResult.viaPopup },
           });
@@ -1909,7 +1930,7 @@ async function runBookingJob(job, opts = {}) {
               phase:    'gate', reason: 'booking_not_open',
               category: 'gate', label: 'Registration not open — exiting early for scheduler retry',
               message:  msg, classTitle,
-              screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+              screenshot: _screenshotRef(screenshotPath),
               url:      page.url(),
               context:  { msUntilBwOpen: Math.round(msUntilBwOpen / 1000) + 's', attempt },
             });
@@ -1953,14 +1974,14 @@ async function runBookingJob(job, opts = {}) {
         // ── POINT 8: recovery — stale card after reload ───────────────────
         if (!targetCard) {
           console.log(`⚠️ [attempt ${attempt}] Card not found after reload — cannot re-open modal.`);
-          await snap('recovery-no-card');
+          await captureFailure('recovery', 'stale_card_recovery_failed');
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'recovery', reason: 'stale_card_recovery_failed',
             category: 'recovery', label: 'Class card missing after page reload',
             message:  `Attempt ${attempt}: could not re-locate class card after page reload`,
             classTitle,
-            screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+            screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
             context:  { attempt, dayShort, targetDayNum, pollTabText, dayTabCountRetry },
           });
@@ -2021,7 +2042,7 @@ async function runBookingJob(job, opts = {}) {
         phase:    'gate', reason: 'booking_not_open',
         category: 'gate', label: 'Registration did not open within retry window',
         message:  msg, classTitle,
-        screenshot: screenshotPath ? path.basename(screenshotPath) : null,
+        screenshot: _screenshotRef(screenshotPath),
         url:      page.url(),
         context:  { maxAttempts },
       });

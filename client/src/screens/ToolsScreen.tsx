@@ -176,6 +176,14 @@ function trimUrl(raw: string): string {
   }
 }
 
+// Returns the correct URL for a screenshot reference stored in the DB.
+// New-style refs contain a "/" (e.g. "2026-04-10/job1_scan_class_not_found_...png")
+// and are served via /api/screenshots/. Legacy refs are plain basenames served via /screenshots/.
+function screenshotSrc(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  return ref.includes('/') ? `/api/screenshots/${ref}` : `/screenshots/${ref}`
+}
+
 function ChevronIcon({ rotated }: { rotated: boolean }) {
   return (
     <svg
@@ -398,7 +406,7 @@ function LastRunEvents({ sniperRunState }: { sniperRunState: SniperRunState | nu
               {/* Screenshot thumbnail */}
               {ev.screenshot && (
                 <img
-                  src={`/screenshots/${ev.screenshot}`}
+                  src={screenshotSrc(ev.screenshot) ?? ''}
                   alt={ev.phase}
                   className="w-full mt-2 rounded-lg border border-divider"
                   loading="lazy"
@@ -555,7 +563,7 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
             )}
             {modalDetail.screenshot && (
               <img
-                src={`/screenshots/${modalDetail.screenshot}`}
+                src={screenshotSrc(modalDetail.screenshot) ?? ''}
                 alt="Modal screenshot"
                 className="w-full mt-1 rounded-lg border border-divider"
                 loading="lazy"
@@ -1452,7 +1460,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                               )}
                               {f.screenshot ? (
                                 <img
-                                  src={`/screenshots/${f.screenshot}`}
+                                  src={screenshotSrc(f.screenshot) ?? ''}
                                   alt={f.reason}
                                   className="w-full rounded-xl border border-divider"
                                   loading="lazy"
