@@ -1472,15 +1472,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                   <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
                                 </div>
                               )}
-                              {f.screenshot ? (
-                                <img
-                                  src={screenshotSrc(f.screenshot) ?? ''}
-                                  alt={f.reason}
-                                  className="w-full rounded-xl border border-divider"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <p className="text-[12px] text-text-muted italic">No screenshot captured</p>
+                              {f.screenshot && (
+                                <a href={screenshotSrc(f.screenshot) ?? '#'} target="_blank" rel="noreferrer" className="block">
+                                  <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
+                                    Failure screenshot <CameraIcon />
+                                  </p>
+                                  <img
+                                    src={screenshotSrc(f.screenshot) ?? ''}
+                                    alt={f.reason}
+                                    className="w-full rounded-xl border border-divider"
+                                    loading="lazy"
+                                  />
+                                </a>
                               )}
                             </div>
                           )}
