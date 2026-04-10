@@ -134,6 +134,9 @@ function createRunState(jobId) {
     timing:         null,
     events:         [],
     updatedAt:      new Date().toISOString(),
+    // Most recent failure/uncertain screenshot from the run (set by logRunSummary).
+    // Stored as a DB-style ref: "YYYY-MM-DD/filename.png" (new) or "filename.png" (legacy).
+    screenshotPath: null,
     // Persisted across runs so the NowScreen badge survives page refreshes
     // and scheduler cycles.  Only savePreflightSnapshot() ever writes this.
     lastPreflightSnapshot: prior?.lastPreflightSnapshot ?? null,

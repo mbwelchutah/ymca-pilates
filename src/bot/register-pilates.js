@@ -440,6 +440,10 @@ async function runBookingJob(job, opts = {}) {
   // the try body and the catch handler.  Returns `result` so it can be inlined:
   //   return logRunSummary({ status: '...', message: '...', screenshotPath });
   function logRunSummary(result) {
+    // Attach the run-level screenshot ref to the persisted state so UI can access it.
+    const _ref = _screenshotRef(screenshotPath);
+    if (_ref) _state.screenshotPath = _ref;
+
     console.log('\n--- RUN SUMMARY ---');
     console.log(JSON.stringify({
       contextTimezone:   'America/Los_Angeles',
@@ -553,6 +557,7 @@ async function runBookingJob(job, opts = {}) {
         screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
       });
       emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message, {
+        screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
         evidence: {
           provider: 'Daxko',
           detail:   (loginErr.message || 'Login failed').slice(0, 120),
@@ -586,6 +591,12 @@ async function runBookingJob(job, opts = {}) {
       if (p) screenshotPath = p;
       return p;
     };
+    // Emits a failure/uncertain event and auto-attaches the current screenshotPath.
+    // Always call captureFailure() before emitFailure() so the ref is already set.
+    const emitFailure = (phase, failureType, message, extra = {}) => {
+      const ref = _screenshotRef(screenshotPath);
+      emitEvent(_state, phase, failureType, message, ref ? { ...extra, screenshot: ref } : extra);
+    };
 
     // Step 2: Go to schedule and filter by the job's instructor
     advance(_state, 'NAVIGATION');
@@ -600,7 +611,7 @@ async function runBookingJob(job, opts = {}) {
     if (loginPrompt > 0) {
       console.log('Schedule page shows "Login to Register" — session not established.');
       await captureFailure('auth', 'session_expired');
-      emitEvent(_state, 'AUTH', 'AUTH_SESSION_EXPIRED',
+      emitFailure('AUTH', 'AUTH_SESSION_EXPIRED',
         'Session not established — schedule page requires login', {
         evidence: {
           provider: 'FamilyWorks',
@@ -1354,7 +1365,7 @@ async function runBookingJob(job, opts = {}) {
       console.log(msg);
       await captureFailure('scan', 'class_not_found');
       const _topSignals = (_lastAllTexts || []).slice(0, 3).map(r => r.txt.slice(0, 60)).join(' | ');
-      emitEvent(_state, 'DISCOVERY', 'DISCOVERY_EMPTY', msg, {
+      emitFailure('DISCOVERY', 'DISCOVERY_EMPTY', msg, {
         evidence: { ...(_topSignals ? { nearMisses: _topSignals } : {}) }
       });
       return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'No matching class card found', url: page.url() });
@@ -1450,9 +1461,9 @@ async function runBookingJob(job, opts = {}) {
           await clickTarget.click({ timeout: 5000 });
         } catch (clickErr) {
           console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
-          emitEvent(_state, 'ACTION', 'ACTION_FORCE_CLICK_USED', `Normal click failed — force-click fallback (${candidateLabel})`);
-          // ── STAGE 3: fallback_used — normal click failed, force click needed ─
+          // ── Capture before emitting so screenshot ref is attached to event ─
           await captureFailure('click', 'fallback_used');
+          emitFailure('ACTION', 'ACTION_FORCE_CLICK_USED', `Normal click failed — force-click fallback (${candidateLabel})`);
           // ─────────────────────────────────────────────────────────────────
           // ── POINT 5: click — fallback to force click ──────────────────────
           recordFailure({
@@ -1505,10 +1516,11 @@ async function runBookingJob(job, opts = {}) {
           const reasonLabel = { 'time': 'Time mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Time mismatch';
           console.log(`❌ Modal verification failed (${candidateLabel}):`, reasonLabel);
           const _ftMap = { 'time': 'VERIFY_TIME_MISMATCH', 'time-instructor': 'VERIFY_MISMATCH' };
-          emitEvent(_state, 'VERIFY', _ftMap[reasonTag] || 'VERIFY_MISMATCH', reasonLabel, { evidence: { candidateLabel, verifyTime, verifyInst } });
           console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
           console.log('Modal preview:', modalText.slice(0, 300));
+          // Capture before emitting so screenshot ref is attached to event.
           await captureFailure('verify', REASONTAG_TO_REASON[reasonTag] || 'unexpected_error');
+          emitFailure('VERIFY', _ftMap[reasonTag] || 'VERIFY_MISMATCH', reasonLabel, { evidence: { candidateLabel, verifyTime, verifyInst } });
           if (screenshotPath) {
             try {
               const meta = {
@@ -1570,13 +1582,12 @@ async function runBookingJob(job, opts = {}) {
         });
         // ─────────────────────────────────────────────────────────────────
         if (PREFLIGHT_ONLY) {
-          emitEvent(_state, 'MODAL', 'MODAL_NOT_OPENED',
+          emitFailure('MODAL', 'MODAL_NOT_OPENED',
             `Preflight: modal unreachable — ${err.message.split('\n')[0]}`, {
             evidence: {
               url:            (() => { try { return page.url(); } catch { return ''; } })(),
               error:          err.message.split('\n')[0],
               candidateLabel,
-              screenshot:     _screenshotRef(screenshotPath),
             }
           });
         }
@@ -1753,9 +1764,7 @@ async function runBookingJob(job, opts = {}) {
         // Capture screenshot BEFORE emitting event so the filename is available
         // as evidence in the Tools timeline (e.g. "preflight-auth-fail-<ts>.png").
         await captureFailure('auth', 'session_expired');
-        emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register', {
-          evidence: { screenshot: _screenshotRef(screenshotPath) }
-        });
+        emitFailure('MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
         _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
       } else if (hasRegister) {
@@ -1773,12 +1782,12 @@ async function runBookingJob(job, opts = {}) {
         return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
       } else {
         if (_hasCancelOnly) {
-          emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: only Cancel button visible — user may already be registered');
           await captureFailure('gate', 'uncertain_state');
+          emitFailure('ACTION', 'ACTION_NOT_FOUND', 'Preflight: only Cancel button visible — user may already be registered');
           return logRunSummary({ status: 'action_blocked', message: 'Preflight: Cancel button only — may already be registered or class blocked', screenshotPath });
         } else {
-          emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
           await captureFailure('gate', 'uncertain_state');
+          emitFailure('ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
           return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
         }
       }
@@ -1811,7 +1820,7 @@ async function runBookingJob(job, opts = {}) {
         if (hasLoginButton) {
           console.log('Session not authenticated — page shows "Login to Register". Failing fast.');
           await captureFailure('auth', 'session_expired');
-          emitEvent(_state, 'MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
+          emitFailure('MODAL', 'MODAL_LOGIN_REQUIRED', 'Session expired inside booking modal');
           _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Login to Register shown in booking modal — FamilyWorks session missing' });
           return logRunSummary({ status: 'error', message: 'Authentication/session failed: page shows "Login to Register"', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Session expired inside booking modal', url: page.url() });
         }
