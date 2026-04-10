@@ -153,19 +153,39 @@ async function createSession(opts = {}) {
   // Daxko sends the user to MyAccountV2.mvc instead of completing the OAuth
   // redirect back to FamilyWorks.
 
+  const HOME_URL     = 'https://my.familyworks.app';
   const SCHEDULE_URL = 'https://my.familyworks.app/schedulesembed/eugeneymca?search=yes';
 
-  console.log('[session] Starting FW-first OAuth auth flow...');
-  await page.goto(SCHEDULE_URL, { timeout: 30000 });
+  // ── Step 1: Check FamilyWorks member home page ────────────────────────────
+  // Navigate to the FW home page first.  If the session cookie is valid, FW
+  // renders the member dashboard (My Schedule, Browse, etc.).  If not, it
+  // shows a "Login to Y Account" button.  This is faster than loading the
+  // schedule embed and clicking a class card to probe the modal.
+  console.log('[session] Checking FamilyWorks member home page for existing session...');
+  await page.goto(HOME_URL, { timeout: 30000 });
   await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(4000); // Bubble.io needs time to render class cards
+  await page.waitForTimeout(2000); // allow Bubble.io SPA to render
 
-  console.log('[session] Schedule embed loaded. URL:', page.url());
+  const homeUrl = page.url();
+  console.log('[session] FamilyWorks home URL:', homeUrl);
 
-  // Look for class cards (any element with a time range)
-  const cardLocator = page.locator('*').filter({ hasText: /\d:\d+ [ap] - \d+:\d+ [ap]/i });
-  const cardCount = await cardLocator.count();
-  console.log(`[session] Class cards visible: ${cardCount}`);
+  // Read visible button/link text to determine login state.
+  const homeBtnTexts = await page.locator('button:visible, [role="button"]:visible, a:visible').allTextContents().catch(() => []);
+  const homeClean    = homeBtnTexts.map(t => t.trim()).filter(Boolean);
+  console.log('[session] Home page buttons/links:', JSON.stringify(homeClean.slice(0, 15)));
+
+  const homeShowsLoginBtn  = homeClean.some(t => /login\s+to\s+y\s+account|sign\s+in/i.test(t));
+  // Member dashboard indicators — any of these confirms an active session.
+  const homeBodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+  const homeShowsMember = !homeShowsLoginBtn && (
+    homeBodyText.includes('my schedule') ||
+    homeBodyText.includes('browse') ||
+    homeBodyText.includes('eugene y') ||
+    homeBodyText.includes('health & wellness') ||
+    homeClean.some(t => /my favorites|new app feedback|donate/i.test(t))
+  );
+
+  console.log(`[session] Home check: loginBtn=${homeShowsLoginBtn} memberDash=${homeShowsMember}`);
 
   // ── Fast path: Tier-2 ping already confirmed sessions valid ──────────────
   // Skip the entire FW OAuth modal probe — sessions are trusted, no login needed.
@@ -174,138 +194,151 @@ async function createSession(opts = {}) {
   if (pingTrusted) {
     console.log('[session] Ping-trusted fast path — skipping OAuth probe, sessions assumed valid.');
     sessionAlreadyValid = true;
-    // Preserve bookingAccessConfirmed — if the HTTP ping confirmed sessions are still
-    // active, the previously confirmed booking access remains valid.  Only booking-code
-    // modal probes or explicit session failures should change this field.
     updateAuthState({
       daxkoValid:    true,
       familyworksValid: true,
       lastCheckedAt: Date.now(),
     });
-  } else if (cardCount > 0) {
-    // Click the first visible, reasonably-sized card
-    let clicked = false;
-    for (let i = 0; i < Math.min(cardCount, 10); i++) {
-      const el = cardLocator.nth(i);
-      try {
-        const box = await el.boundingBox();
-        if (!box || box.width < 80 || box.height < 30) continue;
-        if (box.height > 350 || box.width > 1260) continue; // skip container divs
-        await el.click({ timeout: 3000 });
-        clicked = true;
-        console.log(`[session] Clicked class card ${i} (${Math.round(box.width)}x${Math.round(box.height)})`);
-        break;
-      } catch (_) {}
-    }
+  } else if (homeShowsMember) {
+    // Member dashboard visible → session is active, no login needed.
+    const reuseMsg = cookiesInjected > 0
+      ? `[session-reuse] ✓ Session reused — member dashboard visible (${cookiesInjected} cookies active).`
+      : '[session] FW session already valid — member dashboard visible.';
+    console.log(reuseMsg);
+    sessionAlreadyValid = true;
+    updateAuthState({
+      daxkoValid:               true,
+      familyworksValid:         true,
+      bookingAccessConfirmed:   true,
+      bookingAccessConfirmedAt: Date.now(),
+      lastCheckedAt:            Date.now(),
+    });
+  } else {
+    // "Login to Y Account" visible (or unrecognised state) — need Daxko OAuth.
+    // The OAuth flow MUST go through the schedule embed: navigate there, click a
+    // class card, and click "Login to Register" so FW triggers the Daxko OAuth
+    // redirect with the correct oauth_state parameter.  Pre-navigating to Daxko
+    // first breaks the flow (Daxko skips the OAuth redirect to MyAccountV2.mvc).
+    const credMsg = homeShowsLoginBtn
+      ? (cookiesInjected > 0
+          ? '[session-reuse] ✗ Saved cookies expired — "Login to Y Account" visible. Using credentials.'
+          : '[session] Not logged in — "Login to Y Account" visible. Initiating FW OAuth via Daxko...')
+      : '[session] Login state unclear from home page — falling back to schedule embed probe.';
+    console.log(credMsg);
 
-    if (clicked) {
-      await page.waitForTimeout(2500);
+    // Load the schedule embed to get a class card for the OAuth trigger.
+    console.log('[session] Loading schedule embed for OAuth flow...');
+    await page.goto(SCHEDULE_URL, { timeout: 30000 });
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(4000); // Bubble.io needs time to render class cards
 
-      // Check what button appears in the modal
-      const allBtnTexts = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
-      const cleanBtns   = allBtnTexts.map(t => t.trim()).filter(Boolean);
-      console.log('[session] Modal buttons:', JSON.stringify(cleanBtns));
+    console.log('[session] Schedule embed loaded. URL:', page.url());
 
-      const hasSessionReady = cleanBtns.some(t => /^(Register|Reserve|Waitlist|Join Waitlist|Add to Waitlist)$/i.test(t));
-      const hasLoginRequired = cleanBtns.some(t => /log\s*in\s+to\s+register|sign\s*in\s+to\s+register|login\s+to\s+register/i.test(t));
+    const cardLocator = page.locator('*').filter({ hasText: /\d:\d+ [ap] - \d+:\d+ [ap]/i });
+    const cardCount   = await cardLocator.count();
+    console.log(`[session] Class cards visible: ${cardCount}`);
 
-      if (hasSessionReady) {
-        const reuseMsg = cookiesInjected > 0
-          ? `[session-reuse] ✓ Session reused — Register/Waitlist visible (${cookiesInjected} cookies active, no credentials needed).`
-          : '[session] FW session already valid — Register/Waitlist button visible.';
-        console.log(reuseMsg);
-        sessionAlreadyValid = true;
-        updateAuthState({
-          daxkoValid:               true,
-          familyworksValid:         true,
-          bookingAccessConfirmed:   true,
-          bookingAccessConfirmedAt: Date.now(),
-          lastCheckedAt:            Date.now(),
-        });
-        // Close the modal before continuing
-        await page.keyboard.press('Escape').catch(() => {});
-        await page.waitForTimeout(500);
-      } else if (hasLoginRequired) {
-        const credMsg = cookiesInjected > 0
-          ? '[session-reuse] ✗ Saved cookies expired — Login to Register visible. Using credentials for recovery.'
-          : '[session] Modal shows "Login to Register" — initiating FW OAuth via Daxko...';
-        console.log(credMsg);
+    if (cardCount > 0) {
+      let clicked = false;
+      for (let i = 0; i < Math.min(cardCount, 10); i++) {
+        const el = cardLocator.nth(i);
+        try {
+          const box = await el.boundingBox();
+          if (!box || box.width < 80 || box.height < 30) continue;
+          if (box.height > 350 || box.width > 1260) continue;
+          await el.click({ timeout: 3000 });
+          clicked = true;
+          console.log(`[session] Clicked class card ${i} (${Math.round(box.width)}x${Math.round(box.height)})`);
+          break;
+        } catch (_) {}
+      }
 
-        // Click "Login to Register" — because we have NO Daxko session yet,
-        // this should redirect to Daxko's find_account login page.
-        const loginBtn = page.locator(
-          'button:has-text("Login to Register"), [role="button"]:has-text("Login to Register"), a:has-text("Login to Register")'
-        ).first();
+      if (clicked) {
+        await page.waitForTimeout(2500);
 
-        if ((await loginBtn.count()) > 0) {
-          await loginBtn.click();
-          // Wait for navigation to Daxko
-          await page.waitForURL(url => url.toString().includes('daxko.com'), { timeout: 10000 }).catch(() => {});
-          await page.waitForLoadState('domcontentloaded').catch(() => {});
-          await page.waitForTimeout(1000);
+        const allBtnTexts = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
+        const cleanBtns   = allBtnTexts.map(t => t.trim()).filter(Boolean);
+        console.log('[session] Modal buttons:', JSON.stringify(cleanBtns));
 
-          const afterClickUrl = page.url();
-          console.log('[session] After "Login to Register" click, URL:', afterClickUrl);
+        const hasLoginRequired = cleanBtns.some(t => /log\s*in\s+to\s+register|sign\s*in\s+to\s+register|login\s+to\s+register/i.test(t));
 
-          const isLoginPage  = afterClickUrl.includes('daxko.com') &&
-                               (afterClickUrl.includes('find_account') || afterClickUrl.includes('/login'));
-          const isAccountPg  = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('MyAccount');
-
-          if (isLoginPage) {
-            // Full Daxko login — fill credentials
-            console.log('[session] On Daxko login page — filling credentials...');
-            await page.waitForSelector('input[type="text"], input[type="email"], input[type="tel"]', { timeout: 10000 });
-            await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
-            await page.click('#submit_button');
-            await page.waitForTimeout(1500);
-            if ((await page.locator('input[type="password"]').count()) > 0) {
-              await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
-              console.log('Submitting login...');
-              await Promise.all([
-                page.waitForURL(url => !url.toString().includes('find_account') && !url.toString().includes('/login'), { timeout: 30000 }),
-                page.click('#submit_button'),
-              ]);
-            }
-            console.log('Login submit complete. URL:', page.url());
-
-            // Wait for FamilyWorks redirect to complete
-            if (!page.url().includes('familyworks')) {
-              await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 15000 }).catch(() => {});
-            }
-            await page.waitForLoadState('networkidle').catch(() => {});
-            await page.waitForTimeout(2000);
-            console.log('[session] After Daxko login + FW redirect, URL:', page.url());
-            updateAuthState({
-              daxkoValid:               true,
-              familyworksValid:         true,
-              bookingAccessConfirmed:   false,  // not confirmed until modal probe
-              bookingAccessConfirmedAt: null,   // fresh session — previous confirmation stale
-              lastRecoveredAt:          Date.now(),
-              lastCheckedAt:            Date.now(),
-            });
-
-          } else if (isAccountPg) {
-            // Already authenticated somehow — wait for OAuth redirect to FW
-            console.log('[session] On Daxko account page — waiting for OAuth redirect to FW...');
-            await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 10000 }).catch(() => {
-              console.log('[session] No OAuth redirect received.');
-            });
-            console.log('[session] URL after account-page wait:', page.url());
-
-          } else {
-            console.log('[session] Unexpected URL after Login to Register click — may need manual check.');
-          }
+        if (!hasLoginRequired) {
+          // Modal shows Register/Waitlist — session became valid somehow.
+          console.log('[session] Modal shows action buttons — session valid (unexpected but OK).');
+          sessionAlreadyValid = true;
+          updateAuthState({
+            daxkoValid: true, familyworksValid: true,
+            bookingAccessConfirmed: true, bookingAccessConfirmedAt: Date.now(), lastCheckedAt: Date.now(),
+          });
+          await page.keyboard.press('Escape').catch(() => {});
+          await page.waitForTimeout(500);
         } else {
-          console.log('[session] "Login to Register" button not found in modal.');
+          // Click "Login to Register" → triggers Daxko OAuth redirect
+          const loginBtn = page.locator(
+            'button:has-text("Login to Register"), [role="button"]:has-text("Login to Register"), a:has-text("Login to Register")'
+          ).first();
+
+          if ((await loginBtn.count()) > 0) {
+            await loginBtn.click();
+            await page.waitForURL(url => url.toString().includes('daxko.com'), { timeout: 10000 }).catch(() => {});
+            await page.waitForLoadState('domcontentloaded').catch(() => {});
+            await page.waitForTimeout(1000);
+
+            const afterClickUrl = page.url();
+            console.log('[session] After "Login to Register" click, URL:', afterClickUrl);
+
+            const isLoginPage = afterClickUrl.includes('daxko.com') &&
+                                (afterClickUrl.includes('find_account') || afterClickUrl.includes('/login'));
+            const isAccountPg = afterClickUrl.includes('daxko.com') && afterClickUrl.includes('MyAccount');
+
+            if (isLoginPage) {
+              console.log('[session] On Daxko login page — filling credentials...');
+              await page.waitForSelector('input[type="text"], input[type="email"], input[type="tel"]', { timeout: 10000 });
+              await page.fill('input[type="text"], input[type="email"], input[type="tel"]', process.env.YMCA_EMAIL);
+              await page.click('#submit_button');
+              await page.waitForTimeout(1500);
+              if ((await page.locator('input[type="password"]').count()) > 0) {
+                await page.fill('input[type="password"]', process.env.YMCA_PASSWORD);
+                console.log('Submitting login...');
+                await Promise.all([
+                  page.waitForURL(url => !url.toString().includes('find_account') && !url.toString().includes('/login'), { timeout: 30000 }),
+                  page.click('#submit_button'),
+                ]);
+              }
+              console.log('Login submit complete. URL:', page.url());
+
+              if (!page.url().includes('familyworks')) {
+                await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 15000 }).catch(() => {});
+              }
+              await page.waitForLoadState('networkidle').catch(() => {});
+              await page.waitForTimeout(2000);
+              console.log('[session] After Daxko login + FW redirect, URL:', page.url());
+              updateAuthState({
+                daxkoValid: true, familyworksValid: true,
+                bookingAccessConfirmed: false, bookingAccessConfirmedAt: null,
+                lastRecoveredAt: Date.now(), lastCheckedAt: Date.now(),
+              });
+
+            } else if (isAccountPg) {
+              console.log('[session] On Daxko account page — waiting for OAuth redirect to FW...');
+              await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 10000 }).catch(() => {
+                console.log('[session] No OAuth redirect received.');
+              });
+              console.log('[session] URL after account-page wait:', page.url());
+
+            } else {
+              console.log('[session] Unexpected URL after "Login to Register" click — may need manual check.');
+            }
+          } else {
+            console.log('[session] "Login to Register" button not found in modal.');
+          }
         }
       } else {
-        console.log('[session] No recognized buttons in modal. Buttons seen:', JSON.stringify(cleanBtns));
+        console.log('[session] Could not click any class card — schedule may still be loading.');
       }
     } else {
-      console.log('[session] Could not click any class card — schedule may still be loading.');
+      console.log('[session] No class cards found on schedule embed — skipping OAuth probe.');
     }
-  } else {
-    console.log('[session] No class cards found on schedule embed — skipping auth probe.');
   }
 
   // ---- Auth check: confirm session is established ----
@@ -325,12 +358,11 @@ async function createSession(opts = {}) {
   }
   console.log('Auth looks valid — proceeding.');
 
-  // ---- Step 2: Navigate back to FW schedule embed (ready for booking) ----
-  // After FW-first OAuth the page may be on any URL. Bring it back to the
-  // schedule embed so the caller (register-pilates.js) always starts from
-  // a known, loaded schedule page.
-  if (!page.url().includes('familyworks')) {
-    console.log('[session] Navigating to FW schedule embed post-auth...');
+  // ---- Step 2: Navigate to FW schedule embed (ready for booking) ----
+  // The caller (register-pilates.js) always expects to start from the schedule
+  // embed, not the home page or Daxko. Navigate there unless already on it.
+  if (!page.url().includes('schedulesembed')) {
+    console.log('[session] Navigating to FW schedule embed...');
     await page.goto(SCHEDULE_URL, { timeout: 30000 });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(2000);
