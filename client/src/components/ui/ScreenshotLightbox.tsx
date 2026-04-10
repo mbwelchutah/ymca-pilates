@@ -53,13 +53,13 @@ export function ScreenshotLightbox({ src, onClose }: Props) {
           className="text-center px-8 py-10"
           onClick={e => e.stopPropagation()}
         >
-          <p className="text-white/60 text-[15px]">Screenshot no longer available</p>
+          <p className="text-white/60 text-[15px]">No screenshot</p>
           <p className="text-white/35 text-[12px] mt-1">It may have been removed by the retention policy.</p>
         </div>
       ) : (
         <img
           src={src}
-          alt="Failure screenshot"
+          alt="Screenshot"
           className="max-w-[calc(100vw-32px)] max-h-[calc(100dvh-64px)] object-contain rounded-lg shadow-2xl"
           onClick={e => e.stopPropagation()}
           onError={() => setImgError(true)}

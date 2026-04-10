@@ -702,7 +702,7 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
               className="block w-full px-4 pb-4 pt-3 text-left"
             >
               <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
-                Failure screenshot <CameraIcon />
+                View screenshot <CameraIcon />
               </p>
               <img
                 src={screenshot}
@@ -1440,7 +1440,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                             <div className="flex-1 mr-3 min-w-0">
                               <p className="text-[14px] font-medium text-text-primary flex items-center">
                                 <span className="truncate">{primary}</span>
-                                {f.screenshot && <CameraIcon />}
+                                {f.screenshot && (
+                                  <span title="Screenshot available" className="inline-flex">
+                                    <CameraIcon />
+                                  </span>
+                                )}
                               </p>
                               <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 <span className="text-[11px] font-medium text-text-secondary bg-divider rounded px-1.5 py-0.5 leading-tight">
@@ -1483,13 +1487,13 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                   <span className="text-[11px] text-text-muted font-mono break-all">{trimUrl(f.url)}</span>
                                 </div>
                               )}
-                              {f.screenshot && (
+                              {f.screenshot ? (
                                 <button
                                   onClick={() => { const s = screenshotSrc(f.screenshot); if (s) setLightboxSrc(s) }}
                                   className="block w-full text-left"
                                 >
                                   <p className="text-[12px] text-text-muted mb-2 flex items-center gap-1">
-                                    Failure screenshot <CameraIcon />
+                                    View screenshot <CameraIcon />
                                   </p>
                                   <img
                                     src={screenshotSrc(f.screenshot) ?? ''}
@@ -1498,6 +1502,8 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                                     loading="lazy"
                                   />
                                 </button>
+                              ) : (
+                                <p className="text-[12px] text-text-muted">No screenshot</p>
                               )}
                             </div>
                           )}
