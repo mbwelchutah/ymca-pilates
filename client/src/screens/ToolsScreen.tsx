@@ -39,7 +39,7 @@ interface FailureData {
   recent:   FailureEntry[]
   summary:  Record<string, number>
   by_phase: Record<string, number>
-  trends:   { h24: TrendWindow; d7: TrendWindow }
+  trends:   { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
 }
 
 interface BotStatus {
@@ -699,8 +699,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const scrolledRef = useRef<string | undefined>(undefined)
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
-  const [trendWindow, setTrendWindow]     = useState<'h24' | 'd7'>('h24')
-  const [trendsExpanded, setTrendsExpanded] = useState(false)
   const [techExpanded, setTechExpanded]     = useState(false)
   const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
@@ -878,112 +876,62 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           )
         })()}
 
-        {/* ── Failure Trends (collapsible) ─────────────────── */}
+        {/* ── Failure Trends ────────────────────────────────── */}
         {(() => {
-          const trendData = failures?.trends?.[trendWindow]
-          const total     = trendData?.total ?? 0
-          const topReason = trendData?.byReason?.[0]
-          const windowLabel = trendWindow === 'h24' ? '24h' : '7d'
+          const h1Total  = failures?.trends?.h1?.total  ?? 0
+          const h6Total  = failures?.trends?.h6?.total  ?? 0
+          const h24Total = failures?.trends?.h24?.total ?? 0
 
-          // Collapsed summary line
-          let summary: string
-          if (!trendData)          summary = 'No trend data yet'
-          else if (total === 0)    summary = `No failures in the last ${trendWindow === 'h24' ? '24 hours' : '7 days'}`
-          else                     summary = `${total} failure${total === 1 ? '' : 's'} · Top: ${REASON_LABELS[topReason!.reason] ?? topReason!.reason}`
+          // Direction: compare last-hour rate vs 24h hourly average
+          const h24HourlyAvg = h24Total / 24
+          let direction: string | null = null
+          let dirColor = ''
+          let dirArrow = ''
+          if (failures?.trends?.h24) {
+            if (h1Total === 0 && h24Total === 0) {
+              direction = 'Stable'; dirColor = 'text-text-muted'; dirArrow = '→'
+            } else if (h1Total === 0 && h24HourlyAvg > 0) {
+              direction = 'Improving'; dirColor = 'text-accent-green'; dirArrow = '↓'
+            } else if (h24HourlyAvg === 0 || h1Total > h24HourlyAvg * 1.5) {
+              direction = 'Worsening'; dirColor = 'text-accent-red'; dirArrow = '↑'
+            } else if (h1Total < h24HourlyAvg * 0.75) {
+              direction = 'Improving'; dirColor = 'text-accent-green'; dirArrow = '↓'
+            } else {
+              direction = 'Stable'; dirColor = 'text-text-muted'; dirArrow = '→'
+            }
+          }
+
+          const rows = [
+            { label: 'Last hour',     count: h1Total  },
+            { label: 'Last 6 hours',  count: h6Total  },
+            { label: 'Last 24 hours', count: h24Total },
+          ]
 
           return (
-            <Card padding="none">
-              {/* ── Collapsed header / toggle ──────────────── */}
-              <button
-                onClick={() => setTrendsExpanded(e => !e)}
-                className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Failure Trends</p>
-                  <p className="text-[13px] text-text-muted mt-0.5 truncate">{summary}</p>
-                </div>
-                <ChevronIcon rotated={trendsExpanded} />
-              </button>
-
-              {/* ── Expanded breakdown ─────────────────────── */}
-              {trendsExpanded && (
-                <div className="border-t border-divider">
-                  {/* Time window filter */}
-                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider">
-                    <span className="text-[12px] text-text-muted">Window</span>
-                    <div className="flex bg-divider rounded-lg p-0.5 gap-0.5">
-                      {(['h24', 'd7'] as const).map(w => (
-                        <button
-                          key={w}
-                          onClick={e => { e.stopPropagation(); setTrendWindow(w) }}
-                          className={`text-[12px] font-medium px-3 py-1 rounded-md transition-colors ${
-                            trendWindow === w ? 'bg-white text-text-primary shadow-sm' : 'text-text-muted'
-                          }`}
-                        >
-                          {w === 'h24' ? '24h' : '7d'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {!trendData ? (
-                    <div className="px-4 py-3">
-                      <p className="text-[13px] text-text-muted">No data yet</p>
-                    </div>
-                  ) : total === 0 ? (
-                    <div className="px-4 py-3">
-                      <p className="text-[13px] text-text-muted">No failures in the last {windowLabel}</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* By failure type */}
-                      <div className="border-b border-divider">
-                        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">By Failure Type</span>
-                          <span className="text-[11px] text-text-muted">{total} total</span>
-                        </div>
-                        {trendData.byReason.slice(0, 5).map((r, i, arr) => {
-                          const pct = Math.round((r.count / total) * 100)
-                          return (
-                            <div key={r.reason} className={`px-4 py-2.5 ${i < arr.length - 1 ? 'border-t border-divider' : ''}`}>
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[13px] text-text-primary leading-tight flex-1 mr-2 truncate">
-                                  {REASON_LABELS[r.reason] ?? r.reason}
-                                </span>
-                                <span className="text-[12px] font-medium text-text-secondary flex-shrink-0">{r.count}×</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-1.5 bg-divider rounded-full overflow-hidden">
-                                  <div className="h-full bg-accent-red/60 rounded-full" style={{ width: `${pct}%` }} />
-                                </div>
-                                <span className="text-[10px] text-text-muted w-8 text-right flex-shrink-0">{pct}%</span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* By phase */}
-                      {trendData.byPhase.slice(0, 3).length > 0 && (
-                        <div>
-                          <div className="px-4 pt-3 pb-2 border-b border-divider">
-                            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">By Phase</span>
-                          </div>
-                          {trendData.byPhase.slice(0, 3).map((p, i, arr) => (
-                            <DetailRow
-                              key={p.phase}
-                              label={PHASE_LABELS[p.phase] ?? p.phase}
-                              value={`${p.count}×`}
-                              last={i === arr.length - 1}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </>
+            <>
+              <SectionHeader title="Failure Trends" />
+              <Card padding="none">
+                {/* Direction header */}
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider">
+                  <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Failures</span>
+                  {direction && (
+                    <span className={`text-[12px] font-semibold ${dirColor}`}>{dirArrow} {direction}</span>
                   )}
                 </div>
-              )}
-            </Card>
+                {/* Window rows */}
+                {rows.map((r, i) => (
+                  <div
+                    key={r.label}
+                    className={`flex items-center justify-between px-4 py-2.5 ${i < rows.length - 1 ? 'border-b border-divider' : ''}`}
+                  >
+                    <span className="text-[13px] text-text-secondary">{r.label}</span>
+                    <span className={`text-[13px] font-semibold ${r.count > 0 ? 'text-accent-red' : 'text-text-muted'}`}>
+                      {r.count === 0 ? 'None' : r.count}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            </>
           )
         })()}
 

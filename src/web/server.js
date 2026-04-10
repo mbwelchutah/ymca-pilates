@@ -5045,6 +5045,8 @@ const server = http.createServer((req, res) => {
     const dbSummary = getFailureSummary();
     const now       = Date.now();
     const trends = {
+      h1:  getFailureTrends({ sinceIso: new Date(now -  1 * 60 * 60 * 1000).toISOString() }),
+      h6:  getFailureTrends({ sinceIso: new Date(now -  6 * 60 * 60 * 1000).toISOString() }),
       h24: getFailureTrends({ sinceIso: new Date(now - 24 * 60 * 60 * 1000).toISOString() }),
       d7:  getFailureTrends({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() }),
     };
