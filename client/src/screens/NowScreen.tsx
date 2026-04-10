@@ -665,6 +665,162 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
 
+  // ── Now-tab manual execution state ─────────────────────────────────────────
+  type ExecMode = 'idle' | 'running_preflight' | 'running_booking' | 'done'
+  type StepKey  = 'session' | 'schedule' | 'class' | 'modal' | 'action' | 'result'
+  type StepStatus = 'pending' | 'running' | 'success' | 'failed'
+  type ExecSteps  = Record<StepKey, StepStatus>
+
+  const PREFLIGHT_STEP_LIST: StepKey[] = ['session', 'schedule', 'class', 'modal']
+  const BOOK_STEP_LIST:      StepKey[] = ['session', 'schedule', 'class', 'modal', 'action', 'result']
+  const STEP_LABELS: Record<StepKey, string> = {
+    session:  'Session verified',
+    schedule: 'Schedule loaded',
+    class:    'Class located',
+    modal:    'Booking link ready',
+    action:   'Booking submitted',
+    result:   'Registration confirmed',
+  }
+  const BLANK_STEPS: ExecSteps = {
+    session: 'pending', schedule: 'pending', class: 'pending',
+    modal: 'pending', action: 'pending', result: 'pending',
+  }
+
+  const [execMode,   setExecMode]   = useState<ExecMode>('idle')
+  const [execSteps,  setExecSteps]  = useState<ExecSteps>(BLANK_STEPS)
+  const [execDone,   setExecDone]   = useState<{ ok: boolean; text: string; color: 'green' | 'amber' | 'red' } | null>(null)
+  const [execStepList, setExecStepList] = useState<StepKey[]>(PREFLIGHT_STEP_LIST)
+
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const stepIdxRef   = useRef(0)
+
+  useEffect(() => () => {
+    if (stepTimerRef.current) clearInterval(stepTimerRef.current)
+    if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+  }, [])
+
+  const startStepSimulation = (steps: StepKey[]) => {
+    if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
+    stepIdxRef.current = 0
+    setExecStepList(steps)
+    setExecSteps({ ...BLANK_STEPS, [steps[0]]: 'running' })
+    stepTimerRef.current = setInterval(() => {
+      const idx = stepIdxRef.current
+      setExecSteps(prev => {
+        const next = { ...prev }
+        if (steps[idx]) next[steps[idx]] = 'success'
+        stepIdxRef.current++
+        const ni = stepIdxRef.current
+        if (ni < steps.length - 1) next[steps[ni]] = 'running'
+        else if (ni === steps.length - 1) next[steps[ni]] = 'running'
+        return next
+      })
+      if (stepIdxRef.current >= steps.length - 1) {
+        clearInterval(stepTimerRef.current!); stepTimerRef.current = null
+      }
+    }, 4000)
+  }
+
+  const finalizeSteps = (steps: StepKey[], failIdx: number | null) => {
+    if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
+    setExecSteps(prev => {
+      const next = { ...prev }
+      steps.forEach((step, i) => {
+        if (failIdx !== null) {
+          if (i < failIdx)       next[step] = 'success'
+          else if (i === failIdx) next[step] = 'failed'
+          else                    next[step] = 'pending'
+        } else {
+          next[step] = 'success'
+        }
+      })
+      return next
+    })
+  }
+
+  const scheduleDoneReset = () => {
+    if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+    doneTimerRef.current = setTimeout(() => {
+      setExecMode('idle'); setExecDone(null); setExecSteps(BLANK_STEPS)
+      doneTimerRef.current = null
+    }, 20000)
+  }
+
+  const handleNowPreflight = async () => {
+    if (!job || execMode !== 'idle') return
+    setExecMode('running_preflight')
+    setExecDone(null)
+    startStepSimulation(PREFLIGHT_STEP_LIST)
+    try {
+      const r = await api.runPreflight(job.id)
+      const msg = (r.message ?? '').toLowerCase()
+      const failIdx: number | null = (() => {
+        if (r.authDetail?.verdict === 'FAILED')                             return 0
+        if (r.discoveryDetail && !r.discoveryDetail.found)                  return 2
+        if (r.modalDetail && !r.modalDetail.verdict?.includes('REACHABLE')) return 3
+        return r.success ? null : 3
+      })()
+      finalizeSteps(PREFLIGHT_STEP_LIST, failIdx)
+      const text = r.success
+        ? 'Ready to book'
+        : msg.includes('session') || msg.includes('auth') || msg.includes('login')
+          ? 'Session expired — sign in again'
+          : msg.includes('class') || msg.includes('not found') || msg.includes('discovery')
+            ? 'Class not found on schedule'
+            : msg.includes('modal')
+              ? 'Could not access booking link'
+              : (r.message ?? 'Preflight blocked')
+      setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
+    } catch (e) {
+      finalizeSteps(PREFLIGHT_STEP_LIST, 0)
+      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Preflight failed', color: 'red' })
+    } finally {
+      setExecMode('done')
+      scheduleDoneReset()
+    }
+  }
+
+  const handleNowBook = async () => {
+    if (!job || execMode !== 'idle') return
+    if (bgReadiness?.armed?.state === 'booking') return
+    setExecMode('running_booking')
+    setExecDone(null)
+    startStepSimulation(BOOK_STEP_LIST)
+    try {
+      const r = await api.forceRunJob(job.id)
+      const msg = (r.message ?? '').toLowerCase()
+      const isWaitlist = msg.includes('waitlist')
+      const failIdx: number | null = r.success !== false ? null : (() => {
+        if (msg.includes('session') || msg.includes('auth') || msg.includes('login')) return 0
+        if (msg.includes('class') || msg.includes('not found'))                        return 2
+        if (msg.includes('modal'))                                                     return 3
+        return 4
+      })()
+      finalizeSteps(BOOK_STEP_LIST, failIdx)
+      const color: 'green' | 'amber' | 'red' = r.success !== false
+        ? (isWaitlist ? 'amber' : 'green')
+        : 'red'
+      const text = r.success !== false
+        ? (isWaitlist ? 'Waitlisted' : 'Confirmed')
+        : msg.includes('session') || msg.includes('auth') || msg.includes('login')
+          ? 'Session expired — sign in again'
+          : msg.includes('class') || msg.includes('not found')
+            ? 'Class not found on schedule'
+            : msg.includes('modal')
+              ? 'Could not access booking modal'
+              : (r.message ?? 'Booking failed')
+      setExecDone({ ok: r.success !== false, text, color })
+      refresh()
+    } catch (e) {
+      finalizeSteps(BOOK_STEP_LIST, 0)
+      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Booking failed', color: 'red' })
+    } finally {
+      setExecMode('done')
+      scheduleDoneReset()
+    }
+  }
+
   // ── Check Now (preflight) ──────────────────────────────────────────────────
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
   const [stableResult, setStableResult] = useState<PrimaryResult | null>(null)
@@ -944,6 +1100,116 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     ? `Opening soon · ${formatOpensRelative(bookingOpenMs)}`
                     : formatOpens(bookingOpenMs)}
                 </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Now-tab action buttons / live step list ───────────────────── */}
+          {job && (
+            <div className="mt-3">
+              {/* IDLE: show buttons */}
+              {execMode === 'idle' && (() => {
+                const bgBooking = bgReadiness?.armed?.state === 'booking'
+                return (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleNowBook}
+                      disabled={bgBooking}
+                      className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 disabled:opacity-40 transition-opacity"
+                    >
+                      {bgBooking ? 'Booking in progress' : 'Book Now'}
+                    </button>
+                    <button
+                      onClick={handleNowPreflight}
+                      className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                    >
+                      Preflight
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* RUNNING: show live step list */}
+              {(execMode === 'running_preflight' || execMode === 'running_booking') && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-2.5">
+                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Booking…'}
+                  </p>
+                  <div className="space-y-2">
+                    {execStepList.map(step => {
+                      const status = execSteps[step]
+                      const icon =
+                        status === 'success' ? '✓' :
+                        status === 'failed'  ? '✗' :
+                        status === 'running' ? '⏳' : '·'
+                      const textClass =
+                        status === 'pending' ? 'text-text-muted' :
+                        status === 'failed'  ? 'text-accent-red' :
+                        status === 'running' ? 'text-text-primary font-medium' :
+                        'text-text-primary'
+                      return (
+                        <div key={step} className="flex items-center gap-2.5">
+                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">
+                            {icon}
+                          </span>
+                          <span className={`text-[13px] ${textClass}`}>
+                            {STEP_LABELS[step]}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* DONE: show completed steps + result */}
+              {execMode === 'done' && execDone && (
+                <div>
+                  <div className="space-y-1.5 mb-2.5">
+                    {execStepList.map(step => {
+                      const status = execSteps[step]
+                      const icon =
+                        status === 'success' ? '✓' :
+                        status === 'failed'  ? '✗' : '·'
+                      const textClass =
+                        status === 'pending' ? 'text-text-muted' :
+                        status === 'failed'  ? 'text-accent-red' :
+                        'text-text-primary'
+                      return (
+                        <div key={step} className="flex items-center gap-2.5">
+                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">
+                            {icon}
+                          </span>
+                          <span className={`text-[13px] ${textClass}`}>
+                            {STEP_LABELS[step]}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className={`rounded-xl px-3.5 py-2.5 ${
+                    execDone.color === 'green' ? 'bg-accent-green/10'  :
+                    execDone.color === 'amber' ? 'bg-accent-amber/10'  :
+                    'bg-accent-red/10'
+                  }`}>
+                    <p className={`text-[14px] font-semibold ${
+                      execDone.color === 'green' ? 'text-accent-green'  :
+                      execDone.color === 'amber' ? 'text-accent-amber'  :
+                      'text-accent-red'
+                    }`}>
+                      {execDone.color === 'green' ? '✅ ' : execDone.color === 'amber' ? '🟡 ' : '🔴 '}
+                      {execDone.text}
+                    </p>
+                  </div>
+                  {onGoToTools && (
+                    <button
+                      onClick={() => onGoToTools('tools-run-events')}
+                      className="mt-1.5 text-[12px] text-accent-blue active:opacity-60"
+                    >
+                      View run events →
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}

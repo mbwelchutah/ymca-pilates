@@ -1,0 +1,248 @@
+You are performing a NOW TAB ACTION + LIVE EXECUTION VISIBILITY PASS.
+
+GOAL
+
+Move:
+- Preflight Check
+- Book Now
+
+FROM Tools → INTO Now
+
+AND
+
+Upgrade them to show real-time execution stages with clear, step-by-step feedback.
+
+DO NOT:
+- redesign layout broadly
+- add new features beyond visibility + placement
+- change Plan behavior
+
+ONLY:
+- move actions into Now
+- improve transparency
+- improve feedback during execution
+
+--------------------------------------------------
+STAGE 1 — MOVE ACTIONS INTO NOW CARD
+--------------------------------------------------
+
+Tasks:
+
+1. Add action buttons directly inside the active class card:
+
+Placement:
+- Below class title/status
+- Above stage indicators
+
+Buttons:
+- Primary: Book Now
+- Secondary: Preflight Check
+
+2. Remove dependency on Tools for these actions
+3. Keep Tools version for debugging only (optional, not required)
+
+Success:
+- User can run Preflight and Book directly from Now
+
+STOP
+
+--------------------------------------------------
+STAGE 2 — CREATE LIVE EXECUTION STATE MODEL
+--------------------------------------------------
+
+Goal:
+Replace “black box” execution with visible stages
+
+Create shared execution state:
+
+idle
+running_preflight
+running_booking
+success
+failed
+
+AND step-level tracking:
+
+session
+schedule
+class
+modal
+action
+result
+
+Each step has:
+- pending
+- running
+- success
+- failed
+
+Success:
+- system can represent granular progress
+
+STOP
+
+--------------------------------------------------
+STAGE 3 — DISPLAY LIVE STAGE PROGRESSION
+--------------------------------------------------
+
+When Preflight or Book is triggered:
+
+Transform card UI into:
+
+"Running Preflight..." OR "Booking..."
+
+Display vertical stage list:
+
+✓ Session verified  
+✓ Schedule loaded  
+⏳ Locating class  
+⬜ Checking modal  
+⬜ Performing action  
+
+Rules:
+- Only ONE step is “running”
+- Completed steps become ✓
+- Future steps remain dim
+
+Success:
+- user sees exactly where the bot is
+
+STOP
+
+--------------------------------------------------
+STAGE 4 — DIFFERENTIATE PREFLIGHT VS BOOK
+--------------------------------------------------
+
+Preflight:
+
+Stops at:
+- modal / readiness verification
+
+Ends with:
+"Ready to book"
+
+Book:
+
+Continues through:
+- click
+- confirmation detection
+
+Ends with:
+- Confirmed
+- Waitlisted
+- Failed
+
+Success:
+- same stages, different endings
+
+STOP
+
+--------------------------------------------------
+STAGE 5 — ADD RESULT STATES (CLEAR + CALM)
+--------------------------------------------------
+
+After completion:
+
+Preflight:
+- ✓ Ready to book
+- or Needs attention
+
+Book:
+- ✅ Confirmed
+- 🟡 Waitlisted
+- 🔴 Failed
+
+Remove vague messaging like:
+- “Booking attempt failed”
+
+Replace with:
+- “Could not access booking modal”
+- “Class not found”
+- “Session expired”
+
+Success:
+- outcomes are specific and actionable
+
+STOP
+
+--------------------------------------------------
+STAGE 6 — HANDLE RUNNING + BLOCK STATES CLEANLY
+--------------------------------------------------
+
+If action is already running:
+
+- Disable buttons
+- Show:
+  "Preflight already running…"
+
+If booking in progress:
+
+- Preflight button disabled
+- Show:
+  "Booking in progress"
+
+DO NOT:
+- show “Signing in…” incorrectly
+- confuse auth vs booking states
+
+Success:
+- no conflicting actions
+- no misleading states
+
+STOP
+
+--------------------------------------------------
+STAGE 7 — KEEP NOW TAB CLEAN (NO CLUTTER)
+--------------------------------------------------
+
+Rules:
+
+- Only show live stage list WHEN running
+- Collapse back to simple state when idle
+- Do NOT persist long logs here
+- Link to Tools for deep logs:
+
+"View run events →"
+
+Success:
+- Now = live + clean
+- Tools = deep + historical
+
+STOP
+
+--------------------------------------------------
+STAGE 8 — OPTIONAL MICRO-POLISH (HIGH VALUE)
+--------------------------------------------------
+
+1. Add subtle animation:
+- progress step transitions
+
+2. Add time-to-next-window:
+"Opens in 2d 5h"
+
+3. Add confidence hint (optional):
+"Ready — booking likely to succeed"
+
+DO NOT overcomplicate
+
+STOP
+
+--------------------------------------------------
+FINAL RESULT
+
+Now tab becomes:
+
+- control center (run actions)
+- live execution viewer (see stages)
+- trust builder (no black box)
+
+User experience becomes:
+
+tap → see → understand → trust
+
+NOT:
+
+tap → wait → hope
+
+STOP AFTER EACH STAGE.
+DO NOT SKIP AHEAD.
