@@ -350,7 +350,7 @@ async function checkAutoPreflights({ isActive = false } = {}) {
             maxAttempts: 1,
           }, { preflightOnly: true, dryRun: getDryRun() });
 
-          const status = result.status === 'success' ? 'pass' : 'fail';
+          const status = (result.status === 'success' || result.status === 'booked') ? 'pass' : 'fail';
           console.log(`[auto-preflight] ${trigger.name} done — ${status}: ${result.message}`);
 
           appendLog({

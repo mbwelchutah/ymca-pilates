@@ -390,7 +390,9 @@ function formatDayTime(job: Job) {
 
 function isBookingCurrentCycle(job: Job | null): boolean {
   if (!job) return false
-  if (job.last_result !== 'booked' && job.last_result !== 'dry_run') return false
+  // Accept both 'booked' (new) and 'success' (legacy DB records) as confirmed.
+  const isConfirmed = job.last_result === 'booked' || job.last_result === 'success' || job.last_result === 'dry_run'
+  if (!isConfirmed) return false
   if (job.target_date) {
     const today = new Date().toLocaleDateString('en-CA')
     return job.target_date >= today
@@ -887,6 +889,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="blue" />
               <span className="text-[17px] font-semibold text-accent-blue">
                 Confirming registration…
+              </span>
+            </div>
+          ) : phase === 'late' && bgReadiness?.armed?.state === 'booking' ? (
+            // Booking is actively running during the late phase — don't prematurely
+            // show "window closed" while the bot is still attempting registration.
+            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              <StatusDot color="blue" />
+              <span className="text-[17px] font-semibold text-accent-blue">
+                Booking in progress…
               </span>
             </div>
           ) : phase === 'late' ? (

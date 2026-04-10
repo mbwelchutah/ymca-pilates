@@ -54,6 +54,7 @@ function classifyFailure(botResult) {
 
   // Success variants — not a failure.
   if (
+    status === 'booked'       ||
     status === 'success'      ||
     status === 'registered'   ||
     status === 'waitlisted'   ||

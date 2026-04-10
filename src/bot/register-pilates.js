@@ -373,8 +373,8 @@ async function runBookingJob(job, opts = {}) {
     // ── Replay: finish run — outcome derived from result status + action taken ──
     if (!PREFLIGHT_ONLY) {
       const replayOutcome =
-        result.status === 'success' && _replayAction === 'waitlist' ? 'waitlist' :
-        result.status === 'success'                                  ? 'success'  :
+        (result.status === 'booked' || result.status === 'success') && _replayAction === 'waitlist' ? 'waitlist' :
+        (result.status === 'booked' || result.status === 'success')                                  ? 'success'  :
         'failure';
       replayStore.finishRun(_jobId, replayOutcome);
     }
@@ -1906,7 +1906,7 @@ async function runBookingJob(job, opts = {}) {
     }
     emitSuccess(_state);
     _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Booking completed successfully — FamilyWorks session confirmed active' });
-    return logRunSummary({ status: 'success', message: successMsg, screenshotPath });
+    return logRunSummary({ status: 'booked', message: successMsg, screenshotPath });
 
   } catch (err) {
     console.error('❌ Error:', err.message);

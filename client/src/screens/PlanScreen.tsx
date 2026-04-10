@@ -50,13 +50,14 @@ const PHASE_LABEL: Record<Phase, string> = {
 
 const RESULT_LABEL: Record<string, string> = {
   booked:   'Confirmed', // matches Now's headline — canonical term per spec
+  success:  'Confirmed', // legacy status name used before rename to 'booked'
   dry_run:  'Test run',
   error:    'Issue',     // "Error" replaced — Plan stays calm, not a debug view
   not_found:'Issue',     // "Not found" replaced — same rationale
 }
 
 // Results worth surfacing on the card (transient/noise ones are excluded)
-const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
+const RESULT_SHOW = new Set(['booked', 'success', 'dry_run', 'error', 'not_found'])
 
 // A result badge is "current" if the result is still relevant to the next class occurrence.
 //   - error / not_found: always show (actionable regardless of age)
@@ -72,7 +73,7 @@ const RESULT_SHOW = new Set(['booked', 'dry_run', 'error', 'not_found'])
 function isResultCurrent(job: Job): boolean {
   if (job.last_result === 'error' || job.last_result === 'not_found') return true
   if (job.target_date) return true
-  const refAt = job.last_result === 'booked' ? job.last_success_at : job.last_run_at
+  const refAt = (job.last_result === 'booked' || job.last_result === 'success') ? job.last_success_at : job.last_run_at
   if (!refAt) return false
   return Date.now() - new Date(refAt).getTime() < 6 * 24 * 60 * 60 * 1000
 }
