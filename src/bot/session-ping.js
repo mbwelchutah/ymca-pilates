@@ -255,34 +255,38 @@ async function pingSessionHttp() {
   const fwOk     = fwResult.valid === true;
   const fwFailed = fwResult.valid === false; // explicit 401/403 or Unauthorized body
 
-  // ── Stage 5: Daxko-first trust policy ────────────────────────────────────
-  // Daxko ping is reliable: 200 = active, login-redirect = expired.
-  // FW sessions are established via Daxko OAuth — a valid Daxko session strongly
-  // implies the FW session is still active.  If Daxko is confirmed and FW did
-  // not explicitly fail (i.e. FW ping was inconclusive, not 401/403), we treat
-  // the combined result as trusted.
+  // ── FamilyWorks-first trust policy ───────────────────────────────────────
+  // The booking bot navigates directly to my.familyworks.app — FamilyWorks is
+  // the primary booking surface.  A confirmed FW session is sufficient to trust
+  // the combined session state, even if the Daxko ping timed out.  Daxko is
+  // used as a fallback only when the FW ping result is inconclusive.
   //
   // Trust tiers (in priority order):
-  //   1. Both confirmed OK   → trusted (fwConfirmed: true)
-  //   2. Daxko OK + FW null  → trusted (fwConfirmed: false, Daxko-first policy)
-  //   3. Daxko failed        → NOT trusted
-  //   4. Daxko OK + FW false → NOT trusted (FW explicitly rejected the session)
-  const trusted    = daxkoOk && !fwFailed;
+  //   1. FW confirmed OK              → trusted (booking surface active)
+  //   2. FW null + Daxko OK           → trusted (FW inconclusive, Daxko fallback)
+  //   3. FW false (401/403)           → NOT trusted (explicit FW rejection)
+  //   4. Daxko false + FW null/false  → NOT trusted
+  const trusted     = fwOk || (daxkoOk && !fwFailed);
   const fwConfirmed = fwOk;
 
   if (trusted) {
     refreshStatusTimestamps();
-    updateAuthState({
-      daxkoValid:       true,
-      familyworksValid: fwOk || !fwFailed, // true if FW confirmed or inconclusive
-      lastCheckedAt:    Date.now(),
-    });
-    const detail = fwOk
-      ? `Tier-2 ping OK — Daxko active, FamilyWorks active`
-      : `Tier-2 ping OK — Daxko active, FamilyWorks inconclusive (Daxko-first policy)`;
+    // Only stamp daxkoValid:true when we actually confirmed Daxko.
+    // When FW carried the trust and Daxko timed out, leave daxkoValid unchanged.
+    const authPatch = { familyworksValid: true, lastCheckedAt: Date.now() };
+    if (daxkoOk) authPatch.daxkoValid = true;
+    updateAuthState(authPatch);
+    let detail;
+    if (fwOk && daxkoOk) {
+      detail = `Tier-2 ping OK — FamilyWorks active, Daxko active`;
+    } else if (fwOk) {
+      detail = `Tier-2 ping OK — FamilyWorks active (Daxko inconclusive, FW-first policy)`;
+    } else {
+      detail = `Tier-2 ping OK — Daxko active, FamilyWorks inconclusive (Daxko fallback)`;
+    }
     return {
       trusted:        true,
-      daxkoConfirmed: true,
+      daxkoConfirmed: daxkoOk,
       fwConfirmed,
       detail,
       daxkoResult,

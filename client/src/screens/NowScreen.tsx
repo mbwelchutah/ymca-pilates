@@ -1124,7 +1124,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
              Shown only when accountAttention is true (explicit known-failure:
              AUTH_NEEDS_LOGIN or FAMILYWORKS_SESSION_MISSING). No dismiss —
              it disappears naturally once the session is fixed.              */}
-        {accountAttention && !(isReadinessForSelectedJob && bgReadiness?.session === 'ready') && (
+        {accountAttention &&
+          !(isReadinessForSelectedJob && bgReadiness?.session === 'ready') &&
+          sessionStatus?.daxko        !== 'DAXKO_READY' &&
+          sessionStatus?.familyworks  !== 'FAMILYWORKS_READY' && (
           <button
             onClick={onAccount}
             className="w-full rounded-2xl bg-accent-amber/10 border border-accent-amber/20 px-4 py-3 flex items-center gap-3 text-left active:opacity-70 transition-opacity"
