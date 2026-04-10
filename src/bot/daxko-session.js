@@ -190,6 +190,7 @@ async function createSession(opts = {}) {
   // ── Fast path: Tier-2 ping already confirmed sessions valid ──────────────
   // Skip the entire FW OAuth modal probe — sessions are trusted, no login needed.
   let sessionAlreadyValid = false;
+  let homeValidated       = false;  // true when home page confirmed active session
 
   if (pingTrusted) {
     console.log('[session] Ping-trusted fast path — skipping OAuth probe, sessions assumed valid.');
@@ -206,6 +207,7 @@ async function createSession(opts = {}) {
       : '[session] FW session already valid — member dashboard visible.';
     console.log(reuseMsg);
     sessionAlreadyValid = true;
+    homeValidated = true;
     updateAuthState({
       daxkoValid:               true,
       familyworksValid:         true,
@@ -369,7 +371,7 @@ async function createSession(opts = {}) {
   }
   console.log('[session] Ready. Final URL:', page.url());
 
-  return { browser, page, snap, close };
+  return { browser, page, snap, close, _homeValidated: homeValidated };
 }
 
 module.exports = { createSession, CHROMIUM_PATH };

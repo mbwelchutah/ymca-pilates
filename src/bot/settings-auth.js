@@ -290,28 +290,34 @@ async function runSettingsLogin({ source = 'settings' } = {}) {
       screenshot: null,
     });
 
-    // ── Step 2: Navigate to FamilyWorks schedule embed ────────────────────
-    console.log('[settings-session] Navigating to FamilyWorks schedule embed...');
-    await sess.page.goto(SCHEDULE_URL, { timeout: 30000 });
-    await sess.page.waitForLoadState('networkidle').catch(() => {});
-    await sess.page.waitForTimeout(3000);
-
-    // ── Step 3: First modal check ─────────────────────────────────────────
-    let fwResult = await checkFwModalSession(sess.page, sess.snap, { attempt: 1 });
-
-    // ── Step 4: SSO retry — if "Login to Register" was clicked, navigate
-    //   back and re-verify once. The Daxko account page (MyAccountV2.mvc)
-    //   that appears after the click may have completed the OAuth handshake;
-    //   returning to the schedule embed confirms whether the session was set.
-    if (!fwResult.ready && fwResult.ssoClickDone) {
-      console.log('[settings-session] SSO click done — navigating back to verify session...');
+    // ── Step 2 / 3: Verify FamilyWorks session ───────────────────────────
+    // If createSession() already confirmed the session via the home page or
+    // a Tier-2 HTTP ping, skip the schedule embed card-click check entirely.
+    let fwResult;
+    if (sess._fastValidated || sess._homeValidated) {
+      const how = sess._fastValidated ? 'Tier-2 HTTP ping' : 'member home page';
+      console.log(`[settings-session] Session already confirmed via ${how} — skipping schedule embed check.`);
+      fwResult = { ready: true, ssoClickDone: false, detail: `FamilyWorks session active (confirmed via ${how})` };
+    } else {
+      // Session state unknown — navigate to schedule embed and probe a class card modal.
+      console.log('[settings-session] Navigating to FamilyWorks schedule embed...');
       await sess.page.goto(SCHEDULE_URL, { timeout: 30000 });
       await sess.page.waitForLoadState('networkidle').catch(() => {});
       await sess.page.waitForTimeout(3000);
-      fwResult = await checkFwModalSession(sess.page, sess.snap, { attempt: 2 });
+
+      fwResult = await checkFwModalSession(sess.page, sess.snap, { attempt: 1 });
+
+      // SSO retry — if "Login to Register" was clicked, navigate back and re-verify once.
+      if (!fwResult.ready && fwResult.ssoClickDone) {
+        console.log('[settings-session] SSO click done — navigating back to verify session...');
+        await sess.page.goto(SCHEDULE_URL, { timeout: 30000 });
+        await sess.page.waitForLoadState('networkidle').catch(() => {});
+        await sess.page.waitForTimeout(3000);
+        fwResult = await checkFwModalSession(sess.page, sess.snap, { attempt: 2 });
+      }
     }
 
-    // ── Step 5: Map result to FamilyWorks status ──────────────────────────
+    // ── Step 4: Map result to FamilyWorks status ──────────────────────────
     let familyworks;
     if (fwResult.ready === true) {
       familyworks = 'FAMILYWORKS_READY';
