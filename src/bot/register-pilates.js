@@ -343,6 +343,13 @@ const DEBUG_HIGHLIGHT = true;
 // has zero effect on normal / production runs even if accidentally left true.
 const DEBUG_PAUSE = false;
 
+// When true, capture additional screenshots at key milestone points
+// (auth confirmed, schedule loaded, card found, modal opened) so a full
+// visual breadcrumb is available for debugging.
+// Activate with: DEBUG_SCREENSHOTS=true npm start
+// Default (false) = failure + uncertain states only — production-safe.
+const DEBUG_SCREENSHOTS = process.env.DEBUG_SCREENSHOTS === 'true';
+
 async function highlightElement(page, locator) {
   try {
     const el = await locator.elementHandle({ timeout: 2000 });
@@ -597,6 +604,22 @@ async function runBookingJob(job, opts = {}) {
       const ref = _screenshotRef(screenshotPath);
       emitEvent(_state, phase, failureType, message, ref ? { ...extra, screenshot: ref } : extra);
     };
+    // Debug-mode milestone capture — only fires when DEBUG_SCREENSHOTS=true.
+    // Uses the same naming scheme as captureFailure (phase + reason become the
+    // filename components) so the screenshots appear in the same date directory
+    // and are served by the same /api/screenshots/ route.
+    // No-op in production (DEFAULT: DEBUG_SCREENSHOTS is false).
+    const captureDebug = async (phase, label) => {
+      if (!DEBUG_SCREENSHOTS) return null;
+      console.log(`[debug-screenshot] Capturing: ${phase}/${label}`);
+      const p = await captureFailureScreenshot(page, {
+        jobId:  job.id || job.jobId || null,
+        phase,
+        reason: label,
+      });
+      if (p) screenshotPath = p;
+      return p;
+    };
 
     // Step 2: Go to schedule and filter by the job's instructor
     advance(_state, 'NAVIGATION');
@@ -625,6 +648,7 @@ async function runBookingJob(job, opts = {}) {
     console.log('Auth valid on schedule page — continuing.');
     emitEvent(_state, 'AUTH', null, 'Auth valid on schedule page');
     _state.bundle.session = 'SESSION_READY';
+    await captureDebug('auth', 'session_confirmed');
 
     // Wait for any dropdown to have options loaded (Bubble.io loads them async)
     await page.waitForFunction(() => {
@@ -807,6 +831,7 @@ async function runBookingJob(job, opts = {}) {
     // ─────────────────────────────────────────────────────────────────────────
 
     advance(_state, 'DISCOVERY');
+    await captureDebug('navigate', 'schedule_ready');
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
     // ---------------------------------------------------------------------------
@@ -1373,6 +1398,7 @@ async function runBookingJob(job, opts = {}) {
 
     // Card confirmed on schedule — mark discovery ready before proceeding to modal.
     _state.bundle.discovery = 'DISCOVERY_READY';
+    await captureDebug('scan', 'card_found');
     emitEvent(_state, 'DISCOVERY', null, 'Class found on schedule', {
       evidence: {
         matched:  _lastBestText.slice(0, 80),
@@ -1491,6 +1517,7 @@ async function runBookingJob(job, opts = {}) {
         await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
         // Small settle buffer so the modal text is fully populated.
         await page.waitForTimeout(300);
+        await captureDebug('modal', 'modal_opened');
 
         // Verify the modal matches expected time + instructor.
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
