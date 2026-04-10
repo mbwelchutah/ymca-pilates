@@ -207,32 +207,6 @@ function CameraIcon() {
   )
 }
 
-function ActionRow({
-  label, detail, onClick, loading, disabled,
-}: {
-  label: string
-  detail?: string
-  onClick: () => void
-  loading?: boolean
-  disabled?: boolean
-}) {
-  return (
-    <button
-      disabled={loading || disabled}
-      onClick={onClick}
-      className={`flex items-center justify-between w-full px-4 py-3.5 text-left transition-opacity ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
-    >
-      <div className="flex-1 mr-4">
-        <p className={`text-[15px] font-medium ${disabled ? 'text-text-secondary' : 'text-accent-blue'}`}>
-          {loading ? 'Running…' : label}
-        </p>
-        {detail && <p className="text-[12px] text-text-secondary mt-0.5">{detail}</p>}
-      </div>
-      <ChevronIcon rotated={false} />
-    </button>
-  )
-}
-
 // ── Event dot for phase events ─────────────────────────────────────────────────
 
 function EventDot({ hasFailure }: { hasFailure: boolean }) {
@@ -735,12 +709,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [activityShowAll, setActivityShowAll]   = useState(false)
   const [insightsShowAll, setInsightsShowAll]   = useState(false)
   const [lightboxSrc, setLightboxSrc]         = useState<string | null>(null)
-  const [forceLoading, setForceLoading]       = useState(false)
-  const [forceMsg, setForceMsg]               = useState<{ ok: boolean; text: string } | null>(null)
-  const [runOnceLoading, setRunOnceLoading]   = useState(false)
-  const [runOnceMsg, setRunOnceMsg]           = useState<{ ok: boolean; text: string } | null>(null)
-  const [preflightLoading, setPreflightLoading] = useState(false)
-  const [preflightMsg, setPreflightMsg]       = useState<{ ok: boolean; text: string } | null>(null)
 
   // ── Auto-preflight config (Stage 9.2) ─────────────────────────────────────
   const [autoPreflightConfig, setAutoPreflightConfig] = useState<{
@@ -782,53 +750,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const lastRunJob = [...appState.jobs]
     .filter(j => j.last_run_at)
     .sort((a, b) => new Date(b.last_run_at!).getTime() - new Date(a.last_run_at!).getTime())[0] ?? null
-
-  const handleForce = async () => {
-    if (!selectedJob) return
-    setForceLoading(true)
-    setForceMsg(null)
-    try {
-      const r = await api.forceRunJob(selectedJob.id)
-      setForceMsg({ ok: r.success !== false, text: r.message })
-      refresh()
-    } catch (e) {
-      setForceMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
-    } finally {
-      setForceLoading(false)
-    }
-  }
-
-  const handleRunOnce = async () => {
-    setRunOnceLoading(true)
-    setRunOnceMsg(null)
-    try {
-      const r = await api.runSchedulerOnce()
-      setRunOnceMsg({ ok: r.success !== false, text: r.message })
-      refresh()
-    } catch (e) {
-      setRunOnceMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
-    } finally {
-      setRunOnceLoading(false)
-    }
-  }
-
-  const handlePreflight = async () => {
-    if (!selectedJob) return
-    setPreflightLoading(true)
-    setPreflightMsg(null)
-    try {
-      const r = await api.runPreflight(selectedJob.id)
-      if (r.sniperState) setSniperRunState(r.sniperState)
-      setPreflightMsg({
-        ok:   r.success,
-        text: r.message ?? (r.success ? 'Preflight passed' : 'Preflight blocked'),
-      })
-    } catch (e) {
-      setPreflightMsg({ ok: false, text: e instanceof Error ? e.message : 'Unknown error' })
-    } finally {
-      setPreflightLoading(false)
-    }
-  }
 
   const handleAutoPreflightToggle = async () => {
     if (apfToggling || !autoPreflightConfig) return
@@ -895,64 +816,6 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           screenshot={screenshotSrc(sniperRunState?.screenshotPath)}
           onViewScreenshot={setLightboxSrc}
         />
-
-        {/* ── Actions ──────────────────────────────────────── */}
-        <SectionHeader title="Actions" id="tools-actions" />
-        <Card padding="none">
-          <ActionRow
-            label={selectedJob ? `Preflight Check — ${selectedJob.class_title}` : 'Preflight Check'}
-            detail={
-              selectedJob
-                ? `Job #${selectedJob.id} · confirm readiness without booking`
-                : 'Select a class in Plan first'
-            }
-            onClick={handlePreflight}
-            loading={preflightLoading}
-            disabled={!selectedJob}
-          />
-          <div className="h-px bg-divider mx-4" />
-          <ActionRow
-            label={selectedJob ? `Book Now — ${selectedJob.class_title}` : 'Book Now'}
-            detail={
-              selectedJob
-                ? `Job #${selectedJob.id} · attempt booking right now`
-                : 'Select a class in Plan first'
-            }
-            onClick={handleForce}
-            loading={forceLoading}
-            disabled={!selectedJob}
-          />
-          <div className="h-px bg-divider mx-4" />
-          <ActionRow
-            label="Check Now"
-            detail="Run one booking check across all active classes"
-            onClick={handleRunOnce}
-            loading={runOnceLoading}
-          />
-        </Card>
-
-        {(preflightMsg || forceMsg || runOnceMsg) && (
-          <Card padding="sm">
-            {preflightMsg && (
-              <p className={`text-[13px] ${preflightMsg.ok ? 'text-accent-green' : 'text-accent-red'}`}>
-                {preflightMsg.text}
-              </p>
-            )}
-            {forceMsg && (
-              <p className={`text-[13px] ${forceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg ? 'mt-2' : ''}`}>
-                {forceMsg.text}
-              </p>
-            )}
-            {runOnceMsg && (
-              <p className={`text-[13px] ${runOnceMsg.ok ? 'text-accent-green' : 'text-accent-red'} ${preflightMsg || forceMsg ? 'mt-2' : ''}`}>
-                {runOnceMsg.text}
-              </p>
-            )}
-          </Card>
-        )}
-
-        {/* ── Zone spacer: Actions → Monitoring ────────────── */}
-        <div className="h-1" />
 
         {/* ── Automation Health ─────────────────────────────── */}
         <Card padding="none">
