@@ -1373,6 +1373,16 @@ async function runBookingJob(job, opts = {}) {
     // Replay: class card identified and verified
     if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'target_acquired', 'Class identified', classTitle);
 
+    // ── STAGE 3: uncertain_identity — borderline card confidence ─────────────
+    // Score is exactly at CONFIDENCE_THRESHOLD (8) — only 2 signals matched
+    // (title+instructor but no time, or time+instructor but no title).
+    // Capture once so the matched card can be visually inspected.
+    if (_lastBestScore <= CONFIDENCE_THRESHOLD) {
+      console.log(`⚠️ Card matched at minimum confidence (score=${_lastBestScore}/${CONFIDENCE_THRESHOLD}) — capturing uncertainty screenshot.`);
+      await captureFailure('scan', 'uncertain_identity');
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // ── CLICK + VERIFY HELPER ────────────────────────────────────────────────
     // Scrolls the card into view, clicks its interactive child (button/link/
     // cursor:pointer fallback → force-click last resort), waits for the modal
@@ -1441,6 +1451,9 @@ async function runBookingJob(job, opts = {}) {
         } catch (clickErr) {
           console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
           emitEvent(_state, 'ACTION', 'ACTION_FORCE_CLICK_USED', `Normal click failed — force-click fallback (${candidateLabel})`);
+          // ── STAGE 3: fallback_used — normal click failed, force click needed ─
+          await captureFailure('click', 'fallback_used');
+          // ─────────────────────────────────────────────────────────────────
           // ── POINT 5: click — fallback to force click ──────────────────────
           recordFailure({
             jobId:    job.id || job.jobId || null,
@@ -1761,11 +1774,11 @@ async function runBookingJob(job, opts = {}) {
       } else {
         if (_hasCancelOnly) {
           emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: only Cancel button visible — user may already be registered');
-          await snap('preflight-cancel-only');
+          await captureFailure('gate', 'uncertain_state');
           return logRunSummary({ status: 'action_blocked', message: 'Preflight: Cancel button only — may already be registered or class blocked', screenshotPath });
         } else {
           emitEvent(_state, 'ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
-          await snap('preflight-not-open');
+          await captureFailure('gate', 'uncertain_state');
           return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
         }
       }
@@ -1923,7 +1936,7 @@ async function runBookingJob(job, opts = {}) {
             ].join(' · ');
             const msg = `Class found on schedule (${classDesc}). Registration is not open yet. Bot will retry during booking window.`;
             console.log('ℹ️  ' + msg);
-            await snap('found-not-open');
+            await captureFailure('gate', 'uncertain_state');
             // ── POINT 4: gate — early exit (booking window far off) ────────
             recordFailure({
               jobId:    job.id || job.jobId || null,
@@ -2035,7 +2048,7 @@ async function runBookingJob(job, opts = {}) {
       ].join(' · ');
       const msg = `Class found on schedule (${classDesc}). Registration did not open within the retry window.`;
       console.log('ℹ️  ' + msg);
-      await snap('found-not-open');
+      await captureFailure('gate', 'uncertain_state');
       // ── POINT 4: gate — exhausted retry window ─────────────────────────
       recordFailure({
         jobId:    job.id || job.jobId || null,
