@@ -35,11 +35,18 @@ interface TrendWindow {
   total:    number
 }
 
+interface JobReliability {
+  job_id:        number
+  failure_count: number
+  top_reason:    string | null
+}
+
 interface FailureData {
   recent:   FailureEntry[]
   summary:  Record<string, number>
   by_phase: Record<string, number>
   trends:   { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
+  byJob:    JobReliability[]
 }
 
 interface BotStatus {
@@ -930,6 +937,70 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                     </span>
                   </div>
                 ))}
+              </Card>
+            </>
+          )
+        })()}
+
+        {/* ── Per-Class Reliability ────────────────────────── */}
+        {(() => {
+          const activeJobs = appState.jobs.filter(j => j.is_active)
+          if (activeJobs.length === 0) return null
+
+          const byJobMap = new Map((failures?.byJob ?? []).map(r => [r.job_id, r]))
+
+          // Compute risk score for sorting: more failures = worse
+          const scored = activeJobs.map(job => {
+            const rel    = byJobMap.get(job.id)
+            const fails  = rel?.failure_count ?? 0
+            const isDown = job.last_result === 'failed' || job.last_result === 'error'
+            return { job, rel, fails, isDown, score: fails * 10 + (isDown ? 5 : 0) }
+          })
+          scored.sort((a, b) => b.score - a.score)
+
+          return (
+            <>
+              <SectionHeader title="Per-Class Reliability" />
+              <Card padding="none">
+                {scored.map(({ job, rel, fails, isDown }, i) => {
+                  // Status dot color
+                  let dot = 'bg-accent-green'
+                  let statusText = 'Healthy'
+                  let statusColor = 'text-accent-green'
+                  if (fails >= 3 || isDown) {
+                    dot = 'bg-accent-red'; statusText = 'At risk'; statusColor = 'text-accent-red'
+                  } else if (fails >= 1) {
+                    dot = 'bg-accent-amber'; statusText = 'Issue'; statusColor = 'text-accent-amber'
+                  }
+
+                  const lastLabel = job.last_result
+                    ? (RESULT_LABELS[job.last_result] ?? job.last_result)
+                    : 'No runs'
+                  const topIssue = rel?.top_reason
+                    ? (REASON_LABELS[rel.top_reason] ?? rel.top_reason)
+                    : null
+
+                  return (
+                    <div key={job.id} className={`px-4 py-3 ${i < scored.length - 1 ? 'border-b border-divider' : ''}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-[5px] ${dot}`} />
+                          <p className="text-[14px] font-semibold text-text-primary truncate">{job.class_title}</p>
+                        </div>
+                        <span className={`text-[12px] font-semibold flex-shrink-0 mt-0.5 ${statusColor}`}>{statusText}</span>
+                      </div>
+                      <div className="ml-[18px] mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span className="text-[12px] text-text-secondary">Last: {lastLabel}</span>
+                        {fails > 0 && (
+                          <span className="text-[12px] text-accent-red">· {fails} failure{fails === 1 ? '' : 's'} / 7d</span>
+                        )}
+                        {topIssue && (
+                          <span className="text-[12px] text-text-muted truncate">· {topIssue}</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </Card>
             </>
           )

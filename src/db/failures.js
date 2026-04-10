@@ -130,4 +130,40 @@ function getFailureTrends({ sinceIso }) {
   return { byReason, byPhase, total };
 }
 
-module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends };
+/**
+ * Return per-job failure aggregates for a given time window.
+ * Returns: [{ job_id, failure_count, top_reason }] — only jobs with ≥1 failure.
+ */
+function getFailuresByJob({ sinceIso }) {
+  const db = openDb();
+
+  const totals = db.prepare(`
+    SELECT job_id, COUNT(*) AS failure_count
+    FROM failures
+    WHERE occurred_at >= ? AND job_id IS NOT NULL
+    GROUP BY job_id
+  `).all(sinceIso);
+
+  const topReasons = db.prepare(`
+    SELECT job_id, reason, COUNT(*) AS cnt
+    FROM failures
+    WHERE occurred_at >= ? AND job_id IS NOT NULL
+    GROUP BY job_id, reason
+    ORDER BY job_id, cnt DESC
+  `).all(sinceIso);
+
+  db.close();
+
+  const topReasonByJob = {};
+  for (const r of topReasons) {
+    if (!topReasonByJob[r.job_id]) topReasonByJob[r.job_id] = r.reason;
+  }
+
+  return totals.map(t => ({
+    job_id:        t.job_id,
+    failure_count: t.failure_count,
+    top_reason:    topReasonByJob[t.job_id] ?? null,
+  }));
+}
+
+module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob };

@@ -5038,7 +5038,7 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
     // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.
-    const { getRecentFailures, getFailureSummary, getFailureTrends } = require('../db/failures');
+    const { getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob } = require('../db/failures');
     const fsM = require('fs'), pathM = require('path');
 
     const dbRecent  = getRecentFailures(20);
@@ -5088,7 +5088,8 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends });
+    const byJob = getFailuresByJob({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() });
+    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob });
 
   } else if (req.method === 'GET' && path.startsWith('/api/replay-history/')) {
     const jobId = path.split('/api/replay-history/')[1];
