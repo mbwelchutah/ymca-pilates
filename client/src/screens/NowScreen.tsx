@@ -676,10 +676,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const STEP_LABELS: Record<StepKey, string> = {
     session:  'Session verified',
     schedule: 'Schedule loaded',
-    class:    'Class located',
-    modal:    'Booking link ready',
-    action:   'Booking submitted',
-    result:   'Registration confirmed',
+    class:    'Class found',
+    modal:    'Modal reached',
+    action:   'Booking action',
+    result:   'Confirmation detected',
   }
   const BLANK_STEPS: ExecSteps = {
     session: 'pending', schedule: 'pending', class: 'pending',
@@ -1141,7 +1141,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       const icon =
                         status === 'success' ? '✓' :
                         status === 'failed'  ? '✗' :
-                        status === 'running' ? '⏳' : '·'
+                        status === 'running' ? '⏳' : '⬜'
                       const textClass =
                         status === 'pending' ? 'text-text-muted' :
                         status === 'failed'  ? 'text-accent-red' :
@@ -1170,7 +1170,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       const status = execSteps[step]
                       const icon =
                         status === 'success' ? '✓' :
-                        status === 'failed'  ? '✗' : '·'
+                        status === 'failed'  ? '✗' : '⬜'
                       const textClass =
                         status === 'pending' ? 'text-text-muted' :
                         status === 'failed'  ? 'text-accent-red' :
