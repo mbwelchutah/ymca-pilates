@@ -1236,11 +1236,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               <Card padding="none">
                 <button
                   onClick={() => setTechExpanded(e => !e)}
-                  className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
+                  className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left active:bg-divider/40 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-text-secondary uppercase tracking-wide">Technical Details</p>
-                    <p className="text-[13px] text-text-muted mt-0.5 truncate">{techSummary}</p>
+                    <p className="text-[13px] font-medium text-text-muted">Technical Details</p>
+                    <p className="text-[12px] text-text-muted/70 mt-0.5 truncate">{techSummary}</p>
                   </div>
                   <ChevronIcon rotated={techExpanded} />
                 </button>
