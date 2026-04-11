@@ -225,10 +225,12 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
       console.log(`[confirm-check] Screenshot failed: ${e.message}`);
     }
 
-    // Weak confirmation: buttons gone but no explicit server-side signal.
-    // Treat as confirmed but flag it clearly so replay/logs show the weak confidence.
-    console.log(`⚠️ Booking confirmed (WEAK — action buttons gone, no Cancel/text) after ${actionLabel}`);
-    return { confirmed: true, viaPopup: false, cancelFound: false, weakSignal: true };
+    // No strong signal at all — modal closed but we cannot verify enrollment.
+    // Return NOT confirmed so the retry loop re-opens the modal and checks again.
+    // The reload → re-click path will re-open the modal; if Cancel appears then,
+    // the attempt-loop's hasCancel guard will catch it as a true confirmation.
+    console.log(`⚠️ Booking NOT confirmed (WEAK signal only — action buttons gone, no Cancel/text) after ${actionLabel}`);
+    return { confirmed: false, viaPopup: false, cancelFound: false, weakSignal: true };
   }
 
   // Waitlist button still present but no Register and no Cancel — edge case.
@@ -1852,11 +1854,23 @@ async function runBookingJob(job, opts = {}) {
     // ──────────────────────────────────────────────────────────────────────────
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      let { hasRegister, hasWaitlist, hasLoginRequired: hasLoginButton,
-            registerBtn, waitlistBtn, allBtnTexts: allBtns,
+      let { hasRegister, hasWaitlist, hasCancel: hasCancelNow, hasLoginRequired: hasLoginButton,
+            registerBtn, waitlistBtn, cancelBtn, allBtnTexts: allBtns,
             registerStrategy, waitlistStrategy } = await detectActionButtons(page);
 
       console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
+
+      // If a Cancel button is visible at the START of an attempt (not Register/Waitlist),
+      // AND we previously attempted a click (_replayAction is set), the booking/waitlist-join
+      // already completed — the modal closed before we could detect it.
+      // Guard on _replayAction to avoid false positives from Cancel buttons on OTHER
+      // enrolled classes visible in the schedule background.
+      if (_replayAction && hasCancelNow && !hasRegister && !hasWaitlist && !hasLoginButton) {
+        console.log(`✅ Cancel button found at attempt ${attempt} start (prior action: ${_replayAction}) — enrollment already completed.`);
+        replayStore.addEvent(_jobId, 'confirm', `Enrollment confirmed via Cancel at attempt-start (attempt ${attempt}, action: ${_replayAction})`);
+        registered = true;
+        break;
+      }
 
       if (hasLoginButton) {
         const inlineAuth = await attemptInlineAuth(page);
@@ -1913,7 +1927,9 @@ async function runBookingJob(job, opts = {}) {
           } else {
             console.log('⚠️ Post-waitlist (via Register): booking did not complete. Retrying...');
             await captureFailure('post_click', 'result_unknown');
-            _replayAction = null;
+            // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
+            // may find Cancel confirming the waitlist join happened.
+            if (!wlResult2.weakSignal) _replayAction = null;
             await page.waitForTimeout(3000);
             continue;
           }
@@ -1973,9 +1989,11 @@ async function runBookingJob(job, opts = {}) {
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { attempt, viaPopup: wlResult.viaPopup },
+            context:  { attempt, viaPopup: wlResult.viaPopup, weakSignal: !!wlResult.weakSignal },
           });
-          _replayAction = null;
+          // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
+          // may find Cancel confirming the waitlist join happened.
+          if (!wlResult.weakSignal) _replayAction = null;
           await page.waitForTimeout(3000);
           continue;
         }
