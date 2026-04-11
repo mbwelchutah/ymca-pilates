@@ -98,8 +98,8 @@ export function applyPreflightResult(
 export const SNIPER_STATE_LABEL: Record<SniperState, string> = {
   SNIPER_WAITING:            'Waiting',
   SNIPER_READY:              'Ready',
-  SNIPER_ARMED:              'Armed',
-  SNIPER_BOOKING:            'Booking…',
+  SNIPER_ARMED:              'Auto-registration ready',
+  SNIPER_BOOKING:            'Registering…',
   SNIPER_CONFIRMING:         'Confirming…',
   SNIPER_BLOCKED_AUTH:       'Login required',
   SNIPER_BLOCKED_DISCOVERY:  'Class not found',
@@ -177,7 +177,7 @@ export function computeCompositeReadiness(
     bundle.modal   === 'MODAL_LOGIN_REQUIRED'
   ) {
     const detail = bundle.modal === 'MODAL_LOGIN_REQUIRED'
-      ? 'Login required in the booking modal'
+      ? 'Login required in the registration modal'
       : 'Session expired or missing — log in via Settings'
     return { status: 'COMPOSITE_LOGIN_REQUIRED', label: 'Login required', color: 'red', detail }
   }
@@ -198,7 +198,7 @@ export function computeCompositeReadiness(
       status: 'COMPOSITE_MODAL_ISSUE',
       label:  'Modal issue',
       color:  'red',
-      detail: 'Booking modal could not be opened',
+      detail: 'Registration modal could not be opened',
     }
   }
 

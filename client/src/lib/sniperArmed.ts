@@ -91,10 +91,10 @@ export function computeArmedModel(input: ArmedInput): ArmedModel {
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 export const ARMED_STATE_LABEL: Record<SniperArmedState, string> = {
-  armed:           'Armed',
+  armed:           'Auto-registration ready',
   almost_ready:    'Waiting',
   waiting:         'Waiting',
-  booking:         'Booking',
+  booking:         'Registering',
   needs_attention: 'Needs attention',
 }
 

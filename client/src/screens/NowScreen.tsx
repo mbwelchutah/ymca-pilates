@@ -223,7 +223,7 @@ function derivePrimaryResult(opts: {
   if (bookingActive && phase === 'sniper') {
     return {
       state:    'booking',
-      label:    'Booking…',
+      label:    'Registering…',
       detail:   'Attempting registration now.',
       severity: 'info',
     }
@@ -235,7 +235,7 @@ function derivePrimaryResult(opts: {
     const isDryRun = job?.last_result === 'dry_run'
     return {
       state:    'success',
-      label:    isDryRun ? 'Test run' : 'Confirmed',
+      label:    isDryRun ? 'Test run' : 'Registered',
       detail:   isDryRun
         ? 'Test mode — class found and action verified. Switch to Live to actually register.'
         : 'Registration confirmed.',
@@ -279,7 +279,7 @@ function derivePrimaryResult(opts: {
     if (bgDiscovery === 'missing') {
       detail = 'Class not found on the schedule — will check again before the window opens.'
     } else if (bgModal === 'blocked') {
-      detail = 'Booking link not accessible — retrying automatically.'
+      detail = 'Registration link not accessible — retrying automatically.'
     } else if (bgSession === 'error') {
       detail = 'Sign-in check timed out — the bot is retrying. Tap the account icon if this persists.'
     } else {
@@ -323,8 +323,8 @@ function derivePrimaryResult(opts: {
   if (showComposite && composite.color === 'green' && phase !== 'too_early') {
     return {
       state:    'ready',
-      label:    'Armed',
-      detail:   'Everything is ready for the booking window.',
+      label:    'Auto-registration ready',
+      detail:   'Everything is ready for the registration window.',
       severity: 'success',
       ts:       lastPreflightAt ?? undefined,
     }
@@ -337,7 +337,7 @@ function derivePrimaryResult(opts: {
   return {
     state:    'waiting',
     label:    'Scheduled',
-    detail:   'Booking will start automatically when the window opens.',
+    detail:   'Registration will start automatically when the window opens.',
     severity: 'muted',
   }
 }
@@ -678,8 +678,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     schedule: 'Schedule loaded',
     class:    'Class found',
     modal:    'Modal reached',
-    action:   'Booking action',
-    result:   'Confirmation detected',
+    action:   'Registration action',
+    result:   'Registration confirmed',
   }
   const BLANK_STEPS: ExecSteps = {
     session: 'pending', schedule: 'pending', class: 'pending',
@@ -771,10 +771,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         // Derive text from failIdx (structured) not msg (string-match) to avoid
         // "Class not found" appearing when failure was actually at the modal step.
         const text = r.success
-          ? 'Ready to book'
+          ? 'Ready to register'
           : failIdx === 0 ? 'Session expired — sign in again'
           : failIdx === 2 ? 'Class not found on schedule'
-          : failIdx === 3 ? 'Could not access booking link'
+          : failIdx === 3 ? 'Could not access registration link'
           : (r.message ?? 'Preflight blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
       }
@@ -808,19 +808,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         ? (isWaitlist ? 'amber' : 'green')
         : 'red'
       const text = r.success !== false
-        ? (isWaitlist ? 'Waitlisted' : 'Confirmed')
+        ? (isWaitlist ? 'Waitlisted' : 'Registered')
         : msg.includes('session') || msg.includes('auth') || msg.includes('login')
           ? 'Session expired — sign in again'
           : msg.includes('class') || msg.includes('not found')
             ? 'Class not found on schedule'
             : msg.includes('modal')
-              ? 'Could not access booking modal'
-              : (r.message ?? 'Booking failed')
+              ? 'Could not access registration modal'
+              : (r.message ?? 'Registration failed')
       setExecDone({ ok: r.success !== false, text, color })
       refresh()
     } catch (e) {
       finalizeSteps(BOOK_STEP_LIST, 0)
-      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Booking failed', color: 'red' })
+      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration failed', color: 'red' })
     } finally {
       setExecMode('done')
       scheduleDoneReset()
@@ -1032,7 +1032,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
                 <StatusDot color="green" />
                 <span className="text-[17px] font-semibold text-accent-green">
-                  {job?.last_result === 'dry_run' ? 'Test run' : 'Confirmed'}
+                  {job?.last_result === 'dry_run' ? 'Test run' : 'Registered'}
                 </span>
               </div>
             )
@@ -1043,14 +1043,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 <span className="text-[16px] text-text-secondary">Scheduling off</span>
               </div>
               <p className="text-[12px] text-text-muted mt-1 ml-[22px]">
-                Turn this class on in the Plan tab to resume booking
+                Turn this class on in the Plan tab to resume registration
               </p>
             </div>
           ) : phase === 'sniper' ? (
             <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
               <span className="text-[17px] font-semibold text-accent-blue">
-                Booking in progress…
+                Registering…
               </span>
             </div>
           ) : bgReadiness?.executionTiming?.phase === 'confirming' ? (
@@ -1070,13 +1070,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
               <span className="text-[17px] font-semibold text-accent-blue">
-                Booking in progress…
+                Registering…
               </span>
             </div>
           ) : phase === 'late' ? (
             <div className="bg-surface rounded-xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="gray" />
-              <span className="text-[16px] text-text-secondary">Booking window has closed</span>
+              <span className="text-[16px] text-text-secondary">Registration window has closed</span>
             </div>
           ) : execPhase === 'armed' ? (
             // Stage 10H — Armed phase: window opens in ≤45 s.
@@ -1123,7 +1123,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       disabled={bgBooking}
                       className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 disabled:opacity-40 transition-opacity"
                     >
-                      {bgBooking ? 'Booking in progress' : 'Book Now'}
+                      {bgBooking ? 'Registering…' : 'Register Now'}
                     </button>
                     <button
                       onClick={handleNowPreflight}
@@ -1139,7 +1139,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {(execMode === 'running_preflight' || execMode === 'running_booking') && (
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-2.5">
-                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Booking…'}
+                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Registering…'}
                   </p>
                   <div className="space-y-2">
                     {execStepList.map(step => {

@@ -43,14 +43,14 @@ const PHASE_DOT: Record<Phase, 'gray' | 'amber' | 'blue' | 'red' | 'green'> = {
 const PHASE_LABEL: Record<Phase, string> = {
   too_early: 'Scheduled',
   warmup:    'Opens Soon',
-  sniper:    'Armed',
+  sniper:    'Auto-registration ready',
   late:      '',          // suppressed — timing line + result badge carry the messaging
   unknown:   'Scheduled',
 }
 
 const RESULT_LABEL: Record<string, string> = {
-  booked:   'Confirmed', // matches Now's headline — canonical term per spec
-  success:  'Confirmed', // legacy status name used before rename to 'booked'
+  booked:   'Registered',
+  success:  'Registered', // legacy status name used before rename to 'booked'
   waitlist: 'Waitlisted',// class was full — joined waitlist via Register button
   dry_run:  'Test run',
   error:    'Issue',     // "Error" replaced — Plan stays calm, not a debug view
@@ -307,7 +307,7 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             return (
               <div key={sp} className="flex items-center gap-2 mt-2 animate-sniper-phase">
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-accent-green" />
-                <span className="text-[12px] text-accent-green font-medium">Armed</span>
+                <span className="text-[12px] text-accent-green font-medium">Auto-registration ready</span>
               </div>
             )
           }

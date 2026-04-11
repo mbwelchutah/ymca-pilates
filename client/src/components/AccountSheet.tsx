@@ -102,7 +102,7 @@ function deriveConnectionInfo(s: SessionStatus | null): ConnectionInfo {
       state:          'connected',
       headline:       'Connected',
       subline:        auth.bookingAccessConfirmed
-        ? 'Daxko · Schedule · Booking confirmed'
+        ? 'Daxko · Schedule · Registration confirmed'
         : 'Daxko and schedule active',
       dotColor:       'green',
       headlineCls:    'text-text-primary',
@@ -159,7 +159,7 @@ function deriveOperationInfo(
   // Booking run takes priority over every auth label — prevents mislabeling
   // a booking-time auth step as "Signing in" from the user's perspective.
   if (bookingActive) {
-    return { state: 'blocked_by_booking', label: 'Booking run in progress' }
+    return { state: 'blocked_by_booking', label: 'Registering…' }
   }
 
   // Local button state takes precedence over background / server-pushed state.
@@ -183,7 +183,7 @@ function deriveOperationInfo(
 
   // Lock held without auth in progress (old servers without bookingActive).
   if (locked && !auth?.isAuthInProgress) {
-    return { state: 'blocked_by_booking', label: 'Booking run in progress' }
+    return { state: 'blocked_by_booking', label: 'Registering…' }
   }
 
   return { state: 'idle', label: null }
@@ -512,7 +512,7 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 />
                 <Divider />
                 <DiagRow
-                  label="Booking access"
+                  label="Registration access"
                   value={
                     !auth                              ? '—'
                     : auth.bookingAccessConfirmed      ? `Confirmed ${formatRelative(auth.bookingAccessConfirmedAt)}`

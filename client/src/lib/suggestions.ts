@@ -67,8 +67,8 @@ export function generateSuggestions({
       suggestions.push({
         id:       'session-failures',
         priority: 'high',
-        text:     'Session issues detected — run Preflight closer to booking window',
-        detail:   'Auth failures in the last 7 days can cause missed bookings',
+        text:     'Session issues detected — run Preflight closer to registration window',
+        detail:   'Auth failures in the last 7 days can cause missed registrations',
       })
     }
   }
@@ -79,7 +79,7 @@ export function generateSuggestions({
       id:       'instructor-mismatch',
       priority: 'med',
       text:     'Instructor mismatch — verify the instructor name in Plan',
-      detail:   'The booking modal showed a different instructor than expected',
+      detail:   'The registration modal showed a different instructor than expected',
     })
   }
 
@@ -97,8 +97,8 @@ export function generateSuggestions({
     suggestions.push({
       id:       'booking-not-open',
       priority: 'med',
-      text:     'Booking button not found — class may be waitlist-only',
-      detail:   'Or the booking window timing may be slightly off',
+      text:     'Register button not found — class may be waitlist-only',
+      detail:   'Or the registration window timing may be slightly off',
     })
   }
 

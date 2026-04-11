@@ -76,7 +76,7 @@ const REASON_LABELS: Record<string, string> = {
   'modal_instructor_mismatch':   'Modal — wrong instructor',
   'modal_mismatch':              'Modal — wrong time & instructor',
   'click_fallback':              'Click failed — force used',
-  'booking_not_open':            'Booking not open yet',
+  'booking_not_open':            'Registration not open yet',
   'registration_unclear':        'No confirmation after click',
   'stale_card_recovery_failed':  'Card lost after reload',
   'unexpected_error':            'Unexpected error',
@@ -89,15 +89,15 @@ const PHASE_LABELS: Record<string, string> = {
   'scan':        'Schedule scan',
   'verify':      'Identity verify',
   'click':       'Card click',
-  'gate':        'Booking gate',
-  'action':      'Booking action',
+  'gate':        'Registration gate',
+  'action':      'Registration action',
   'post_click':  'Post-click check',
   'recovery':    'Stale recovery',
   'login':          'Login',
   'schedule_scan':  'Schedule scan',
   'card_click':     'Card click',
   'modal_verify':   'Modal verify',
-  'booking':        'Booking',
+  'booking':        'Registration',
   'unknown':        'Unknown',
   // Taxonomy ExecutionPhase values
   'AUTH':         'Auth',
@@ -159,7 +159,7 @@ function formatEvidenceValue(v: unknown): string {
 }
 
 const RESULT_LABELS: Record<string, string> = {
-  booked:             'Confirmed',
+  booked:             'Registered',
   waitlisted:         'Waitlisted',
   dry_run:            'Simulated',
   found_not_open_yet: 'Not Open Yet',
@@ -594,11 +594,11 @@ function resultToOutcome(result: string | null): {
 } {
   switch (result) {
     case 'booked':
-      return { label: 'Confirmed',   reason: 'Spot reserved successfully',       color: 'text-accent-green', dot: 'bg-accent-green' }
+      return { label: 'Registered',  reason: 'Spot reserved successfully',       color: 'text-accent-green', dot: 'bg-accent-green' }
     case 'waitlisted':
       return { label: 'Waitlisted',  reason: 'Added to the waitlist',            color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'dry_run':
-      return { label: 'Simulated',   reason: 'Simulated booking (test mode)',    color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
+      return { label: 'Simulated',   reason: 'Simulated registration (test mode)', color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'found_not_open_yet':
       return { label: 'Not Open Yet',reason: 'Registration not open yet — will retry', color: 'text-text-muted', dot: 'bg-text-muted' }
     case 'not_found':
@@ -606,7 +606,7 @@ function resultToOutcome(result: string | null): {
     case 'skipped':
       return { label: 'Skipped',     reason: 'Class skipped — already booked or paused', color: 'text-text-muted', dot: 'bg-text-muted' }
     default:
-      return { label: 'Failed',      reason: 'Booking failed — see reason below', color: 'text-accent-red',   dot: 'bg-accent-red'   }
+      return { label: 'Failed',      reason: 'Registration failed — see reason below', color: 'text-accent-red',   dot: 'bg-accent-red'   }
   }
 }
 
