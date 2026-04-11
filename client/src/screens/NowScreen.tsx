@@ -9,6 +9,7 @@ import { DetailRow } from '../components/ui/DetailRow'
 import { ToggleRow } from '../components/ui/ToggleRow'
 import type { AppState, Job, Phase, SessionStatus, AuthStatusEnum } from '../types'
 import type { SniperRunState } from '../lib/api'
+import type { SniperEvent } from '../lib/failureTypes'
 import { api } from '../lib/api'
 import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL,
@@ -462,6 +463,72 @@ export function resolveSmartButton(opts: {
         : null
       return { label: 'Get Spot', actionType: 'arm', helperText, disabled: false, emphasis: 'primary-blue' }
     }
+  }
+}
+
+// ── Stage 5: Live status derivation ──────────────────────────────────────────
+// Maps the current sniper phase to a concise, human-readable status text +
+// an optional subtext (e.g. "Will register at 10:20 PM").
+// Shown directly below the 5-segment sniper strip dots.
+
+interface LiveStatusLine {
+  text:    string
+  subtext: string | null
+}
+
+function fmtWindowTime(iso: string | null): string | null {
+  if (!iso) return null
+  try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+  catch { return null }
+}
+
+function deriveLiveStatus(sp: SniperPhase, nextWindow: string | null): LiveStatusLine {
+  switch (sp) {
+    case 'monitoring':
+      return { text: 'Watching for registration',    subtext: nextWindow ? `Will register at ${fmtWindowTime(nextWindow)}` : null }
+    case 'locked':
+      return { text: 'Registration opens soon',      subtext: null }
+    case 'armed':
+      return { text: 'Auto-registration ready',      subtext: nextWindow ? `Will register at ${fmtWindowTime(nextWindow)}` : null }
+    case 'countdown':
+      return { text: 'Auto-registration ready',      subtext: null }
+    case 'firing':
+      return { text: 'Registering\u2026',            subtext: null }
+    case 'confirming':
+      return { text: 'Confirming registration\u2026',subtext: null }
+  }
+}
+
+// ── Stage 5: Timeline event labelling ────────────────────────────────────────
+// Maps a raw SniperEvent to a user-facing one-liner.
+// Deep diagnostic detail stays in Tools; Now screen shows the human outcome.
+
+function friendlyEventLabel(ev: SniperEvent): string {
+  const msg = (ev.message ?? '').toLowerCase()
+  if (ev.failureType) {
+    switch (ev.phase) {
+      case 'AUTH':         return 'Session check failed'
+      case 'NAVIGATION':   return 'Schedule could not load'
+      case 'DISCOVERY':    return 'Class not found'
+      case 'VERIFY':       return 'Class could not be confirmed'
+      case 'MODAL':        return 'Registration page unavailable'
+      case 'ACTION':       return 'Registration failed'
+      case 'CONFIRMATION': return 'Result unclear — check Tools'
+      case 'RECOVERY':     return 'Recovery attempt failed'
+      default:             return 'Check failed'
+    }
+  }
+  switch (ev.phase) {
+    case 'AUTH':         return 'Session verified'
+    case 'NAVIGATION':   return 'Schedule loaded'
+    case 'DISCOVERY':    return 'Class detected'
+    case 'VERIFY':       return 'Class confirmed'
+    case 'MODAL':        return 'Registration page reached'
+    case 'ACTION':       return msg.includes('waitlist') ? 'Waitlist action submitted' : 'Registration submitted'
+    case 'CONFIRMATION': return msg.includes('waitlist') ? 'Joined waitlist'           : 'Successfully registered'
+    case 'RECOVERY':     return 'Retry scheduled'
+    case 'SYSTEM':       return 'System monitoring active'
+    default:             return ev.message || 'Activity recorded'
   }
 }
 
@@ -1399,38 +1466,52 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             }
             const { filled, color, fireAnim } = STRIP[sp]
 
+            const { text: lsText, subtext: lsSubtext } = deriveLiveStatus(sp, bgReadiness?.armed?.nextWindow ?? null)
+
             return (
-              <div key={sp} className="mt-2 flex items-center gap-3 animate-sniper-phase">
-                {/* 5 segment dots */}
-                <div className="flex items-center gap-1.5">
-                  {[0, 1, 2, 3, 4].map(i => {
-                    const isFilled   = i < filled
-                    // Countdown: the 4th dot (index 3) is the active frontier —
-                    // render it slightly larger to signal it's the leading edge.
-                    const isFrontier = sp === 'countdown' && i === 3
-                    // Fire moment: 5th dot (index 4) gets the scale-pop animation.
-                    const isFireDot  = fireAnim && i === 4
-                    return (
-                      <span
-                        key={i}
-                        className={[
-                          'rounded-full flex-shrink-0',
-                          isFrontier ? 'w-2.5 h-2.5' : 'w-2 h-2',
-                          isFilled ? color : 'bg-divider',
-                          isFireDot ? 'animate-sniper-fire' : '',
-                        ].filter(Boolean).join(' ')}
-                      />
-                    )
-                  })}
+              <>
+                <div key={sp} className="mt-2 flex items-center gap-3 animate-sniper-phase">
+                  {/* 5 segment dots */}
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3, 4].map(i => {
+                      const isFilled   = i < filled
+                      // Countdown: the 4th dot (index 3) is the active frontier —
+                      // render it slightly larger to signal it's the leading edge.
+                      const isFrontier = sp === 'countdown' && i === 3
+                      // Fire moment: 5th dot (index 4) gets the scale-pop animation.
+                      const isFireDot  = fireAnim && i === 4
+                      return (
+                        <span
+                          key={i}
+                          className={[
+                            'rounded-full flex-shrink-0',
+                            isFrontier ? 'w-2.5 h-2.5' : 'w-2 h-2',
+                            isFilled ? color : 'bg-divider',
+                            isFireDot ? 'animate-sniper-fire' : '',
+                          ].filter(Boolean).join(' ')}
+                        />
+                      )
+                    })}
+                  </div>
+                  {/* Countdown phase: show "Firing in X" text inline */}
+                  {sp === 'countdown' && (
+                    <span className="text-[13px] text-text-secondary font-medium">
+                      {'Firing in '}
+                      <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
+                    </span>
+                  )}
                 </div>
-                {/* Countdown phase: show "Firing in X" text inline */}
-                {sp === 'countdown' && (
-                  <span className="text-[13px] text-text-secondary font-medium">
-                    {'Firing in '}
-                    <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
-                  </span>
-                )}
-              </div>
+
+                {/* ── Stage 5: Live status line ──────────────────────────── */}
+                {/* Text companion to the graphical dots — human-readable    */}
+                {/* summary of what the bot is doing right now.              */}
+                <p className="text-[12px] text-text-muted mt-1 mb-0.5 leading-snug">
+                  {lsText}
+                  {lsSubtext && (
+                    <span className="ml-1.5 opacity-75">· {lsSubtext}</span>
+                  )}
+                </p>
+              </>
             )
           })()}
 
@@ -1786,6 +1867,56 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             })()}
           </Card>
         )}
+
+        {/* ── Stage 5: Activity Timeline ─────────────────────────────────
+             Shows the last 5 bot events as user-friendly one-liners.
+             Source: sniperRunState.events (existing telemetry array).
+             Keeps deep diagnostics in Tools; this is user transparency. */}
+        {sniperRunState && sniperRunState.events.length > 0 && (() => {
+          const entries = [...sniperRunState.events].reverse().slice(0, 5)
+          return (
+            <Card padding="none">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-divider">
+                <p className="text-[13px] font-semibold text-text-primary">Recent Activity</p>
+              </div>
+
+              {/* Event rows */}
+              {entries.map((ev, i) => {
+                const label     = friendlyEventLabel(ev)
+                const isFailure = !!ev.failureType
+                const timeStr   = (() => {
+                  try { return new Date(ev.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+                  catch { return null }
+                })()
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-3 px-4 py-3 ${i < entries.length - 1 ? 'border-b border-divider' : ''}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isFailure ? 'bg-accent-red' : 'bg-accent-green'}`} />
+                    <span className={`flex-1 text-[13px] ${isFailure ? 'text-accent-red' : 'text-text-primary'}`}>
+                      {label}
+                    </span>
+                    {timeStr && (
+                      <span className="text-[12px] text-text-muted tabular-nums flex-shrink-0">{timeStr}</span>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Link to full Tools view */}
+              {onGoToTools && (
+                <button
+                  onClick={() => onGoToTools('tools-run-events')}
+                  className="w-full text-center text-[12px] text-accent-blue active:opacity-60 py-2.5 border-t border-divider"
+                >
+                  Full details in Tools →
+                </button>
+              )}
+            </Card>
+          )
+        })()}
 
         {/* ── Contextual action: Register again ──────────────────── */}
         {isStaleBooking && job && (
