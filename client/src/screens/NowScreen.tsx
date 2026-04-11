@@ -368,9 +368,57 @@ function isTransitionAllowed(from: TopLevelState, to: TopLevelState, severity: R
 const PHASE_CONFIG: Record<Phase, { label: string }> = {
   too_early: { label: 'Scheduled'     }, // matches Plan's PHASE_LABEL — canonical term
   warmup:    { label: 'Opens Soon'    }, // matches Plan's PHASE_LABEL warmup exactly
-  sniper:    { label: 'Booking…'      }, // matches canonical vocabulary (ellipsis = in-progress)
+  sniper:    { label: 'Registering…'  }, // matches canonical vocabulary (ellipsis = in-progress)
   late:      { label: 'Window Closed' },
   unknown:   { label: 'Scheduled'     }, // matches Plan's PHASE_LABEL unknown
+}
+
+// ── Stage 2: NowCardState — drives action buttons + inline status ───────────────
+// Maps every combination of signals → one definitive card state so the action
+// buttons never contradict the displayed registration status.
+//
+// Intentionally separate from the existing TopLevelState / derivePrimaryResult
+// machinery, which continues to drive the "Layer A" result card unchanged.
+//
+// State priority (highest → lowest):
+//   waitlisted / registered  — outcome already known this cycle
+//   registration_in_progress — background booking run is active
+//   registration_open_full   — preflight confirmed waitlist-only
+//   registration_open_with_spots — window open, spots available
+//   registration_not_open    — window hasn't opened yet (default / fallback)
+
+export type NowCardState =
+  | 'registered'                 // booked this cycle (non-waitlist)
+  | 'waitlisted'                 // waitlisted this cycle
+  | 'registration_in_progress'   // booking attempt actively running
+  | 'registration_open_with_spots' // window open — Register Now
+  | 'registration_open_full'     // window open — class full, Join Waitlist
+  | 'registration_not_open'      // window not open yet
+
+export function deriveNowCardState(opts: {
+  isBooked:                 boolean
+  lastResult:               string | null
+  bookingActive:            boolean
+  phase:                    Phase
+  effectivePreflightStatus: string | null
+}): NowCardState {
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus } = opts
+
+  // 1. Cycle outcome already determined
+  if (isBooked && lastResult === 'waitlist') return 'waitlisted'
+  if (isBooked)                              return 'registered'
+
+  // 2. Background (scheduler-driven) registration attempt in progress
+  if (bookingActive) return 'registration_in_progress'
+
+  // 3. Class is full — waitlist the only option (set by preflight)
+  if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
+
+  // 4. Registration window is open — assume spots unless preflight says otherwise
+  if (phase === 'sniper') return 'registration_open_with_spots'
+
+  // 5. Default — window not yet open (too_early, warmup, late, unknown)
+  return 'registration_not_open'
 }
 
 function formatDayTime(job: Job) {
@@ -748,7 +796,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }
 
   const handleNowPreflight = async () => {
-    if (!job || execMode !== 'idle') return
+    if (!job || (execMode !== 'idle' && execMode !== 'done')) return
+    // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
+    if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setExecMode('running_preflight')
     setExecDone(null)
     startStepSimulation(PREFLIGHT_STEP_LIST)
@@ -788,8 +838,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   }
 
   const handleNowBook = async () => {
-    if (!job || execMode !== 'idle') return
+    if (!job || (execMode !== 'idle' && execMode !== 'done')) return
     if (bgReadiness?.armed?.state === 'booking') return
+    // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
+    if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setExecMode('running_booking')
     setExecDone(null)
     startStepSimulation(BOOK_STEP_LIST)
@@ -946,6 +998,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setStableConfidenceLabel(prev => scoreToLabelWithHysteresis(confidenceScore, prev))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confidenceScore])
+
+  // ── Stage 2: NowCardState — drives action buttons ──────────────────────────
+  // Computed from existing signals; no new API calls required.
+  // Only used when execMode === 'idle' (running/done states have their own UI).
+  const nowCardState: NowCardState = deriveNowCardState({
+    isBooked,
+    lastResult:               job?.last_result ?? null,
+    bookingActive:            bgReadiness?.armed?.state === 'booking',
+    phase,
+    effectivePreflightStatus,
+  })
 
   if (loading) {
     return (
@@ -1113,23 +1176,112 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* ── Now-tab action buttons / live step list ───────────────────── */}
           {job && (
             <div className="mt-3">
-              {/* IDLE: show buttons */}
+              {/* IDLE: state-driven action buttons (Stage 2 — NowCardState) */}
               {execMode === 'idle' && (() => {
-                const bgBooking = bgReadiness?.armed?.state === 'booking'
+                // registered / waitlisted — outcome known; no conflicting CTA
+                if (nowCardState === 'registered') {
+                  return (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-accent-green/10 flex-1">
+                        <StatusDot color="green" />
+                        <span className="text-[14px] font-semibold text-accent-green">Registered ✓</span>
+                      </div>
+                      <button
+                        onClick={handleNowPreflight}
+                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Preflight
+                      </button>
+                    </div>
+                  )
+                }
+
+                if (nowCardState === 'waitlisted') {
+                  return (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-accent-amber/10 flex-1">
+                        <StatusDot color="amber" />
+                        <span className="text-[14px] font-semibold text-accent-amber">On waitlist</span>
+                      </div>
+                      <button
+                        onClick={handleNowPreflight}
+                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Preflight
+                      </button>
+                    </div>
+                  )
+                }
+
+                // background scheduler booking is running — disable all manual actions
+                if (nowCardState === 'registration_in_progress') {
+                  return (
+                    <button
+                      disabled
+                      className="w-full bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold opacity-60 cursor-default"
+                    >
+                      Registering…
+                    </button>
+                  )
+                }
+
+                // class full — only waitlist available (confirmed by preflight)
+                if (nowCardState === 'registration_open_full') {
+                  return (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleNowBook}
+                        className="flex-1 bg-accent-amber text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Join Waitlist
+                      </button>
+                      <button
+                        onClick={handleNowPreflight}
+                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Preflight
+                      </button>
+                    </div>
+                  )
+                }
+
+                // registration window is open and spots are available
+                if (nowCardState === 'registration_open_with_spots') {
+                  return (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleNowBook}
+                        className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Register Now
+                      </button>
+                      <button
+                        onClick={handleNowPreflight}
+                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      >
+                        Preflight
+                      </button>
+                    </div>
+                  )
+                }
+
+                // registration_not_open — window hasn't opened yet (default / inactive)
+                // Primary CTA: "Get Spot" runs preflight to verify everything is
+                // ready so the bot can secure a spot when the window opens.
                 return (
                   <div className="flex gap-2">
                     <button
-                      onClick={handleNowBook}
-                      disabled={bgBooking}
-                      className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 disabled:opacity-40 transition-opacity"
+                      onClick={handleNowPreflight}
+                      className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
                     >
-                      {bgBooking ? 'Registering…' : 'Register Now'}
+                      Get Spot
                     </button>
                     <button
-                      onClick={handleNowPreflight}
+                      onClick={handleNowBook}
                       className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
+                      title="Attempt registration immediately (window may not be open)"
                     >
-                      Preflight
+                      Register Now
                     </button>
                   </div>
                 )
@@ -1213,6 +1365,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       className="mt-1.5 text-[12px] text-accent-blue active:opacity-60"
                     >
                       View run events →
+                    </button>
+                  )}
+                  {/* Retry shortcut — only shown for failed runs */}
+                  {!execDone.ok && (
+                    <button
+                      onClick={execStepList.length === BOOK_STEP_LIST.length ? handleNowBook : handleNowPreflight}
+                      className="mt-2 w-full py-2 rounded-xl border border-divider text-[13px] text-text-secondary font-medium active:opacity-60 transition-opacity"
+                    >
+                      {execStepList.length === BOOK_STEP_LIST.length ? 'Retry registration' : 'Run check again'}
                     </button>
                   )}
                 </div>
@@ -1630,14 +1791,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </Card>
         )}
 
-        {/* ── Contextual action: Book again ───────────────────────── */}
+        {/* ── Contextual action: Register again ──────────────────── */}
         {isStaleBooking && job && (
           <SecondaryButton
             onClick={handleBookAgain}
             disabled={resetting}
             className="w-full"
           >
-            {resetting ? 'Resetting…' : 'Book again'}
+            {resetting ? 'Resetting…' : 'Register again'}
           </SecondaryButton>
         )}
 
