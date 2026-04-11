@@ -148,7 +148,8 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
   async function readSignals() {
     const btns = await detectActionButtons(page);
     const body = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-    const textConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to/i.test(body);
+    // Match explicit server-side confirmations. Includes FamilyWorks waitlist phrases.
+    const textConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to|on the waitlist|waitlisted|waitlist confirmed|you.?re on/i.test(body);
     return { btns, body, textConfirm };
   }
 
@@ -194,11 +195,40 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
     return { confirmed: false, viaPopup: true, cancelFound: false };
   }
 
-  // No popup appeared: action buttons are gone, no Cancel either.
-  // State changed from before the click → booking went through (modal closed).
+  // No popup appeared and no Cancel/text signal yet.
+  // FamilyWorks sometimes takes 2–4 s to show "Cancel" after processing —
+  // wait an extra 3 s and re-check before falling back to the weak buttons-gone signal.
   if (!step1.btns.hasRegister && !step1.btns.hasWaitlist) {
-    console.log(`✅ Booking confirmed (action buttons gone — modal closed after ${actionLabel})`);
-    return { confirmed: true, viaPopup: false, cancelFound: false };
+    console.log(`[confirm-check] buttons gone — waiting 3 s for delayed Cancel/text confirmation...`);
+    await page.waitForTimeout(3000);
+    const step1b = await readSignals();
+    console.log(`[confirm-check] delayed re-check: cancel=${step1b.btns.hasCancel} textOK=${step1b.textConfirm}`);
+
+    if (step1b.btns.hasCancel) {
+      console.log(`✅ Booking confirmed (delayed Cancel button appeared) after ${actionLabel}`);
+      return { confirmed: true, viaPopup: false, cancelFound: true };
+    }
+    if (step1b.textConfirm) {
+      console.log(`✅ Booking confirmed (delayed text match) after ${actionLabel}`);
+      return { confirmed: true, viaPopup: false, cancelFound: false };
+    }
+
+    // Still no strong signal — capture the current state as a diagnostic screenshot.
+    try {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const screenshotFile = `data/screenshots/${new Date().toISOString().slice(0,10)}/confirm-weak-${ts}.png`;
+      const { mkdirSync } = require('fs');
+      mkdirSync(require('path').dirname(screenshotFile), { recursive: true });
+      await page.screenshot({ path: screenshotFile, fullPage: false });
+      console.log(`[confirm-check] ⚠️ Weak-signal screenshot: ${screenshotFile}`);
+    } catch (e) {
+      console.log(`[confirm-check] Screenshot failed: ${e.message}`);
+    }
+
+    // Weak confirmation: buttons gone but no explicit server-side signal.
+    // Treat as confirmed but flag it clearly so replay/logs show the weak confidence.
+    console.log(`⚠️ Booking confirmed (WEAK — action buttons gone, no Cancel/text) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: false, weakSignal: true };
   }
 
   // Waitlist button still present but no Register and no Cancel — edge case.
