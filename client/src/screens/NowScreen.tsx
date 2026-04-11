@@ -541,7 +541,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // and phase labels don't mislead the user into thinking booking is pending.
   const isInactive = job != null && !job.is_active
 
-  const [resetting, setResetting] = useState(false)
+  const [resetting,        setResetting]        = useState(false)
+  const [showActionSheet,  setShowActionSheet]  = useState(false)
 
   // ── Sniper readiness state ─────────────────────────────────────────────────
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
@@ -791,6 +792,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (stepTimerRef.current) clearInterval(stepTimerRef.current)
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
   }, [])
+
+  // Close the action sheet whenever an execution starts (execMode leaves 'idle')
+  useEffect(() => {
+    if (execMode !== 'idle') setShowActionSheet(false)
+  }, [execMode])
 
   const startStepSimulation = (steps: StepKey[]) => {
     if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
@@ -1228,7 +1234,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* ── Now-tab action buttons / live step list ───────────────────── */}
           {job && (
             <div className="mt-3">
-              {/* IDLE: Stage 3 — single smart primary button driven by resolveSmartButton() */}
+              {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
                 const { label, actionType, helperText, disabled, emphasis } = smartButton
 
@@ -1240,9 +1246,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   actionType === 'arm'      ? handleNowPreflight :
                   undefined
 
-                // Derive button classes from emphasis + disabled state
+                // Derive button classes from emphasis + disabled state.
+                // flex-1 instead of w-full so the ··· trigger sits alongside it.
                 const btnClass = [
-                  'w-full rounded-xl py-3 text-[15px] font-semibold transition-opacity',
+                  'flex-1 rounded-xl py-3 text-[15px] font-semibold transition-opacity',
                   disabled
                     ? emphasis === 'muted'
                       ? 'bg-surface border border-divider text-text-muted cursor-default'
@@ -1254,9 +1261,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
                 return (
                   <div>
-                    <button onClick={handler} disabled={disabled} className={btnClass}>
-                      {label}
-                    </button>
+                    <div className="flex items-stretch gap-2">
+                      <button onClick={handler} disabled={disabled} className={btnClass}>
+                        {label}
+                      </button>
+                      {/* Stage 4: overflow trigger — opens advanced action sheet */}
+                      <button
+                        onClick={() => setShowActionSheet(true)}
+                        className="flex-shrink-0 w-11 flex items-center justify-center rounded-xl bg-surface border border-divider text-text-muted active:opacity-60 transition-opacity"
+                        aria-label="More actions"
+                      >
+                        <span className="text-[18px] leading-none tracking-widest select-none">···</span>
+                      </button>
+                    </div>
                     {helperText && (
                       <p className="text-center text-[12px] text-text-muted mt-1.5 leading-snug">
                         {helperText}
@@ -1782,6 +1799,87 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         )}
 
       </ScreenContainer>
+
+      {/* ── Stage 4: Advanced action sheet (progressive disclosure) ─────────
+           Shown over the entire screen via fixed positioning.
+           Options reuse existing handlers; sheet auto-closes when execMode
+           leaves 'idle' (i.e. as soon as any action starts).              */}
+      {showActionSheet && (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          onClick={() => setShowActionSheet(false)}
+        >
+          {/* scrim */}
+          <div className="absolute inset-0 bg-black/40" />
+
+          {/* bottom sheet */}
+          <div
+            className="relative w-full bg-white rounded-t-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* title */}
+            <div className="px-4 py-3.5 border-b border-divider">
+              <p className="text-center text-[13px] font-semibold text-text-secondary tracking-wide">
+                {job?.class_title ?? 'Actions'}
+              </p>
+            </div>
+
+            {/* action rows */}
+            {([
+              {
+                label:   'Register Now',
+                sub:     'Attempt immediate registration',
+                handler: handleNowBook,
+              },
+              {
+                label:   'Auto-register',
+                sub:     'Verify readiness and arm auto-registration',
+                handler: handleNowPreflight,
+              },
+              {
+                label:   'Join Waitlist',
+                sub:     'Register on waiting list if class is full',
+                handler: handleNowBook,
+              },
+              {
+                label:   'Registration Check',
+                sub:     'Run a full readiness check',
+                handler: handleNowPreflight,
+              },
+            ] as { label: string; sub: string; handler: () => void }[]).map(item => (
+              <button
+                key={item.label}
+                onClick={() => { setShowActionSheet(false); item.handler() }}
+                className="w-full px-5 py-4 flex items-center justify-between border-b border-divider last:border-0 active:bg-surface transition-colors text-left"
+              >
+                <div>
+                  <p className="text-[16px] font-medium text-text-primary leading-snug">
+                    {item.label}
+                  </p>
+                  <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+                    {item.sub}
+                  </p>
+                </div>
+                <svg
+                  className="w-4 h-4 flex-shrink-0 ml-3 text-text-muted"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                </svg>
+              </button>
+            ))}
+
+            {/* cancel */}
+            <button
+              onClick={() => setShowActionSheet(false)}
+              className="w-full py-4 text-center text-[16px] font-semibold text-accent-red active:opacity-60 transition-opacity border-t border-divider mt-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
