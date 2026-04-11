@@ -665,11 +665,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     return () => clearInterval(id)
   }, [readinessPollMs])
 
-  // Imperative refresh — parent bumps bgRefreshSignal to force an immediate re-fetch
-  // (used after dismiss escalation so the banner clears without waiting for the next poll).
+  // Imperative refresh — parent bumps bgRefreshSignal to force an immediate re-fetch.
+  // Used after escalation dismiss and after Account sheet closes (login/re-auth).
+  // Re-fetches both readiness and session so the Issue card clears promptly.
   useEffect(() => {
     if (!bgRefreshSignal) return
     api.getReadiness().then(setBgReadiness).catch(() => {})
+    api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
   }, [bgRefreshSignal])
 
   // Live relative label — auto-refreshes every 30 s

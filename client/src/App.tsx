@@ -138,6 +138,7 @@ export default function App() {
         open={accountOpen}
         onClose={() => {
           setAccountOpen(false)
+          setBgRefreshSignal(v => v + 1)
           setTimeout(() => checkSessionRef.current?.(), 500)
         }}
         polledStatus={polledStatus}
