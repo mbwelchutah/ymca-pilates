@@ -754,23 +754,30 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     startStepSimulation(PREFLIGHT_STEP_LIST)
     try {
       const r = await api.runPreflight(job.id)
-      const msg = (r.message ?? '').toLowerCase()
-      const failIdx: number | null = (() => {
-        if (r.authDetail?.verdict === 'FAILED')                             return 0
-        if (r.discoveryDetail && !r.discoveryDetail.found)                  return 2
-        if (r.modalDetail && !r.modalDetail.verdict?.includes('REACHABLE')) return 3
-        return r.success ? null : 3
-      })()
-      finalizeSteps(PREFLIGHT_STEP_LIST, failIdx)
-      // Derive text from failIdx (structured) not msg (string-match) to avoid
-      // "Class not found" appearing when failure was actually at the modal step.
-      const text = r.success
-        ? 'Ready to book'
-        : failIdx === 0 ? 'Session expired — sign in again'
-        : failIdx === 2 ? 'Class not found on schedule'
-        : failIdx === 3 ? 'Could not access booking link'
-        : (r.message ?? 'Preflight blocked')
-      setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
+      // "found_not_open_yet" = session ok, class found, modal reachable —
+      // registration window just isn't open yet. All steps pass; show amber.
+      if (r.status === 'found_not_open_yet') {
+        finalizeSteps(PREFLIGHT_STEP_LIST, null)
+        const hint = r.message || r.actionDetail?.detail || 'Registration window not open yet'
+        setExecDone({ ok: true, text: hint, color: 'amber' })
+      } else {
+        const failIdx: number | null = (() => {
+          if (r.authDetail?.verdict === 'FAILED')                                          return 0
+          if (r.discoveryDetail && !r.discoveryDetail.found)                               return 2
+          if (r.modalDetail && !r.modalDetail.verdict?.toLowerCase().includes('reachable')) return 3
+          return r.success ? null : 3
+        })()
+        finalizeSteps(PREFLIGHT_STEP_LIST, failIdx)
+        // Derive text from failIdx (structured) not msg (string-match) to avoid
+        // "Class not found" appearing when failure was actually at the modal step.
+        const text = r.success
+          ? 'Ready to book'
+          : failIdx === 0 ? 'Session expired — sign in again'
+          : failIdx === 2 ? 'Class not found on schedule'
+          : failIdx === 3 ? 'Could not access booking link'
+          : (r.message ?? 'Preflight blocked')
+        setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
+      }
     } catch (e) {
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
       setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Preflight failed', color: 'red' })

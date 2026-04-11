@@ -1841,13 +1841,26 @@ async function runBookingJob(job, opts = {}) {
         return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
       } else {
         if (_hasCancelOnly) {
-          await captureFailure('gate', 'uncertain_state');
-          emitFailure('ACTION', 'ACTION_NOT_FOUND', 'Preflight: only Cancel button visible — user may already be registered');
-          return logRunSummary({ status: 'action_blocked', message: 'Preflight: Cancel button only — may already be registered or class blocked', screenshotPath });
+          // Cancel button visible with no Register/Waitlist — user is already enrolled.
+          // This is a fully successful preflight state, not a failure.
+          _state.bundle.action = 'ACTION_READY';
+          _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Cancel button visible (already registered)' });
+          await snap('preflight-already-registered');
+          return logRunSummary({ status: 'success', message: 'Preflight: already registered — Cancel button visible in modal', screenshotPath });
         } else {
-          await captureFailure('gate', 'uncertain_state');
-          emitFailure('ACTION', 'ACTION_NOT_FOUND', 'Preflight: no booking button visible — registration not open yet');
-          return logRunSummary({ status: 'found_not_open_yet', message: 'Preflight: class found but no booking button yet — registration not open', screenshotPath });
+          // No booking button visible — registration window not open yet (e.g. countdown shown).
+          // The modal IS reachable and the session IS valid — this is a healthy ready state.
+          // Extract any countdown hint from the modal text to surface in the message.
+          const _modalBodyRaw = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+          const _countdownMatch = _modalBodyRaw.match(/(\d+\s*(?:hr|hour|min|minute)s?\s*until\s*(?:open\s*)?registration)/i);
+          const _countdownHint = _countdownMatch ? _countdownMatch[1].trim() : '';
+          const _notOpenMsg = _countdownHint
+            ? `Session ready — registration opens in ${_countdownHint.replace(/\s*until\s*(open\s*)?registration/i, '').trim()}`
+            : 'Session ready — registration not open yet';
+          _state.bundle.action = 'ACTION_BLOCKED';
+          _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: `FamilyWorks session active — modal accessible, registration not open yet${_countdownHint}` });
+          await snap('preflight-not-open-yet');
+          return logRunSummary({ status: 'found_not_open_yet', message: _notOpenMsg, screenshotPath });
         }
       }
     }
