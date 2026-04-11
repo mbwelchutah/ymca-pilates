@@ -285,7 +285,7 @@ function derivePrimaryResult(opts: {
       detail = 'Sign-in check timed out — the bot is retrying. Tap the account icon if this persists.'
     } else {
       label  = 'Checking'
-      detail = 'A recent preflight timed out — retrying automatically. No action needed.'
+      detail = 'A recent check timed out — retrying automatically. No action needed.'
     }
     return {
       state:    'issue',
@@ -485,7 +485,7 @@ function fmtWindowTime(iso: string | null): string | null {
 function deriveLiveStatus(sp: SniperPhase, nextWindow: string | null): LiveStatusLine {
   switch (sp) {
     case 'monitoring':
-      return { text: 'Watching for registration',    subtext: nextWindow ? `Will register at ${fmtWindowTime(nextWindow)}` : null }
+      return { text: 'Watching for registration',    subtext: null }
     case 'locked':
       return { text: 'Registration opens soon',      subtext: null }
     case 'armed':
@@ -837,7 +837,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     session:  'Session verified',
     schedule: 'Schedule loaded',
     class:    'Class found',
-    modal:    'Modal reached',
+    modal:    'Registration page reached',
     action:   'Registration action',
     result:   'Registration confirmed',
   }
@@ -943,12 +943,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           : failIdx === 0 ? 'Session expired — sign in again'
           : failIdx === 2 ? 'Class not found on schedule'
           : failIdx === 3 ? 'Could not access registration link'
-          : (r.message ?? 'Preflight blocked')
+          : (r.message ?? 'Registration check blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
       }
     } catch (e) {
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
-      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Preflight failed', color: 'red' })
+      setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration check failed', color: 'red' })
     } finally {
       setExecMode('done')
       scheduleDoneReset()
@@ -978,7 +978,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         ? (isWaitlist ? 'amber' : 'green')
         : 'red'
       const text = r.success !== false
-        ? (isWaitlist ? 'Waitlisted' : 'Registered')
+        ? (isWaitlist ? 'On waitlist' : 'Registered')
         : msg.includes('session') || msg.includes('auth') || msg.includes('login')
           ? 'Session expired — sign in again'
           : msg.includes('class') || msg.includes('not found')
@@ -1964,7 +1964,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               },
               {
                 label:   'Auto-register',
-                sub:     'Verify readiness and arm auto-registration',
+                sub:     'Set up auto-registration',
                 handler: handleNowPreflight,
               },
               {
