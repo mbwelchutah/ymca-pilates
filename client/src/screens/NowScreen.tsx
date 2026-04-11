@@ -882,6 +882,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const doneTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null)
   const stepIdxRef   = useRef(0)
 
+  // Refs used by the visibilitychange handler so it never has stale closures.
+  const execModeRef = useRef<ExecMode>('idle')
+  execModeRef.current = execMode
+  const hiddenAtRef = useRef<number | null>(null)
+
   useEffect(() => () => {
     if (stepTimerRef.current) clearInterval(stepTimerRef.current)
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
@@ -891,6 +896,43 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   useEffect(() => {
     if (execMode !== 'idle') setShowActionSheet(false)
   }, [execMode])
+
+  // Re-fetch readiness after any exec finishes so the trust line stays visible.
+  useEffect(() => {
+    if (execMode === 'done') {
+      api.getReadiness().then(setBgReadiness).catch(() => {})
+    }
+  }, [execMode])
+
+  // Foreground-resume handler: re-fetch stale data and clear ghost exec states.
+  // iOS suspends JS timers when the app goes to background, so polling intervals
+  // stop and state can be many minutes old when the user returns. This handler
+  // fires immediately when the page becomes visible again.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now()
+      } else {
+        api.getReadiness().then(setBgReadiness).catch(() => {})
+        api.getSniperState().then(setSniperRunState).catch(() => {})
+        api.getSessionStatus().then(setLocalSessionStatus).catch(() => {})
+        const awayMs = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : 0
+        hiddenAtRef.current = null
+        // If an exec was "in flight" when backgrounded for > 60 s, the simulation
+        // is a ghost — the bot run finished long ago. Clear it so the normal UI
+        // (Get Spot button, Scheduled card) is visible immediately on return.
+        if (awayMs > 60_000 && execModeRef.current !== 'idle') {
+          if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
+          if (doneTimerRef.current) { clearTimeout(doneTimerRef.current);  doneTimerRef.current = null }
+          setExecMode('idle')
+          setExecDone(null)
+          setExecSteps({ session: 'pending', schedule: 'pending', class: 'pending', modal: 'pending', action: 'pending', result: 'pending' })
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, []) // empty deps — state access goes through refs or stable React setters
 
   const startStepSimulation = (steps: StepKey[]) => {
     if (stepTimerRef.current) { clearInterval(stepTimerRef.current); stepTimerRef.current = null }
