@@ -953,7 +953,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       if (stepIdxRef.current >= steps.length - 1) {
         clearInterval(stepTimerRef.current!); stepTimerRef.current = null
       }
-    }, 4000)
+    }, 10_000)
   }
 
   const finalizeSteps = (steps: StepKey[], failIdx: number | null) => {
@@ -1453,6 +1453,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         </div>
                       )
                     })}
+                  </div>
+                  {/* Activity pulse — always visible while bot is communicating,
+                      even after animated steps have all advanced. */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-pulse shrink-0" />
+                    <span className="text-[12px] text-text-muted">
+                      {execMode === 'running_preflight'
+                        ? 'Communicating with YMCA…'
+                        : 'Submitting registration…'}
+                    </span>
                   </div>
                 </div>
               )}
