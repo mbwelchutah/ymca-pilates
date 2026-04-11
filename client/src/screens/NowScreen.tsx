@@ -206,6 +206,7 @@ function derivePrimaryResult(opts: {
   bgSession?:       string | null
   bgDiscovery?:     string | null
   bgModal?:         string | null
+  bgAction?:        string | null
 }): PrimaryResult {
   const {
     isBooked, isInactive, job,
@@ -213,7 +214,7 @@ function derivePrimaryResult(opts: {
     sessionStatus,
     composite, compositeDetail, showComposite,
     bookingActive, lastPreflightAt, bgArmedState, blocked,
-    bgSession, bgDiscovery, bgModal,
+    bgSession, bgDiscovery, bgModal, bgAction,
   } = opts
 
   // ── STATE: booking ─────────────────────────────────────────────────────────
@@ -275,23 +276,33 @@ function derivePrimaryResult(opts: {
 
   // Auto-check or composite signals a real problem (red = blocking error).
   if (bgArmedState === 'needs_attention') {
-    let detail: string
-    let label = 'Issue'
-    if (bgDiscovery === 'missing') {
-      detail = 'Class not found on the schedule — will check again before the window opens.'
-    } else if (bgModal === 'blocked') {
-      detail = 'Registration link not accessible — retrying automatically.'
-    } else if (bgSession === 'error') {
-      detail = 'Sign-in check timed out — the bot is retrying. Tap the account icon if this persists.'
-    } else {
-      label  = 'Checking'
-      detail = 'A recent check timed out — retrying automatically. No action needed.'
-    }
-    return {
-      state:    'issue',
-      label,
-      detail,
-      severity: 'warning',
+    // Before the registration window opens, the modal and action being
+    // inaccessible is expected — not a user-actionable issue. Suppress the
+    // card and let the state fall through to 'scheduled' so the user sees
+    // normal pre-window status rather than a false alarm.
+    const preWindowExpected =
+      bgAction === 'not_open' &&
+      bgDiscovery !== 'missing' &&
+      bgSession   !== 'error'
+    if (!preWindowExpected) {
+      let detail: string
+      let label = 'Issue'
+      if (bgDiscovery === 'missing') {
+        detail = 'Class not found on the schedule — will check again before the window opens.'
+      } else if (bgModal === 'blocked') {
+        detail = 'Registration link not accessible — retrying automatically.'
+      } else if (bgSession === 'error') {
+        detail = 'Sign-in check timed out — the bot is retrying. Tap the account icon if this persists.'
+      } else {
+        label  = 'Checking'
+        detail = 'A recent check timed out — retrying automatically. No action needed.'
+      }
+      return {
+        state:    'issue',
+        label,
+        detail,
+        severity: 'warning',
+      }
     }
   }
   if (showComposite && composite.color === 'red') {
@@ -1110,6 +1121,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     bgSession:    reconciledBgSession    ?? null,
     bgDiscovery:  bgReadiness?.discovery ?? null,
     bgModal:      bgReadiness?.modal     ?? null,
+    bgAction:     bgReadiness?.action    ?? null,
   }) : null
 
   // Hysteresis effect — runs whenever the derived state or severity changes.
