@@ -637,7 +637,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     execPhase === 'armed' ||
     execPhase === 'warmup' ||
     execPhase === 'confirming'
-  const readinessPollMs = isHotPhase ? 1_000 : 30_000
+
+  // Adaptive readiness poll: check more frequently as the window approaches.
+  // msUntilOpen is server-computed at the last poll time — accurate enough for
+  // threshold-based bucketing since thresholds are wide relative to poll lag.
+  const msUntilOpen = bgReadiness?.executionTiming?.msUntilOpen ?? null
+  const readinessPollMs: number = (() => {
+    if (isHotPhase)                             return      1_000  // 1 s   — armed / warmup / sniper
+    if (msUntilOpen == null || msUntilOpen <= 0) return     30_000  // 30 s  — window open or timing unknown
+    if (msUntilOpen > 4 * 60 * 60_000)          return 15 * 60_000  // 15 min — > 4 h out
+    if (msUntilOpen > 60 * 60_000)              return 10 * 60_000  // 10 min — 1–4 h out
+    if (msUntilOpen > 30 * 60_000)              return  5 * 60_000  // 5 min  — 30–60 min out
+    if (msUntilOpen > 15 * 60_000)              return  2 * 60_000  // 2 min  — 15–30 min out
+    if (msUntilOpen > 5 * 60_000)              return     60_000   // 1 min  — 5–15 min out
+    return 15_000                                                    // 15 s   — < 5 min out
+  })()
 
   // Stage 9 — banner-is-complete guard.
   // When the status-banner block (countdown area) is already showing a definitive
