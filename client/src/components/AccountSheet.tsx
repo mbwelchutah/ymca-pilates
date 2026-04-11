@@ -248,11 +248,17 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
     }
   }, [open, polledStatus])
 
-  // Stage 8: busy includes server-side booking so buttons are disabled while
-  // a booking run is active (server would reject auth attempts anyway, and the
-  // UI should not let the user start an operation that will immediately fail).
+  // Derive connection truth early — needed to gate bookingRunActive below.
+  const conn = deriveConnectionInfo(session)
+  const op   = deriveOperationInfo(session, signingIn, refreshing)
+  const auth = session?.authState ?? null
+  const lastCheckedMs = auth?.lastCheckedAt ?? null
+
   const bookingRunActive = !!(session?.bookingActive)
-  const busy = signingIn || refreshing || signingOut || bookingRunActive
+  // Only block sign-in/verify due to an active booking run when the user IS
+  // signed in. If the user is signed out, the booking run is already going to
+  // fail — blocking the only fix (signing back in) makes the situation worse.
+  const busy = signingIn || refreshing || signingOut || (bookingRunActive && conn.signedIn)
 
   const handleSignIn = async () => {
     if (busy) return
@@ -314,11 +320,6 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
   // Tick every 30 s while open — re-renders the relative time labels
   const tick = useTick(30_000, open)
   void tick
-
-  const conn = deriveConnectionInfo(session)
-  const op   = deriveOperationInfo(session, signingIn, refreshing)
-  const auth = session?.authState ?? null
-  const lastCheckedMs = auth?.lastCheckedAt ?? null
 
   // Stage 7: Stale-operation resolver.
   // While any auth operation is in flight, re-fetch server truth frequently so
@@ -595,6 +596,13 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
               )}
 
             </div>
+          )}
+
+          {/* ── Booking-active warning (signed-out only) ────────────── */}
+          {bookingRunActive && !conn.signedIn && (
+            <p className="text-[13px] text-accent-amber mb-3">
+              A registration attempt is running — it will keep failing until you sign in below.
+            </p>
           )}
 
           {/* ── Feedback ─────────────────────────────────────────────── */}
