@@ -421,6 +421,50 @@ export function deriveNowCardState(opts: {
   return 'registration_not_open'
 }
 
+// ── Stage 3: SmartButtonConfig — single primary action resolver ─────────────
+// Collapses all card-state branches into one config object so the render
+// section stays thin.  No side-effects; pure function of card state.
+//
+// emphasis values:
+//   'primary-blue'  — filled blue pill (default CTA)
+//   'primary-amber' — filled amber pill (waitlist CTA)
+//   'muted'         — surface/border pill, non-interactive appearance
+
+export interface SmartButtonConfig {
+  label:      string
+  actionType: 'register' | 'waitlist' | 'arm' | 'none'
+  helperText: string | null
+  disabled:   boolean
+  emphasis:   'primary-blue' | 'primary-amber' | 'muted'
+}
+
+export function resolveSmartButton(opts: {
+  cardState:    NowCardState
+  countdown:    string | null
+  bookingOpenMs: number | null
+}): SmartButtonConfig {
+  const { cardState, countdown, bookingOpenMs } = opts
+
+  switch (cardState) {
+    case 'registered':
+      return { label: 'Registered ✓', actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'muted'         }
+    case 'waitlisted':
+      return { label: 'On waitlist',  actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'muted'         }
+    case 'registration_in_progress':
+      return { label: 'Registering…', actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'primary-blue'  }
+    case 'registration_open_with_spots':
+      return { label: 'Register Now', actionType: 'register', helperText: 'Spots available',             disabled: false, emphasis: 'primary-blue'  }
+    case 'registration_open_full':
+      return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full — waitlist available', disabled: false, emphasis: 'primary-amber' }
+    case 'registration_not_open': {
+      const helperText = (bookingOpenMs != null && countdown)
+        ? `Registration opens in ${countdown}`
+        : null
+      return { label: 'Get Spot', actionType: 'arm', helperText, disabled: false, emphasis: 'primary-blue' }
+    }
+  }
+}
+
 function formatDayTime(job: Job) {
   const days: Record<number, string> = {
     0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',
@@ -808,8 +852,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       // registration window just isn't open yet. All steps pass; show amber.
       if (r.status === 'found_not_open_yet') {
         finalizeSteps(PREFLIGHT_STEP_LIST, null)
-        const hint = r.message || r.actionDetail?.detail || 'Registration window not open yet'
-        setExecDone({ ok: true, text: hint, color: 'amber' })
+        // "Get Spot" preflight passed — session, class, and modal all confirmed.
+        // Show a clean armed-confirmation message instead of a raw server detail.
+        setExecDone({ ok: true, text: 'Auto-registration ready — registers when the window opens', color: 'amber' })
       } else {
         const failIdx: number | null = (() => {
           if (r.authDetail?.verdict === 'FAILED')                                          return 0
@@ -1010,6 +1055,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     effectivePreflightStatus,
   })
 
+  // Stage 3: single smart button config — drives the IDLE action button + helper text
+  const smartButton: SmartButtonConfig = resolveSmartButton({
+    cardState:    nowCardState,
+    countdown,
+    bookingOpenMs,
+  })
+
   if (loading) {
     return (
       <>
@@ -1176,113 +1228,40 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* ── Now-tab action buttons / live step list ───────────────────── */}
           {job && (
             <div className="mt-3">
-              {/* IDLE: state-driven action buttons (Stage 2 — NowCardState) */}
+              {/* IDLE: Stage 3 — single smart primary button driven by resolveSmartButton() */}
               {execMode === 'idle' && (() => {
-                // registered / waitlisted — outcome known; no conflicting CTA
-                if (nowCardState === 'registered') {
-                  return (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-accent-green/10 flex-1">
-                        <StatusDot color="green" />
-                        <span className="text-[14px] font-semibold text-accent-green">Registered ✓</span>
-                      </div>
-                      <button
-                        onClick={handleNowPreflight}
-                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Preflight
-                      </button>
-                    </div>
-                  )
-                }
+                const { label, actionType, helperText, disabled, emphasis } = smartButton
 
-                if (nowCardState === 'waitlisted') {
-                  return (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-accent-amber/10 flex-1">
-                        <StatusDot color="amber" />
-                        <span className="text-[14px] font-semibold text-accent-amber">On waitlist</span>
-                      </div>
-                      <button
-                        onClick={handleNowPreflight}
-                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Preflight
-                      </button>
-                    </div>
-                  )
-                }
+                // Map actionType → handler (register and waitlist share the same
+                // backend flow — handleNowBook detects which button to click)
+                const handler =
+                  actionType === 'register' ? handleNowBook      :
+                  actionType === 'waitlist' ? handleNowBook      :
+                  actionType === 'arm'      ? handleNowPreflight :
+                  undefined
 
-                // background scheduler booking is running — disable all manual actions
-                if (nowCardState === 'registration_in_progress') {
-                  return (
-                    <button
-                      disabled
-                      className="w-full bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold opacity-60 cursor-default"
-                    >
-                      Registering…
-                    </button>
-                  )
-                }
+                // Derive button classes from emphasis + disabled state
+                const btnClass = [
+                  'w-full rounded-xl py-3 text-[15px] font-semibold transition-opacity',
+                  disabled
+                    ? emphasis === 'muted'
+                      ? 'bg-surface border border-divider text-text-muted cursor-default'
+                      : 'bg-accent-blue text-white opacity-60 cursor-default'
+                    : emphasis === 'primary-amber'
+                      ? 'bg-accent-amber text-white active:opacity-80'
+                      : 'bg-accent-blue text-white active:opacity-80',
+                ].join(' ')
 
-                // class full — only waitlist available (confirmed by preflight)
-                if (nowCardState === 'registration_open_full') {
-                  return (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleNowBook}
-                        className="flex-1 bg-accent-amber text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Join Waitlist
-                      </button>
-                      <button
-                        onClick={handleNowPreflight}
-                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Preflight
-                      </button>
-                    </div>
-                  )
-                }
-
-                // registration window is open and spots are available
-                if (nowCardState === 'registration_open_with_spots') {
-                  return (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleNowBook}
-                        className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Register Now
-                      </button>
-                      <button
-                        onClick={handleNowPreflight}
-                        className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      >
-                        Preflight
-                      </button>
-                    </div>
-                  )
-                }
-
-                // registration_not_open — window hasn't opened yet (default / inactive)
-                // Primary CTA: "Get Spot" runs preflight to verify everything is
-                // ready so the bot can secure a spot when the window opens.
                 return (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleNowPreflight}
-                      className="flex-1 bg-accent-blue text-white rounded-xl py-2.5 text-[14px] font-semibold active:opacity-80 transition-opacity"
-                    >
-                      Get Spot
+                  <div>
+                    <button onClick={handler} disabled={disabled} className={btnClass}>
+                      {label}
                     </button>
-                    <button
-                      onClick={handleNowBook}
-                      className="px-4 py-2.5 bg-surface border border-divider text-text-primary rounded-xl text-[14px] font-semibold active:opacity-80 transition-opacity"
-                      title="Attempt registration immediately (window may not be open)"
-                    >
-                      Register Now
-                    </button>
+                    {helperText && (
+                      <p className="text-center text-[12px] text-text-muted mt-1.5 leading-snug">
+                        {helperText}
+                      </p>
+                    )}
                   </div>
                 )
               })()}
