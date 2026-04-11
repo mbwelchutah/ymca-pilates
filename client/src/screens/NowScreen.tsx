@@ -1332,14 +1332,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       <button onClick={handler} disabled={disabled} className={btnClass}>
                         {label}
                       </button>
-                      {/* Stage 4: overflow trigger — opens advanced action sheet */}
-                      <button
-                        onClick={() => setShowActionSheet(true)}
-                        className="flex-shrink-0 w-11 flex items-center justify-center rounded-xl bg-surface border border-divider text-text-muted active:opacity-60 transition-opacity"
-                        aria-label="More actions"
-                      >
-                        <span className="text-[18px] leading-none tracking-widest select-none">···</span>
-                      </button>
+                      {/* Stage 4: overflow trigger — hidden when primary action is disabled
+                           (registered / waitlisted / in-progress) to prevent the action
+                           sheet from offering duplicate or contradictory actions. */}
+                      {!disabled && (
+                        <button
+                          onClick={() => setShowActionSheet(true)}
+                          className="flex-shrink-0 w-11 flex items-center justify-center rounded-xl bg-surface border border-divider text-text-muted active:opacity-60 transition-opacity"
+                          aria-label="More actions"
+                        >
+                          <span className="text-[18px] leading-none tracking-widest select-none">···</span>
+                        </button>
+                      )}
                     </div>
                     {helperText && (
                       <p className="text-center text-[12px] text-text-muted mt-1.5 leading-snug">
@@ -1354,7 +1358,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {(execMode === 'running_preflight' || execMode === 'running_booking') && (
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-2.5">
-                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Registering…'}
+                    {execMode === 'running_preflight' ? 'Registration Check…' : 'Registering…'}
                   </p>
                   <div className="space-y-2">
                     {execStepList.map(step => {
