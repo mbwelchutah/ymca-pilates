@@ -1596,8 +1596,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             <div className="mt-2 pt-2 border-t border-divider">
 
               {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
-              {/* Stage 9: suppressed when the status banner already shows a complete state */}
-              {!bannerIsComplete && job && (() => {
+              {/* Stage 9: suppressed when the status banner shows a complete state,    */}
+              {/* or during an active exec run (step list provides all context needed). */}
+              {!bannerIsComplete && job && execMode === 'idle' && (() => {
                 const result = stableResult ?? currentResult
                 if (!result) return null
                 const bgClass =
@@ -1639,7 +1640,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               })()}
 
               {/* ── Trust line: State · Confidence · Freshness ── */}
-              {!bannerIsComplete && (() => {
+              {!bannerIsComplete && execMode === 'idle' && (() => {
                 if (!isReadinessForSelectedJob) return null
 
                 // Steady state — Confidence · Freshness
