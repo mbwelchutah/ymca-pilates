@@ -183,9 +183,13 @@
   .pt-tab-top {
     padding-top: calc(env(safe-area-inset-top) + 44px);
   }
-  /* Unified TopNav: title row (~65px) + segmented control row (~52px) = 117px below safe area */
+  /* Unified TopNav: title row (~65px) + segmented control row (~52px) = ~120px below safe area.
+     130px gives a safe 10px margin for font-metric variance across device/OS versions. */
   .pt-content-top {
-    padding-top: calc(env(safe-area-inset-top) + 117px);
+    padding-top: calc(env(safe-area-inset-top) + 130px);
+    /* scroll-padding-top ensures the browser's own scroll-into-view (focus, anchor)
+       leaves room for the fixed header, not just our manual padding-top. */
+    scroll-padding-top: calc(env(safe-area-inset-top) + 130px);
   }
   .pb-tab {
     padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
