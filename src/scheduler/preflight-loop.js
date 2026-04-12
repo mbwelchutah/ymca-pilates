@@ -50,7 +50,8 @@ const { triggerBookingFromBurst } = require('./booking-bridge');
 const MIN_INTERVAL_MS        = 3  * 60 * 1000;  // min time between runs per job
 const ACTIVE_HORIZON_MS      = 24 * 60 * 60 * 1000; // only run within 24 h of window
 const AUTO_PREFLIGHT_OWNS_MS = 30 * 60 * 1000;  // auto-preflight owns inside 30 min
-const AUTH_BLOCK_STALE_MS    = 20 * 60 * 1000;  // mirror of auto-preflight / tick.js
+const AUTH_BLOCK_STALE_MS         = 20 * 60 * 1000; // stale window for real auth failures
+const AUTH_BLOCK_STALE_TIMEOUT_MS =  5 * 60 * 1000; // shorter window for transient timeouts
 const PREFLIGHT_TIMEOUT_MS   = 90 * 1000;        // max wall-time for one preflight run
 
 // Stage 10C — Micro-burst constants.
@@ -497,10 +498,15 @@ async function runPreflightLoop({ isActive = false } = {}) {
     }
 
     if (sessionStatus?.valid === false && sessionStatus.checkedAt) {
-      const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
-      if (age < AUTH_BLOCK_STALE_MS) {
-        const minAgo = Math.round(age / 60000);
-        console.log(`[preflight-loop] skip:session-failed — Job #${dbJob.id} (session check failed ${minAgo} min ago).`);
+      const age     = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+      // Timeouts (YMCA site slow) use a shorter 5-min window; real auth failures
+      // (wrong credentials, account locked) block for the full 20 min.
+      const isTimeout = sessionStatus.failureType === 'timeout';
+      const staleMs   = isTimeout ? AUTH_BLOCK_STALE_TIMEOUT_MS : AUTH_BLOCK_STALE_MS;
+      if (age < staleMs) {
+        const minAgo  = Math.round(age / 60000);
+        const reason  = isTimeout ? 'page-load timeout' : 'auth failure';
+        console.log(`[preflight-loop] skip:session-failed — Job #${dbJob.id} (${reason} ${minAgo} min ago, resumes in ${Math.round((staleMs - age) / 60000)} min).`);
         continue;
       }
     }

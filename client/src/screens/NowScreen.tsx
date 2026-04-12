@@ -580,14 +580,15 @@ export interface ConfidenceSummary {
 }
 
 export function resolveConfidenceSummary(opts: {
-  nowCardState:    NowCardState
-  compositeColor:  'green' | 'amber' | 'red'
-  compositeStatus: CompositeStatus
-  confidenceLabel: ConfidenceLabel | null
-  bgSession:       string | null
-  bgDiscovery:     string | null
+  nowCardState:        NowCardState
+  compositeColor:      'green' | 'amber' | 'red'
+  compositeStatus:     CompositeStatus
+  confidenceLabel:     ConfidenceLabel | null
+  bgSession:           string | null
+  bgDiscovery:         string | null
+  sessionFailureType?: string | null
 }): ConfidenceSummary {
-  const { nowCardState, compositeColor, compositeStatus, confidenceLabel, bgSession, bgDiscovery } = opts
+  const { nowCardState, compositeColor, compositeStatus, confidenceLabel, bgSession, bgDiscovery, sessionFailureType } = opts
 
   // check_recommended: any error/failure signal present
   const hasIssue =
@@ -601,7 +602,9 @@ export function resolveConfidenceSummary(opts: {
   if (hasIssue) {
     // Surface a specific reason when we know what went wrong
     const reason =
-      bgSession === 'error'
+      bgSession === 'error' && sessionFailureType === 'timeout'
+        ? 'The YMCA site timed out — this is usually temporary. Checks will resume automatically in a few minutes.'
+        : bgSession === 'error'
         ? 'Session issue detected — tap the account icon to re-authenticate.'
         : bgDiscovery === 'missing'
           ? 'Class could not be found on the schedule. Run a fresh check before the window opens.'
@@ -1544,11 +1547,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const confidenceSummary: ConfidenceSummary | null = localArmed
     ? resolveConfidenceSummary({
         nowCardState,
-        compositeColor:  composite.color,
-        compositeStatus: composite.status,
+        compositeColor:       composite.color,
+        compositeStatus:      composite.status,
         confidenceLabel,
-        bgSession:   reconciledBgSession,
-        bgDiscovery: isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
+        bgSession:            reconciledBgSession,
+        bgDiscovery:          isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
+        sessionFailureType:   sessionStatus?.failureType ?? null,
       })
     : null
 

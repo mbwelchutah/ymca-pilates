@@ -610,13 +610,20 @@ async function runBookingJob(job, opts = {}) {
         screenshot: null,
       });
     } catch (loginErr) {
-      // Auth failed — persist the failure immediately so the UI can reflect it.
+      // Distinguish transient timeouts from real auth failures.
+      // A Playwright page-load timeout means the YMCA site was slow — credentials
+      // may still be valid.  Writing valid:false for a timeout triggers a 20-min
+      // skip window in preflight-loop, which is far too aggressive for a network
+      // hiccup.  We tag these as failureType:'timeout' so the skip window is
+      // capped at 5 min instead.
+      const isTimeout = /timeout|timed out/i.test(loginErr.message);
       saveSessionStatus({
-        valid:     false,
-        checkedAt: new Date().toISOString(),
-        source:    _runSource,
-        detail:    loginErr.message || 'Login failed',
-        screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
+        valid:       false,
+        failureType: isTimeout ? 'timeout' : 'auth_failed',
+        checkedAt:   new Date().toISOString(),
+        source:      _runSource,
+        detail:      loginErr.message || 'Login failed',
+        screenshot:  loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
       });
       emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message, {
         screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,

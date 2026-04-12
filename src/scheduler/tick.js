@@ -14,7 +14,8 @@ const { loadStatus }             = require('../bot/session-check');
 // Fresh auth-block skip threshold: if the last run or session check recorded
 // an auth failure within this window, skip warmup-phase attempts (they will
 // fail for the same reason and waste a full browser launch).
-const AUTH_BLOCK_STALE_MS = 20 * 60 * 1000; // 20 minutes
+const AUTH_BLOCK_STALE_MS         = 20 * 60 * 1000; // stale window for real auth failures
+const AUTH_BLOCK_STALE_TIMEOUT_MS =  5 * 60 * 1000; // shorter window for transient timeouts
 
 const COOLDOWN_MS        = 30 * 60 * 1000;  // cooldown for warmup phase
 const COOLDOWN_HOT_MS    =  5 * 60 * 1000;  // shorter cooldown for sniper/late — must retry fast
@@ -179,11 +180,15 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       }
 
       if (!skipReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
-        const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
-        if (age < AUTH_BLOCK_STALE_MS) {
+        const age       = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+        const isTimeout = sessionStatus.failureType === 'timeout';
+        const staleMs   = isTimeout ? AUTH_BLOCK_STALE_TIMEOUT_MS : AUTH_BLOCK_STALE_MS;
+        if (age < staleMs) {
           const minAgo = Math.round(age / 60000);
           skipReason  = 'SESSION_CHECK_FAILED';
-          skipMessage = `Skipped warmup: session check failed ${minAgo} min ago — credentials likely invalid`;
+          skipMessage = isTimeout
+            ? `Skipped warmup: page-load timeout ${minAgo} min ago — will retry when stale (${Math.round((staleMs - age) / 60000)} min)`
+            : `Skipped warmup: session check failed ${minAgo} min ago — credentials likely invalid`;
         }
       }
 

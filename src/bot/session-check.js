@@ -108,9 +108,11 @@ async function runSessionCheck({ source = 'manual' } = {}) {
     // err.screenshotPath is set by daxko-session.js when login fails and a
     // screenshot was already captured before the error was thrown.
     const screenshot = err.screenshotPath ? path.basename(err.screenshotPath) : null;
+    const isTimeout  = /timeout|timed out/i.test(err.message);
     console.warn('[session-check] Login failed:', err.message);
     const status = {
-      valid:      false,
+      valid:       false,
+      failureType: isTimeout ? 'timeout' : 'auth_failed',
       checkedAt,
       source,
       detail:     err.message || 'Login failed',

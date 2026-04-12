@@ -37,6 +37,7 @@ export interface AuthState {
 
 export interface SessionStatus {
   valid:         boolean | null
+  failureType?:  'timeout' | 'auth_failed' | null
   checkedAt:     string | null
   detail:        string | null
   screenshot:    string | null
