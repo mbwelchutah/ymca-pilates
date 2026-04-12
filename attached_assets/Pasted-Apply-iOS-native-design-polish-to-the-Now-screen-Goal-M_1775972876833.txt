@@ -1,0 +1,80 @@
+Apply iOS-native design polish to the Now screen.
+
+Goal:
+Make the interface feel like a modern iPhone app (Apple Health / Reminders style), not a web-style card layout.
+
+Focus areas:
+
+1. Layout & surfaces
+- Reduce nested card/border feel
+- Use one primary container with internal spacing instead of multiple boxed sections
+- Replace borders with spacing and subtle background contrast
+
+2. Typography hierarchy
+- Make class title larger and more prominent
+- Keep countdown bold and clear
+- Make checklist text slightly lighter than title
+- Make confidence smaller and secondary
+- Ensure clear visual hierarchy across all text
+
+3. Buttons
+- Primary button:
+  - slightly larger corner radius
+  - subtle elevation/shadow
+  - smooth press animation
+- Secondary button:
+  - ghost/outline style
+  - same height as primary
+  - lower emphasis
+
+4. Checklist styling
+- Increase spacing slightly between rows
+- Use iOS-style checkmark icons (SF Symbols)
+- Subtle green for completed items
+- Maintain calm, readable appearance
+
+5. Confidence styling
+- Text-based (no heavy badges)
+- subtle tone color
+- visually tied to checklist, not a separate card
+
+6. Remove visual noise
+- eliminate dot progress bar
+- remove redundant dividers and borders
+- remove duplicate status UI
+- remove unnecessary Tools links
+
+7. Motion polish
+- smooth transitions for button state changes
+- fade/transition status messages instead of abrupt swaps
+- keep animations subtle and fast
+
+8. Color system
+- reduce number of colors used simultaneously
+- keep tones soft and consistent
+- avoid harsh contrasts
+
+9. Spacing system
+- use consistent vertical spacing (8pt rhythm)
+- larger gaps between sections than within sections
+- ensure clean alignment across all elements
+
+10. Overall goal
+- calm
+- minimal
+- cohesive
+- iPhone-native feel
+- no "dashboard" or "developer tool" vibe
+
+Constraints:
+- do not change functionality
+- do not break existing flows
+- focus only on visual and interaction polish
+
+Please:
+1. apply styling updates
+2. ensure mobile layout remains stable
+3. report:
+   - files changed
+   - major visual changes made
+   - any tradeoffs

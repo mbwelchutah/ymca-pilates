@@ -1560,13 +1560,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* Class name */}
           {job ? (
             <>
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-1.5">
-                Active from Plan
-              </p>
               <h2 className="text-[28px] font-bold tracking-tighter text-text-primary leading-tight">
                 {job.class_title}
               </h2>
-              <p className="text-[14px] text-text-secondary mt-1 mb-2">
+              <p className="text-[14px] text-text-secondary mt-1 mb-3">
                 {formatDayTime(job)}
               </p>
             </>
@@ -1581,17 +1578,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Status banner — booked / waitlist / off / sniper / late / countdown */}
+          {/* Status banner — booked / waitlist / off / sniper / late / countdown.
+               Urgency states (Registering, Armed ≤45s) keep tinted surfaces to
+               signal action. Calm states (Registered, Late, Off) use flat dot+text
+               so the card doesn't feel like nested boxes. */}
           {isBooked ? (
             job?.last_result === 'waitlist' ? (
-              <div className="bg-amber-500/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              // Waitlisted — amber surface, mild warning
+              <div className="flex items-center gap-2.5 py-0.5">
                 <StatusDot color="amber" />
-                <span className="text-[17px] font-semibold text-amber-600">
-                  Waitlisted
-                </span>
+                <span className="text-[17px] font-semibold text-amber-600">Waitlisted</span>
               </div>
             ) : (
-              <div className="bg-accent-green/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+              // Registered — flat green, calm completion state
+              <div className="flex items-center gap-2.5 py-0.5">
                 <StatusDot color="green" />
                 <span className="text-[17px] font-semibold text-accent-green">
                   {job?.last_result === 'dry_run' ? 'Test run' : 'Registered'}
@@ -1599,7 +1599,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </div>
             )
           ) : isInactive ? (
-            <div className="bg-surface rounded-xl px-4 py-3">
+            // Scheduling off — flat, no surface box
+            <div className="py-0.5">
               <div className="flex items-center gap-2.5">
                 <StatusDot color="gray" />
                 <span className="text-[16px] text-text-secondary">Scheduling off</span>
@@ -1609,44 +1610,32 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </p>
             </div>
           ) : phase === 'sniper' ? (
-            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+            // Actively registering — keep blue tint (urgency)
+            <div className="bg-accent-blue/10 rounded-2xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
-              <span className="text-[17px] font-semibold text-accent-blue">
-                Registering…
-              </span>
+              <span className="text-[17px] font-semibold text-accent-blue">Registering…</span>
             </div>
           ) : bgReadiness?.executionTiming?.phase === 'confirming' ? (
-            // Stage 10E — window has opened, a live booking attempt is in flight,
-            // and the bot is waiting for the page to confirm the registration.
-            // Client-side phase would be 'late' at this point; the server-computed
-            // executionTiming.phase overrides that to show the correct state.
-            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+            // Stage 10E — booking in flight, waiting for confirmation
+            <div className="bg-accent-blue/10 rounded-2xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
-              <span className="text-[17px] font-semibold text-accent-blue">
-                Confirming registration…
-              </span>
+              <span className="text-[17px] font-semibold text-accent-blue">Confirming registration…</span>
             </div>
           ) : phase === 'late' && bgReadiness?.armed?.state === 'booking' ? (
-            // Booking is actively running during the late phase — don't prematurely
-            // show "window closed" while the bot is still attempting registration.
-            <div className="bg-accent-blue/10 rounded-xl px-4 py-3 flex items-center gap-2.5">
+            // Booking running in late phase — keep blue (active)
+            <div className="bg-accent-blue/10 rounded-2xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
-              <span className="text-[17px] font-semibold text-accent-blue">
-                Registering…
-              </span>
+              <span className="text-[17px] font-semibold text-accent-blue">Registering…</span>
             </div>
           ) : phase === 'late' ? (
-            <div className="bg-surface rounded-xl px-4 py-3 flex items-center gap-2.5">
+            // Window closed — flat, neutral
+            <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="gray" />
               <span className="text-[16px] text-text-secondary">Registration window has closed</span>
             </div>
           ) : execPhase === 'armed' ? (
-            // Stage 10H — Armed phase: window opens in ≤45 s.
-            // Show an amber pulsing indicator instead of the generic countdown.
-            // The existing useCountdown hook already ticks every second so the
-            // number is always fresh; the readiness poll is now 1 s so the
-            // transition to "Booking in progress" is near-instantaneous.
-            <div className="bg-accent-amber/10 rounded-xl px-4 py-3">
+            // Stage 10H — ≤45 s to open; amber keeps urgency
+            <div className="bg-accent-amber/10 rounded-2xl px-4 py-3">
               <div className="flex items-center gap-2.5 mb-1">
                 <StatusDot color="amber" />
                 <span className="text-[17px] font-semibold text-accent-amber">Opening in</span>
@@ -1658,7 +1647,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </div>
             </div>
           ) : (
-            <div className="bg-surface rounded-xl px-4 py-3">
+            // Default countdown — no inner box, number floats on card bg
+            <div className="py-0.5">
               <span className="text-[48px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
                 {countdown || '—'}
               </span>
@@ -1726,15 +1716,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                        the same nodes while localArmed stays true so it never
                        replays on re-render.  prefers-reduced-motion: reduce
                        strips translateY, leaving only the opacity fade. */}
-                  <div className="space-y-1.5">
+                  <div className="space-y-2.5">
                     {PREFLIGHT_STEP_LIST.map((step, idx) => (
                       <div
                         key={step}
-                        className="flex items-center gap-2.5 animate-checklist-item"
+                        className="flex items-center gap-3 animate-checklist-item"
                         style={{ animationDelay: `${idx * 50}ms` }}
                       >
-                        <span className="text-[13px] w-4 text-center shrink-0 text-accent-green select-none">✓</span>
-                        <span className="text-[13px] text-text-primary">{STEP_LABELS[step]}</span>
+                        <span className="text-[14px] w-4 text-center shrink-0 text-accent-green select-none leading-none">✓</span>
+                        <span className="text-[14px] text-text-primary">{STEP_LABELS[step]}</span>
                       </div>
                     ))}
                   </div>
@@ -1788,11 +1778,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 const result = stableResult ?? currentResult
                 if (!result) return null
                 const bgClass =
-                  result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
-                  result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
-                  result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
-                  result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
-                  'bg-surface border border-divider'
+                  result.severity === 'success' ? 'bg-accent-green/10' :
+                  result.severity === 'warning' ? 'bg-accent-amber/10' :
+                  result.severity === 'error'   ? 'bg-accent-red/10'   :
+                  result.severity === 'info'    ? 'bg-accent-blue/10'  :
+                  'bg-surface'
                 const labelClass =
                   result.severity === 'success' ? 'text-accent-green' :
                   result.severity === 'warning' ? 'text-accent-amber' :
@@ -1806,7 +1796,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   result.severity === 'info'    ? 'blue'  :
                   'gray'
                 return (
-                  <div className={`rounded-xl px-3.5 py-3 mb-3 ${bgClass}`}>
+                  <div className={`rounded-2xl px-3.5 py-3 mb-3 ${bgClass}`}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <StatusDot color={dotColor} />
                       <span className={`text-[14px] font-medium ${labelClass}`}>
@@ -1840,17 +1830,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
                 // Derive button classes from emphasis + disabled state.
                 // flex-1 so the Options button sits alongside it at a fixed width.
+                // rounded-2xl + shadow-sm + active:scale-[0.98] = iOS-native press feel.
                 const btnClass = [
-                  'flex-1 rounded-xl py-3 text-[15px] font-semibold transition-opacity',
+                  'flex-1 rounded-2xl py-3 text-[15px] font-semibold transition-all',
                   disabled
                     ? emphasis === 'muted'
                       ? 'bg-surface border border-divider text-text-muted cursor-default'
                       : 'bg-accent-blue text-white opacity-60 cursor-default'
                     : emphasis === 'primary-amber'
-                      ? 'bg-accent-amber text-white active:opacity-80'
+                      ? 'bg-accent-amber text-white shadow-sm active:opacity-80 active:scale-[0.98]'
                       : emphasis === 'outline-red'
-                        ? 'bg-surface border border-accent-red/40 text-accent-red active:opacity-60'
-                        : 'bg-accent-blue text-white active:opacity-80',
+                        ? 'bg-surface border border-accent-red/40 text-accent-red active:opacity-60 active:scale-[0.98]'
+                        : 'bg-accent-blue text-white shadow-sm active:opacity-80 active:scale-[0.98]',
                 ].join(' ')
 
                 // Long-press handlers — fires the action sheet after 500 ms hold.
@@ -1889,7 +1880,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
-                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 transition-opacity"
+                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 active:scale-[0.98] transition-all"
                           aria-label={SECONDARY_LABEL[secondaryAction]}
                         >
                           {SECONDARY_LABEL[secondaryAction]}
@@ -1998,7 +1989,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   {!execDone.ok && (
                     <button
                       onClick={execStepList.length === BOOK_STEP_LIST.length ? handleNowBook : handleNowPreflight}
-                      className="mt-2 w-full py-2 rounded-xl border border-divider text-[13px] text-text-secondary font-medium active:opacity-60 transition-opacity"
+                      className="mt-2 w-full py-2 rounded-2xl border border-divider text-[13px] text-text-secondary font-medium active:opacity-60 active:scale-[0.98] transition-all"
                     >
                       {execStepList.length === BOOK_STEP_LIST.length ? 'Retry registration' : 'Run check again'}
                     </button>
@@ -2008,9 +1999,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* Actions section */}
+          {/* Actions section — spacing only, no divider border */}
           {job && (
-            <div className="mt-2 pt-2 border-t border-divider">
+            <div className="mt-4">
 
               {/* ── Bottom utility row: Live/Test toggle + Pause/Resume ───────────── */}
               {/* Resume is shown as an amber pill (urgent); Pause is muted text.    */}

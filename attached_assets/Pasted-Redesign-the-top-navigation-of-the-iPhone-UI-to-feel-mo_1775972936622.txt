@@ -1,0 +1,66 @@
+Redesign the top navigation of the iPhone UI to feel more truly iOS-native.
+
+Goal:
+Replace the current web-like top tab layout with a more Apple-style navigation pattern using large title behavior and a segmented-control-inspired section switcher.
+
+Current structure:
+- title area
+- subtitle
+- top tab row: Now / Plan / Tools / Settings
+
+Problems:
+- feels more like a web app than a native iPhone app
+- tab row lacks iOS polish
+- overall top navigation does not yet feel Apple-like
+
+Desired direction:
+
+1. Add true iOS-style large title behavior
+- make "YMCA Bot" feel like a large iPhone navigation title
+- allow it to feel spacious at the top
+- as content scrolls, compress the header subtly into a tighter navigation state
+- keep transitions calm and smooth
+
+2. Redesign the top section switcher
+Preferred approach:
+- replace the current tab row with a segmented-control-inspired pill switcher
+- sections remain:
+  - Now
+  - Plan
+  - Tools
+  - Settings
+- use a rounded container and active pill treatment
+- smooth selection transitions
+- equal spacing and iPhone-friendly sizing
+
+3. Keep the top area visually clean
+- title on left
+- profile/status icon on right
+- optional subtitle only if useful (for example: "Auto-registration ready" or "1 class scheduled")
+- avoid extra lines, dividers, or web-style tab underlines
+
+4. Behavior
+- section switcher should remain clear and easy to tap
+- if possible, keep the switcher pinned while content scrolls
+- make the large title collapse gracefully as the user scrolls
+
+5. Design intent
+- modern iPhone feel
+- Apple Health / Reminders / Settings influence
+- soft surfaces, spacing, and hierarchy
+- not a browser-like top tab bar
+
+6. Constraints
+- do not change app functionality
+- preserve existing navigation destinations
+- keep layout stable on iPhone widths
+- prioritize visual and interaction polish
+
+Please:
+1. redesign the top navigation
+2. implement large-title behavior if feasible in the current stack
+3. replace current tab styling with segmented-control-inspired styling
+4. report:
+   - files changed
+   - major navigation changes made
+   - any limitations due to the current app architecture
