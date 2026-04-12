@@ -162,13 +162,18 @@ function getCachedPng(size) {
 const MANIFEST_JSON = JSON.stringify({
   name: 'YMCA BOT',
   short_name: 'YMCA BOT',
+  id: '/',
   start_url: '/',
+  scope: '/',
   display: 'standalone',
-  background_color: '#000000',
-  theme_color: '#ffffff',
+  orientation: 'portrait',
+  background_color: '#f9f9fb',
+  theme_color: '#f9f9fb',
   icons: [
-    { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    // 180px — Apple Home Screen preferred size (also served as apple-touch-icon)
+    { src: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png', purpose: 'any' },
+    { src: '/icon-192.png',         sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png',         sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
   ],
 });
 
@@ -398,9 +403,10 @@ function buildHtml(jobs, error, editError) {
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="YMCA BOT">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#f9f9fb">
+  <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -3879,7 +3885,13 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
     res.end(MANIFEST_JSON);
 
-  } else if (req.method === 'GET' && (path === '/icon-192.png' || path === '/apple-touch-icon.png')) {
+  } else if (req.method === 'GET' && path === '/apple-touch-icon.png') {
+    // Apple recommends 180×180 for the home-screen touch icon
+    const png = getCachedPng(180);
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Content-Length': png.length });
+    res.end(png);
+
+  } else if (req.method === 'GET' && path === '/icon-192.png') {
     const png = getCachedPng(192);
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Content-Length': png.length });
     res.end(png);

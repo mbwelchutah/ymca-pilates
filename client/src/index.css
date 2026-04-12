@@ -35,13 +35,43 @@
   html {
     font-family: var(--font-family-sans);
     background-color: var(--color-surface);
+    /* Lock the root viewport to device height — prevents browser chrome resize
+       from causing layout shifts when standalone on iOS. */
+    height: 100%;
+    overscroll-behavior: none;
   }
 
   body {
     margin: 0;
     padding: 0;
+    height: 100%;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
+    /* Prevent rubber-band on the body itself in standalone mode. */
+    position: fixed;
+    width: 100%;
+  }
+
+  #root {
+    height: 100%;
+    /* Use dynamic viewport height when available (accounts for collapsing
+       browser chrome on mobile). Falls back to 100vh on older devices. */
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Eliminate the 300ms tap delay on all interactive elements.
+     'manipulation' disables double-tap-to-zoom on the element while preserving
+     normal scroll behaviour on its container — the correct iOS default. */
+  button, a, [role="button"], [role="tab"], label, select {
+    touch-action: manipulation;
+  }
+
+  /* Prevent accidental text selection on UI controls. Scrollable text areas
+     (p, span inside a card) are unaffected by this rule. */
+  button, [role="button"], [role="tab"] {
+    user-select: none;
+    -webkit-user-select: none;
   }
 }
 
