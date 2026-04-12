@@ -1,0 +1,87 @@
+Refine the Now screen to make the checklist the single source of truth and remove redundant status UI.
+
+Current issues:
+- multiple sections are repeating the same readiness information
+- dot progress bar duplicates checklist state
+- separate Tools links and diagnostic sections create clutter
+- errors are not consistently surfaced near the checklist
+
+Goal:
+Create a clean, calm, iPhone-friendly Now screen where:
+- the checklist is the primary reassurance element
+- confidence is shown alongside the checklist
+- all status and error messaging appears directly below the checklist
+- Tools is only referenced when necessary
+
+Requirements:
+
+1. Make the checklist the primary readiness block
+- Keep items like:
+  - Session verified
+  - Schedule loaded
+  - Class found
+  - Modal reached
+- Ensure the checklist persists after auto-registration is armed
+- Do not allow it to disappear unexpectedly
+
+2. Add a confidence summary directly below the checklist
+- Use labels like:
+  - Very likely to succeed
+  - Likely to succeed
+  - Needs attention
+  - Check recommended
+- Add a short explanation line under the label
+- Do not create a separate large card for confidence
+
+3. Move all status and error messaging directly below the checklist
+Examples:
+- "Auto-registration ready · Will register at 9:35 AM"
+- "Needs attention · Login may need to be refreshed"
+
+4. Add contextual actions only when needed
+If there is an issue:
+- show:
+  - "Run Registration Check"
+  - "View details"
+- "View details" should link to Tools
+- do NOT show Tools links when everything is working
+
+5. Remove redundant UI elements
+Specifically remove:
+- dot progress bar under the button
+- duplicate readiness summaries
+- "View run events in Tools"
+- "Full details in Tools"
+- separate diagnostic/status sections that repeat checklist info
+
+6. Keep the Now card minimal and self-contained
+Final structure:
+- countdown
+- checklist
+- confidence line
+- status / message
+- primary action
+- secondary dynamic button
+
+7. Preserve all existing functionality
+- immediate registration
+- auto-registration arming
+- cancel auto-registration
+- registration check (preflight)
+
+Design intent:
+- calm
+- trustworthy
+- no duplication
+- no developer-dashboard feel
+- checklist = truth, everything else supports it
+
+Please:
+1. identify all duplicate status UI
+2. remove or consolidate them
+3. reposition status + error messaging under the checklist
+4. keep Tools access only when contextually needed
+5. report:
+   - files changed
+   - what UI elements were removed
+   - how error states are now surfaced

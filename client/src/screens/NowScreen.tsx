@@ -1914,14 +1914,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {execDone.text}
                     </p>
                   </div>
-                  {onGoToTools && (
-                    <button
-                      onClick={() => onGoToTools('tools-run-events')}
-                      className="mt-1.5 text-[12px] text-accent-blue active:opacity-60"
-                    >
-                      View run events →
-                    </button>
-                  )}
                   {/* Retry shortcut — only shown for failed runs */}
                   {!execDone.ok && (
                     <button
@@ -1935,81 +1927,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               )}
             </div>
           )}
-
-          {/* ── Sniper Timeline Strip — 5-segment progress bar ───────────── */}
-          {/* Replaces the single-dot status bar. Shown for all phases        */}
-          {/* including firing/confirming (full bar reinforces completion).   */}
-          {job && !isBooked && !isInactive && phase !== 'late' && (() => {
-            const sp = deriveSniperPhase({
-              armedState:    sniperArmed?.state ?? null,
-              clientPhase:   phase,
-              execPhase:     execPhase ?? null,
-              bookingActive: bgReadiness?.armed?.state === 'booking',
-            })
-
-            // Phase → fill count, filled-segment colour, fire animation flag
-            const STRIP: Record<SniperPhase, { filled: number; color: string; fireAnim: boolean }> = {
-              monitoring: { filled: 1, color: 'bg-text-muted/50', fireAnim: false },
-              locked:     { filled: 2, color: 'bg-accent-amber',  fireAnim: false },
-              armed:      { filled: 3, color: 'bg-accent-green',  fireAnim: false },
-              countdown:  { filled: 4, color: 'bg-accent-green',  fireAnim: false },
-              firing:     { filled: 5, color: 'bg-accent-green',  fireAnim: true  },
-              confirming: { filled: 5, color: 'bg-accent-green', fireAnim: true  },
-            }
-            const { filled, color, fireAnim } = STRIP[sp]
-
-            const { text: lsText, subtext: lsSubtext } = deriveLiveStatus(sp, bgReadiness?.armed?.nextWindow ?? null)
-
-            return (
-              <>
-                <div key={sp} className="mt-2 flex items-center gap-3 animate-sniper-phase">
-                  {/* 5 segment dots */}
-                  <div className="flex items-center gap-1.5">
-                    {[0, 1, 2, 3, 4].map(i => {
-                      const isFilled   = i < filled
-                      // Countdown: the 4th dot (index 3) is the active frontier —
-                      // render it slightly larger to signal it's the leading edge.
-                      const isFrontier = sp === 'countdown' && i === 3
-                      // Fire moment: 5th dot (index 4) gets the scale-pop animation.
-                      const isFireDot  = fireAnim && i === 4
-                      return (
-                        <span
-                          key={i}
-                          className={[
-                            'rounded-full flex-shrink-0',
-                            isFrontier ? 'w-2.5 h-2.5' : 'w-2 h-2',
-                            isFilled ? color : 'bg-divider',
-                            isFireDot ? 'animate-sniper-fire' : '',
-                          ].filter(Boolean).join(' ')}
-                        />
-                      )
-                    })}
-                  </div>
-                  {/* Countdown phase: show "Firing in X" text inline */}
-                  {sp === 'countdown' && (
-                    <span className="text-[13px] text-text-secondary font-medium">
-                      {'Firing in '}
-                      <span className="text-accent-green font-semibold tabular-nums">{countdown || '—'}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* ── Stage 5: Live status line ──────────────────────────── */}
-                {/* Suppressed when armed — the persistent checklist below   */}
-                {/* already carries the "Auto-registration ready" message.   */}
-                {!localArmed && (
-                  <p className="text-[12px] text-text-muted mt-1 mb-0.5 leading-snug">
-                    {lsText}
-                    {lsSubtext && (
-                      <span className="ml-1.5 opacity-75">· {lsSubtext}</span>
-                    )}
-                  </p>
-                )}
-              </>
-            )
-          })()}
-
-
 
           {/* Actions section */}
           {job && (
@@ -2061,30 +1978,24 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* ── Trust line: State · Confidence · Freshness ── */}
-              {/* Suppressed when armed — checklist is the sole reassurance element. */}
-              {!bannerIsComplete && execMode === 'idle' && !localArmed && (() => {
+              {/* Trust line removed — confidence summary inside checklist block is the sole
+                   readiness indicator. Keeping the freshness timestamp only where it adds
+                   unique value (Tools readiness tab). */}
+              {false && !bannerIsComplete && execMode === 'idle' && !localArmed && (() => {
                 if (!isReadinessForSelectedJob) return null
-
-                // Steady state — Confidence · Freshness
-                // State is already shown in the card above; trust line provides supporting context only.
                 const result = stableResult ?? currentResult
                 if (!result) return null
-
                 const dotColor: DotColor =
                   result.severity === 'success' ? 'green' :
                   result.severity === 'error'   ? 'red'   :
                   result.severity === 'warning' ? 'amber' :
                   result.severity === 'info'    ? 'blue'  :
                   'gray'
-
-                // Map confidence: low confidence on an issue → "At risk"
                 const confText = (() => {
                   if (!confidenceLabel) return null
                   if (result.state === 'issue' && confidenceLabel === 'Low confidence') return 'At risk'
                   return confidenceLabel
                 })()
-
                 const trustText = [confText, lastCheckedText].filter(Boolean).join(' · ')
                 if (!trustText) return null
 
@@ -2213,32 +2124,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </div>
         )}
 
-        {/* ── Technical status link — demoted from 4-tile diagnostic card ─
-             The full Session / Class / Modal / Action detail lives in Tools.
-             This link is context-aware: session problem → readiness tab,
-             run events present → run-events tab, otherwise general readiness. */}
-        {!isBooked && onGoToTools && (
+        {/* ── Contextual Tools link — only surfaces when the assistant signals an issue.
+             Hidden when everything is healthy so the screen stays clean.
+             "check" = low confidence / session error / class missing (before arming)
+             "fix"   = last action failed (registration_failed / preflight_failed)  */}
+        {!isBooked && onGoToTools && (secondaryAction === 'check' || secondaryAction === 'fix') && (
           <div className="text-center">
-            {(() => {
-              const hasSessionProblem =
-                sessionStatus?.daxko !== 'DAXKO_READY' ||
-                sessionStatus?.familyworks !== 'FAMILYWORKS_READY'
-              const hasRunEvents = (sniperRunState?.events?.length ?? 0) > 0
-              const section = hasSessionProblem ? 'tools-readiness'
-                : hasRunEvents ? 'tools-run-events'
-                : 'tools-readiness'
-              const label = hasSessionProblem ? 'Check session in Tools →'
-                : hasRunEvents ? 'View run events in Tools →'
-                : 'View technical status →'
-              return (
-                <button
-                  onClick={() => onGoToTools(section)}
-                  className="text-[12px] text-text-muted active:opacity-50 px-2 py-1"
-                >
-                  {label}
-                </button>
-              )
-            })()}
+            <button
+              onClick={() => onGoToTools('tools-readiness')}
+              className="text-[12px] text-text-muted active:opacity-50 px-2 py-1"
+            >
+              View details in Tools →
+            </button>
           </div>
         )}
 
@@ -2282,15 +2179,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })}
 
-              {/* Link to full Tools view */}
-              {onGoToTools && (
-                <button
-                  onClick={() => onGoToTools('tools-run-events')}
-                  className="w-full text-center text-[12px] text-accent-blue active:opacity-60 py-2.5 border-t border-divider"
-                >
-                  Full details in Tools →
-                </button>
-              )}
             </Card>
           )
         })()}
