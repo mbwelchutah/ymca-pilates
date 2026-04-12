@@ -249,9 +249,13 @@ function derivePrimaryResult(opts: {
   // Real failures that require user attention before the system can proceed.
 
   // Auth / session failure — explicit blocker.
+  // Suppressed when the live HTTP ping (bgSession='ready') confirms the session is
+  // actually active — prevents a stale 90 s poll result from showing "Login required"
+  // while the account icon simultaneously shows a green dot.
   if (
-    sessionStatus?.overall === 'AUTH_NEEDS_LOGIN' ||
-    sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING'
+    (sessionStatus?.overall === 'AUTH_NEEDS_LOGIN' ||
+     sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING') &&
+    bgSession !== 'ready'
   ) {
     const isExpired = sessionStatus.overall === 'FAMILYWORKS_SESSION_MISSING'
     return {
