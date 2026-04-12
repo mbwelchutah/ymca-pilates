@@ -39,7 +39,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
     try {
       const result = await api.settingsClear()
       if (result.success) {
-        setClearFeedback({ text: result.detail ?? 'Session cleared. Log in before the next booking run.', cls: 'text-accent-amber' })
+        setClearFeedback({ text: result.detail ?? 'Session cleared. Log in before the next registration run.', cls: 'text-accent-amber' })
       } else {
         setClearFeedback({ text: result.detail ?? 'Clear failed — try again', cls: 'text-accent-red' })
       }
@@ -60,7 +60,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
         <Card padding="none">
           <ToggleRow
             label="Pause Scheduler"
-            detail="Stop automatic booking attempts"
+            detail="Stop automatic registration attempts"
             value={appState.schedulerPaused}
             onChange={pause => handlePauseResume(pause)}
           />
@@ -86,7 +86,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
         <Card>
           <p className="text-[14px] text-text-secondary leading-snug mb-4">
             Reset all saved auth state. Use this if sign-in is stuck or credentials are out of sync.
-            You will need to log in again before the next booking run.
+            You will need to log in again before the next registration run.
           </p>
           <button
             onClick={handleClear}

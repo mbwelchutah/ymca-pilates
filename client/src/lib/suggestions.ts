@@ -118,7 +118,7 @@ export function generateSuggestions({
       id:       'schedule-slow',
       priority: 'med',
       text:     'Schedule repeatedly failed to load — Daxko may be slow',
-      detail:   'No action needed if it was a one-off; monitor closely near booking',
+      detail:   'No action needed if it was a one-off; monitor closely near registration',
     })
   }
 

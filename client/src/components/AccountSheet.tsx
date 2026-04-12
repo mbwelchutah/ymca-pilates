@@ -113,7 +113,7 @@ function deriveConnectionInfo(s: SessionStatus | null): ConnectionInfo {
     if (auth.status === 'signed_out' || (!auth.daxkoValid && !auth.familyworksValid && auth.lastCheckedAt === null)) return {
       state:          'needs_attention',
       headline:       'Signed out',
-      subline:        'Sign in to enable booking',
+      subline:        'Sign in to enable registration',
       dotColor:       'red',
       headlineCls:    'text-accent-red',
       signedIn:       false,

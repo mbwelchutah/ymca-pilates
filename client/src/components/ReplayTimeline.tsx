@@ -151,7 +151,7 @@ function EmptyNoRuns() {
       <div className="text-center">
         <p className="text-[13px] font-medium text-text-secondary">No runs yet</p>
         <p className="text-[11px] text-text-muted mt-1 leading-relaxed max-w-[220px]">
-          The timeline fills in automatically after the first booking attempt.
+          The timeline fills in automatically after the first registration attempt.
         </p>
       </div>
     </div>

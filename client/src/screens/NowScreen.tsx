@@ -884,7 +884,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     schedule: 'Schedule loaded',
     class:    'Class found',
     modal:    'Modal reached',
-    action:   'Booking action',
+    action:   'Registration action',
     result:   'Confirmation detected',
   }
   const BLANK_STEPS: ExecSteps = {
@@ -1485,7 +1485,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {(execMode === 'running_preflight' || execMode === 'running_booking') && (
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-2.5">
-                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Booking…'}
+                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Registering…'}
                   </p>
                   <div className="space-y-2">
                     {execStepList.map(step => {

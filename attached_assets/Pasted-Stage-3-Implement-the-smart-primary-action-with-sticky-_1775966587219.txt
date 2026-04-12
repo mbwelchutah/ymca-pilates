@@ -1,0 +1,80 @@
+Stage 3 — Implement the smart primary action with sticky armed state
+
+Goal:
+Replace the fixed/manual primary action with one smart primary button that adapts to real class state while reusing existing working flows.
+
+Important:
+- Reuse the existing working immediate registration flow
+- Reuse existing Preflight flow
+- Do not replace backend registration logic
+- Keep only one visible primary action on the card
+- Waitlist is not a proactive pre-run button state yet; only surface waitlist as a post-attempt outcome if already supported by the existing response handling
+
+Centralize smart button logic in a clean resolver function that returns:
+- label
+- action type
+- helper text
+- disabled/loading state
+- optional visual emphasis state
+
+Required button label/state logic:
+- already registered -> "Registered ✓" (disabled or non-primary)
+- registration in progress -> "Registering..."
+- auto-registration armed -> "Cancel Auto-registration"
+- registration open -> "Register Now"
+- registration not open and not armed -> "Get Spot"
+
+Critical sticky-state requirement:
+Once the user taps "Get Spot" and auto-registration is successfully armed, the UI must remain in the armed state until one of the following occurs:
+- user cancels auto-registration
+- registration attempt starts
+- registration succeeds
+- registration fails
+- the underlying plan entry changes or is removed
+
+That means:
+- do NOT allow the CTA to revert to "Get Spot" just because the registration window is still closed
+- armed state must have higher priority than generic pre-open state
+
+Use a clear source of truth for armed state, such as:
+- autoRegistrationArmed
+- scheduledRunActive
+- armedFromPlan
+or the most accurate equivalent in the current architecture
+
+Required button behavior:
+- "Register Now" -> run the existing immediate registration flow
+- "Get Spot" -> arm auto-registration for this class and show inline confirmation
+- "Cancel Auto-registration" -> disarm the scheduled/armed state and keep the class/plan intact unless the current architecture already couples them; if coupled, report that clearly before changing it
+- "Registered ✓" -> no registration action
+
+Helper text rules:
+- registration open -> "Spots available" if that is already known, otherwise keep helper text minimal
+- registration not open -> "Registration opens in [time]"
+- auto-registration armed -> "Auto-registration ready" and "Will register at [time]"
+
+Required state priority:
+1. registered
+2. registration_in_progress
+3. auto_registration_armed
+4. registration_failed
+5. preflight_failed
+6. registration_open
+7. registration_not_open
+
+Requirements:
+- Keep the main card simple
+- Preserve current successful button flows
+- Avoid duplicate buttons or parallel action choices
+- Keep this mobile-friendly and visually calm
+
+Please:
+1. inspect where the current Now CTA state is derived
+2. identify why it is reverting to "Get Spot"
+3. fix the state-priority logic
+4. wire the cancel action for the armed state
+5. report:
+   - files changed
+   - new state priority
+   - what source of truth is used for "armed"
+   - whether cancel disarms only or also alters the Plan entry
