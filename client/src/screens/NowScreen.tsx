@@ -559,6 +559,75 @@ export function resolveSecondaryAction(opts: {
   return 'options'
 }
 
+// ── Confidence summary resolver ───────────────────────────────────────────────
+// Maps the current readiness signals to a human-friendly confidence assessment
+// shown below the persistent preflight checklist when armed.
+// Four levels — priority highest → lowest:
+//   check_recommended — an issue was found (error/failure/red/missing)
+//   needs_attention   — amber signals or medium confidence (partial pass)
+//   very_likely       — composite green + high confidence (everything confirmed)
+//   likely            — default armed state (no bad signal; green or unknown)
+
+export type ConfidenceLevel = 'very_likely' | 'likely' | 'needs_attention' | 'check_recommended'
+
+export interface ConfidenceSummary {
+  level:  ConfidenceLevel
+  label:  string
+  reason: string
+}
+
+export function resolveConfidenceSummary(opts: {
+  nowCardState:    NowCardState
+  compositeColor:  'green' | 'amber' | 'red'
+  confidenceLabel: ConfidenceLabel | null
+  bgSession:       string | null
+  bgDiscovery:     string | null
+}): ConfidenceSummary {
+  const { nowCardState, compositeColor, confidenceLabel, bgSession, bgDiscovery } = opts
+
+  // check_recommended: any error/failure signal present
+  const hasIssue =
+    nowCardState === 'registration_failed' ||
+    nowCardState === 'preflight_failed'    ||
+    compositeColor === 'red'               ||
+    bgSession      === 'error'             ||
+    bgDiscovery    === 'missing'           ||
+    confidenceLabel === 'Low confidence'
+
+  if (hasIssue) {
+    return {
+      level:  'check_recommended',
+      label:  'Check recommended',
+      reason: 'An issue was found that may affect registration.',
+    }
+  }
+
+  // needs_attention: amber signals or medium confidence
+  if (compositeColor === 'amber' || confidenceLabel === 'Medium confidence') {
+    return {
+      level:  'needs_attention',
+      label:  'Needs attention',
+      reason: 'Most checks passed, but some signals need review before the window opens.',
+    }
+  }
+
+  // very_likely: composite green + high confidence = everything confirmed
+  if (compositeColor === 'green' && confidenceLabel === 'High confidence') {
+    return {
+      level:  'very_likely',
+      label:  'Very likely to succeed',
+      reason: 'Session, class, and registration link are all confirmed.',
+    }
+  }
+
+  // likely: default armed state — green composite but confidence not yet measured
+  return {
+    level:  'likely',
+    label:  'Likely to succeed',
+    reason: 'Core checks passed — will register when the window opens.',
+  }
+}
+
 // ── Stage 5: Live status derivation ──────────────────────────────────────────
 // Maps the current sniper phase to a concise, human-readable status text +
 // an optional subtext (e.g. "Will register at 10:20 PM").
@@ -1428,6 +1497,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     }
   })()
 
+  // Confidence summary — rendered below the persistent armed checklist.
+  // Only computed when localArmed so it's only needed while the checklist is visible.
+  const confidenceSummary: ConfidenceSummary | null = localArmed
+    ? resolveConfidenceSummary({
+        nowCardState,
+        compositeColor:  composite.color,
+        confidenceLabel,
+        bgSession:   reconciledBgSession,
+        bgDiscovery: isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
+      })
+    : null
+
   if (loading) {
     return (
       <>
@@ -1633,18 +1714,41 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {job && (
             <div className="mt-3">
 
-              {/* ── Persistent preflight checklist — shown when armed + idle ──────
-                   Keeps the session/schedule/class/modal reassurance visible after
-                   the 20 s exec-done animation resets.  Disappears immediately on
-                   disarm, booking, or job change (all clear localArmed).          */}
+              {/* ── Persistent preflight checklist + confidence summary ────────────
+                   Shown when armed + idle. Checklist gives step-level reassurance;
+                   confidence summary gives an overall human-friendly read.
+                   Disappears on disarm, booking, or job change (all clear localArmed). */}
               {execMode === 'idle' && localArmed && (
-                <div className="space-y-1.5 mb-3">
-                  {PREFLIGHT_STEP_LIST.map(step => (
-                    <div key={step} className="flex items-center gap-2.5">
-                      <span className="text-[13px] w-4 text-center shrink-0 text-accent-green select-none">✓</span>
-                      <span className="text-[13px] text-text-primary">{STEP_LABELS[step]}</span>
-                    </div>
-                  ))}
+                <div className="mb-3">
+                  {/* Step rows */}
+                  <div className="space-y-1.5">
+                    {PREFLIGHT_STEP_LIST.map(step => (
+                      <div key={step} className="flex items-center gap-2.5">
+                        <span className="text-[13px] w-4 text-center shrink-0 text-accent-green select-none">✓</span>
+                        <span className="text-[13px] text-text-primary">{STEP_LABELS[step]}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Confidence summary — tone-matched label + one-line reason */}
+                  {confidenceSummary && (() => {
+                    const { level, label: confLabel, reason } = confidenceSummary
+                    const labelClass =
+                      level === 'very_likely'       ? 'text-accent-green' :
+                      level === 'needs_attention'   ? 'text-accent-amber' :
+                      level === 'check_recommended' ? 'text-accent-amber' :
+                      'text-text-secondary'
+                    return (
+                      <div className="mt-2.5 pt-2.5 border-t border-divider/60">
+                        <p className={`text-[12px] font-semibold leading-snug ${labelClass}`}>
+                          {confLabel}
+                        </p>
+                        <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                          {reason}
+                        </p>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 
