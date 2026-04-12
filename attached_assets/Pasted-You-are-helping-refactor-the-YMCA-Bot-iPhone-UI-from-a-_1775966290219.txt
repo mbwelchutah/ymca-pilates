@@ -1,0 +1,40 @@
+You are helping refactor the YMCA Bot iPhone UI from a static class card into a smart registration assistant.
+
+Current state:
+- The Now screen shows an active class card
+- Immediate registration currently works from the primary button
+- Preflight currently works from the secondary button
+- Auto-registration can be armed from the Now screen
+- There is currently a bug where after auto-registration is armed, the UI can flip back to "Get Spot" instead of staying in an armed state
+- The app currently uses some “booking” wording, but YMCA language should be “registration”
+
+Final desired outcome:
+1. Replace “booking” wording with “registration” wording in all user-facing UI
+2. Convert the Now card into a state-driven card
+3. Unify manual registration and auto-registration into a smart primary action
+4. Make auto-registration armed state sticky until canceled, run, success, failure, or plan change
+5. Show "Cancel Auto-registration" when auto-registration is armed
+6. Keep advanced controls hidden behind progressive disclosure
+7. Add live status + user-facing activity feedback so the bot feels active and trustworthy
+8. Keep the interface calm, modern, iPhone-friendly, and not tool-heavy
+
+Critical constraints:
+- Do NOT break the current working immediate registration flow
+- Do NOT break the current working Preflight flow
+- Prefer reusing existing handlers and backend flows over rewriting them
+- Waitlist is not a proactive pre-run path yet; only surface it as a post-attempt outcome if already supported by the existing response handling
+- In-app notification / push when registration opens is out of scope
+- Scheduler configuration edits belong in Plan, not in the Now card
+- Make changes in small stages
+- At the end of each stage, report:
+  - files changed
+  - behavior changed
+  - anything intentionally deferred
+- Keep backend function names if needed; focus first on user-facing UI and state mapping
+- Preserve mobile layout stability and smooth scrolling
+
+Before implementing anything:
+1. Inspect the codebase and identify the main Now screen component(s), primary action handler(s), Preflight handler(s), current auto-registration armed source of truth, and likely shared UI/state utilities
+2. Tell me the most likely files to change
+3. Tell me the safest order to implement the staged refactor
+4. Do not make changes yet

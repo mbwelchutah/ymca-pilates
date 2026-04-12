@@ -1,0 +1,72 @@
+Stage 2 — Refactor the Now card into state-driven rendering
+
+Goal:
+Convert the Now screen card from a mostly static card into a state-driven card so the visible status, helper text, and actions always match the actual class state.
+
+Current known working behavior:
+- Immediate registration currently works
+- Preflight currently works
+- Auto-registration can be armed, but the UI currently does not hold the armed state correctly
+
+Use those existing working flows. Do not rewrite backend behavior.
+
+Create a centralized UI state mapping / selector for the Now card.
+Do not scatter conditional logic across the JSX if it can be cleanly centralized.
+
+Support these user-facing card states:
+1. registered
+2. registration_open
+3. registration_not_open
+4. auto_registration_armed
+5. registration_in_progress
+6. registration_failed
+7. preflight_failed
+8. waitlisted
+
+State rendering rules:
+
+registered:
+- show status like "Registered"
+- do not show "Register Now"
+- primary action should be removed, disabled, or rendered as a non-action state like "Registered ✓"
+
+registration_open:
+- primary action should be "Register Now"
+
+registration_not_open:
+- primary action should be "Get Spot"
+- helper text should indicate registration is not open yet, e.g. "Registration opens in [time]" if available
+
+auto_registration_armed:
+- this is a distinct sticky state, not just a variant of not-open
+- show status like "Auto-registration ready"
+- show helper like "Will register at [time]"
+- primary action should become "Cancel Auto-registration"
+- keep countdown visible if available
+
+registration_in_progress:
+- show loading state like "Registering..."
+
+registration_failed:
+- show clear inline status like "Registration failed"
+- show retry if already supported, otherwise keep minimal and report what is deferred
+
+preflight_failed:
+- show a clear inline warning
+- preserve ability to run Preflight / Registration Check
+
+waitlisted:
+- show "On waitlist"
+- this is a post-attempt outcome only, not a proactive pre-run state
+
+Rules:
+- Never show contradictory combinations like "Registered" + "Register Now"
+- Never show "Get Spot" while auto-registration is already armed
+- Preserve existing handlers where possible
+- Keep the layout mobile-first and visually calm
+
+At the end:
+1. Report the derived UI state function or mapping you created
+2. List files changed
+3. Call out any deferred waitlist behavior
+4. Confirm current registration and Preflight flows remain intact

@@ -1,0 +1,67 @@
+Fix the Now screen so auto-registration remains in a sticky armed state after the user taps "Get Spot".
+
+Current problem:
+Auto-registration can be successfully armed, and the UI briefly shows the armed/ready state, but then the primary CTA flips back to "Get Spot". This is incorrect.
+
+Desired behavior:
+Once auto-registration is armed, the Now screen should stay in that armed state until one of the following happens:
+- user cancels auto-registration
+- registration attempt starts
+- registration succeeds
+- registration fails
+- the underlying plan is removed or changed
+
+What I want in the UI:
+1. After tapping "Get Spot", keep the card in an armed state
+2. Show clear sticky messaging such as:
+   - "Auto-registration ready"
+   - "Will register at [time]"
+   - "Registration opens in [countdown]"
+3. Replace the primary button with:
+   - "Cancel Auto-registration"
+4. Keep "Get Spot" visible only when:
+   - registration is not open
+   - and auto-registration is NOT armed
+5. Keep the countdown visible while armed
+6. Preserve existing working registration and preflight flows
+
+Implementation requirements:
+- Treat auto-registration armed as a higher-priority UI state than the generic pre-open state
+- Add or reuse a clear boolean/state source such as:
+  - autoRegistrationArmed
+  - scheduledRunActive
+  - armedFromPlan
+  whichever is most accurate in the current architecture
+- Do not infer the armed state only from "window not open"
+- Do not reset the CTA to "Get Spot" while an active armed run still exists
+
+Please refactor the derived Now-card state priority to something like:
+1. registered
+2. registration_in_progress
+3. auto_registration_armed
+4. registration_failed
+5. registration_check_failed
+6. registration_not_open
+7. registration_open
+
+UI requirements for auto_registration_armed:
+- prominent status: "Auto-registration ready"
+- helper text: "Will register at [time]"
+- primary button: "Cancel Auto-registration"
+- optional low-emphasis action or overflow item: "Run Registration Check"
+
+Cancellation behavior:
+- "Cancel Auto-registration" should disarm the scheduled/armed state only
+- it should not delete the class from Plan unless the current architecture already couples those concepts; if so, report that coupling clearly before changing it
+- after cancel succeeds, the CTA can revert to "Get Spot"
+
+Please:
+1. inspect where the current Now CTA state is derived
+2. identify why it is reverting to "Get Spot"
+3. fix the state-priority logic
+4. wire a cancel action for the armed state
+5. report:
+   - files changed
+   - new state priority
+   - what source of truth is used for "armed"
+   - whether cancel disarms only or also alters the Plan entry
