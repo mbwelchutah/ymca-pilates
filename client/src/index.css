@@ -92,7 +92,7 @@
   .pt-tab-top {
     padding-top: calc(env(safe-area-inset-top) + 44px);
   }
-  /* AppHeader (73px) + TabBar (44px) below safe area */
+  /* Unified TopNav: title row (~65px) + segmented control row (~52px) = 117px below safe area */
   .pt-content-top {
     padding-top: calc(env(safe-area-inset-top) + 117px);
   }

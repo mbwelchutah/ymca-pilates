@@ -14,9 +14,12 @@ interface SettingsScreenProps {
   onAccount?: () => void
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
+  tab?: import('../components/nav/TabBar').Tab
+  onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
+  scrolled?: boolean
 }
 
-export function SettingsScreen({ appState, refresh, onAccount, accountAttention, authStatus }: SettingsScreenProps) {
+export function SettingsScreen({ appState, refresh, onAccount, accountAttention, authStatus, tab = 'settings', onTabChange = () => {}, scrolled = false }: SettingsScreenProps) {
   const [clearing,     setClearing]     = useState(false)
   const [clearFeedback, setClearFeedback] = useState<{ text: string; cls: string } | null>(null)
 
@@ -52,7 +55,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
 
   return (
     <>
-      <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
+      <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
       <ScreenContainer>
 
         {/* Scheduler */}

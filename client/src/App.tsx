@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { TabBar } from './components/nav/TabBar'
 import type { Tab } from './components/nav/TabBar'
 import { NowScreen } from './screens/NowScreen'
 import { PlanScreen } from './screens/PlanScreen'
@@ -127,9 +126,17 @@ export default function App() {
     localStorage.setItem('mobileTab', 'now')
   }
 
+  const [scrolled, setScrolled] = useState(false)
+
   const handleTabChange = (t: Tab) => {
     setTab(t)
     localStorage.setItem('mobileTab', t)
+    // Reset scroll collapse when switching tabs so the large title re-appears
+    setScrolled(false)
+  }
+
+  const handleMainScroll = (e: React.UIEvent<HTMLElement>) => {
+    setScrolled((e.target as HTMLElement).scrollTop > 8)
   }
 
   return (
@@ -143,9 +150,8 @@ export default function App() {
         }}
         polledStatus={polledStatus}
       />
-      <TabBar active={tab} onChange={handleTabChange} />
 
-      <main className="flex-1 overflow-y-auto pt-content-top">
+      <main className="flex-1 overflow-y-auto pt-content-top" onScroll={handleMainScroll}>
         {/* Now and Plan stay mounted at all times so their local state (readiness
             scores, sniper data, countdown ticks) is preserved across tab switches.
             The active tab is shown via display; the inactive one is hidden.
@@ -168,6 +174,9 @@ export default function App() {
               refresh()
             }}
             bgRefreshSignal={bgRefreshSignal}
+            tab={tab}
+            onTabChange={handleTabChange}
+            scrolled={scrolled}
           />
         </div>
         <div style={{ display: tab === 'plan' ? undefined : 'none' }}>
@@ -180,13 +189,36 @@ export default function App() {
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
             authStatus={authStatus}
+            tab={tab}
+            onTabChange={handleTabChange}
+            scrolled={scrolled}
           />
         </div>
         {tab === 'tools' && (
-          <ToolsScreen appState={state} selectedJobId={selectedJobId} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} authStatus={authStatus} scrollTo={toolsSection} />
+          <ToolsScreen
+            appState={state}
+            selectedJobId={selectedJobId}
+            refresh={refresh}
+            onAccount={() => setAccountOpen(true)}
+            accountAttention={accountAttention}
+            authStatus={authStatus}
+            scrollTo={toolsSection}
+            tab={tab}
+            onTabChange={handleTabChange}
+            scrolled={scrolled}
+          />
         )}
         {tab === 'settings' && (
-          <SettingsScreen appState={state} refresh={refresh} onAccount={() => setAccountOpen(true)} accountAttention={accountAttention} authStatus={authStatus} />
+          <SettingsScreen
+            appState={state}
+            refresh={refresh}
+            onAccount={() => setAccountOpen(true)}
+            accountAttention={accountAttention}
+            authStatus={authStatus}
+            tab={tab}
+            onTabChange={handleTabChange}
+            scrolled={scrolled}
+          />
         )}
       </main>
     </div>

@@ -39,6 +39,9 @@ interface NowScreenProps {
   polledStatus?: SessionStatus | null
   onDismissEscalation?: (jobId: number) => void
   bgRefreshSignal?: number
+  tab?: import('../components/nav/TabBar').Tab
+  onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
+  scrolled?: boolean
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -764,7 +767,7 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal, tab = 'now', onTabChange = () => {}, scrolled = false }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -1512,7 +1515,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (loading) {
     return (
       <>
-        <AppHeader subtitle="Loading…" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
+        <AppHeader subtitle="Loading…" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
         <ScreenContainer>
           <Card className="flex items-center justify-center h-40">
             <span className="text-text-secondary text-[15px]">Loading…</span>
@@ -1525,7 +1528,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   if (error) {
     return (
       <>
-        <AppHeader subtitle="Error" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
+        <AppHeader subtitle="Error" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
         <ScreenContainer>
           <Card>
             <p className="text-accent-red text-[14px]">{error}</p>
@@ -1552,6 +1555,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         onAccount={onAccount}
         accountAttention={accountAttention}
         authStatus={authStatus}
+        tab={tab}
+        onTabChange={onTabChange}
+        scrolled={scrolled}
       />
 
       <ScreenContainer>

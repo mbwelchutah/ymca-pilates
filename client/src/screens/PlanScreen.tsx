@@ -20,6 +20,9 @@ interface PlanScreenProps {
   onAccount?: () => void
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
+  tab?: import('../components/nav/TabBar').Tab
+  onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
+  scrolled?: boolean
 }
 
 const DAY_NAMES: Record<number, string> = {
@@ -821,7 +824,7 @@ function sortPillLabel(mode: SortMode, dir: SortDir): string {
 }
 const SORT_MODES: SortMode[] = ['date', 'name', 'instructor']
 
-export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention, authStatus }: PlanScreenProps) {
+export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refresh, onAccount, accountAttention, authStatus, tab = 'plan', onTabChange = () => {}, scrolled = false }: PlanScreenProps) {
   const [showAdd, setShowAdd]         = useState(false)
   const [showBrowse, setShowBrowse]   = useState(false)
   const [prefill, setPrefill]         = useState<Prefill | null>(null)
@@ -930,6 +933,9 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
         onAccount={onAccount}
         accountAttention={accountAttention}
         authStatus={authStatus}
+        tab={tab}
+        onTabChange={onTabChange}
+        scrolled={scrolled}
       />
       <ScreenContainer>
         {showAdd && (

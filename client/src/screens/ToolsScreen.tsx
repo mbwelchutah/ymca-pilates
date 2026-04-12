@@ -63,6 +63,9 @@ interface ToolsScreenProps {
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
   scrollTo?: string
+  tab?: import('../components/nav/TabBar').Tab
+  onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
+  scrolled?: boolean
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -702,7 +705,7 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo }: ToolsScreenProps) {
+export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo, tab = 'tools', onTabChange = () => {}, scrolled = false }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
   const scrolledRef = useRef<string | undefined>(undefined)
 
@@ -804,7 +807,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   return (
     <>
-      <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} />
+      <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
       <ScreenContainer>
 
         {/* ── Last Run (compact, tap to expand) ───────────── */}
