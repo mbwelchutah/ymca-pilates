@@ -1749,8 +1749,72 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       </div>
                     )
                   })()}
+
+                  {/* Status message — shows auto-registration intent + timing.
+                       Only rendered when confidence is healthy (check_recommended /
+                       needs_attention already convey the problem via the label above). */}
+                  {confidenceSummary &&
+                    confidenceSummary.level !== 'check_recommended' &&
+                    confidenceSummary.level !== 'needs_attention' && (() => {
+                      const nextWindow = bgReadiness?.armed?.nextWindow ?? null
+                      const timeStr = nextWindow ? fmtWindowTime(nextWindow) : null
+                      const msg = timeStr
+                        ? `Auto-registration ready · Will register at ${timeStr}`
+                        : 'Auto-registration ready · Watching for the window'
+                      return (
+                        <p className="text-[12px] text-text-muted mt-1 leading-snug">
+                          {msg}
+                        </p>
+                      )
+                    })()}
                 </div>
               )}
+
+              {/* ── Status card — not-armed idle state ───────────────────────────────
+                   Sits between the checklist and the buttons so the user sees
+                   "what's happening" before being asked to act.
+                   Suppressed when armed (checklist + confidence covers that state)
+                   and when an exec run is in progress (step list provides context). */}
+              {execMode === 'idle' && !localArmed && !bannerIsComplete && (() => {
+                const result = stableResult ?? currentResult
+                if (!result) return null
+                const bgClass =
+                  result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
+                  result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
+                  result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
+                  result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
+                  'bg-surface border border-divider'
+                const labelClass =
+                  result.severity === 'success' ? 'text-accent-green' :
+                  result.severity === 'warning' ? 'text-accent-amber' :
+                  result.severity === 'error'   ? 'text-accent-red'   :
+                  result.severity === 'info'    ? 'text-accent-blue'  :
+                  'text-text-secondary'
+                const dotColor: DotColor =
+                  result.severity === 'success' ? 'green' :
+                  result.severity === 'warning' ? 'amber' :
+                  result.severity === 'error'   ? 'red'   :
+                  result.severity === 'info'    ? 'blue'  :
+                  'gray'
+                return (
+                  <div className={`rounded-xl px-3.5 py-3 mb-3 ${bgClass}`}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <StatusDot color={dotColor} />
+                      <span className={`text-[15px] font-semibold ${labelClass}`}>
+                        {result.label}
+                      </span>
+                      {result.ts && (
+                        <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
+                          {formatPreflightTime(result.ts)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-text-secondary leading-snug ml-5">
+                      {result.detail}
+                    </p>
+                  </div>
+                )
+              })()}
 
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
@@ -1823,7 +1887,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         </button>
                       )}
                     </div>
-                    {helperText && (
+                    {/* helperText suppressed when armed — status message in the
+                         checklist block already shows timing ("Will register at X"). */}
+                    {helperText && !localArmed && (
                       <p className="text-center text-[12px] text-text-muted mt-1.5 leading-snug">
                         {helperText}
                       </p>
@@ -1931,84 +1997,6 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* Actions section */}
           {job && (
             <div className="mt-2 pt-2 border-t border-divider">
-
-              {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
-              {/* Stage 9: suppressed when the status banner shows a complete state,    */}
-              {/* or during an active exec run (step list provides all context needed). */}
-              {/* Also suppressed when armed — persistent checklist is the primary      */}
-              {/* reassurance and the "Auto-registration ready" card would duplicate it. */}
-              {!bannerIsComplete && job && execMode === 'idle' && !localArmed && (() => {
-                const result = stableResult ?? currentResult
-                if (!result) return null
-                const bgClass =
-                  result.severity === 'success' ? 'bg-accent-green/10 border border-accent-green/20' :
-                  result.severity === 'warning' ? 'bg-accent-amber/10 border border-accent-amber/20' :
-                  result.severity === 'error'   ? 'bg-accent-red/10 border border-accent-red/20'     :
-                  result.severity === 'info'    ? 'bg-accent-blue/10 border border-accent-blue/20'   :
-                  'bg-surface border border-divider'
-                const labelClass =
-                  result.severity === 'success' ? 'text-accent-green' :
-                  result.severity === 'warning' ? 'text-accent-amber' :
-                  result.severity === 'error'   ? 'text-accent-red'   :
-                  result.severity === 'info'    ? 'text-accent-blue'  :
-                  'text-text-secondary'
-                const dotColor: DotColor =
-                  result.severity === 'success' ? 'green' :
-                  result.severity === 'warning' ? 'amber' :
-                  result.severity === 'error'   ? 'red'   :
-                  result.severity === 'info'    ? 'blue'  :
-                  'gray'
-                return (
-                  <div className={`rounded-xl px-3.5 py-3 mt-2 mb-1 ${bgClass}`}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <StatusDot color={dotColor} />
-                      <span className={`text-[15px] font-semibold ${labelClass}`}>
-                        {result.label}
-                      </span>
-                      {result.ts && (
-                        <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
-                          {formatPreflightTime(result.ts)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[12px] text-text-secondary leading-snug ml-5">
-                      {result.detail}
-                    </p>
-                  </div>
-                )
-              })()}
-
-              {/* Trust line removed — confidence summary inside checklist block is the sole
-                   readiness indicator. Keeping the freshness timestamp only where it adds
-                   unique value (Tools readiness tab). */}
-              {false && !bannerIsComplete && execMode === 'idle' && !localArmed && (() => {
-                if (!isReadinessForSelectedJob) return null
-                const result = stableResult ?? currentResult
-                if (!result) return null
-                const dotColor: DotColor =
-                  result.severity === 'success' ? 'green' :
-                  result.severity === 'error'   ? 'red'   :
-                  result.severity === 'warning' ? 'amber' :
-                  result.severity === 'info'    ? 'blue'  :
-                  'gray'
-                const confText = (() => {
-                  if (!confidenceLabel) return null
-                  if (result.state === 'issue' && confidenceLabel === 'Low confidence') return 'At risk'
-                  return confidenceLabel
-                })()
-                const trustText = [confText, lastCheckedText].filter(Boolean).join(' · ')
-                if (!trustText) return null
-
-                return (
-                  <div className="mb-2 flex items-center justify-center gap-1.5">
-                    <StatusDot color={dotColor} size="sm" />
-                    <span className="text-[12px] text-text-muted">
-                      {trustText}
-                    </span>
-                  </div>
-                )
-              })()}
-
 
               {/* ── Bottom utility row: Live/Test toggle + Pause/Resume ───────────── */}
               {/* Resume is shown as an amber pill (urgent); Pause is muted text.    */}
