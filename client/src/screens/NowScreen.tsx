@@ -1250,12 +1250,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     })
   }
 
-  const scheduleDoneReset = () => {
+  const scheduleDoneReset = (delayMs = 20000) => {
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     doneTimerRef.current = setTimeout(() => {
       setExecMode('idle'); setExecDone(null); setExecSteps(BLANK_STEPS)
       doneTimerRef.current = null
-    }, 20000)
+    }, delayMs)
   }
 
   const handleNowPreflight = async () => {
@@ -1266,16 +1266,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setExecMode('running_preflight')
     setExecDone(null)
     startStepSimulation(PREFLIGHT_STEP_LIST)
+    // Track whether the check resulted in an armed state so the finally block
+    // can use a short done-reset delay (2 s) instead of the normal 20 s.
+    // Short delay = the amber confirmation flashes briefly, then the armed
+    // checklist + "Very likely to succeed" appears without a jarring 20 s wait.
+    let armedThisRun = false
     try {
       const r = await api.runPreflight(job.id)
       // "found_not_open_yet" = session ok, class found, modal reachable —
       // registration window just isn't open yet. All steps pass; show amber.
       if (r.status === 'found_not_open_yet') {
         finalizeSteps(PREFLIGHT_STEP_LIST, null)
-        // "Get Spot" preflight passed — session, class, and modal all confirmed.
-        // Show a clean armed-confirmation message instead of a raw server detail.
-        setExecDone({ ok: true, text: 'Auto-registration ready — registers when the window opens', color: 'amber' })
         setArmed(true)
+        armedThisRun = true
+        setExecDone({ ok: true, text: 'Auto-registration ready — registers when the window opens', color: 'amber' })
       } else {
         const failIdx: number | null = (() => {
           if (r.authDetail?.verdict === 'FAILED')                                          return 0
@@ -1293,7 +1297,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           : failIdx === 3 ? 'Could not access registration link'
           : (r.message ?? 'Registration check blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
-        if (r.success) setArmed(true)
+        if (r.success) { setArmed(true); armedThisRun = true }
         else setLastFailedAction('preflight')
       }
     } catch (e) {
@@ -1302,7 +1306,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       setLastFailedAction('preflight')
     } finally {
       setExecMode('done')
-      scheduleDoneReset()
+      // Armed success: transition to the idle armed state (green checklist +
+      // confidence summary) after just 2 s — long enough to read the confirmation,
+      // short enough that it doesn't feel stuck on the amber banner.
+      // Failure / non-armed success: keep the standard 20 s so the user has time
+      // to read the result message before it clears.
+      scheduleDoneReset(armedThisRun ? 2000 : 20000)
     }
   }
 
