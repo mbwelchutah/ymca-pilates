@@ -233,9 +233,32 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
     return { confirmed: false, viaPopup: false, cancelFound: false, weakSignal: true };
   }
 
-  // Waitlist button still present but no Register and no Cancel — edge case.
-  console.log(`⚠️ After ${actionLabel}: no Cancel, Register gone but Waitlist visible — state unclear, treating as incomplete.`);
-  return { confirmed: false, viaPopup: false, cancelFound: false };
+  // Waitlist button still present but no Register and no Cancel.
+  // FamilyWorks keeps showing the "Waitlist" button after a successful waitlist
+  // enrollment — it does NOT change to Cancel/Leave Waitlist in the embed.
+  // Wait 3 s and re-check: if the state is stable (still Waitlist-only, no Register)
+  // then this IS the FW confirmation posture and we can treat it as confirmed.
+  console.log(`[confirm-check] Waitlist-only state (no Register, no Cancel) — waiting 3 s to confirm FW waitlist enrollment...`);
+  await page.waitForTimeout(3000);
+  const stepWL = await readSignals();
+  console.log(`[confirm-check] waitlist re-check: cancel=${stepWL.btns.hasCancel} register=${stepWL.btns.hasRegister} waitlist=${stepWL.btns.hasWaitlist} textOK=${stepWL.textConfirm}`);
+
+  if (stepWL.btns.hasCancel) {
+    console.log(`✅ Booking confirmed (delayed Cancel appeared) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: true };
+  }
+  if (stepWL.textConfirm) {
+    console.log(`✅ Booking confirmed (delayed text match) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: false };
+  }
+  if (!stepWL.btns.hasRegister && stepWL.btns.hasWaitlist) {
+    // Still Waitlist-only — this is the stable FamilyWorks "you are on the waitlist" state.
+    console.log(`✅ Booking confirmed (FW waitlist-only stable state — Register gone, Waitlist present) after ${actionLabel}`);
+    return { confirmed: true, viaPopup: false, cancelFound: false };
+  }
+
+  console.log(`⚠️ After ${actionLabel}: no Cancel, Register gone but Waitlist visible — state unclear after 3 s re-check, treating as incomplete (weakSignal).`);
+  return { confirmed: false, viaPopup: false, cancelFound: false, weakSignal: true };
 }
 
 // ── Inline Familyworks authentication ─────────────────────────────────────
