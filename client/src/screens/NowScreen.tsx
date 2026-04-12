@@ -582,6 +582,21 @@ function friendlyEventLabel(ev: SniperEvent): string {
   }
 }
 
+// Returns true for events that belong in Recent Activity on the Now screen.
+// Setup-phase successes (AUTH/NAVIGATION/DISCOVERY/VERIFY/MODAL) are already
+// shown in the persistent preflight checklist — repeating them in the timeline
+// creates clutter.  Keep failures always, and high-level outcomes only.
+function isMilestoneEvent(ev: SniperEvent): boolean {
+  if (ev.failureType) return true   // always surface failures
+  switch (ev.phase) {
+    case 'ACTION':       return true  // registration submitted
+    case 'CONFIRMATION': return true  // registered / waitlisted
+    case 'RECOVERY':     return true  // retry scheduled
+    case 'SYSTEM':       return true  // system-level events
+    default:             return false // AUTH/NAVIGATION/DISCOVERY/VERIFY/MODAL successes → checklist
+  }
+}
+
 function formatDayTime(job: Job) {
   const days: Record<number, string> = {
     0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',
@@ -1525,6 +1540,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {/* ── Now-tab action buttons / live step list ───────────────────── */}
           {job && (
             <div className="mt-3">
+
+              {/* ── Persistent preflight checklist — shown when armed + idle ──────
+                   Keeps the session/schedule/class/modal reassurance visible after
+                   the 20 s exec-done animation resets.  Disappears immediately on
+                   disarm, booking, or job change (all clear localArmed).          */}
+              {execMode === 'idle' && localArmed && (
+                <div className="space-y-1.5 mb-3">
+                  {PREFLIGHT_STEP_LIST.map(step => (
+                    <div key={step} className="flex items-center gap-2.5">
+                      <span className="text-[13px] w-4 text-center shrink-0 text-accent-green select-none">✓</span>
+                      <span className="text-[13px] text-text-primary">{STEP_LABELS[step]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
                 const { label, actionType, helperText, disabled, emphasis } = smartButton
@@ -1744,14 +1775,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
 
                 {/* ── Stage 5: Live status line ──────────────────────────── */}
-                {/* Text companion to the graphical dots — human-readable    */}
-                {/* summary of what the bot is doing right now.              */}
-                <p className="text-[12px] text-text-muted mt-1 mb-0.5 leading-snug">
-                  {lsText}
-                  {lsSubtext && (
-                    <span className="ml-1.5 opacity-75">· {lsSubtext}</span>
-                  )}
-                </p>
+                {/* Suppressed when armed — the persistent checklist below   */}
+                {/* already carries the "Auto-registration ready" message.   */}
+                {!localArmed && (
+                  <p className="text-[12px] text-text-muted mt-1 mb-0.5 leading-snug">
+                    {lsText}
+                    {lsSubtext && (
+                      <span className="ml-1.5 opacity-75">· {lsSubtext}</span>
+                    )}
+                  </p>
+                )}
               </>
             )
           })()}
@@ -1765,7 +1798,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {/* ── Layer A — Primary result card: top-level state machine (Stages 1–2) ── */}
               {/* Stage 9: suppressed when the status banner shows a complete state,    */}
               {/* or during an active exec run (step list provides all context needed). */}
-              {!bannerIsComplete && job && execMode === 'idle' && (() => {
+              {/* Also suppressed when armed — persistent checklist is the primary      */}
+              {/* reassurance and the "Auto-registration ready" card would duplicate it. */}
+              {!bannerIsComplete && job && execMode === 'idle' && !localArmed && (() => {
                 const result = stableResult ?? currentResult
                 if (!result) return null
                 const bgClass =
@@ -1807,7 +1842,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               })()}
 
               {/* ── Trust line: State · Confidence · Freshness ── */}
-              {!bannerIsComplete && execMode === 'idle' && (() => {
+              {/* Suppressed when armed — checklist is the sole reassurance element. */}
+              {!bannerIsComplete && execMode === 'idle' && !localArmed && (() => {
                 if (!isReadinessForSelectedJob) return null
 
                 // Steady state — Confidence · Freshness
@@ -1957,157 +1993,33 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </div>
         )}
 
-        {/* ── Compact details section (Stage 4 + 5) ──────────────── */}
-        {/* Hidden when booking is confirmed — live session dot would contradict the Confirmed banner. */}
-        {!isBooked && (sessionStatus || hasReadinessData || (isReadinessForSelectedJob && bgReadiness)) && (
-          <Card padding="none">
-            {/* ── Readiness milestones — 4-column strip (Session | Class | Modal | Action) ─── */}
+        {/* ── Technical status link — demoted from 4-tile diagnostic card ─
+             The full Session / Class / Modal / Action detail lives in Tools.
+             This link is context-aware: session problem → readiness tab,
+             run events present → run-events tab, otherwise general readiness. */}
+        {!isBooked && onGoToTools && (
+          <div className="text-center">
             {(() => {
-              // bgRdy: background readiness normalized fields (job-gated).
-              // Used as a sticky fallback when no explicit preflight bundle exists.
-              const bgRdy = isReadinessForSelectedJob ? bgReadiness : null
-
-              // ── Session chip ───────────────────────────────────────────────
-              // Labels: Ready / Needs login / Monitoring
-              // Primary: sessionStatus (live check). Fallback: bgRdy.session.
-              const sessReady   = sessionStatus?.daxko === 'DAXKO_READY' ||
-                                  (!sessionStatus && bgRdy?.session === 'ready')
-              const sessBlocked = sessionStatus?.overall === 'AUTH_NEEDS_LOGIN'   ||
-                                  sessionStatus?.overall === 'FAMILYWORKS_SESSION_MISSING' ||
-                                  (!sessionStatus && bgRdy?.session === 'error')
-              const sessDot:   DotColor = sessReady ? 'green' : sessBlocked ? 'red' : 'gray'
-              const sessValue            = sessReady ? 'Ready' : sessBlocked ? 'Needs login' : 'Monitoring'
-
-              // ── Class chip (discovery) ─────────────────────────────────────
-              // Labels: Found / Missing / Monitoring
-              // bgRdy is fresher (updated by background loops); bundle is fallback.
-              // Pre-window (too_early): only bg signal — don't surface stale bundle failure.
-              const bgClassFound   = bgRdy?.discovery === 'found'
-              const bgClassMissing = bgRdy?.discovery === 'missing'
-              const classFound   = phase === 'too_early'
-                ? bgClassFound
-                : bgClassFound || (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_READY')
-              const classMissing = phase !== 'too_early' &&
-                                   (bgClassMissing ||
-                                    (!bgClassFound && !bgClassMissing && bundle?.discovery === 'DISCOVERY_FAILED'))
-              const classDot:   DotColor = classFound ? 'green' : classMissing ? 'red' : 'gray'
-              const classValue           = classFound ? 'Found' : classMissing ? 'Missing' : 'Monitoring'
-
-              // ── Modal chip ─────────────────────────────────────────────────
-              // Labels: Reachable / Blocked / Monitoring
-              // bgRdy first; bundle fallback. Pre-window: bg only, no stale Blocked.
-              const bgModalOk  = bgRdy?.modal === 'reachable'
-              const bgModalBad = bgRdy?.modal === 'blocked'
-              const modalOk  = phase === 'too_early'
-                ? bgModalOk
-                : bgModalOk || (!bgModalOk && !bgModalBad && bundle?.modal === 'MODAL_READY')
-              const modalBad = phase !== 'too_early' &&
-                               (bgModalBad ||
-                                (!bgModalOk && !bgModalBad &&
-                                 (bundle?.modal === 'MODAL_BLOCKED' || bundle?.modal === 'MODAL_LOGIN_REQUIRED')))
-              const modalDot:  DotColor = modalOk ? 'green' : modalBad ? 'red' : 'gray'
-              const modalValue           = modalOk ? 'Reachable' : modalBad ? 'Blocked' : 'Monitoring'
-
-              // ── Action chip ────────────────────────────────────────────────
-              // Labels: Not open yet / Ready / Waitlist / Unavailable / Monitoring
-              // Stage 5: before window always shows "Not open yet" (gray, expected).
-              // Post-window: bgRdy first, bundle fallback.
-              const isWaitlist = effectivePreflightStatus === 'waitlist_only'
-              let actionDot: DotColor
-              let actionValue: string
-              if (phase === 'too_early') {
-                actionDot   = 'gray'
-                actionValue = 'Not open yet'
-              } else {
-                const bgAction     = bgRdy?.action ?? 'unknown'
-                const bundleAction = bundle?.action !== 'ACTION_NOT_TESTED' ? bundle?.action : null
-
-                const actionReady   = !isWaitlist && (
-                  bgAction === 'ready' ||
-                  (bgAction === 'unknown' && bundleAction === 'ACTION_READY')
-                )
-                const actionUnavail = !isWaitlist && (
-                  bgAction === 'blocked' || bgAction === 'not_open' ||
-                  (bgAction === 'unknown' && bundleAction === 'ACTION_BLOCKED')
-                )
-
-                if (isWaitlist) {
-                  actionDot = 'amber'; actionValue = 'Waitlist'
-                } else if (actionReady) {
-                  actionDot = 'green'; actionValue = 'Ready'
-                } else if (actionUnavail) {
-                  actionDot = 'amber'; actionValue = 'Unavailable'
-                } else {
-                  actionDot = 'gray'; actionValue = 'Monitoring'
-                }
-              }
-
-              const hasRunEvents = (sniperRunState?.events?.length ?? 0) > 0
-              const milestones = [
-                { label: 'Session', dot: sessDot,   value: sessValue,   section: 'tools-readiness'                                    },
-                { label: 'Class',   dot: classDot,  value: classValue,  section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
-                { label: 'Modal',   dot: modalDot,  value: modalValue,  section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
-                { label: 'Action',  dot: actionDot, value: actionValue, section: hasRunEvents ? 'tools-run-events' : 'tools-readiness' },
-              ]
-
-              return (
-                <div className="flex border-b border-divider">
-                  {milestones.map((m, i) => {
-                    const base = `flex-1 flex flex-col items-center py-3 gap-1 ${i > 0 ? 'border-l border-divider' : ''}`
-                    const inner = (
-                      <>
-                        <StatusDot color={m.dot} />
-                        <span className="text-[12px] font-medium text-text-secondary">{m.value}</span>
-                        <span className="text-[10px] text-text-muted">{m.label}</span>
-                      </>
-                    )
-                    return onGoToTools ? (
-                      <button
-                        key={m.label}
-                        onClick={() => onGoToTools(m.section)}
-                        className={`${base} active:bg-divider/50 transition-colors`}
-                      >
-                        {inner}
-                      </button>
-                    ) : (
-                      <div key={m.label} className={base}>{inner}</div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
-
-            {/* Tools link — context-aware handoff */}
-            {onGoToTools && (() => {
               const hasSessionProblem =
                 sessionStatus?.daxko !== 'DAXKO_READY' ||
                 sessionStatus?.familyworks !== 'FAMILYWORKS_READY'
               const hasRunEvents = (sniperRunState?.events?.length ?? 0) > 0
-
-              let section: string
-              let label: string
-
-              if (hasSessionProblem) {
-                section = 'tools-readiness'
-                label   = 'Check session in Tools →'
-              } else if (hasRunEvents) {
-                section = 'tools-run-events'
-                label   = 'View run events in Tools →'
-              } else {
-                section = 'tools-readiness'
-                label   = 'View details in Tools →'
-              }
-
+              const section = hasSessionProblem ? 'tools-readiness'
+                : hasRunEvents ? 'tools-run-events'
+                : 'tools-readiness'
+              const label = hasSessionProblem ? 'Check session in Tools →'
+                : hasRunEvents ? 'View run events in Tools →'
+                : 'View technical status →'
               return (
                 <button
                   onClick={() => onGoToTools(section)}
-                  className="w-full text-center text-[13px] font-medium text-accent-blue active:opacity-60 py-3 border-t border-divider"
+                  className="text-[12px] text-text-muted active:opacity-50 px-2 py-1"
                 >
                   {label}
                 </button>
               )
             })()}
-          </Card>
+          </div>
         )}
 
         {/* ── Stage 5: Activity Timeline ─────────────────────────────────
@@ -2115,7 +2027,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
              Source: sniperRunState.events (existing telemetry array).
              Keeps deep diagnostics in Tools; this is user transparency. */}
         {sniperRunState && sniperRunState.events.length > 0 && (() => {
-          const entries = [...sniperRunState.events].reverse().slice(0, 5)
+          // Show only meaningful outcomes — setup-phase events (session, schedule,
+          // class, modal) are already shown in the persistent preflight checklist.
+          const entries = [...sniperRunState.events].reverse().filter(isMilestoneEvent).slice(0, 5)
+          if (entries.length === 0) return null
           return (
             <Card padding="none">
               {/* Header */}

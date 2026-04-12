@@ -1,0 +1,77 @@
+Refine the Now screen to remove repeated status information while preserving reassurance.
+
+Current issue:
+The Now screen is showing the same readiness information in too many places:
+1. preflight checklist
+2. auto-registration ready / will register summary line with dots
+3. diagnostic tiles row (Ready / Found / Reachable / Not open yet)
+4. recent activity entries that repeat the same setup steps
+
+User feedback:
+- The preflight checklist is reassuring and should stay
+- Its sudden disappearance is not good
+- The repeated status blocks feel redundant and cluttered
+
+Goal:
+Make the Now screen feel calm and trustworthy by keeping one primary readiness block and demoting duplicate information.
+
+Requirements:
+
+1. Keep the preflight checklist visible on the main Now card after auto-registration is armed
+- Preserve items like:
+  - Session verified
+  - Schedule loaded
+  - Class found
+  - Modal reached
+- Do not let this checklist suddenly disappear after arming unless there is a stronger replacement in the exact same area
+
+2. Keep one concise armed-status message on the main card
+Example:
+- "Auto-registration ready"
+- "Will register at 9:35 AM"
+
+3. Remove or demote duplicate status sections from the Now screen
+Specifically evaluate:
+- the green-dot summary strip with repeated "Auto-registration ready / Will register at..."
+- the 4 diagnostic tiles row (Ready / Found / Reachable / Not open yet)
+
+Preferred outcome:
+- remove these from the main Now screen, or
+- collapse them behind a low-emphasis "View technical status" / "View run events in Tools" link
+
+4. Simplify Recent Activity so it shows only meaningful milestones, not duplicate setup details already shown in the checklist
+Preferred examples:
+- Auto-registration armed
+- Registration starts at [time]
+- Registration attempt started
+- Registered successfully
+- Added to waitlist
+- Registration failed
+
+Do not repeat checklist items like:
+- Session verified
+- Class found
+- Modal reached
+if those are already shown persistently in the main checklist area
+
+5. Keep the main Now card focused on:
+- countdown
+- persistent preflight checklist
+- one concise armed-status message
+- primary action: Cancel Auto-registration
+- optional link to Tools for deeper run events
+
+Design intent:
+- calm, iPhone-friendly, reassuring
+- not a diagnostic dashboard
+- preserve trust without repeating the same information 3 times
+
+Please:
+1. identify which sections are duplicative
+2. refactor the main Now screen information hierarchy
+3. preserve the checklist as the primary reassurance element
+4. move lower-level diagnostics to Tools or lower emphasis
+5. report:
+   - files changed
+   - what was removed or demoted
+   - how Recent Activity was simplified
