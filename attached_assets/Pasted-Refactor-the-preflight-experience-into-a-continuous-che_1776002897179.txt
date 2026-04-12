@@ -1,0 +1,79 @@
+Refactor the preflight experience into a continuous checklist model.
+
+Goal:
+Replace the “Running Registration Check…” and separate status messaging with a persistent, always-visible checklist that updates live.
+
+Current issues:
+- "Running Registration Check..." introduces a temporary mode
+- checklist and status messaging are separated
+- duplicate information appears in multiple places
+- UI feels like a process instead of a state
+
+New model:
+The checklist is always visible and represents the current truth of the system.
+
+Requirements:
+
+1. Remove "Running Registration Check..." messaging entirely
+
+2. Introduce a subtle section label above checklist:
+- "Registration readiness"
+
+3. Treat checklist as a live state model
+Each item should have one of these states:
+- complete (checkmark)
+- active (in-progress)
+- pending (not yet evaluated)
+
+4. Replace status messages with an active checklist item
+Example:
+Instead of:
+- "Running registration check..."
+
+Use:
+- "⏳ Confirming registration access…"
+as the final checklist row
+
+5. Add final checklist item for full readiness
+Example:
+- "Registration path confirmed"
+
+6. Keep checklist visible at all times:
+- before check
+- during check
+- after completion
+- after auto-registration is armed
+
+7. Move confidence + next action below checklist
+Examples:
+- "Very likely to succeed"
+- "Will register at 9:35 AM"
+
+8. Error handling:
+If a check fails:
+- mark that row clearly (but not aggressively)
+- show short explanation below checklist
+- show:
+  - "Run Registration Check"
+  - "View details"
+
+9. Remove:
+- separate "running check" messages
+- duplicate banners describing readiness
+- any status text that repeats checklist content
+
+Design intent:
+- calm
+- continuous
+- state-based (not process-based)
+- iOS-native feel
+- checklist = single source of truth
+
+Please:
+1. refactor checklist rendering logic
+2. unify status into checklist rows
+3. ensure smooth transitions between states
+4. report:
+   - files changed
+   - how checklist states are managed
+   - how active step is determined

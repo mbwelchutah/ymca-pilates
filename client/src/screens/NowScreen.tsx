@@ -889,6 +889,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   useEffect(() => {
     setLastFailedAction(null)
+    setExecSteps(BLANK_STEPS)
+    setExecDone(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobId])
 
@@ -1129,23 +1131,27 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   // ── Now-tab manual execution state ─────────────────────────────────────────
   type ExecMode = 'idle' | 'running_preflight' | 'running_booking' | 'done'
-  type StepKey  = 'session' | 'schedule' | 'class' | 'modal' | 'action' | 'result'
+  type StepKey  = 'session' | 'schedule' | 'class' | 'modal' | 'confirmed' | 'action' | 'result'
   type StepStatus = 'pending' | 'running' | 'success' | 'failed'
   type ExecSteps  = Record<StepKey, StepStatus>
 
-  const PREFLIGHT_STEP_LIST: StepKey[] = ['session', 'schedule', 'class', 'modal']
-  const BOOK_STEP_LIST:      StepKey[] = ['session', 'schedule', 'class', 'modal', 'action', 'result']
+  const PREFLIGHT_STEP_LIST: StepKey[]     = ['session', 'schedule', 'class', 'modal']
+  // Visual checklist — includes a virtual 'confirmed' row that represents the
+  // final "registration path confirmed" state once armed.
+  const PREFLIGHT_CHECKLIST_STEPS: StepKey[] = ['session', 'schedule', 'class', 'modal', 'confirmed']
+  const BOOK_STEP_LIST:      StepKey[]     = ['session', 'schedule', 'class', 'modal', 'action', 'result']
   const STEP_LABELS: Record<StepKey, string> = {
-    session:  'Session verified',
-    schedule: 'Schedule loaded',
-    class:    'Class found',
-    modal:    'Modal reached',
-    action:   'Registration action',
-    result:   'Confirmation detected',
+    session:   'Session verified',
+    schedule:  'Schedule loaded',
+    class:     'Class found',
+    modal:     'Modal reached',
+    confirmed: 'Registration path confirmed',
+    action:    'Registration action',
+    result:    'Confirmation detected',
   }
   const BLANK_STEPS: ExecSteps = {
     session: 'pending', schedule: 'pending', class: 'pending',
-    modal: 'pending', action: 'pending', result: 'pending',
+    modal: 'pending', confirmed: 'pending', action: 'pending', result: 'pending',
   }
 
   const [execMode,   setExecMode]   = useState<ExecMode>('idle')
@@ -1253,7 +1259,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const scheduleDoneReset = (delayMs = 20000) => {
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     doneTimerRef.current = setTimeout(() => {
-      setExecMode('idle'); setExecDone(null); setExecSteps(BLANK_STEPS)
+      // Only clear execMode — leave execSteps and execDone in place so the
+      // unified checklist continues to show the last result in idle state
+      // (e.g. the red failed row stays visible until the next run starts).
+      setExecMode('idle')
       doneTimerRef.current = null
     }, delayMs)
   }
@@ -1263,8 +1272,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setLastFailedAction(null)   // clear stale failure before starting
-    setExecMode('running_preflight')
+    setExecSteps(BLANK_STEPS)   // reset checklist rows for a fresh run
     setExecDone(null)
+    setExecMode('running_preflight')
     startStepSimulation(PREFLIGHT_STEP_LIST)
     // Track whether the check resulted in an armed state so the finally block
     // can use a short done-reset delay (2 s) instead of the normal 20 s.
@@ -1323,6 +1333,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setLastFailedAction(null)   // clear stale failure before starting
+    setExecSteps(BLANK_STEPS)   // reset step state for fresh booking run
     setExecMode('running_booking')
     setExecDone(null)
     startStepSimulation(BOOK_STEP_LIST)
@@ -1400,6 +1411,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   )
   // Show the composite badge only when there is something meaningful to say.
   const showComposite = effectivePreflightStatus !== null || Boolean(hasReadinessData)
+
+  // True when the active (or just-completed) exec run was a booking, not a preflight.
+  // Used to show the booking-specific 6-step list instead of the unified
+  // preflight checklist (which is always visible for preflight states).
+  const isBookingFlow =
+    execMode === 'running_booking' ||
+    (execMode === 'done' && execStepList.length === BOOK_STEP_LIST.length)
 
   // ── Stage 8: Composite detail ───────────────────────────────────────────────
   // Uses the computed composite message directly. Background-loop readiness
@@ -1759,43 +1777,91 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
-          {/* ── Now-tab action buttons / live step list ───────────────────── */}
+          {/* ── Now-tab: checklist + action buttons ────────────────────── */}
           {job && (
             <div className="mt-3">
 
-              {/* ── Persistent preflight checklist + confidence summary ────────────
-                   Shown when armed + idle. Checklist gives step-level reassurance;
-                   confidence summary gives an overall human-friendly read.
-                   Disappears on disarm, booking, or job change (all clear localArmed). */}
-              {execMode === 'idle' && localArmed && (
+              {/* ═══ Unified preflight checklist ══════════════════════════════════
+                   Always visible for preflight states (idle, running_preflight,
+                   and done-after-preflight). Replaces three separate blocks
+                   (armed-idle checklist / not-armed result banner / running steps).
+                   Hidden only during an active booking run/result. */}
+              {!isBooked && !isBookingFlow && (
                 <div className="mb-3">
-                  {/* Step rows — each item fades in and rises 4px on mount.
-                       animation-delay staggers items 50ms apart.
-                       CSS animation plays once per DOM insertion; React reuses
-                       the same nodes while localArmed stays true so it never
-                       replays on re-render.  prefers-reduced-motion: reduce
-                       strips translateY, leaving only the opacity fade. */}
+                  <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-2.5">
+                    Registration readiness
+                  </p>
+
+                  {/* Step rows */}
                   <div className="space-y-2.5">
-                    {PREFLIGHT_STEP_LIST.map((step, idx) => (
-                      <div
-                        key={step}
-                        className="flex items-center gap-3 animate-checklist-item"
-                        style={{ animationDelay: `${idx * 50}ms` }}
-                      >
-                        <span className="text-[14px] w-4 text-center shrink-0 text-accent-green select-none leading-none">✓</span>
-                        <span className="text-[14px] text-text-primary">{STEP_LABELS[step]}</span>
-                      </div>
-                    ))}
+                    {PREFLIGHT_CHECKLIST_STEPS.map(step => {
+                      // Derive per-row status from live exec state + armed flag
+                      const status: StepStatus = (() => {
+                        if (step === 'confirmed') {
+                          // Virtual final step: armed → success, running check → active
+                          if (localArmed)                           return 'success'
+                          if (execMode === 'running_preflight')     return 'running'
+                          return 'pending'
+                        }
+                        // When armed, all real steps are confirmed green
+                        if (localArmed) return 'success'
+                        // Otherwise use live execSteps (pending/running/success/failed)
+                        return execSteps[step]
+                      })()
+
+                      // 'confirmed' changes its label while actively being checked
+                      const label =
+                        step === 'confirmed' && status === 'running'
+                          ? 'Confirming registration access…'
+                          : STEP_LABELS[step]
+
+                      const icon =
+                        status === 'success' ? '✓' :
+                        status === 'failed'  ? '✗' :
+                        status === 'running' ? '⏳' : '·'
+
+                      const iconClass =
+                        status === 'success' ? 'text-accent-green' :
+                        status === 'failed'  ? 'text-accent-red'   :
+                        status === 'running' ? 'text-accent-blue'  :
+                        'text-text-muted'
+
+                      const textClass =
+                        status === 'pending' ? 'text-text-muted'               :
+                        status === 'failed'  ? 'text-accent-red'               :
+                        status === 'running' ? 'text-text-primary font-medium' :
+                        'text-text-primary'
+
+                      return (
+                        <div key={step} className="flex items-center gap-3">
+                          <span className={`text-[14px] w-4 text-center shrink-0 leading-none select-none ${iconClass}`}>
+                            {icon}
+                          </span>
+                          <span className={`text-[14px] ${textClass}`}>{label}</span>
+                        </div>
+                      )
+                    })}
                   </div>
 
-                  {/* Confidence summary — tone-matched label + one-line reason */}
-                  {confidenceSummary && (() => {
+                  {/* Error detail — shown below the failed row when check failed */}
+                  {lastFailedAction === 'preflight' && execDone && !execDone.ok && (
+                    <div className="mt-2 pl-7">
+                      <p className="text-[12px] text-accent-red/90 leading-snug">{execDone.text}</p>
+                    </div>
+                  )}
+
+                  {/* Confidence + timing — shown when armed */}
+                  {localArmed && confidenceSummary && (() => {
                     const { level, label: confLabel, reason } = confidenceSummary
                     const labelClass =
                       level === 'very_likely'       ? 'text-accent-green' :
                       level === 'needs_attention'   ? 'text-accent-amber' :
                       level === 'check_recommended' ? 'text-accent-amber' :
                       'text-text-secondary'
+                    const nextWindow = bgReadiness?.armed?.nextWindow ?? null
+                    const timeStr    = nextWindow ? fmtWindowTime(nextWindow) : null
+                    const showTiming =
+                      level !== 'check_recommended' && level !== 'needs_attention'
                     return (
                       <div className="mt-2.5 pt-2 border-t border-divider/40">
                         <p className={`text-[13px] font-medium leading-snug ${labelClass}`}>
@@ -1804,75 +1870,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
                           {reason}
                         </p>
+                        {showTiming && (
+                          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+                            {timeStr
+                              ? `Will register at ${timeStr}`
+                              : 'Watching for the registration window'}
+                          </p>
+                        )}
                       </div>
                     )
                   })()}
-
-                  {/* Status message — shows auto-registration intent + timing.
-                       Only rendered when confidence is healthy (check_recommended /
-                       needs_attention already convey the problem via the label above). */}
-                  {confidenceSummary &&
-                    confidenceSummary.level !== 'check_recommended' &&
-                    confidenceSummary.level !== 'needs_attention' && (() => {
-                      const nextWindow = bgReadiness?.armed?.nextWindow ?? null
-                      const timeStr = nextWindow ? fmtWindowTime(nextWindow) : null
-                      const msg = timeStr
-                        ? `Auto-registration ready · Will register at ${timeStr}`
-                        : 'Auto-registration ready · Watching for the window'
-                      return (
-                        <p className="text-[12px] text-text-muted mt-1 leading-snug">
-                          {msg}
-                        </p>
-                      )
-                    })()}
                 </div>
               )}
-
-              {/* ── Status card — not-armed idle state ───────────────────────────────
-                   Sits between the checklist and the buttons so the user sees
-                   "what's happening" before being asked to act.
-                   Suppressed when armed (checklist + confidence covers that state)
-                   and when an exec run is in progress (step list provides context). */}
-              {execMode === 'idle' && !localArmed && !bannerIsComplete && (() => {
-                const result = stableResult ?? currentResult
-                if (!result) return null
-                const bgClass =
-                  result.severity === 'success' ? 'bg-accent-green/10' :
-                  result.severity === 'warning' ? 'bg-accent-amber/10' :
-                  result.severity === 'error'   ? 'bg-accent-red/10'   :
-                  result.severity === 'info'    ? 'bg-accent-blue/10'  :
-                  'bg-surface'
-                const labelClass =
-                  result.severity === 'success' ? 'text-accent-green' :
-                  result.severity === 'warning' ? 'text-accent-amber' :
-                  result.severity === 'error'   ? 'text-accent-red'   :
-                  result.severity === 'info'    ? 'text-accent-blue'  :
-                  'text-text-secondary'
-                const dotColor: DotColor =
-                  result.severity === 'success' ? 'green' :
-                  result.severity === 'warning' ? 'amber' :
-                  result.severity === 'error'   ? 'red'   :
-                  result.severity === 'info'    ? 'blue'  :
-                  'gray'
-                return (
-                  <div className={`rounded-2xl px-3.5 py-3 mb-3 ${bgClass}`}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <StatusDot color={dotColor} />
-                      <span className={`text-[14px] font-medium ${labelClass}`}>
-                        {result.label}
-                      </span>
-                      {result.ts && (
-                        <span className="ml-auto text-[11px] text-text-muted tabular-nums shrink-0">
-                          {formatPreflightTime(result.ts)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[12px] text-text-muted leading-snug ml-5">
-                      {result.detail}
-                    </p>
-                  </div>
-                )
-              })()}
 
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
@@ -1957,12 +1966,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 )
               })()}
 
-              {/* RUNNING: show live step list */}
-              {(execMode === 'running_preflight' || execMode === 'running_booking') && (
+              {/* BOOKING RUNNING: 6-step list + pulse — preflight is handled by
+                   the unified checklist above (confirmed row becomes active). */}
+              {execMode === 'running_booking' && (
                 <div>
-                  <p className="text-[12px] font-medium text-text-muted mb-2.5">
-                    {execMode === 'running_preflight' ? 'Running Registration Check…' : 'Registering…'}
-                  </p>
+                  <p className="text-[12px] font-medium text-text-muted mb-2.5">Registering…</p>
                   <div className="space-y-2">
                     {execStepList.map(step => {
                       const status = execSteps[step]
@@ -1977,50 +1985,34 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         'text-text-primary'
                       return (
                         <div key={step} className="flex items-center gap-2.5">
-                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">
-                            {icon}
-                          </span>
-                          <span className={`text-[13px] ${textClass}`}>
-                            {STEP_LABELS[step]}
-                          </span>
+                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">{icon}</span>
+                          <span className={`text-[13px] ${textClass}`}>{STEP_LABELS[step]}</span>
                         </div>
                       )
                     })}
                   </div>
-                  {/* Activity pulse — always visible while bot is communicating,
-                      even after animated steps have all advanced. */}
                   <div className="mt-3 flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-pulse shrink-0" />
-                    <span className="text-[12px] text-text-muted">
-                      {execMode === 'running_preflight'
-                        ? 'Communicating with YMCA…'
-                        : 'Submitting registration…'}
-                    </span>
+                    <span className="text-[12px] text-text-muted">Submitting registration…</span>
                   </div>
                 </div>
               )}
 
-              {/* DONE: show completed steps + result */}
-              {execMode === 'done' && execDone && (
+              {/* BOOKING DONE: result banner + retry — shown only after a booking run */}
+              {execMode === 'done' && isBookingFlow && execDone && (
                 <div>
                   <div className="space-y-1.5 mb-2.5">
                     {execStepList.map(step => {
                       const status = execSteps[step]
-                      const icon =
-                        status === 'success' ? '✓' :
-                        status === 'failed'  ? '✗' : '⬜'
+                      const icon = status === 'success' ? '✓' : status === 'failed' ? '✗' : '⬜'
                       const textClass =
                         status === 'pending' ? 'text-text-muted' :
                         status === 'failed'  ? 'text-accent-red' :
                         'text-text-primary'
                       return (
                         <div key={step} className="flex items-center gap-2.5">
-                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">
-                            {icon}
-                          </span>
-                          <span className={`text-[13px] ${textClass}`}>
-                            {STEP_LABELS[step]}
-                          </span>
+                          <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">{icon}</span>
+                          <span className={`text-[13px] ${textClass}`}>{STEP_LABELS[step]}</span>
                         </div>
                       )
                     })}
@@ -2028,29 +2020,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   <div className={`rounded-xl px-3.5 py-2.5 ${
                     execDone.color === 'green' ? 'bg-accent-green/10 border border-accent-green/20' :
                     execDone.color === 'amber' ? 'bg-accent-amber/10 border border-accent-amber/20' :
-                    'bg-accent-amber/10 border border-accent-amber/20'
+                    'bg-accent-red/10 border border-accent-red/20'
                   }`}>
                     <div className="flex items-center gap-2">
-                      <StatusDot color={
-                        execDone.color === 'green' ? 'green' :
-                        execDone.color === 'amber' ? 'amber' : 'amber'
-                      } />
+                      <StatusDot color={execDone.color === 'green' ? 'green' : execDone.color === 'amber' ? 'amber' : 'red'} />
                       <p className={`text-[14px] font-medium ${
                         execDone.color === 'green' ? 'text-accent-green' :
                         execDone.color === 'amber' ? 'text-accent-amber' :
-                        'text-accent-amber'
-                      }`}>
-                        {execDone.text}
-                      </p>
+                        'text-accent-red'
+                      }`}>{execDone.text}</p>
                     </div>
                   </div>
-                  {/* Retry shortcut — only shown for failed runs */}
                   {!execDone.ok && (
                     <button
-                      onClick={execStepList.length === BOOK_STEP_LIST.length ? handleNowBook : handleNowPreflight}
+                      onClick={handleNowBook}
                       className="mt-2 w-full py-2 rounded-2xl border border-divider text-[13px] text-text-secondary font-medium active:opacity-60 active:scale-[0.98] transition-all"
                     >
-                      {execStepList.length === BOOK_STEP_LIST.length ? 'Retry registration' : 'Run check again'}
+                      Retry registration
                     </button>
                   )}
                 </div>
