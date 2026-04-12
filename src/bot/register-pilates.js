@@ -2325,15 +2325,11 @@ async function cancelRegistration(job) {
   async function findCardWithScan(page) {
     let card = await findCard(page);
     if (card) return card;
-    // Scroll up
-    for (let i=0;i<80;i++) {
-      await scrollPanel(page,-80); await page.waitForTimeout(200);
-      card = await findCard(page); if (card) return card;
-    }
-    // Reset and scroll down
-    await scrollPanel(page,-999999); await page.waitForTimeout(200);
-    for (let i=0;i<150;i++) {
-      await scrollPanel(page,80); await page.waitForTimeout(200);
+    // Scroll up (reset to top first, then gentle scan down)
+    await scrollPanel(page,-999999); await page.waitForTimeout(150);
+    card = await findCard(page); if (card) return card;
+    for (let i=0;i<40;i++) {
+      await scrollPanel(page,120); await page.waitForTimeout(150);
       card = await findCard(page); if (card) return card;
     }
     return null;
@@ -2369,7 +2365,6 @@ async function cancelRegistration(job) {
     console.log('[cancel] Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout:60000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
 
     const loginPrompt = await page.locator('text=/login to register/i').count();
     if (loginPrompt > 0) return { success:false, action:null, message:'Session not established — schedule page requires login' };
@@ -2455,7 +2450,10 @@ async function cancelRegistration(job) {
     if ((await viewResBtns.count()) > 0) {
       console.log('[cancel] "View Reservation/Waitlist" button found — clicking through to reservation popup...');
       await viewResBtns.first().click({ timeout:5000 });
-      await page.waitForTimeout(1500);
+      // Wait for the popup's Cancel button (or a close/confirm action) rather than fixed sleep
+      const cancelPopupReady = 'button:has-text("Cancel"), [role="button"]:has-text("Cancel"), button:has-text("Unregister"), [role="button"]:has-text("Unregister")';
+      await page.waitForSelector(cancelPopupReady, { timeout:3000 }).catch(()=>null);
+      await page.waitForTimeout(300);
     }
 
     // ── Modal verification ────────────────────────────────────────────────────
@@ -2503,10 +2501,20 @@ async function cancelRegistration(job) {
     const isWaitlistCancel = /waitlist/i.test(cancelLabel);
     console.log(`[cancel] Clicking "${cancelLabel}"...`);
     await cancelBtn.click({ timeout:5000 });
-    await page.waitForTimeout(2000);
+
+    // Wait for a post-cancel state change: confirmation dialog OR success signals.
+    // Use waitForSelector to bail out as soon as something appears rather than sleeping.
+    const postCancelSig = [
+      'button:has-text("Yes")', '[role="button"]:has-text("Yes")',
+      'button:has-text("Confirm")', '[role="button"]:has-text("Confirm")',
+      'button:has-text("OK")', '[role="button"]:has-text("OK")',
+      'button:has-text("Register")', '[role="button"]:has-text("Register")',
+      'button:has-text("Waitlist")', '[role="button"]:has-text("Waitlist")',
+    ].join(', ');
+    await page.waitForSelector(postCancelSig, { timeout:4000 }).catch(()=>null);
+    await page.waitForTimeout(300);
 
     // ── Confirmation dialog: accept if present ────────────────────────────────
-    // Some YMCA modals show a "Are you sure?" dialog after clicking cancel.
     const confirmSels = [
       'button:has-text("Yes"), button:has-text("Confirm"), button:has-text("OK")',
       '[role="button"]:has-text("Yes"), [role="button"]:has-text("Confirm"), [role="button"]:has-text("OK")',
@@ -2516,13 +2524,14 @@ async function cancelRegistration(job) {
       if ((await loc.count()) > 0) {
         console.log('[cancel] Confirmation dialog detected — clicking confirm...');
         await loc.first().click({ timeout:3000 }).catch(()=>{});
-        await page.waitForTimeout(1500);
+        // Wait for the dialog to close + success signal
+        await page.waitForTimeout(800);
         break;
       }
     }
 
     // ── Verify success: Register or Join Waitlist button should reappear ──────
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
     const postBtns = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(()=>[]);
     console.log(`[cancel] Post-cancel buttons: ${JSON.stringify(postBtns)}`);
 
