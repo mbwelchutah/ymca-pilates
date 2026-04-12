@@ -177,6 +177,13 @@ export const api = {
       body: JSON.stringify({ id }),
     }),
 
+  cancelRegistration: (id: number): Promise<{ success: boolean; action: string | null; message: string }> =>
+    apiFetch('/cancel-registration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }),
+
   getSniperState: (): Promise<SniperRunState> =>
     apiFetch('/api/sniper-state'),
 

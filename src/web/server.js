@@ -4,7 +4,7 @@ const http = require('http');
 const { URL } = require('url');
 const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun } = require('../db/jobs');
 const { openDb } = require('../db/init');
-const { runBookingJob } = require('../bot/register-pilates');
+const { runBookingJob, cancelRegistration } = require('../bot/register-pilates');
 const { scrapeSchedule } = require('../bot/scrape-schedule');
 const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
@@ -4798,6 +4798,41 @@ const server = http.createServer((req, res) => {
       console.log(`[escalation] Dismissed by user — Job #${id}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
+    });
+
+  } else if (req.method === 'POST' && path === '/cancel-registration') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      let id;
+      try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      if (!id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Invalid job ID' }));
+        return;
+      }
+      const job = getJobById(id);
+      if (!job) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Job not found' }));
+        return;
+      }
+      try {
+        console.log(`[cancel-registration] Starting cancel for job #${id} (${job.class_title})`);
+        const result = await cancelRegistration(job);
+        if (result.success) {
+          clearLastRun(id);
+          console.log(`[cancel-registration] Job #${id} cancelled successfully — booking state cleared`);
+        } else {
+          console.log(`[cancel-registration] Job #${id} cancel failed: ${result.message}`);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        console.error(`[cancel-registration] Unexpected error for job #${id}:`, err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, action: null, message: err.message || 'Internal error' }));
+      }
     });
 
   } else if (req.method === 'POST' && path === '/add-job') {

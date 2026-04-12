@@ -2200,7 +2200,329 @@ async function runBookingJob(job, opts = {}) {
   }
 }
 
-module.exports = { runBookingJob };
+// ── Cancel Registration ───────────────────────────────────────────────────────
+// Navigates to the YMCA schedule, finds the registered/waitlisted class,
+// opens the modal, verifies it matches the job, and clicks Unregister /
+// Cancel / Leave Waitlist.  Returns a structured result.
+//
+// Reuses: createSession, auth-lock, pingSessionHttp, saveCookies, ACTION_SELECTORS
+// Does NOT touch the sniper state, booking windows, or booking locks.
+// ─────────────────────────────────────────────────────────────────────────────
+async function cancelRegistration(job) {
+  const { classTitle, classTime, instructor, dayOfWeek, targetDate } = job;
+
+  const classTitleLower   = (classTitle || '').toLowerCase();
+  const classTimeNorm     = classTime
+    ? classTime.trim().toLowerCase().replace(/^(\d+:\d+)\s*(am|pm).*/, (_, t, ap) => t + ' ' + ap[0])
+    : null;
+  const instructorFirstName = instructor
+    ? instructor.trim().split(/\s+/)[0].toLowerCase()
+    : null;
+
+  const DAY_SHORT = {
+    Sunday:'Sun', Monday:'Mon', Tuesday:'Tue', Wednesday:'Wed',
+    Thursday:'Thu', Friday:'Fri', Saturday:'Sat',
+  };
+  let dayShort    = DAY_SHORT[dayOfWeek] || 'Wed';
+  let targetDayNum = null;
+  if (targetDate) {
+    const d    = new Date(targetDate + 'T00:00:00Z');
+    dayShort   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
+    targetDayNum = d.getUTCDate();
+  }
+
+  const CONFIDENCE_THRESHOLD = 8;
+
+  let browser = null;
+  let _authLockAcquired = false;
+
+  // ── DOM eval: find the best-matching card on the current page ─────────────
+  // Same scoring logic as the inner findTargetCard() in runBookingJob.
+  async function findCard(page) {
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-cancel-target]').forEach(e => e.removeAttribute('data-cancel-target'));
+    });
+    const result = await page.evaluate(({ classTitleLower, instrFirst, confidenceThreshold, classTimeNorm }) => {
+      const SKIP = new Set(['OPTION','SELECT','SCRIPT','STYLE','HEAD','HTML','BODY','NOSCRIPT','SVG','PATH']);
+      function norm(t) { return (t||'').replace(/[\s\u00A0\u2009\u202f]+/g,' ').trim(); }
+      let timeAmRe;
+      if (classTimeNorm) {
+        const m = classTimeNorm.match(/^(\d+:\d+)\s*([ap])/i);
+        timeAmRe = m ? new RegExp(m[1]+'\\s*'+m[2],'i') : /(?!)/;
+      } else { timeAmRe = /(?!)/; }
+      const titleParts = classTitleLower.split(/\s+/).map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+      const titleRe  = new RegExp(titleParts.join('[\\s\\u00A0]+'),'i');
+      const instrRe  = instrFirst ? new RegExp(instrFirst,'i') : /(?!)/;
+      const rows = [];
+      for (const el of document.querySelectorAll('*')) {
+        if (SKIP.has(el.tagName)) continue;
+        const desc = el.querySelectorAll('*').length;
+        if (desc > 100 || desc < 2) continue;
+        const txt  = norm(el.textContent||'');
+        if (!txt) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width===0 && r.height===0) continue;
+        const hasTitle = titleRe.test(txt);
+        const hasTime  = timeAmRe.test(txt);
+        const hasInstr = instrFirst ? instrRe.test(txt) : false;
+        let score = 0;
+        if (hasTitle) score+=5;
+        if (hasTime)  score+=5;
+        if (hasInstr) score+=3;
+        if (score < confidenceThreshold) continue;
+        rows.push({ el, score, desc, visible: r.width>=100 && r.height>=30, txt:txt.slice(0,200) });
+      }
+      rows.sort((a,b)=>b.score-a.score||(b.visible?1:0)-(a.visible?1:0)||a.desc-b.desc);
+      if (!rows.length) return null;
+      rows[0].el.setAttribute('data-cancel-target','yes');
+      return { score: rows[0].score, txt: rows[0].txt };
+    }, { classTitleLower, instrFirst: instructorFirstName, confidenceThreshold: CONFIDENCE_THRESHOLD, classTimeNorm });
+    if (!result) return null;
+    console.log(`[cancel] Card found — score=${result.score} "${result.txt.slice(0,80)}"`);
+    return page.locator('[data-cancel-target="yes"]').first();
+  }
+
+  // ── Scroll helper — find the largest scrollable panel and shift it ────────
+  async function scrollPanel(page, amount) {
+    await page.evaluate((amt) => {
+      let best = null, bestH = 0;
+      for (const el of document.querySelectorAll('*')) {
+        const s = getComputedStyle(el);
+        if (s.overflowY!=='auto'&&s.overflowY!=='scroll'&&s.overflow!=='auto'&&s.overflow!=='scroll') continue;
+        if (el.scrollHeight<=el.clientHeight+50) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width<100||r.height<100) continue;
+        if (r.height>bestH){best=el;bestH=r.height;}
+      }
+      if (best) best.scrollTop += amt;
+    }, amount);
+  }
+
+  // ── Find card with scroll scan ────────────────────────────────────────────
+  async function findCardWithScan(page) {
+    let card = await findCard(page);
+    if (card) return card;
+    // Scroll up
+    for (let i=0;i<80;i++) {
+      await scrollPanel(page,-80); await page.waitForTimeout(200);
+      card = await findCard(page); if (card) return card;
+    }
+    // Reset and scroll down
+    await scrollPanel(page,-999999); await page.waitForTimeout(200);
+    for (let i=0;i<150;i++) {
+      await scrollPanel(page,80); await page.waitForTimeout(200);
+      card = await findCard(page); if (card) return card;
+    }
+    return null;
+  }
+
+  try {
+    if (!classTitle) return { success:false, action:null, message:'Job is missing classTitle' };
+
+    // ── Auth ─────────────────────────────────────────────────────────────────
+    let _tier2Trusted = false;
+    try {
+      const ping = await pingSessionHttp();
+      _tier2Trusted = ping.trusted === true;
+    } catch { /* fall through to full auth */ }
+
+    if (!_tier2Trusted) {
+      if (isLocked()) return { success:false, action:null, message:'Auth lock held — another browser session is in progress' };
+      _authLockAcquired = acquireLock('cancel','signing_in');
+    }
+
+    let _session;
+    try {
+      _session = await createSession({ headless: isHeadless });
+    } catch (loginErr) {
+      return { success:false, action:null, message: loginErr.message || 'Login failed' };
+    }
+    if (_authLockAcquired) { releaseLock(); _authLockAcquired = false; }
+
+    browser = _session.browser;
+    const page = _session.page;
+
+    // ── Navigate ─────────────────────────────────────────────────────────────
+    console.log('[cancel] Navigating to schedule...');
+    await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout:60000 });
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const loginPrompt = await page.locator('text=/login to register/i').count();
+    if (loginPrompt > 0) return { success:false, action:null, message:'Session not established — schedule page requires login' };
+
+    // Wait for dropdowns
+    await page.waitForFunction(() => {
+      const sels = document.querySelectorAll('select');
+      for (const s of sels) if (s.options.length>1) return true;
+      return false;
+    }, { timeout:15000 }).catch(()=>{});
+
+    // ── Category filter ───────────────────────────────────────────────────────
+    // Use native selectOption (works reliably as seen in logs).
+    const selects = page.locator('select');
+    const selCount = await selects.count();
+    let filterApplied = false;
+    for (let i=0;i<selCount;i++) {
+      const opts = await selects.nth(i).locator('option').allTextContents();
+      if (opts.some(o => /yoga.*pilates|pilates.*yoga/i.test(o))) {
+        const before = await page.locator('[data-repeater-item], .bbl-rg-item, .schedule-row, [class*="rg-item"]').count().catch(()=>0);
+        await selects.nth(i).selectOption({ label: 'Yoga/Pilates' });
+        await page.waitForTimeout(1000);
+        filterApplied = true;
+        console.log(`[cancel] Yoga/Pilates filter applied (select #${i})`);
+        break;
+      }
+    }
+    if (!filterApplied) console.log('[cancel] ⚠️ Could not apply Yoga/Pilates filter — scanning without it.');
+    await page.waitForTimeout(600);
+
+    // ── Find day tab & card ───────────────────────────────────────────────────
+    const dayTabs   = page.locator(`text=/${dayShort} \\d+/`);
+    const tabCount  = await dayTabs.count();
+    console.log(`[cancel] Found ${tabCount} "${dayShort}" tab(s).`);
+
+    let card = null;
+
+    if (targetDayNum !== null) {
+      for (let w=0;w<tabCount;w++) {
+        const tabTxt = await dayTabs.nth(w).textContent();
+        if (parseInt(tabTxt.replace(/\D+/g,''),10) === targetDayNum) {
+          console.log('[cancel] Clicking exact date tab: '+tabTxt.trim());
+          await dayTabs.nth(w).click();
+          card = await findCardWithScan(page);
+          break;
+        }
+      }
+    }
+    if (!card) {
+      for (let w=0;w<tabCount;w++) {
+        const tabTxt = await dayTabs.nth(w).textContent();
+        await dayTabs.nth(w).click();
+        card = await findCardWithScan(page);
+        if (card) { console.log('[cancel] Card found on tab: '+tabTxt.trim()); break; }
+      }
+    }
+
+    if (!card) {
+      return { success:false, action:null, message:`Could not find class "${classTitle}" on the schedule` };
+    }
+
+    // ── Open modal ────────────────────────────────────────────────────────────
+    try { await card.scrollIntoViewIfNeeded({ timeout:5000 }); } catch {}
+    await page.waitForTimeout(300);
+    const clickable = card.locator("button, [role='button'], a").first();
+    const clickTarget = (await clickable.count()) > 0 ? clickable : card;
+    try {
+      await clickTarget.scrollIntoViewIfNeeded({ timeout:3000 }).catch(()=>{});
+      await clickTarget.click({ timeout:5000 });
+    } catch {
+      await card.click({ force:true });
+    }
+
+    // Wait for modal action buttons
+    await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout:3000 }).catch(()=>null);
+    await page.waitForTimeout(500);
+
+    // ── Modal verification ────────────────────────────────────────────────────
+    const rawModal  = (await page.locator('body').innerText().catch(()=>'')).toLowerCase();
+    const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g,' ');
+    const verifyTime = classTimeNorm ? modalText.includes(classTimeNorm) : true;
+    const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
+    console.log(`[cancel] Modal verify — time:${verifyTime} instr:${verifyInst}`);
+
+    if (!verifyTime) {
+      return { success:false, action:null, message:'verification_failed: modal time does not match job — will not cancel' };
+    }
+
+    // ── Find cancel / unregister / leave-waitlist button ──────────────────────
+    const CANCEL_SELECTORS_LIST = [
+      'button:has-text("Unregister"), [role="button"]:has-text("Unregister")',
+      'button:has-text("Leave Waitlist"), [role="button"]:has-text("Leave Waitlist")',
+      'button:has-text("Cancel Waitlist"), [role="button"]:has-text("Cancel Waitlist")',
+      'button:has-text("Cancel Registration"), [role="button"]:has-text("Cancel Registration")',
+      'button:has-text("Cancel"), [role="button"]:has-text("Cancel")',
+    ];
+
+    let cancelBtn = null;
+    let cancelLabel = null;
+    for (const sel of CANCEL_SELECTORS_LIST) {
+      const loc = page.locator(sel);
+      if ((await loc.count()) > 0) {
+        cancelBtn   = loc.first();
+        cancelLabel = (await cancelBtn.textContent().catch(()=>'Cancel')).trim();
+        break;
+      }
+    }
+
+    const allBtnTexts = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(()=>[]);
+    console.log(`[cancel] Visible buttons: ${JSON.stringify(allBtnTexts)}`);
+
+    if (!cancelBtn) {
+      return {
+        success: false,
+        action:  null,
+        message: `No cancel/unregister button found in modal. Visible buttons: ${allBtnTexts.join(', ')}`,
+      };
+    }
+
+    const isWaitlistCancel = /waitlist/i.test(cancelLabel);
+    console.log(`[cancel] Clicking "${cancelLabel}"...`);
+    await cancelBtn.click({ timeout:5000 });
+    await page.waitForTimeout(2000);
+
+    // ── Confirmation dialog: accept if present ────────────────────────────────
+    // Some YMCA modals show a "Are you sure?" dialog after clicking cancel.
+    const confirmSels = [
+      'button:has-text("Yes"), button:has-text("Confirm"), button:has-text("OK")',
+      '[role="button"]:has-text("Yes"), [role="button"]:has-text("Confirm"), [role="button"]:has-text("OK")',
+    ];
+    for (const sel of confirmSels) {
+      const loc = page.locator(sel);
+      if ((await loc.count()) > 0) {
+        console.log('[cancel] Confirmation dialog detected — clicking confirm...');
+        await loc.first().click({ timeout:3000 }).catch(()=>{});
+        await page.waitForTimeout(1500);
+        break;
+      }
+    }
+
+    // ── Verify success: Register or Join Waitlist button should reappear ──────
+    await page.waitForTimeout(1500);
+    const postBtns = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(()=>[]);
+    console.log(`[cancel] Post-cancel buttons: ${JSON.stringify(postBtns)}`);
+
+    const registerReturned = postBtns.some(t => /register|reserve|join waitlist|waitlist/i.test(t));
+    const cancelGone       = !postBtns.some(t => /unregister|leave waitlist|cancel registration/i.test(t));
+
+    if (registerReturned || cancelGone) {
+      const action = isWaitlistCancel ? 'left_waitlist' : 'cancelled';
+      const message = isWaitlistCancel ? 'Successfully left the waitlist' : 'Registration cancelled successfully';
+      console.log(`✅ [cancel] ${message}`);
+
+      // Save fresh cookies
+      try { await saveCookies(page); } catch {}
+
+      return { success:true, action, message };
+    }
+
+    // Ambiguous — cancel button may still be present
+    return {
+      success: false,
+      action:  null,
+      message: `Cancel clicked but outcome unclear. Post-cancel buttons: ${postBtns.join(', ')}`,
+    };
+
+  } catch (err) {
+    console.error('[cancel] Unexpected error:', err.message);
+    return { success:false, action:null, message: err.message || 'Unexpected error during cancel' };
+  } finally {
+    if (browser) await browser.close().catch(()=>{});
+    if (_authLockAcquired) releaseLock();
+  }
+}
+
+module.exports = { runBookingJob, cancelRegistration };
 
 // Allow direct invocation: node src/bot/register-pilates.js
 if (require.main === module) {

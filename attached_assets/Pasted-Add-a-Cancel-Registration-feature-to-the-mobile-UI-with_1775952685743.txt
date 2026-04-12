@@ -1,0 +1,175 @@
+Add a “Cancel Registration” feature to the mobile UI with a clean, modern iPhone-style UX.
+
+IMPORTANT:
+Do NOT change any existing booking logic.
+Reuse the existing Playwright session and navigation system.
+
+This should ONLY add:
+- a cancel action in the UI
+- a backend function that clicks “Unregister” on the YMCA site
+- a safe confirmation flow
+
+--------------------------------------------------
+1) UI — ADD CANCEL BUTTON (NOW TAB)
+--------------------------------------------------
+
+In the Now tab, when a class is:
+- Registered
+- OR Waitlisted
+
+Show a secondary action button:
+
+Label:
+- If registered → "Cancel Registration"
+- If waitlisted → "Leave Waitlist"
+
+Style:
+- subtle red outline button (not primary)
+- rounded, iOS style
+- smaller than Run button
+
+Placement:
+- directly under the main class card (Core Pilates card)
+
+Do NOT show this button if:
+- no active reservation
+- class not yet booked
+
+--------------------------------------------------
+2) CONFIRMATION SHEET (iOS STYLE)
+--------------------------------------------------
+
+When user taps Cancel:
+
+Open a bottom sheet (not alert)
+
+Content:
+
+Title:
+Cancel Registration?
+
+Body:
+You are about to cancel your spot in:
+Core Pilates · Tuesday 4:20 PM
+
+Actions:
+- Cancel Registration (red)
+- Keep Reservation (default)
+
+Behavior:
+- require explicit confirmation
+- do NOT allow accidental tap-through
+
+--------------------------------------------------
+3) BACKEND — CANCEL FUNCTION
+--------------------------------------------------
+
+Create a new function:
+
+cancelBookingJob(jobId)
+
+Flow:
+
+1. launch Playwright (reuse auth state)
+2. navigate to YMCA schedule page
+3. locate the correct class (reuse your existing class selection logic)
+4. click into class modal
+5. find button:
+   - "Unregister"
+   OR
+   - "Cancel"
+   OR
+   - "Leave Waitlist"
+
+6. click it
+7. confirm if a confirmation dialog appears
+8. verify success by detecting:
+   - "Register" button returns
+   OR
+   - "Join Waitlist" appears
+
+Return structured result:
+{
+  success: true/false,
+  action: "cancelled" | "left_waitlist",
+  message: string
+}
+
+--------------------------------------------------
+4) SAFETY CHECKS (CRITICAL)
+--------------------------------------------------
+
+Before clicking cancel:
+
+Verify modal matches:
+- class title
+- time
+- instructor
+
+Reuse existing verification logic.
+
+If mismatch:
+- DO NOT cancel
+- return error: "verification_failed"
+
+--------------------------------------------------
+5) UPDATE UI AFTER CANCEL
+--------------------------------------------------
+
+After success:
+
+Update Now card:
+- remove "Waitlisted" or "Registered"
+- show:
+  "Not Registered"
+
+Update status badge:
+- from Live/Booked → Idle
+
+Add activity log item:
+- "Registration cancelled"
+OR
+- "Left waitlist"
+
+--------------------------------------------------
+6) ACTIVITY FEED INTEGRATION
+--------------------------------------------------
+
+Add to Recent Activity:
+
+- Registration cancelled
+- Left waitlist
+
+Timestamp it like existing events.
+
+--------------------------------------------------
+7) OPTIONAL (NICE TOUCH)
+--------------------------------------------------
+
+Add subtle feedback:
+
+- small haptic feedback (if enabled)
+- brief success toast:
+  "Registration cancelled"
+
+--------------------------------------------------
+8) DO NOT BREAK EXISTING FLOW
+--------------------------------------------------
+
+Do NOT modify:
+- booking
+- scheduler
+- job creation
+- login/session handling
+
+This is an additive feature only.
+
+--------------------------------------------------
+9) AFTER IMPLEMENTATION EXPLAIN
+--------------------------------------------------
+
+Explain:
+1. where cancel button appears
+2. how confirmation works
+3. how cancel flow interacts with Playwright
+4. how safety verification prevents wrong cancellations

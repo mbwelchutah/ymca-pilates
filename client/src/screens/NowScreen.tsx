@@ -621,6 +621,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   const [resetting,        setResetting]        = useState(false)
   const [showActionSheet,  setShowActionSheet]  = useState(false)
+  const [showCancelSheet,  setShowCancelSheet]  = useState(false)
+  const [cancelInProgress, setCancelInProgress] = useState(false)
+  const [cancelResult,     setCancelResult]     = useState<{ ok: boolean; text: string } | null>(null)
 
   // ── Sniper readiness state ─────────────────────────────────────────────────
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
@@ -850,6 +853,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   const handleDryRun = async (enabled: boolean) => {
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
+  }
+
+  const handleCancelConfirm = async () => {
+    if (!job || cancelInProgress) return
+    setCancelInProgress(true)
+    setShowCancelSheet(false)
+    setCancelResult(null)
+    try {
+      const r = await api.cancelRegistration(job.id)
+      setCancelResult({ ok: r.success, text: r.success ? (r.action === 'left_waitlist' ? 'Left waitlist' : 'Registration cancelled') : (r.message || 'Could not cancel') })
+      if (r.success) refresh()
+    } catch (e) {
+      setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed' })
+    } finally {
+      setCancelInProgress(false)
+    }
   }
 
   // ── Now-tab manual execution state ─────────────────────────────────────────
@@ -1365,6 +1384,30 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     : formatOpens(bookingOpenMs)}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ── Cancel registration button — shown when booked/waitlisted ─────── */}
+          {isBooked && execMode === 'idle' && job && (
+            <div className="mt-2">
+              {cancelResult && (
+                <div className={`rounded-xl px-3.5 py-2.5 mb-2 ${cancelResult.ok ? 'bg-accent-green/10' : 'bg-accent-red/10'}`}>
+                  <p className={`text-[13px] font-medium ${cancelResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+                    {cancelResult.ok ? '✓ ' : '✗ '}{cancelResult.text}
+                  </p>
+                </div>
+              )}
+              <button
+                onClick={() => { setCancelResult(null); setShowCancelSheet(true) }}
+                disabled={cancelInProgress}
+                className="w-full rounded-xl py-2.5 text-[14px] font-medium border border-accent-red/40 text-accent-red active:opacity-60 transition-opacity disabled:opacity-40"
+              >
+                {cancelInProgress
+                  ? 'Cancelling…'
+                  : job.last_result === 'waitlist'
+                    ? 'Leave Waitlist'
+                    : 'Cancel Registration'}
+              </button>
             </div>
           )}
 
@@ -2093,6 +2136,56 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancel confirmation sheet ─────────────────────────────────────────
+           iOS-style bottom sheet requiring explicit confirmation before cancel.
+           Scrim prevents accidental tap-through.                               */}
+      {showCancelSheet && job && (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          onClick={() => setShowCancelSheet(false)}
+        >
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full bg-white rounded-t-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* header */}
+            <div className="px-5 pt-5 pb-3">
+              <p className="text-[17px] font-semibold text-text-primary text-center leading-snug">
+                {job.last_result === 'waitlist' ? 'Leave Waitlist?' : 'Cancel Registration?'}
+              </p>
+              <p className="text-[13px] text-text-secondary text-center mt-2 leading-snug">
+                You are about to {job.last_result === 'waitlist' ? 'leave the waitlist for' : 'cancel your spot in'}:
+              </p>
+              <p className="text-[13px] font-medium text-text-primary text-center mt-0.5 leading-snug">
+                {job.class_title}
+                {job.class_time ? ` · ${job.class_time}` : ''}
+              </p>
+              <p className="text-[11px] text-text-muted text-center mt-1 leading-snug">
+                This action will be performed on the YMCA website.
+              </p>
+            </div>
+
+            <div className="border-t border-divider mt-1">
+              {/* confirm — red */}
+              <button
+                onClick={handleCancelConfirm}
+                className="w-full py-4 text-center text-[17px] font-semibold text-accent-red active:opacity-60 transition-opacity border-b border-divider"
+              >
+                {job.last_result === 'waitlist' ? 'Leave Waitlist' : 'Cancel Registration'}
+              </button>
+              {/* keep — default */}
+              <button
+                onClick={() => setShowCancelSheet(false)}
+                className="w-full py-4 text-center text-[17px] font-medium text-accent-blue active:opacity-60 transition-opacity"
+              >
+                Keep Reservation
+              </button>
+            </div>
           </div>
         </div>
       )}
