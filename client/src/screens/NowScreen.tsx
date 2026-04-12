@@ -403,11 +403,22 @@ export type NowCardState =
   | 'registered'                 // booked this cycle (non-waitlist)
   | 'waitlisted'                 // waitlisted this cycle
   | 'registration_in_progress'   // booking attempt actively running
+  | 'auto_registration_armed'    // user armed; scheduler fires at window open
+  | 'registration_failed'        // last manual registration attempt failed
+  | 'preflight_failed'           // last preflight check failed
   | 'registration_open_with_spots' // window open — Register Now
   | 'registration_open_full'     // window open — class full, Join Waitlist
   | 'registration_not_open'      // window not open yet
-  | 'auto_registration_armed'    // user armed auto-registration; waiting for window
 
+// State priority (highest → lowest):
+//   waitlisted / registered         — outcome for this cycle
+//   registration_in_progress        — scheduler/manual run active now
+//   auto_registration_armed         — armed before window; scheduler fires automatically
+//   registration_failed             — most recent manual registration failed
+//   preflight_failed                — most recent preflight check failed
+//   registration_open_full          — window open but class full
+//   registration_open_with_spots    — window open, spots available
+//   registration_not_open           — window not open yet (default)
 export function deriveNowCardState(opts: {
   isBooked:                 boolean
   lastResult:               string | null
@@ -415,27 +426,33 @@ export function deriveNowCardState(opts: {
   phase:                    Phase
   effectivePreflightStatus: string | null
   localArmed:               boolean
+  lastFailedAction:         'registration' | 'preflight' | null
 }): NowCardState {
-  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed } = opts
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction } = opts
 
   // 1. Cycle outcome already determined
   if (isBooked && lastResult === 'waitlist') return 'waitlisted'
   if (isBooked)                              return 'registered'
 
-  // 2. Background (scheduler-driven) registration attempt in progress
+  // 2. Scheduler-driven or manual registration attempt actively in progress
   if (bookingActive) return 'registration_in_progress'
 
-  // 3. Class is full — waitlist the only option (set by preflight)
+  // 3. User explicitly armed auto-registration — takes priority over window-open states.
+  //    When armed the scheduler fires automatically; showing "Register Now" would be
+  //    misleading (it implies manual action is required) and contradicts the armed state.
+  if (localArmed) return 'auto_registration_armed'
+
+  // 4. Last manual action failed — show retry before falling to generic pre-open states
+  if (lastFailedAction === 'registration') return 'registration_failed'
+  if (lastFailedAction === 'preflight')    return 'preflight_failed'
+
+  // 5. Class is full — waitlist the only option (set by preflight)
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
 
-  // 4. Registration window is open — assume spots unless preflight says otherwise
+  // 6. Registration window is open — assume spots unless preflight says otherwise
   if (phase === 'sniper') return 'registration_open_with_spots'
 
-  // 5. User explicitly armed auto-registration and window hasn't opened or closed yet.
-  //    Not shown during 'late' (window passed) — only while waiting for the window.
-  if (localArmed && phase !== 'late') return 'auto_registration_armed'
-
-  // 6. Default — window not yet open (too_early, warmup, late, unknown)
+  // 7. Default — window not yet open (too_early, warmup, late, unknown)
   return 'registration_not_open'
 }
 
@@ -482,6 +499,10 @@ export function resolveSmartButton(opts: {
         : 'Will register when the window opens'
       return { label: 'Cancel Auto-registration', actionType: 'disarm', helperText, disabled: false, emphasis: 'outline-red' }
     }
+    case 'registration_failed':
+      return { label: 'Retry Registration', actionType: 'register', helperText: 'Last registration attempt failed', disabled: false, emphasis: 'primary-blue' }
+    case 'preflight_failed':
+      return { label: 'Run Check Again',   actionType: 'arm',      helperText: "Last check didn't pass",           disabled: false, emphasis: 'primary-blue' }
     case 'registration_not_open': {
       const helperText = (bookingOpenMs != null && countdown)
         ? `Registration opens in ${countdown}`
@@ -683,6 +704,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       else   localStorage.removeItem(armedKey)
     } catch { /* ignored */ }
   }
+
+  // ── Last manual action failure — persists after execMode resets to idle ──────
+  // Survives the 20 s step-animation auto-reset so the card keeps showing
+  // "Retry Registration" / "Run Check Again" until the user acts or the job changes.
+  // Cleared at the start of any new attempt, on success, and on job change.
+  const [lastFailedAction, setLastFailedAction] = useState<'registration' | 'preflight' | null>(null)
+
+  useEffect(() => {
+    setLastFailedAction(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId])
 
   // ── Stage 9F — Background readiness state (auto-check status + last checked) ─
   // Stage 10H — Adaptive polling: 1 s during armed/warmup/sniper/confirming,
@@ -1052,6 +1084,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (!job || (execMode !== 'idle' && execMode !== 'done')) return
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
+    setLastFailedAction(null)   // clear stale failure before starting
     setExecMode('running_preflight')
     setExecDone(null)
     startStepSimulation(PREFLIGHT_STEP_LIST)
@@ -1083,10 +1116,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           : (r.message ?? 'Registration check blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
         if (r.success) setArmed(true)
+        else setLastFailedAction('preflight')
       }
     } catch (e) {
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
       setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration check failed', color: 'red' })
+      setLastFailedAction('preflight')
     } finally {
       setExecMode('done')
       scheduleDoneReset()
@@ -1100,6 +1135,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     if (bgReadiness?.armed?.state === 'booking') return
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
+    setLastFailedAction(null)   // clear stale failure before starting
     setExecMode('running_booking')
     setExecDone(null)
     startStepSimulation(BOOK_STEP_LIST)
@@ -1127,10 +1163,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               ? 'Could not access registration modal'
               : (r.message ?? 'Registration failed')
       setExecDone({ ok: r.success !== false, text, color })
+      if (r.success === false) setLastFailedAction('registration')
       refresh()
     } catch (e) {
       finalizeSteps(BOOK_STEP_LIST, 0)
       setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration failed', color: 'red' })
+      setLastFailedAction('registration')
     } finally {
       setExecMode('done')
       scheduleDoneReset()
@@ -1268,6 +1306,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     phase,
     effectivePreflightStatus,
     localArmed,
+    lastFailedAction,
   })
 
   // Stage 3: single smart button config — drives the IDLE action button + helper text
