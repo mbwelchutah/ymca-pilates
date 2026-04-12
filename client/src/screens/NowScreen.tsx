@@ -1720,10 +1720,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                    Disappears on disarm, booking, or job change (all clear localArmed). */}
               {execMode === 'idle' && localArmed && (
                 <div className="mb-3">
-                  {/* Step rows */}
+                  {/* Step rows — each item fades in and rises 4px on mount.
+                       animation-delay staggers items 50ms apart.
+                       CSS animation plays once per DOM insertion; React reuses
+                       the same nodes while localArmed stays true so it never
+                       replays on re-render.  prefers-reduced-motion: reduce
+                       strips translateY, leaving only the opacity fade. */}
                   <div className="space-y-1.5">
-                    {PREFLIGHT_STEP_LIST.map(step => (
-                      <div key={step} className="flex items-center gap-2.5">
+                    {PREFLIGHT_STEP_LIST.map((step, idx) => (
+                      <div
+                        key={step}
+                        className="flex items-center gap-2.5 animate-checklist-item"
+                        style={{ animationDelay: `${idx * 50}ms` }}
+                      >
                         <span className="text-[13px] w-4 text-center shrink-0 text-accent-green select-none">✓</span>
                         <span className="text-[13px] text-text-primary">{STEP_LABELS[step]}</span>
                       </div>
