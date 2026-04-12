@@ -151,7 +151,7 @@ export default function App() {
         polledStatus={polledStatus}
       />
 
-      <main className="flex-1 overflow-y-auto pt-content-top" onScroll={handleMainScroll}>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden pt-content-top" onScroll={handleMainScroll}>
         {/* Now and Plan stay mounted at all times so their local state (readiness
             scores, sniper data, countdown ticks) is preserved across tab switches.
             The active tab is shown via display; the inactive one is hidden.

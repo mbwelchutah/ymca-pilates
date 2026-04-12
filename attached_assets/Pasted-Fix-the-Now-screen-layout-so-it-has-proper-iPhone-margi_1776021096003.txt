@@ -1,0 +1,60 @@
+Fix the Now screen layout so it has proper iPhone margins and stable scrolling.
+
+Current issues seen in the iPhone screenshots:
+1. The main card does not have enough outer margin / gutter and feels too close to or partially clipped by the screen edges
+2. The screen/container scrolling feels off
+3. The layout does not consistently respect a clean outer page margin
+4. There may be horizontal overflow or an incorrect scroll container causing the content to appear shifted or cropped
+
+Goal:
+Make the Now screen feel properly inset, centered, and scroll cleanly on iPhone.
+
+Requirements:
+
+1. Add a stable outer page gutter
+- Ensure the main page content has consistent horizontal padding on both sides
+- Target approximately 16px minimum side padding on iPhone
+- 20px is acceptable if it feels more Apple-like
+- The card should never appear clipped against the left or right edge
+
+2. Ensure the main card respects that gutter
+- The card should sit cleanly inside the page padding
+- Avoid accidental negative margins, translated offsets, or width calculations that exceed the viewport
+
+3. Audit width calculations
+- Inspect any use of:
+  - width: 100vw
+  - calc() widths
+  - negative margins
+  - translateX
+  - absolute positioning
+- Remove or correct anything causing overflow or off-screen rendering
+
+4. Fix scrolling architecture
+- Ensure there is one clear vertical scroll container for the page content
+- Avoid nested scrolling regions unless absolutely necessary
+- The Now screen should scroll naturally on iPhone
+- No clipped bottom content
+- No horizontal scrolling
+
+5. Safe-area handling
+- Respect safe-area insets where needed
+- Ensure content is not crowding the viewport edges in standalone/PWA-like behavior
+
+6. Validate the top segmented control + card layout together
+- The segmented control should align with the same outer gutter as the main card
+- The card and top controls should feel like part of the same layout system
+
+7. Validate bottom spacing
+- Ensure there is enough bottom padding so the last content is not cramped against the bottom of the viewport or browser controls
+
+8. Keep functionality unchanged
+- Do not alter logic
+- This is strictly a layout / spacing / scroll fix
+
+Please report:
+1. files changed
+2. root cause of the clipping / margin issue
+3. what was changed in page wrapper and card layout
+4. what was changed in scroll container behavior
+5. whether any horizontal overflow was found and fixed

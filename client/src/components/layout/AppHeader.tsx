@@ -59,7 +59,7 @@ export function AppHeader({
     >
       {/* ── Row 1: Large title (collapses on scroll) + right-side actions ── */}
       <div
-        className={`px-4 flex items-end justify-between transition-all duration-250 ${
+        className={`px-5 flex items-end justify-between transition-all duration-250 ${
           scrolled ? 'pt-2 pb-1' : 'pt-3.5 pb-1'
         }`}
       >
@@ -133,7 +133,7 @@ export function AppHeader({
       </div>
 
       {/* ── Row 2: iOS-style segmented pill control ── */}
-      <div className="px-4 pt-2 pb-2.5">
+      <div className="px-5 pt-2 pb-2.5">
         <div className="relative flex items-center bg-[#E5E5EA] rounded-[10px] p-[2px]">
           {/* Sliding white pill — absolute positioned, driven by activeIdx */}
           <div
