@@ -4819,7 +4819,14 @@ const server = http.createServer((req, res) => {
       }
       try {
         console.log(`[cancel-registration] Starting cancel for job #${id} (${job.class_title})`);
-        const result = await cancelRegistration(job);
+        const result = await cancelRegistration({
+          id:         job.id,
+          classTitle: job.class_title,
+          classTime:  job.class_time,
+          instructor: job.instructor,
+          dayOfWeek:  job.day_of_week,
+          targetDate: job.target_date,
+        });
         if (result.success) {
           clearLastRun(id);
           console.log(`[cancel-registration] Job #${id} cancelled successfully — booking state cleared`);

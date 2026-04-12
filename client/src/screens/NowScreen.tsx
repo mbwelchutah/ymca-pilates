@@ -1395,6 +1395,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   <p className={`text-[13px] font-medium ${cancelResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>
                     {cancelResult.ok ? '✓ ' : '✗ '}{cancelResult.text}
                   </p>
+                  {!cancelResult.ok && (
+                    <p className="text-[11px] text-text-muted mt-1.5 leading-snug">
+                      Already cancelled on the YMCA site?{' '}
+                      <button
+                        onClick={async () => {
+                          if (!job) return
+                          try { await api.resetBooking(job.id); refresh(); setCancelResult(null) } catch { /* ignored */ }
+                        }}
+                        className="text-accent-blue underline active:opacity-60"
+                      >
+                        Clear status
+                      </button>
+                    </p>
+                  )}
                 </div>
               )}
               <button
