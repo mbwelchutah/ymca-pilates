@@ -516,6 +516,49 @@ export function resolveSmartButton(opts: {
   }
 }
 
+// ── Secondary action state resolver ──────────────────────────────────────────
+// Drives the dynamic label on the Options / secondary button.
+// Priority (highest → lowest):
+//   status  — registration actively in progress (button is hidden anyway)
+//   fix     — last action failed; guide user to retry
+//   ready   — armed and system looks healthy; reassure, no urgency
+//   check   — low confidence or a readiness issue detected; nudge user
+//   options — default; no strong signal
+
+export type SecondaryActionState = 'options' | 'check' | 'ready' | 'fix' | 'status'
+
+export function resolveSecondaryAction(opts: {
+  nowCardState:    NowCardState
+  confidenceLabel: ConfidenceLabel | null
+  compositeColor:  'green' | 'amber' | 'red'
+  localArmed:      boolean
+  bgSession:       string | null
+  bgDiscovery:     string | null
+}): SecondaryActionState {
+  const { nowCardState, confidenceLabel, compositeColor, localArmed, bgSession, bgDiscovery } = opts
+
+  // 1. Registration actively in progress (Options button is hidden when disabled,
+  //    but guard here for completeness / future use)
+  if (nowCardState === 'registration_in_progress') return 'status'
+
+  // 2. Last action failed — guide user to fix it
+  if (nowCardState === 'registration_failed' || nowCardState === 'preflight_failed') return 'fix'
+
+  // 3. Armed and healthy — pure reassurance
+  if (localArmed && (confidenceLabel === 'High confidence' || compositeColor === 'green')) return 'ready'
+
+  // 4. Something looks off — nudge user to check
+  if (
+    confidenceLabel === 'Low confidence' ||
+    compositeColor  === 'red'            ||
+    bgSession       === 'error'          ||
+    bgDiscovery     === 'missing'
+  ) return 'check'
+
+  // 5. Default
+  return 'options'
+}
+
 // ── Stage 5: Live status derivation ──────────────────────────────────────────
 // Maps the current sniper phase to a concise, human-readable status text +
 // an optional subtext (e.g. "Will register at 10:20 PM").
@@ -1338,6 +1381,53 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
   })
 
+  // Secondary action state — drives the dynamic label + sheet contents.
+  // Derived from the same signals as smartButton; no extra API calls needed.
+  const secondaryAction: SecondaryActionState = resolveSecondaryAction({
+    nowCardState,
+    confidenceLabel,
+    compositeColor: composite.color,
+    localArmed,
+    bgSession:   reconciledBgSession,
+    bgDiscovery: isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
+  })
+
+  // Label and context-aware action sheet rows driven by secondaryAction.
+  const SECONDARY_LABEL: Record<SecondaryActionState, string> = {
+    options: 'Options',
+    check:   'Check',
+    ready:   'Ready',
+    fix:     'Fix',
+    status:  'Status',
+  }
+
+  // Action sheet rows change based on the assistant's read of the situation.
+  const secondarySheetItems: { label: string; sub: string; handler: () => void }[] = (() => {
+    switch (secondaryAction) {
+      case 'check':
+        return [
+          { label: 'Run Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
+          { label: 'Register Now',            sub: 'Attempt immediate registration',              handler: handleNowBook       },
+          { label: 'Auto-register',           sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
+        ]
+      case 'fix':
+        return [
+          { label: 'Run Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
+          { label: 'Retry Registration',     sub: 'Attempt registration again',                   handler: handleNowBook       },
+          { label: 'Auto-register',          sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
+        ]
+      case 'ready':
+      case 'status':
+      case 'options':
+      default:
+        return [
+          { label: 'Register Now',       sub: 'Attempt immediate registration',              handler: handleNowBook       },
+          { label: 'Auto-register',      sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
+          { label: 'Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
+        ]
+    }
+  })()
+
   if (loading) {
     return (
       <>
@@ -1616,16 +1706,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       >
                         {label}
                       </button>
-                      {/* Options button — labeled secondary, same height as primary.
+                      {/* Secondary / Options button — label is context-driven.
                            Hidden when primary is disabled (booked / in-progress)
                            so the sheet can't offer contradictory actions. */}
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
                           className="flex-shrink-0 px-4 flex items-center justify-center rounded-xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 transition-opacity"
-                          aria-label="Options"
+                          aria-label={SECONDARY_LABEL[secondaryAction]}
                         >
-                          Options
+                          {SECONDARY_LABEL[secondaryAction]}
                         </button>
                       )}
                     </div>
@@ -2138,24 +2228,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </p>
             </div>
 
-            {/* action rows */}
-            {([
-              {
-                label:   'Register Now',
-                sub:     'Attempt immediate registration',
-                handler: handleNowBook,
-              },
-              {
-                label:   'Auto-register',
-                sub:     'Set up auto-registration for when the window opens',
-                handler: handleNowPreflight,
-              },
-              {
-                label:   'Registration Check',
-                sub:     'Verify session, class, and registration link',
-                handler: handleNowPreflight,
-              },
-            ] as { label: string; sub: string; handler: () => void }[]).map(item => (
+            {/* action rows — context-driven via secondarySheetItems */}
+            {secondarySheetItems.map(item => (
               <button
                 key={item.label}
                 onClick={() => { setShowActionSheet(false); item.handler() }}

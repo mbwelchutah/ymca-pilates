@@ -1,0 +1,79 @@
+Add a calm, user-facing confidence indicator next to the checklist on the Now screen.
+
+Goal:
+Help the user understand how likely the bot is to successfully register, without adding clutter or turning the UI into a technical dashboard.
+
+Requirements:
+
+1. Add a confidence summary near the persistent checklist
+- Place it directly next to the checklist area or directly below it
+- Keep it compact and visually integrated with the checklist
+- Do not create a large separate diagnostic card
+
+2. Use human-friendly confidence labels instead of raw percentages
+Supported labels:
+- Very likely to succeed
+- Likely to succeed
+- Needs attention
+- Check recommended
+
+3. Add a short explanation under or beside the confidence label
+Examples:
+- Session verified, class found, and registration path reachable
+- Core checks passed. Registration will begin when the window opens
+- Login readiness may need review
+- We found an issue that could affect registration
+
+4. Derive confidence only from existing signals where possible
+Use current available signals such as:
+- session verified
+- schedule loaded
+- class found
+- modal reached
+- auth confidence
+- auto-registration armed
+- registration failure state
+- preflight failure state
+- other existing readiness signals already present in the app
+
+Do not add major new backend logic in this step.
+Build a lightweight resolver from current state.
+
+5. Implement a confidence resolver function
+Example output:
+- label
+- reason
+- tone / variant
+
+The resolver should map current state to one of:
+- very_likely
+- likely
+- needs_attention
+- check_recommended
+
+6. Keep it consistent with the dynamic secondary button
+Examples:
+- if confidence is low, secondary button can lean toward "Check"
+- if confidence is high and armed, secondary button can lean toward "Ready"
+
+7. Keep the design calm and iPhone-friendly
+- no percentages for now
+- no scary warning styles unless truly needed
+- avoid duplication with the checklist itself
+
+Design intent:
+- reassuring
+- understandable
+- honest
+- elegant
+- feels like a smart assistant
+
+Please:
+1. implement the confidence resolver
+2. place the confidence summary near the checklist
+3. keep the Now card visually simple
+4. report:
+   - files changed
+   - signals used for confidence
+   - confidence rules
+   - any assumptions made
