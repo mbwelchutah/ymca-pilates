@@ -55,10 +55,30 @@
   to   { opacity: 1; transform: translateY(0);   }
 }
 
+/* Icon crossfade — plays when a checklist row icon changes state.
+   Keying the icon span on status causes React to remount it on change,
+   triggering this animation. Pure opacity keeps it subtle. */
+@keyframes checklist-icon-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Standby heartbeat — gentle breathing on the armed-standby dot.
+   Only the dot animates; the row text stays fully stable. */
+@keyframes standby-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1);    }
+  50%       { opacity: 0.85; transform: scale(1.05); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   @keyframes checklist-item-in {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+  /* Reduced-motion standby: opacity-only fade, no scale */
+  @keyframes standby-pulse {
+    0%, 100% { opacity: 0.5;  }
+    50%       { opacity: 0.8;  }
   }
 }
 
@@ -81,6 +101,17 @@
      prefers-reduced-motion override strips the translateY above. */
   .animate-checklist-item {
     animation: checklist-item-in 200ms ease-out both;
+  }
+
+  /* Icon crossfade — triggers on key change when row status flips.
+     180ms matches the spec for checklist row transitions. */
+  .animate-checklist-icon {
+    animation: checklist-icon-in 180ms ease-out both;
+  }
+
+  /* Standby dot pulse — 1.6s breathing cycle, continuous while armed+waiting. */
+  .animate-standby-pulse {
+    animation: standby-pulse 1.6s ease-in-out infinite;
   }
 
   .safe-top {

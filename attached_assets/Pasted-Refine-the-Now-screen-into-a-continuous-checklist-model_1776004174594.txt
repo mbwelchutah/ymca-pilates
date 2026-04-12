@@ -1,0 +1,163 @@
+Refine the Now screen into a continuous checklist model with stable timing and a subtle live standby indicator.
+
+Goal:
+Make the Now screen feel calm, stable, and iPhone-native by:
+1. keeping the checklist always visible as the single source of truth
+2. improving UI timing and state timing to reduce flicker
+3. adding a subtle heartbeat-style standby animation to the final checklist row while waiting for the registration window
+
+Part 1 — Continuous checklist model
+
+Current issue:
+The preflight/readiness experience still feels too much like a temporary process screen. Messaging such as "Running Registration Check..." creates a mode switch instead of a stable truth model.
+
+Refactor so that:
+- the checklist is always visible
+- the checklist itself represents current system truth
+- status/progress is shown as checklist row states, not as a separate process banner
+
+Requirements:
+1. Remove temporary process messaging such as:
+- "Running Registration Check..."
+- any other separate "currently checking" headline that duplicates checklist meaning
+
+2. Add a subtle section label above the checklist:
+- "Registration readiness"
+
+3. Treat each checklist row as one of:
+- pending
+- active
+- complete
+- failed
+
+4. Use the final checklist row to represent the current live readiness step when appropriate
+Examples:
+- "Confirming registration access"
+- "Waiting for registration window"
+
+5. Keep confidence and next-step messaging directly below the checklist, not in separate duplicate banners
+
+6. Preserve the checklist in all relevant states:
+- before check
+- during check
+- ready/armed
+- waiting for open window
+- error/failure
+- registered
+
+Part 2 — Timing and transition stability
+
+Goal:
+Prioritize state stability over immediacy. A slightly delayed but stable UI is better than a fast flickering UI.
+
+Please inspect and improve:
+- state derivation timing
+- polling cadence
+- rerender frequency
+- debounce / settle windows
+- sticky state priority
+
+Requirements:
+1. Checklist rows should transition only when their state truly changes:
+- pending -> active
+- active -> complete
+- active -> failed
+Do not re-animate or remount unchanged rows.
+
+2. Timing values:
+- checklist row fade/slide transitions: 180–240ms
+- stagger multiple row completions by ~50ms
+- helper / status text fade: 150–200ms
+- button label/state swaps: 180–220ms crossfade
+
+3. State stability:
+- do not switch states on transient intermediate values unless they persist long enough to matter
+- add small debounce / settle windows where needed to avoid flicker
+- do not downgrade from a stronger state to a weaker one unless the weaker state is confirmed
+- once auto-registration is armed, keep that state sticky until cancel, run start, success, failure, or plan change
+
+4. Rendering cadence:
+- countdown may update once per second
+- checklist / confidence / readiness state should only recompute when relevant dependencies change
+- avoid rerendering the full Now card every second if only the countdown changed
+
+5. Respect reduced motion:
+- support prefers-reduced-motion
+- use fade-only or minimal-motion fallbacks when needed
+
+Part 3 — Subtle heartbeat standby checklist row
+
+Goal:
+When the bot is armed and waiting for the registration window, make the final checklist row feel quietly alive and reassuring.
+
+Behavior requirements:
+1. Add a final standby checklist row that appears only when all of these are true:
+- auto-registration is armed
+- core readiness checks are complete
+- registration window is not open yet
+- no active failure state exists
+- registration is not currently running
+
+Suggested row text:
+- "Waiting for registration window"
+Alternative acceptable text:
+- "Standing by for registration"
+
+2. Animate only the icon/dot on this final row
+Preferred animation:
+- soft pulse / breathing effect
+- very small scale shift (about 1.0 -> 1.05 or 1.06)
+- opacity shift (about 0.45 -> 0.85)
+- slow ease-in-out cycle
+
+3. Timing:
+- one full pulse cycle around 1.4s to 1.8s
+- continuous while in standby state
+- no abrupt start/stop
+
+4. Do NOT use:
+- spinner
+- bouncing dots
+- progress bar
+- strong flashing
+- loud color changes
+- repeated full-row motion
+
+5. Keep text mostly stable:
+- do not animate the entire row
+- do not animate layout
+- pulse should be limited mainly to the icon/dot
+- optional tiny text opacity shift is okay if extremely subtle
+
+6. Remove the heartbeat row when state changes:
+- registration window opens
+- registration starts
+- registration fails
+- registration is canceled
+- class becomes registered
+
+7. Reduced motion:
+- if prefers-reduced-motion is enabled, use a static dot or a very subtle opacity-only effect
+- avoid continuous scale animation in reduced-motion mode
+
+Design intent:
+- emotional reassurance over technical signaling
+- communicate “the bot is calmly watching”
+- Apple-like, calm, elegant, non-distracting
+
+Part 4 — Constraints
+
+- Do not break existing registration, auto-registration, cancel, or registration-check flows
+- Do not reintroduce duplicate status UI
+- Keep the checklist as the main reassurance element
+- Keep the Now screen calm, minimal, and iPhone-friendly
+
+Please report:
+1. files changed
+2. how checklist row states are managed
+3. timing values chosen
+4. where debounce / settle logic was added
+5. how rerenders were reduced
+6. the exact standby-row conditions
+7. reduced-motion behavior
+8. any tradeoffs or remaining risks

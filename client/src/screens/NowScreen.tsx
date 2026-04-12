@@ -1419,6 +1419,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     execMode === 'running_booking' ||
     (execMode === 'done' && execStepList.length === BOOK_STEP_LIST.length)
 
+  // Standby heartbeat row — "Waiting for registration window".
+  // Conditions (all must be true):
+  //   • user has armed auto-registration (localArmed)
+  //   • exec is idle (no check or booking in flight)
+  //   • no failure is active (lastFailedAction null)
+  //   • class not yet registered (isBooked false)
+  //   • window has not opened (phase too_early or warmup)
+  // Removed automatically when window opens (phase→sniper/late), registration
+  // starts, fails, is cancelled, or the class becomes registered.
+  const showStandbyRow =
+    localArmed        &&
+    execMode === 'idle' &&
+    !lastFailedAction &&
+    !isBooked         &&
+    (phase === 'too_early' || phase === 'warmup')
+
   // ── Stage 8: Composite detail ───────────────────────────────────────────────
   // Uses the computed composite message directly. Background-loop readiness
   // provides all necessary context without a manual preflight.
@@ -1792,7 +1808,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     Registration readiness
                   </p>
 
-                  {/* Step rows */}
+                  {/* Step rows — icon spans are keyed on `step+status` so
+                       React remounts the icon (and replays animate-checklist-icon)
+                       only when the status actually changes, not on every render. */}
                   <div className="space-y-2.5">
                     {PREFLIGHT_CHECKLIST_STEPS.map(step => {
                       // Derive per-row status from live exec state + armed flag
@@ -1837,13 +1855,35 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
                       return (
                         <div key={step} className="flex items-center gap-3">
-                          <span className={`text-[14px] w-4 text-center shrink-0 leading-none select-none ${iconClass}`}>
+                          {/* key includes status → remounts icon on state change
+                               → animate-checklist-icon replays (180ms fade-in) */}
+                          <span
+                            key={`icon-${step}-${status}`}
+                            className={`text-[14px] w-4 text-center shrink-0 leading-none select-none animate-checklist-icon ${iconClass}`}
+                          >
                             {icon}
                           </span>
                           <span className={`text-[14px] ${textClass}`}>{label}</span>
                         </div>
                       )
                     })}
+
+                    {/* ── Standby row — "Waiting for registration window" ────────────
+                         Appears only when armed + idle + window not yet open + no failure.
+                         The pulsing dot is the ONLY animated element; text is fully stable.
+                         Removed when: window opens (phase→sniper), registration runs/fails,
+                         disarmed, or the class is registered. */}
+                    {showStandbyRow && (
+                      <div className="flex items-center gap-3">
+                        {/* Pulse container — fixed 16px to match icon column */}
+                        <span className="w-4 shrink-0 flex items-center justify-center">
+                          <span className="animate-standby-pulse inline-block w-2 h-2 rounded-full bg-accent-amber" />
+                        </span>
+                        <span className="text-[14px] text-text-muted">
+                          Waiting for registration window
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Error detail — shown below the failed row when check failed */}
