@@ -996,9 +996,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [execDone,   setExecDone]   = useState<{ ok: boolean; text: string; color: 'green' | 'amber' | 'red' } | null>(null)
   const [execStepList, setExecStepList] = useState<StepKey[]>(PREFLIGHT_STEP_LIST)
 
-  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const doneTimerRef = useRef<ReturnType<typeof setTimeout>  | null>(null)
-  const stepIdxRef   = useRef(0)
+  const stepTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  const doneTimerRef     = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stepIdxRef       = useRef(0)
 
   // Refs used by the visibilitychange handler so it never has stale closures.
   const execModeRef = useRef<ExecMode>('idle')
@@ -1006,8 +1007,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const hiddenAtRef = useRef<number | null>(null)
 
   useEffect(() => () => {
-    if (stepTimerRef.current) clearInterval(stepTimerRef.current)
-    if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+    if (stepTimerRef.current)      clearInterval(stepTimerRef.current)
+    if (doneTimerRef.current)      clearTimeout(doneTimerRef.current)
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
   }, [])
 
   // Close the action sheet whenever an execution starts (execMode leaves 'idle')
@@ -1570,7 +1572,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   undefined
 
                 // Derive button classes from emphasis + disabled state.
-                // flex-1 instead of w-full so the ··· trigger sits alongside it.
+                // flex-1 so the Options button sits alongside it at a fixed width.
                 const btnClass = [
                   'flex-1 rounded-xl py-3 text-[15px] font-semibold transition-opacity',
                   disabled
@@ -1584,22 +1586,46 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         : 'bg-accent-blue text-white active:opacity-80',
                 ].join(' ')
 
+                // Long-press handlers — fires the action sheet after 500 ms hold.
+                // Cancelled on touch-end / touch-move so normal taps are unaffected.
+                const onLongPressStart = () => {
+                  if (disabled) return
+                  longPressTimerRef.current = setTimeout(() => {
+                    longPressTimerRef.current = null
+                    setShowActionSheet(true)
+                  }, 500)
+                }
+                const onLongPressCancel = () => {
+                  if (longPressTimerRef.current) {
+                    clearTimeout(longPressTimerRef.current)
+                    longPressTimerRef.current = null
+                  }
+                }
+
                 return (
                   <div>
                     <div className="flex items-stretch gap-2">
-                      <button onClick={handler} disabled={disabled} className={btnClass}>
+                      {/* Primary action — long-press also opens Options sheet */}
+                      <button
+                        onClick={handler}
+                        disabled={disabled}
+                        className={btnClass}
+                        onTouchStart={onLongPressStart}
+                        onTouchEnd={onLongPressCancel}
+                        onTouchMove={onLongPressCancel}
+                      >
                         {label}
                       </button>
-                      {/* Stage 4: overflow trigger — hidden when primary action is disabled
-                           (registered / waitlisted / in-progress) to prevent the action
-                           sheet from offering duplicate or contradictory actions. */}
+                      {/* Options button — labeled secondary, same height as primary.
+                           Hidden when primary is disabled (booked / in-progress)
+                           so the sheet can't offer contradictory actions. */}
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
-                          className="flex-shrink-0 w-11 flex items-center justify-center rounded-xl bg-surface border border-divider text-text-muted active:opacity-60 transition-opacity"
-                          aria-label="More actions"
+                          className="flex-shrink-0 px-4 flex items-center justify-center rounded-xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 transition-opacity"
+                          aria-label="Options"
                         >
-                          <span className="text-[18px] leading-none tracking-widest select-none">···</span>
+                          Options
                         </button>
                       )}
                     </div>
@@ -2121,17 +2147,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               },
               {
                 label:   'Auto-register',
-                sub:     'Set up auto-registration',
+                sub:     'Set up auto-registration for when the window opens',
                 handler: handleNowPreflight,
               },
               {
-                label:   'Join Waitlist',
-                sub:     'Register on waiting list if class is full',
-                handler: handleNowBook,
-              },
-              {
                 label:   'Registration Check',
-                sub:     'Run a full readiness check',
+                sub:     'Verify session, class, and registration link',
                 handler: handleNowPreflight,
               },
             ] as { label: string; sub: string; handler: () => void }[]).map(item => (

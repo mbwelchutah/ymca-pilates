@@ -1,0 +1,84 @@
+Enhance the secondary action button to be context-aware and dynamically labeled.
+
+Goal:
+Transform the static "Options" button into a smart, state-driven assistant control that adapts its label and emphasis based on system state.
+
+Current:
+- Secondary button is a static "Options" button
+- Opens action sheet with advanced actions
+
+New behavior:
+
+1. Replace static label with dynamic label based on state:
+
+States and labels:
+- default -> "Options"
+- low confidence / preflight issues -> "Check"
+- auto-registration armed + high confidence -> "Ready"
+- registration failed -> "Fix"
+- registration in progress -> "Status"
+
+2. Implement a resolver function:
+getSecondaryActionState(state) -> returns one of:
+- "options"
+- "check"
+- "ready"
+- "fix"
+- "status"
+
+3. Use existing signals where possible:
+- session verified
+- class found
+- modal reachable
+- auth confidence
+- registration in progress
+- registration failure
+- preflight failure
+
+Do NOT add new backend logic yet—derive from existing state.
+
+4. Update button label dynamically:
+- render correct label based on resolved state
+
+5. Update action sheet contents contextually:
+
+If state = "check":
+- first item: "Run Registration Check" (primary emphasis)
+
+If state = "fix":
+- first item: "Run Registration Check"
+- second: "Retry Registration" (if supported)
+
+If state = "status":
+- first item: "View current status"
+
+If state = "ready":
+- no strong emphasis items; keep neutral
+
+Default:
+- Register now
+- Auto-register
+- Registration Check
+
+6. Keep UI minimal:
+- still only one primary button + one secondary button
+- no additional clutter
+
+7. Preserve all existing functionality:
+- immediate registration
+- auto-registration arming
+- preflight / registration check
+
+Design intent:
+- feel like an assistant, not a menu
+- guide user attention subtly
+- increase confidence and clarity without adding UI elements
+
+Please:
+1. implement dynamic label resolver
+2. update button rendering
+3. update action sheet contents
+4. report:
+   - files changed
+   - signals used for decision
+   - any assumptions made
