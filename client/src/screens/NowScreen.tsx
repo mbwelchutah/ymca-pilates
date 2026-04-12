@@ -953,7 +953,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       if (stepIdxRef.current >= steps.length - 1) {
         clearInterval(stepTimerRef.current!); stepTimerRef.current = null
       }
-    }, 10_000)
+    }, 7_000)
   }
 
   const finalizeSteps = (steps: StepKey[], failIdx: number | null) => {
