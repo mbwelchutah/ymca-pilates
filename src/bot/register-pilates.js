@@ -658,7 +658,7 @@ async function runBookingJob(job, opts = {}) {
     console.log('Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(1000); // waitForFunction below is the real gate
     console.log('Schedule loaded. URL:', page.url());
 
     // Auth check: if the schedule page is asking us to log in, session didn't carry over
@@ -752,7 +752,7 @@ async function runBookingJob(job, opts = {}) {
           return null;
         });
         await page.locator('select').nth(selectIndex).selectOption(targetValue, { timeout: 3000, force: true });
-        await page.waitForTimeout(2500);
+        await page.waitForTimeout(1000);
         const newCount = await page.evaluate(() => {
           for (const el of document.querySelectorAll('*')) {
             const m = el.textContent.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
@@ -830,7 +830,7 @@ async function runBookingJob(job, opts = {}) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    await page.waitForTimeout(1500); // let schedule re-render with both filters active
+    await page.waitForTimeout(600); // POINT 3 check below validates rendered content
 
     // ── POINT 3: navigate — schedule not rendered ─────────────────────────────
     // A rendered schedule should have at least one element with a time string and
@@ -1138,7 +1138,7 @@ async function runBookingJob(job, opts = {}) {
 
     // After a tab click: immediate DOM search → slow-scroll retry if not found.
     async function findCardOnTab(tabLabel) {
-      await page.waitForTimeout(2000); // let the tab panel settle
+      await page.waitForTimeout(1000); // let the tab panel settle
 
       // Attempt 1: find in DOM without any scrolling.
       let card = await findTargetCard();
@@ -1194,7 +1194,7 @@ async function runBookingJob(job, opts = {}) {
       console.log(`  Phase 1: scrolling UP ${MAX_UP} steps to find AM class above current position...`);
       for (let step = 0; step < MAX_UP; step++) {
         await scrollSchedulePanel(-STEP_PX);
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(200);
         card = await findTargetCard();
         if (card) {
           console.log(`  Found card after ${step + 1} upward scroll step(s).`);
@@ -1222,11 +1222,11 @@ async function runBookingJob(job, opts = {}) {
       // Phase 2: Reset to top and sweep downward.
       console.log(`  Phase 2: resetting to top and scrolling DOWN ${MAX_DOWN} steps...`);
       await scrollSchedulePanel(-999999);
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(200);
 
       for (let step = 0; step < MAX_DOWN; step++) {
         await scrollSchedulePanel(STEP_PX);
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(200);
         card = await findTargetCard();
         if (card) {
           console.log(`  Found card after ${step + 1} downward scroll step(s).`);
@@ -1277,7 +1277,7 @@ async function runBookingJob(job, opts = {}) {
           pollTabText  = tabText.trim();
           console.log('Clicking exact date tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
-          await page.waitForTimeout(2000); // let tab render
+          await page.waitForTimeout(1000); // let tab render
 
           // Check if we're close to the booking window opening.
           // If so, skip the 90-second scroll scan — we'll enter poll mode shortly anyway.
@@ -1397,7 +1397,7 @@ async function runBookingJob(job, opts = {}) {
             const freshTabs = page.locator(`text=/${dayShort} \\d+/`);
             if (await freshTabs.count() > pollTabIndex) await freshTabs.nth(pollTabIndex).click();
           }
-          await page.waitForTimeout(2000); // let Bubble.io re-render
+          await page.waitForTimeout(1000); // let Bubble.io re-render
           targetCard = await findTargetCard();
           if (targetCard) {
             _tc.cardFoundAt = new Date().toISOString();
