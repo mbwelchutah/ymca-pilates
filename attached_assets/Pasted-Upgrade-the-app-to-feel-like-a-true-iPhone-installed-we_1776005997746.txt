@@ -1,0 +1,74 @@
+Upgrade the app to feel like a true iPhone-installed web app, with a path that is PWA-first and wrapper-ready later.
+
+Goal:
+Make the YMCA Bot feel like a native iPhone app when launched from the Home Screen.
+
+Important:
+- Do not change core booking/registration logic
+- Focus on installable iPhone app shell, full-screen behavior, gesture polish, and app-like UX
+- If something is limited by web platform constraints, document it clearly and provide the best web fallback
+
+Part 1 — PWA / Home Screen app setup
+
+1. Add or refine a web app manifest:
+- name
+- short_name
+- start_url
+- scope
+- display: standalone
+- theme_color
+- background_color
+- icons including appropriate iPhone-friendly sizes
+
+2. Add iOS-specific support where appropriate:
+- apple-touch-icon assets
+- relevant Apple mobile web app meta tags if still useful in current stack
+- proper theme color and launch appearance
+- verify standalone launch behavior from Home Screen
+
+3. Make the app shell feel installed:
+- no browser-like internal chrome
+- smooth initial load
+- preserve last active section when reopening if appropriate
+
+Part 2 — Full-screen / safe-area polish
+
+1. Support safe areas correctly:
+- top inset for status area / Dynamic Island
+- bottom inset for home indicator
+- no clipped content
+- no buttons too close to screen edges
+
+2. Make header and bottom actions feel native in standalone mode
+
+3. Review overscroll / bounce behavior and reduce awkward browser-like effects where safe
+
+Part 3 — Gesture polish
+
+1. Improve tap targets for iPhone
+2. Keep long-press on main action for advanced controls if already implemented
+3. Add swipe gestures only if they do not conflict with vertical scrolling
+4. Keep interactions calm and reliable, not gimmicky
+
+Part 4 — Haptics and feedback
+
+1. Implement best-available web haptic feedback where supported
+2. Gracefully no-op on platforms that do not support it
+3. Document where native wrapper would provide stronger iPhone haptics than web alone
+
+Part 5 — Wrapper-readiness
+
+1. Structure the app so it could later be wrapped in a native shell if desired
+2. Keep navigation, safe-area handling, and app shell logic clean and modular
+3. Identify what would materially improve if moved to a native wrapper later:
+- haptics
+- notifications
+- audio
+- deeper system integration
+
+Deliver:
+1. files changed
+2. manifest/meta/safe-area changes made
+3. standalone/Home Screen behavior verified
+4. web limitations found
+5. wrapper-ready recommendations for a later phase

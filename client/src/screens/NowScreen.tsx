@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { haptic } from '../lib/haptics'
+import { playTone } from '../lib/sounds'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -1269,6 +1271,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   const handleNowPreflight = async () => {
     if (!job || (execMode !== 'idle' && execMode !== 'done')) return
+    haptic('medium')            // "Get Spot" tap — medium impact
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setLastFailedAction(null)   // clear stale failure before starting
@@ -1287,6 +1290,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       // registration window just isn't open yet. All steps pass; show amber.
       if (r.status === 'found_not_open_yet') {
         finalizeSteps(PREFLIGHT_STEP_LIST, null)
+        haptic('selection')  // checklist fully ready — subtle confirmation
         setArmed(true)
         armedThisRun = true
         setExecDone({ ok: true, text: 'Auto-registration ready — registers when the window opens', color: 'amber' })
@@ -1307,10 +1311,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           : failIdx === 3 ? 'Could not access registration link'
           : (r.message ?? 'Registration check blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
-        if (r.success) { setArmed(true); armedThisRun = true }
-        else setLastFailedAction('preflight')
+        if (r.success) { haptic('selection'); setArmed(true); armedThisRun = true }
+        else { haptic('error'); setLastFailedAction('preflight') }
       }
     } catch (e) {
+      haptic('error')
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
       setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration check failed', color: 'red' })
       setLastFailedAction('preflight')
@@ -1325,7 +1330,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     }
   }
 
-  const handleDisarm = () => { setArmed(false) }
+  const handleDisarm = () => { haptic('light'); setArmed(false) }
 
   const handleNowBook = async () => {
     if (!job || (execMode !== 'idle' && execMode !== 'done')) return
@@ -1361,9 +1366,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               ? 'Could not access registration modal'
               : (r.message ?? 'Registration failed')
       setExecDone({ ok: r.success !== false, text, color })
-      if (r.success === false) setLastFailedAction('registration')
+      if (r.success !== false) { haptic('success'); playTone('success') }
+      else                     { haptic('error');   playTone('error');   setLastFailedAction('registration') }
       refresh()
     } catch (e) {
+      haptic('error'); playTone('error')
       finalizeSteps(BOOK_STEP_LIST, 0)
       setExecDone({ ok: false, text: e instanceof Error ? e.message : 'Registration failed', color: 'red' })
       setLastFailedAction('registration')
@@ -1735,7 +1742,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </div>
               <div className="ml-[22px]">
                 <span className="text-[36px] font-bold text-accent-amber tabular-nums leading-none tracking-tighter">
-                  {countdown || '—'}
+                  {countdown
+                    ? countdown.split('').map((ch, i) => (
+                        <span key={`a-${i}-${ch}`} className="inline-block animate-digit-in">{ch}</span>
+                      ))
+                    : '—'}
                 </span>
               </div>
             </div>
@@ -1743,7 +1754,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             // Default countdown — no inner box, number floats on card bg
             <div className="pt-0.5 pb-4">
               <span className="text-[48px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
-                {countdown || '—'}
+                {countdown
+                  ? countdown.split('').map((ch, i) => (
+                      <span key={`d-${i}-${ch}`} className="inline-block animate-digit-in">{ch}</span>
+                    ))
+                  : '—'}
               </span>
               {bookingOpenMs != null && (
                 <p className="text-[12px] text-text-muted mt-2">
@@ -1906,7 +1921,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     const showTiming =
                       level !== 'check_recommended' && level !== 'needs_attention'
                     return (
-                      <div className="mt-3 pt-3 border-t border-divider/20">
+                      <div
+                        className="mt-3 pt-3 border-t border-divider/20 animate-fade-in-up"
+                        style={{ animationDelay: '150ms' }}
+                      >
                         <p className={`text-[13px] font-medium leading-snug ${labelClass}`}>
                           {confLabel}
                         </p>
@@ -1939,18 +1957,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
                 // Derive button classes from emphasis + disabled state.
                 // flex-1 so the Options button sits alongside it at a fixed width.
-                // rounded-2xl + shadow-sm + active:scale-[0.98] = iOS-native press feel.
+                // transition-[transform,opacity] + duration-150 = iOS-native spring press feel:
+                //   press down snaps fast (instant to 0.97 scale while finger is held),
+                //   release eases back in 150ms — feels physical without being heavy.
                 const btnClass = [
-                  'flex-1 rounded-2xl py-3 text-[15px] font-semibold transition-all',
+                  'flex-1 rounded-2xl py-3 text-[15px] font-semibold transition-[transform,opacity] duration-150 ease-out',
                   disabled
                     ? emphasis === 'muted'
                       ? 'bg-surface border border-divider text-text-muted cursor-default'
                       : 'bg-accent-blue text-white opacity-60 cursor-default'
                     : emphasis === 'primary-amber'
-                      ? 'bg-accent-amber text-white shadow-sm active:opacity-80 active:scale-[0.98]'
+                      ? 'bg-accent-amber text-white shadow-sm active:scale-[0.97] active:opacity-90'
                       : emphasis === 'outline-red'
-                        ? 'bg-accent-red/[0.06] border border-accent-red/20 text-accent-red/80 active:opacity-70 active:scale-[0.98]'
-                        : 'bg-accent-blue text-white shadow-sm active:opacity-80 active:scale-[0.98]',
+                        ? 'bg-accent-red/[0.06] border border-accent-red/20 text-accent-red/80 active:scale-[0.97] active:opacity-80'
+                        : 'bg-accent-blue text-white shadow-sm active:scale-[0.97] active:opacity-90',
                 ].join(' ')
 
                 // Long-press handlers — fires the action sheet after 500 ms hold.
@@ -1989,7 +2009,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
-                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-text-primary/[0.06] text-[14px] font-medium text-text-primary active:opacity-60 active:scale-[0.98] transition-all"
+                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-text-primary/[0.06] text-[14px] font-medium text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
                           aria-label={SECONDARY_LABEL[secondaryAction]}
                         >
                           {SECONDARY_LABEL[secondaryAction]}

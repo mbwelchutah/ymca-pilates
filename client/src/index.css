@@ -82,6 +82,30 @@
   }
 }
 
+/* Countdown digit slide-in — triggers when a character changes (key remount).
+   Only the changed position animates; stable characters are unaffected. */
+@keyframes digit-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Confidence block entrance — delayed fade-up for composed armed state. */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes digit-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
+
 @keyframes sniper-fire-in {
   0%   { opacity: 0; transform: scale(0.6); }
   65%  { transform: scale(1.2); }
@@ -112,6 +136,16 @@
   /* Standby dot pulse — 1.6s breathing cycle, continuous while armed+waiting. */
   .animate-standby-pulse {
     animation: standby-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Countdown digit entrance — 150ms, fires only on the character that changed. */
+  .animate-digit-in {
+    animation: digit-in 150ms ease-out both;
+  }
+
+  /* Confidence block composed entrance — 220ms with external animation-delay. */
+  .animate-fade-in-up {
+    animation: fade-in-up 220ms ease-out both;
   }
 
   .safe-top {
