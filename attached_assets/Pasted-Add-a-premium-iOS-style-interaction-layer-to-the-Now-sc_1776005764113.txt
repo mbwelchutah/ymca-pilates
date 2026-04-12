@@ -1,0 +1,137 @@
+Add a premium iOS-style interaction layer to the Now screen.
+
+Goal:
+Make the experience feel like a native iPhone app through subtle haptics, motion, and feedback — calm, minimal, and high-quality.
+
+Do NOT change functionality or layout. Only enhance interaction and feedback.
+
+---
+
+Part 1 — Haptics
+
+Add haptic feedback at key moments only:
+
+1. Arm auto-registration (Get Spot)
+- medium impact
+
+2. Cancel auto-registration
+- light impact
+
+3. Registration success
+- success notification
+
+4. Registration failure
+- error notification
+
+5. Optional:
+- very subtle selection feedback when checklist reaches fully ready state
+
+Constraints:
+- do NOT fire haptics on polling or checklist updates
+- do NOT repeat haptics rapidly
+
+---
+
+Part 2 — Button press physics
+
+For primary and secondary buttons:
+
+1. On press down:
+- scale to ~0.97
+- duration 80–120ms
+
+2. On release:
+- return to scale 1.0
+- duration 160–220ms
+- soft spring easing
+
+3. Visual:
+- slight opacity reduction (~0.9)
+- no ripple or harsh effects
+
+4. State changes:
+- crossfade button labels instead of remounting
+- avoid layout shift
+
+---
+
+Part 3 — Countdown digit animation
+
+Enhance countdown updates:
+
+1. Only animate digits that change
+
+2. Animation:
+- old digit: fade out + move up ~4px
+- new digit: fade in + move from below (~4px → 0)
+
+3. Timing:
+- 120–180ms
+- ease-out
+
+4. Do NOT animate the entire timer block
+
+---
+
+Part 4 — Subtle sound cues (optional)
+
+Add very minimal sound feedback:
+
+1. Registration success:
+- soft confirmation tone
+
+2. Registration failure:
+- soft muted alert tone
+
+3. Optional:
+- light tap sound when arming auto-registration
+
+Constraints:
+- keep volume low
+- do not loop or repeat
+- do not add sounds to countdown or checklist updates
+
+---
+
+Part 5 — Motion coordination
+
+Ensure animations feel cohesive:
+
+- button transitions: 180–220ms
+- checklist transitions: 180–240ms
+- text fades: 150–200ms
+- countdown digits: 120–180ms
+- heartbeat pulse: 1.4–1.8s
+
+Avoid overlapping or competing animations.
+
+---
+
+Part 6 — Composed state transitions
+
+When auto-registration becomes armed:
+
+1. checklist completes
+2. slight delay (~150ms)
+3. confidence fades in
+4. button transitions
+
+This should feel intentional and calm, not instantaneous.
+
+---
+
+Design intent:
+- calm
+- subtle
+- Apple-like
+- emotionally reassuring
+- no flashy or noisy effects
+
+---
+
+Please report:
+1. files changed
+2. haptic events added
+3. animation values used
+4. sound cues implemented
+5. any platform limitations (web vs iOS)

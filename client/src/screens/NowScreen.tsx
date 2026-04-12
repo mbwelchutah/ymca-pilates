@@ -1741,7 +1741,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           ) : (
             // Default countdown — no inner box, number floats on card bg
-            <div className="py-0.5">
+            <div className="pt-0.5 pb-4">
               <span className="text-[48px] font-bold text-text-primary tabular-nums leading-none tracking-tighter">
                 {countdown || '—'}
               </span>
@@ -1804,14 +1804,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                    Hidden only during an active booking run/result. */}
               {!isBooked && !isBookingFlow && (
                 <div className="mb-3">
-                  <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-2.5">
+                  <p className="text-[12px] text-text-secondary mb-3">
                     Registration readiness
                   </p>
 
                   {/* Step rows — icon spans are keyed on `step+status` so
                        React remounts the icon (and replays animate-checklist-icon)
                        only when the status actually changes, not on every render. */}
-                  <div className="space-y-2.5">
+                  <div className="space-y-3 mt-1">
                     {PREFLIGHT_CHECKLIST_STEPS.map(step => {
                       // Derive per-row status from live exec state + armed flag
                       const status: StepStatus = (() => {
@@ -1877,7 +1877,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       <div className="flex items-center gap-3">
                         {/* Pulse container — fixed 16px to match icon column */}
                         <span className="w-4 shrink-0 flex items-center justify-center">
-                          <span className="animate-standby-pulse inline-block w-2 h-2 rounded-full bg-accent-amber" />
+                          <span className="animate-standby-pulse inline-block w-1.5 h-1.5 rounded-full bg-accent-amber" />
                         </span>
                         <span className="text-[14px] text-text-muted">
                           Waiting for registration window
@@ -1906,12 +1906,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     const showTiming =
                       level !== 'check_recommended' && level !== 'needs_attention'
                     return (
-                      <div className="mt-2.5 pt-2 border-t border-divider/40">
+                      <div className="mt-3 pt-3 border-t border-divider/20">
                         <p className={`text-[13px] font-medium leading-snug ${labelClass}`}>
                           {confLabel}
-                        </p>
-                        <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
-                          {reason}
                         </p>
                         {/* Only show timing when we have a concrete window time.
                              The "waiting" message is already carried by the standby
@@ -1952,7 +1949,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     : emphasis === 'primary-amber'
                       ? 'bg-accent-amber text-white shadow-sm active:opacity-80 active:scale-[0.98]'
                       : emphasis === 'outline-red'
-                        ? 'bg-surface border border-accent-red/40 text-accent-red active:opacity-60 active:scale-[0.98]'
+                        ? 'bg-accent-red/[0.06] border border-accent-red/20 text-accent-red/80 active:opacity-70 active:scale-[0.98]'
                         : 'bg-accent-blue text-white shadow-sm active:opacity-80 active:scale-[0.98]',
                 ].join(' ')
 
@@ -1992,7 +1989,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
-                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 active:scale-[0.98] transition-all"
+                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-text-primary/[0.06] text-[14px] font-medium text-text-primary active:opacity-60 active:scale-[0.98] transition-all"
                           aria-label={SECONDARY_LABEL[secondaryAction]}
                         >
                           {SECONDARY_LABEL[secondaryAction]}
@@ -2090,19 +2087,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
           {/* Actions section — spacing only, no divider border */}
           {job && (
-            <div className="mt-4">
+            <div className="mt-7">
 
               {/* ── Bottom utility row: Live/Test toggle + Pause/Resume ───────────── */}
               {/* Resume is shown as an amber pill (urgent); Pause is muted text.    */}
               {/* Live/Test is always visible; Pause/Resume only when banner active.  */}
-              <div className="flex items-center justify-between mt-2 px-1">
+              <div className="flex items-center justify-between px-1">
                 {/* Live / Test toggle — left side */}
-                <div className="flex items-center gap-0.5 text-[12px]">
+                <div className="flex items-center gap-0.5 text-[11px]">
                   <button
                     onClick={() => handleDryRun(false)}
                     className={`px-2 py-1 rounded-md transition-all
                       ${!appState.dryRun
-                        ? 'bg-surface font-semibold text-text-primary'
+                        ? 'bg-surface font-medium text-text-secondary'
                         : 'text-text-muted'}`}
                   >
                     Live
@@ -2112,7 +2109,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     onClick={() => handleDryRun(true)}
                     className={`px-2 py-1 rounded-md transition-all
                       ${appState.dryRun
-                        ? 'bg-surface font-semibold text-text-primary'
+                        ? 'bg-surface font-medium text-text-secondary'
                         : 'text-text-muted'}`}
                   >
                     Test
@@ -2221,47 +2218,22 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           </div>
         )}
 
-        {/* ── Stage 5: Activity Timeline ─────────────────────────────────
-             Shows the last 5 bot events as user-friendly one-liners.
-             Source: sniperRunState.events (existing telemetry array).
-             Keeps deep diagnostics in Tools; this is user transparency. */}
+        {/* ── Stage 5: Last activity summary — single line, minimal weight.
+             Only milestone events shown; setup-phase steps live in the checklist. */}
         {sniperRunState && sniperRunState.events.length > 0 && (() => {
-          // Show only meaningful outcomes — setup-phase events (session, schedule,
-          // class, modal) are already shown in the persistent preflight checklist.
-          const entries = [...sniperRunState.events].reverse().filter(isMilestoneEvent).slice(0, 5)
+          const entries = [...sniperRunState.events].reverse().filter(isMilestoneEvent)
           if (entries.length === 0) return null
+          const latest    = entries[0]
+          const label     = friendlyEventLabel(latest)
+          const isFailure = !!latest.failureType
+          const timeStr   = (() => {
+            try { return new Date(latest.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+            catch { return null }
+          })()
           return (
-            <Card padding="none">
-              {/* Header */}
-              <div className="px-4 py-3 border-b border-divider">
-                <p className="text-[13px] font-semibold text-text-primary">Recent Activity</p>
-              </div>
-
-              {/* Event rows */}
-              {entries.map((ev, i) => {
-                const label     = friendlyEventLabel(ev)
-                const isFailure = !!ev.failureType
-                const timeStr   = (() => {
-                  try { return new Date(ev.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
-                  catch { return null }
-                })()
-                return (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 px-4 py-3 ${i < entries.length - 1 ? 'border-b border-divider' : ''}`}
-                  >
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isFailure ? 'bg-accent-red' : 'bg-accent-green'}`} />
-                    <span className={`flex-1 text-[13px] ${isFailure ? 'text-accent-red' : 'text-text-primary'}`}>
-                      {label}
-                    </span>
-                    {timeStr && (
-                      <span className="text-[12px] text-text-muted tabular-nums flex-shrink-0">{timeStr}</span>
-                    )}
-                  </div>
-                )
-              })}
-
-            </Card>
+            <p className={`text-center text-[12px] px-4 ${isFailure ? 'text-accent-red/70' : 'text-text-muted'}`}>
+              Last activity: {label}{timeStr ? ` at ${timeStr}` : ''}
+            </p>
           )
         })()}
 
