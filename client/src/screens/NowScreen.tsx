@@ -15,7 +15,7 @@ import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL,
   DEFAULT_READINESS, computeCompositeReadiness,
 } from '../lib/readinessResolver'
-import type { CompositeReadiness } from '../lib/readinessResolver'
+import type { CompositeReadiness, CompositeStatus } from '../lib/readinessResolver'
 import { computeConfidence, scoreToLabelWithHysteresis } from '../lib/confidence'
 import type { ConfidenceLabel } from '../lib/confidence'
 import { computeArmedModel } from '../lib/sniperArmed'
@@ -582,11 +582,12 @@ export interface ConfidenceSummary {
 export function resolveConfidenceSummary(opts: {
   nowCardState:    NowCardState
   compositeColor:  'green' | 'amber' | 'red'
+  compositeStatus: CompositeStatus
   confidenceLabel: ConfidenceLabel | null
   bgSession:       string | null
   bgDiscovery:     string | null
 }): ConfidenceSummary {
-  const { nowCardState, compositeColor, confidenceLabel, bgSession, bgDiscovery } = opts
+  const { nowCardState, compositeColor, compositeStatus, confidenceLabel, bgSession, bgDiscovery } = opts
 
   // check_recommended: any error/failure signal present
   const hasIssue =
@@ -598,19 +599,57 @@ export function resolveConfidenceSummary(opts: {
     confidenceLabel === 'Low confidence'
 
   if (hasIssue) {
+    // Surface a specific reason when we know what went wrong
+    const reason =
+      bgSession === 'error'
+        ? 'Session issue detected — tap the account icon to re-authenticate.'
+        : bgDiscovery === 'missing'
+          ? 'Class could not be found on the schedule. Run a fresh check before the window opens.'
+          : nowCardState === 'registration_failed'
+            ? 'Last registration attempt failed. Run a fresh check to diagnose.'
+            : nowCardState === 'preflight_failed'
+              ? 'Last readiness check found a problem. Review and re-run when ready.'
+              : 'A potential issue was detected. Run a check to confirm status before the window opens.'
     return {
       level:  'check_recommended',
       label:  'Check recommended',
-      reason: 'An issue was found that may affect registration.',
+      reason,
     }
   }
 
-  // needs_attention: amber signals or medium confidence
+  // COMPOSITE_ACTION_BLOCKED = "not open yet" — the window simply hasn't opened.
+  // All checks that can run pre-window have passed; treat as likely/very_likely,
+  // not needs_attention (which would be alarming and incorrect).
+  if (compositeStatus === 'COMPOSITE_ACTION_BLOCKED') {
+    if (confidenceLabel === 'High confidence') {
+      return {
+        level:  'very_likely',
+        label:  'Very likely to succeed',
+        reason: 'Session, class, and registration link are all confirmed. Waiting for the window to open.',
+      }
+    }
+    return {
+      level:  'likely',
+      label:  'Likely to succeed',
+      reason: 'Core checks passed — will register as soon as the window opens.',
+    }
+  }
+
+  // COMPOSITE_WAITLIST = class is full, waitlist available — worth noting specifically
+  if (compositeStatus === 'COMPOSITE_WAITLIST') {
+    return {
+      level:  'needs_attention',
+      label:  'Waitlist only',
+      reason: 'Class is currently full. Auto-registration will join the waitlist when the window opens.',
+    }
+  }
+
+  // Other amber signals or medium confidence
   if (compositeColor === 'amber' || confidenceLabel === 'Medium confidence') {
     return {
       level:  'needs_attention',
       label:  'Needs attention',
-      reason: 'Most checks passed, but some signals need review before the window opens.',
+      reason: 'Moderate confidence — some signals were inconclusive. Consider running a fresh check.',
     }
   }
 
@@ -1506,6 +1545,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     ? resolveConfidenceSummary({
         nowCardState,
         compositeColor:  composite.color,
+        compositeStatus: composite.status,
         confidenceLabel,
         bgSession:   reconciledBgSession,
         bgDiscovery: isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
