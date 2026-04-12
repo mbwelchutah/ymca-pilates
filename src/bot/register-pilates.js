@@ -279,8 +279,13 @@ async function attemptInlineAuth(page) {
     if ((await loginBtn.count()) === 0) {
       return { authenticated: false, detail: 'Login to Register button not found in modal' };
     }
-    await loginBtn.click();
-    await page.waitForTimeout(3000);
+    // Click and simultaneously wait for any navigation (Daxko redirect).
+    // Using Promise.all avoids a race where navigation finishes before
+    // waitForNavigation is registered.  Fallback 5s covers slow networks.
+    await Promise.all([
+      page.waitForNavigation({ timeout: 5000, waitUntil: 'domcontentloaded' }).catch(() => {}),
+      loginBtn.click(),
+    ]);
 
     const afterClickUrl = page.url();
     console.log('[inline-auth] After click, URL:', afterClickUrl);
@@ -300,9 +305,8 @@ async function attemptInlineAuth(page) {
         await page.click('#submit_button');
       }
       // Wait for redirect back to FamilyWorks (y_login callback sets the session cookie)
-      await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 15000 }).catch(() => {});
-      await page.waitForLoadState('networkidle').catch(() => {});
-      await page.waitForTimeout(2000);
+      await page.waitForURL(url => url.toString().includes('familyworks'), { timeout: 12000 }).catch(() => {});
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
       console.log('[inline-auth] SSO complete. URL:', page.url());
 
       // After the y_login callback, navigate back to the schedule embed.
@@ -310,9 +314,8 @@ async function attemptInlineAuth(page) {
       // (not the y_login callback URL which would show an error/404).
       if (!page.url().includes('schedulesembed')) {
         console.log('[inline-auth] Navigating back to schedule embed after OAuth...');
-        await page.goto(SCHEDULE_URL, { timeout: 30000 });
-        await page.waitForLoadState('networkidle').catch(() => {});
-        await page.waitForTimeout(3000);
+        await page.goto(SCHEDULE_URL, { timeout: 20000, waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(1500);
         console.log('[inline-auth] Back on schedule. URL:', page.url());
       }
 
@@ -329,9 +332,9 @@ async function attemptInlineAuth(page) {
       // instead of back to FamilyWorks. Wait for an automatic redirect to FW.
       console.log('[inline-auth] On Daxko account page (already authenticated) — waiting for OAuth redirect to FamilyWorks...');
       try {
-        await page.waitForURL(url => url.toString().includes('familyworks.app'), { timeout: 8000 });
-        await page.waitForLoadState('networkidle').catch(() => {});
-        await page.waitForTimeout(2000);
+        // Daxko→FW redirect is usually near-instant when already authed; 4 s is ample.
+        await page.waitForURL(url => url.toString().includes('familyworks.app'), { timeout: 4000 });
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
         console.log('[inline-auth] OAuth redirect to FamilyWorks succeeded. URL:', page.url());
         return { authenticated: true, detail: 'OAuth redirect from Daxko account page completed — back on FamilyWorks' };
       } catch {
@@ -340,9 +343,8 @@ async function attemptInlineAuth(page) {
         // The booking loop's existing retry logic will reload, re-find the card,
         // and re-click it. On the next attempt the modal should show Register/Waitlist.
         console.log('[inline-auth] No automatic OAuth redirect — navigating back to FamilyWorks schedule...');
-        await page.goto(SCHEDULE_URL, { timeout: 30000 });
-        await page.waitForLoadState('networkidle').catch(() => {});
-        await page.waitForTimeout(3000);
+        await page.goto(SCHEDULE_URL, { timeout: 20000, waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(1500);
         console.log('[inline-auth] Back on FamilyWorks. URL:', page.url());
         return {
           authenticated: true,
