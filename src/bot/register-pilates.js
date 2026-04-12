@@ -2447,6 +2447,17 @@ async function cancelRegistration(job) {
     await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout:3000 }).catch(()=>null);
     await page.waitForTimeout(500);
 
+    // ── "View Reservation" intermediary — FamilyWorks shows this button in the
+    //    class detail modal when you're registered/waitlisted. Clicking it opens
+    //    a second popup layer that has the actual "Cancel" / "#N On Waitlist" button.
+    const viewReservationSel = 'button:has-text("View Reservation"), [role="button"]:has-text("View Reservation"), button:has-text("View Waitlist"), [role="button"]:has-text("View Waitlist")';
+    const viewResBtns = page.locator(viewReservationSel);
+    if ((await viewResBtns.count()) > 0) {
+      console.log('[cancel] "View Reservation/Waitlist" button found — clicking through to reservation popup...');
+      await viewResBtns.first().click({ timeout:5000 });
+      await page.waitForTimeout(1500);
+    }
+
     // ── Modal verification ────────────────────────────────────────────────────
     const rawModal  = (await page.locator('body').innerText().catch(()=>'')).toLowerCase();
     const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g,' ');
