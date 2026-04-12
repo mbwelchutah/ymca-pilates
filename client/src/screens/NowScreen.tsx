@@ -406,6 +406,7 @@ export type NowCardState =
   | 'registration_open_with_spots' // window open — Register Now
   | 'registration_open_full'     // window open — class full, Join Waitlist
   | 'registration_not_open'      // window not open yet
+  | 'auto_registration_armed'    // user armed auto-registration; waiting for window
 
 export function deriveNowCardState(opts: {
   isBooked:                 boolean
@@ -413,8 +414,9 @@ export function deriveNowCardState(opts: {
   bookingActive:            boolean
   phase:                    Phase
   effectivePreflightStatus: string | null
+  localArmed:               boolean
 }): NowCardState {
-  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus } = opts
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed } = opts
 
   // 1. Cycle outcome already determined
   if (isBooked && lastResult === 'waitlist') return 'waitlisted'
@@ -429,7 +431,11 @@ export function deriveNowCardState(opts: {
   // 4. Registration window is open — assume spots unless preflight says otherwise
   if (phase === 'sniper') return 'registration_open_with_spots'
 
-  // 5. Default — window not yet open (too_early, warmup, late, unknown)
+  // 5. User explicitly armed auto-registration and window hasn't opened or closed yet.
+  //    Not shown during 'late' (window passed) — only while waiting for the window.
+  if (localArmed && phase !== 'late') return 'auto_registration_armed'
+
+  // 6. Default — window not yet open (too_early, warmup, late, unknown)
   return 'registration_not_open'
 }
 
@@ -444,30 +450,38 @@ export function deriveNowCardState(opts: {
 
 export interface SmartButtonConfig {
   label:      string
-  actionType: 'register' | 'waitlist' | 'arm' | 'none'
+  actionType: 'register' | 'waitlist' | 'arm' | 'disarm' | 'none'
   helperText: string | null
   disabled:   boolean
-  emphasis:   'primary-blue' | 'primary-amber' | 'muted'
+  emphasis:   'primary-blue' | 'primary-amber' | 'muted' | 'outline-red'
 }
 
 export function resolveSmartButton(opts: {
   cardState:    NowCardState
   countdown:    string | null
   bookingOpenMs: number | null
+  nextWindow:   string | null
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow } = opts
 
   switch (cardState) {
     case 'registered':
-      return { label: 'Registered ✓', actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'muted'         }
+      return { label: 'Registered ✓',  actionType: 'none',    helperText: null,                                 disabled: true,  emphasis: 'muted'         }
     case 'waitlisted':
-      return { label: 'On waitlist',  actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'muted'         }
+      return { label: 'On waitlist',   actionType: 'none',    helperText: null,                                 disabled: true,  emphasis: 'muted'         }
     case 'registration_in_progress':
-      return { label: 'Registering…', actionType: 'none',     helperText: null,                          disabled: true,  emphasis: 'primary-blue'  }
+      return { label: 'Registering…',  actionType: 'none',    helperText: null,                                 disabled: true,  emphasis: 'primary-blue'  }
     case 'registration_open_with_spots':
-      return { label: 'Register Now', actionType: 'register', helperText: 'Spots available',             disabled: false, emphasis: 'primary-blue'  }
+      return { label: 'Register Now',  actionType: 'register', helperText: 'Spots available',                  disabled: false, emphasis: 'primary-blue'  }
     case 'registration_open_full':
       return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full — waitlist available', disabled: false, emphasis: 'primary-amber' }
+    case 'auto_registration_armed': {
+      const windowTime = nextWindow ? fmtWindowTime(nextWindow) : null
+      const helperText = windowTime
+        ? `Will register at ${windowTime}`
+        : 'Will register when the window opens'
+      return { label: 'Cancel Auto-registration', actionType: 'disarm', helperText, disabled: false, emphasis: 'outline-red' }
+    }
     case 'registration_not_open': {
       const helperText = (bookingOpenMs != null && countdown)
         ? `Registration opens in ${countdown}`
@@ -635,6 +649,40 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     }, 30_000)
     return () => clearInterval(id)
   }, [])
+
+  // ── Auto-registration armed state — persisted across reloads ─────────────
+  // Set when the user clicks "Get Spot" and preflight confirms session, class,
+  // and modal are all reachable. Cleared when the class books, the window
+  // passes, or the user explicitly taps "Cancel Auto-registration".
+  // Key is per-job so switching classes starts fresh.
+  const armedKey = selectedJobId != null ? `ymca_auto_armed_${selectedJobId}` : null
+  const [localArmed, setLocalArmedState] = useState<boolean>(false)
+
+  // Re-read from localStorage whenever the selected job changes.
+  useEffect(() => {
+    if (!armedKey) { setLocalArmedState(false); return }
+    try { setLocalArmedState(localStorage.getItem(armedKey) === '1') }
+    catch { setLocalArmedState(false) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armedKey])
+
+  // Auto-clear when the class is booked or the registration window has passed.
+  // Also removes the localStorage entry so the next cycle starts fresh.
+  useEffect(() => {
+    if (isBooked || phase === 'late') {
+      setLocalArmedState(false)
+      if (armedKey) { try { localStorage.removeItem(armedKey) } catch { /* ignored */ } }
+    }
+  }, [isBooked, phase, armedKey])
+
+  const setArmed = (v: boolean) => {
+    setLocalArmedState(v)
+    if (!armedKey) return
+    try {
+      if (v) localStorage.setItem(armedKey, '1')
+      else   localStorage.removeItem(armedKey)
+    } catch { /* ignored */ }
+  }
 
   // ── Stage 9F — Background readiness state (auto-check status + last checked) ─
   // Stage 10H — Adaptive polling: 1 s during armed/warmup/sniper/confirming,
@@ -1016,6 +1064,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         // "Get Spot" preflight passed — session, class, and modal all confirmed.
         // Show a clean armed-confirmation message instead of a raw server detail.
         setExecDone({ ok: true, text: 'Auto-registration ready — registers when the window opens', color: 'amber' })
+        setArmed(true)
       } else {
         const failIdx: number | null = (() => {
           if (r.authDetail?.verdict === 'FAILED')                                          return 0
@@ -1033,6 +1082,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           : failIdx === 3 ? 'Could not access registration link'
           : (r.message ?? 'Registration check blocked')
         setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
+        if (r.success) setArmed(true)
       }
     } catch (e) {
       finalizeSteps(PREFLIGHT_STEP_LIST, 0)
@@ -1042,6 +1092,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       scheduleDoneReset()
     }
   }
+
+  const handleDisarm = () => { setArmed(false) }
 
   const handleNowBook = async () => {
     if (!job || (execMode !== 'idle' && execMode !== 'done')) return
@@ -1215,6 +1267,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     bookingActive:            bgReadiness?.armed?.state === 'booking',
     phase,
     effectivePreflightStatus,
+    localArmed,
   })
 
   // Stage 3: single smart button config — drives the IDLE action button + helper text
@@ -1222,6 +1275,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     cardState:    nowCardState,
     countdown,
     bookingOpenMs,
+    nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
   })
 
   if (loading) {
@@ -1438,6 +1492,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   actionType === 'register' ? handleNowBook      :
                   actionType === 'waitlist' ? handleNowBook      :
                   actionType === 'arm'      ? handleNowPreflight :
+                  actionType === 'disarm'   ? handleDisarm       :
                   undefined
 
                 // Derive button classes from emphasis + disabled state.
@@ -1450,7 +1505,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       : 'bg-accent-blue text-white opacity-60 cursor-default'
                     : emphasis === 'primary-amber'
                       ? 'bg-accent-amber text-white active:opacity-80'
-                      : 'bg-accent-blue text-white active:opacity-80',
+                      : emphasis === 'outline-red'
+                        ? 'bg-surface border border-accent-red/40 text-accent-red active:opacity-60'
+                        : 'bg-accent-blue text-white active:opacity-80',
                 ].join(' ')
 
                 return (
