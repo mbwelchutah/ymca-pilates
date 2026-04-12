@@ -1739,11 +1739,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       level === 'check_recommended' ? 'text-accent-amber' :
                       'text-text-secondary'
                     return (
-                      <div className="mt-2.5 pt-2.5 border-t border-divider/60">
-                        <p className={`text-[12px] font-semibold leading-snug ${labelClass}`}>
+                      <div className="mt-2.5 pt-2 border-t border-divider/40">
+                        <p className={`text-[13px] font-medium leading-snug ${labelClass}`}>
                           {confLabel}
                         </p>
-                        <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                        <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
                           {reason}
                         </p>
                       </div>
@@ -1800,7 +1800,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                   <div className={`rounded-xl px-3.5 py-3 mb-3 ${bgClass}`}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <StatusDot color={dotColor} />
-                      <span className={`text-[15px] font-semibold ${labelClass}`}>
+                      <span className={`text-[14px] font-medium ${labelClass}`}>
                         {result.label}
                       </span>
                       {result.ts && (
@@ -1809,7 +1809,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-text-secondary leading-snug ml-5">
+                    <p className="text-[12px] text-text-muted leading-snug ml-5">
                       {result.detail}
                     </p>
                   </div>
@@ -1880,7 +1880,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       {!disabled && (
                         <button
                           onClick={() => setShowActionSheet(true)}
-                          className="flex-shrink-0 px-4 flex items-center justify-center rounded-xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 transition-opacity"
+                          className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-xl bg-surface border border-divider text-[14px] font-medium text-text-secondary active:opacity-60 transition-opacity"
                           aria-label={SECONDARY_LABEL[secondaryAction]}
                         >
                           {SECONDARY_LABEL[secondaryAction]}
@@ -1901,8 +1901,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {/* RUNNING: show live step list */}
               {(execMode === 'running_preflight' || execMode === 'running_booking') && (
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-2.5">
-                    {execMode === 'running_preflight' ? 'Running Preflight…' : 'Registering…'}
+                  <p className="text-[12px] font-medium text-text-muted mb-2.5">
+                    {execMode === 'running_preflight' ? 'Running Registration Check…' : 'Registering…'}
                   </p>
                   <div className="space-y-2">
                     {execStepList.map(step => {
@@ -1967,18 +1967,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     })}
                   </div>
                   <div className={`rounded-xl px-3.5 py-2.5 ${
-                    execDone.color === 'green' ? 'bg-accent-green/10'  :
-                    execDone.color === 'amber' ? 'bg-accent-amber/10'  :
-                    'bg-accent-red/10'
+                    execDone.color === 'green' ? 'bg-accent-green/10 border border-accent-green/20' :
+                    execDone.color === 'amber' ? 'bg-accent-amber/10 border border-accent-amber/20' :
+                    'bg-accent-amber/10 border border-accent-amber/20'
                   }`}>
-                    <p className={`text-[14px] font-semibold ${
-                      execDone.color === 'green' ? 'text-accent-green'  :
-                      execDone.color === 'amber' ? 'text-accent-amber'  :
-                      'text-accent-red'
-                    }`}>
-                      {execDone.color === 'green' ? '✅ ' : execDone.color === 'amber' ? '🟡 ' : '🔴 '}
-                      {execDone.text}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <StatusDot color={
+                        execDone.color === 'green' ? 'green' :
+                        execDone.color === 'amber' ? 'amber' : 'amber'
+                      } />
+                      <p className={`text-[14px] font-medium ${
+                        execDone.color === 'green' ? 'text-accent-green' :
+                        execDone.color === 'amber' ? 'text-accent-amber' :
+                        'text-accent-amber'
+                      }`}>
+                        {execDone.text}
+                      </p>
+                    </div>
                   </div>
                   {/* Retry shortcut — only shown for failed runs */}
                   {!execDone.ok && (
