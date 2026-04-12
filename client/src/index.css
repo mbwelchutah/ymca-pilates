@@ -47,9 +47,6 @@
     height: 100%;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
-    /* Prevent rubber-band on the body itself in standalone mode. */
-    position: fixed;
-    width: 100%;
   }
 
   #root {
@@ -57,7 +54,6 @@
     /* Use dynamic viewport height when available (accounts for collapsing
        browser chrome on mobile). Falls back to 100vh on older devices. */
     min-height: 100dvh;
-    overflow: hidden;
   }
 
   /* Eliminate the 300ms tap delay on all interactive elements.
