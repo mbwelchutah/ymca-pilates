@@ -1913,11 +1913,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
                           {reason}
                         </p>
-                        {showTiming && (
+                        {/* Only show timing when we have a concrete window time.
+                             The "waiting" message is already carried by the standby
+                             row above; duplicating it here adds noise. */}
+                        {showTiming && timeStr && (
                           <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
-                            {timeStr
-                              ? `Will register at ${timeStr}`
-                              : 'Watching for the registration window'}
+                            Will register at {timeStr}
                           </p>
                         )}
                       </div>

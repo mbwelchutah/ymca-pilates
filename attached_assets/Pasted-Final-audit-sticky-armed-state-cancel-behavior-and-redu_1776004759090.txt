@@ -1,0 +1,192 @@
+Final audit — sticky armed state, cancel behavior, and reduced duplication
+
+Goal:
+Carefully audit the Now screen and make only targeted fixes related to:
+1. sticky armed state
+2. cancel auto-registration behavior
+3. removal of duplicated status/readiness UI
+
+Do NOT do broad redesigns.
+Do NOT change working backend flows unless required to fix one of the audited issues.
+Prefer minimal, safe fixes.
+
+Context:
+The Now screen has been refactored toward:
+- a state-driven primary action
+- persistent checklist as the main reassurance element
+- reduced Tools clutter
+- simplified status hierarchy
+
+This audit is specifically to verify that the final behavior is stable and clean.
+
+--------------------------------------------------
+A. Sticky armed state audit
+--------------------------------------------------
+
+Please inspect how the Now-screen CTA and readiness state are derived.
+
+Questions to answer:
+1. After the user taps "Get Spot" and auto-registration is successfully armed, does the UI remain in an armed state?
+2. Can the UI incorrectly revert back to "Get Spot" during:
+   - background refresh
+   - countdown tick
+   - polling
+   - recomputation of derived state
+   - temporary async null/empty state
+3. Is armed state given higher priority than generic pre-open state?
+
+Expected behavior:
+- Once auto-registration is armed, the Now screen must stay in the armed state until one of these occurs:
+  - user cancels auto-registration
+  - registration attempt starts
+  - registration succeeds
+  - registration fails
+  - underlying plan entry is removed or materially changed
+
+Expected UI in armed state:
+- checklist remains visible
+- armed/ready messaging remains visible
+- primary action is "Cancel Auto-registration"
+- UI must NOT fall back to "Get Spot" while the armed state is still truly active
+
+Please verify:
+- the actual source of truth for armed state
+- the state priority order
+- whether any intermediate async reads can incorrectly downgrade the state
+
+If needed, fix by:
+- making armed state sticky
+- adding settle/debounce windows where appropriate
+- preventing lower-priority fallback during transient refresh states
+
+--------------------------------------------------
+B. Cancel auto-registration audit
+--------------------------------------------------
+
+Please inspect what happens when the user taps "Cancel Auto-registration".
+
+Questions to answer:
+1. Does cancel reliably disarm the armed state?
+2. After cancel completes, does the primary CTA correctly revert to "Get Spot"?
+3. Does cancel affect only the armed registration state, or does it also alter/delete the class or Plan entry?
+4. If cancel currently affects the Plan entry, is that intentional and clearly represented in UI logic?
+
+Expected behavior:
+- "Cancel Auto-registration" should disarm the current armed state
+- after successful cancel, the UI should return to the normal pre-open state
+- this should happen cleanly without requiring a hard refresh
+- cancel should not cause temporary contradictory states
+- cancel should not accidentally leave the UI looking armed when it is no longer armed
+- cancel should not accidentally remove unrelated scheduling data unless that coupling is unavoidable in the current architecture
+
+Please verify:
+- handler used by cancel
+- source of truth update after cancel
+- rerender timing after cancel
+- whether any stale local state causes mismatch
+
+If needed, fix by:
+- ensuring disarm updates the real source of truth
+- syncing local derived state after cancel
+- preventing stale optimistic UI from lingering
+- documenting any unavoidable coupling to Plan
+
+--------------------------------------------------
+C. Reduced duplication audit
+--------------------------------------------------
+
+Please inspect the Now screen for repeated readiness/status information.
+
+Goal:
+Checklist should be the main truth model.
+Everything else should support it, not repeat it.
+
+Please verify that the Now screen does NOT contain duplicated readiness UI such as:
+- multiple summaries saying the same thing as the checklist
+- duplicate "ready" sections
+- leftover dot progress bar
+- duplicate diagnostic tile rows
+- repeated Tools references
+- Recent Activity entries that restate checklist rows without adding new information
+
+Expected structure:
+- countdown
+- persistent checklist
+- confidence summary
+- one concise contextual message below checklist
+- primary button
+- dynamic secondary button
+
+Tools references:
+- should be absent in healthy state
+- should only appear contextually when there is an issue and deeper detail is actually needed
+
+Recent Activity:
+- should be removed or simplified enough that it adds distinct value
+- should not repeat checklist lines like session verified / class found / modal reached if those are already persistently visible
+
+If needed, fix by:
+- removing duplicate sections
+- demoting nonessential diagnostics
+- tightening message hierarchy
+- keeping the checklist as the primary reassurance element
+
+--------------------------------------------------
+D. Required regression checks
+--------------------------------------------------
+
+Please explicitly test or inspect the following states:
+
+1. Pre-open, not armed
+Expected:
+- primary button = "Get Spot"
+
+2. Pre-open, armed
+Expected:
+- primary button = "Cancel Auto-registration"
+- armed state remains sticky
+- checklist remains visible
+- no fallback to "Get Spot"
+
+3. Registration open
+Expected:
+- correct open-state action appears
+- armed/pre-open state does not linger incorrectly
+
+4. Registration in progress
+Expected:
+- button and status reflect active run cleanly
+
+5. Registered
+Expected:
+- no registration CTA shown incorrectly
+
+6. Failed
+Expected:
+- failure is shown clearly without duplicated banners
+
+7. Cancel after armed
+Expected:
+- armed state clears cleanly
+- CTA returns to "Get Spot"
+- no stale armed messaging remains
+
+--------------------------------------------------
+E. Output format
+--------------------------------------------------
+
+At the end, report exactly:
+
+1. Issues found
+2. Fixes applied
+3. Files changed
+4. Source of truth used for armed state
+5. Final state priority order
+6. Whether cancel disarms only or also changes Plan data
+7. Duplicate UI removed or retained
+8. Remaining risks or TODOs
+
+Important:
+- Make only targeted fixes from this audit
+- Do not introduce unrelated redesign changes
+- Preserve existing working registration and registration-check flows
