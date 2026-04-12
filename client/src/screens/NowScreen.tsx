@@ -1798,9 +1798,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       // Derive per-row status from live exec state + armed flag
                       const status: StepStatus = (() => {
                         if (step === 'confirmed') {
-                          // Virtual final step: armed → success, running check → active
-                          if (localArmed)                           return 'success'
-                          if (execMode === 'running_preflight')     return 'running'
+                          // Virtual final step: armed → success; active only after
+                          // all 4 real steps have completed so it progresses naturally
+                          // in sequence rather than activating from the start.
+                          if (localArmed) return 'success'
+                          if (execMode === 'running_preflight' && execSteps['modal'] === 'success')
+                            return 'running'
                           return 'pending'
                         }
                         // When armed, all real steps are confirmed green
