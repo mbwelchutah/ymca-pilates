@@ -212,6 +212,7 @@ export default function App() {
           <SettingsScreen
             appState={state}
             refresh={refresh}
+            onSessionRefresh={() => checkSessionRef.current?.()}
             onAccount={() => setAccountOpen(true)}
             accountAttention={accountAttention}
             authStatus={authStatus}

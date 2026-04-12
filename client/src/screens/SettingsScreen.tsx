@@ -11,6 +11,7 @@ import { api } from '../lib/api'
 interface SettingsScreenProps {
   appState: AppState
   refresh: () => void
+  onSessionRefresh?: () => void
   onAccount?: () => void
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
@@ -19,7 +20,7 @@ interface SettingsScreenProps {
   scrolled?: boolean
 }
 
-export function SettingsScreen({ appState, refresh, onAccount, accountAttention, authStatus, tab = 'settings', onTabChange = () => {}, scrolled = false }: SettingsScreenProps) {
+export function SettingsScreen({ appState, refresh, onSessionRefresh, onAccount, accountAttention, authStatus, tab = 'settings', onTabChange = () => {}, scrolled = false }: SettingsScreenProps) {
   const [clearing,     setClearing]     = useState(false)
   const [clearFeedback, setClearFeedback] = useState<{ text: string; cls: string } | null>(null)
 
@@ -43,6 +44,7 @@ export function SettingsScreen({ appState, refresh, onAccount, accountAttention,
       const result = await api.settingsClear()
       if (result.success) {
         setClearFeedback({ text: result.detail ?? 'Session cleared. Log in before the next registration run.', cls: 'text-accent-amber' })
+        onSessionRefresh?.()
       } else {
         setClearFeedback({ text: result.detail ?? 'Clear failed — try again', cls: 'text-accent-red' })
       }
