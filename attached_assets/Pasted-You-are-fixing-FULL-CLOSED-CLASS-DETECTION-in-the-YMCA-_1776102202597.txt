@@ -1,0 +1,264 @@
+You are fixing FULL / CLOSED CLASS DETECTION in the YMCA Booker app.
+
+PRIMARY GOAL
+
+Stop the bot from treating a reachable class modal as a bookable class.
+
+Right now the system incorrectly shows:
+- Registration path confirmed
+- Likely to succeed
+- Will register at [time]
+
+even when the YMCA UI clearly shows:
+- Closed - Full
+- Full
+- 0 spot left
+- 30/30 attendees
+
+This is wrong.
+
+We need to add a real ACTION-STATE CLASSIFIER after the modal/detail view is opened.
+
+IMPORTANT RULES
+
+- Do NOT redesign the app
+- Do NOT expand scope beyond full/waitlist/bookable classification
+- Keep app runnable after each stage
+- Implement ONE stage at a time
+- After each stage:
+  1. summarize changes
+  2. explain what remains
+  3. STOP
+  4. wait for user to say continue
+
+==================================================
+STAGE 1 — ADD ACTION-STATE CLASSIFIER
+==================================================
+
+Goal:
+After class modal/detail is opened, determine the actual action state.
+
+Create a classifier that returns one of:
+
+- bookable
+- waitlist_available
+- full
+- already_registered
+- closed
+- unknown
+
+Use visible signals such as:
+- Register
+- Reserve
+- Waitlist
+- Full
+- Closed - Full
+- 0 spot left
+- attendees full
+- Registration Unavailable
+- Unregister
+- Cancel
+
+Do not rely only on modal reachability.
+
+Success criteria:
+- action state is distinct from modal reached
+- modal reached no longer implies bookable
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — PRIORITIZE FULL / CLOSED SIGNALS
+==================================================
+
+Goal:
+Make full-class detection win over generic readiness.
+
+Rules:
+
+If any strong full/closed signals appear, classify as:
+- full OR closed
+
+Examples:
+- Closed - Full
+- Full
+- 0 spot left
+- 30/30 attendees
+
+These must override softer structural signals like:
+- modal reached
+- path exists
+- class found
+
+Success criteria:
+- full classes are never shown as likely to succeed
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — DISTINGUISH BOOKABLE VS WAITLIST
+==================================================
+
+Goal:
+Do not confuse waitlist with booking.
+
+Rules:
+
+If booking button exists:
+- bookable
+
+If waitlist button exists and booking does not:
+- waitlist_available
+
+If both are unavailable and full signals exist:
+- full
+
+If already registered/unregister/cancel visible:
+- already_registered
+
+Success criteria:
+- waitlist and full are separate states
+- bookable is only used when actual booking action exists
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — UPDATE NOW TAB MESSAGING
+==================================================
+
+Goal:
+Make the Now tab truthful.
+
+Mapping:
+
+bookable:
+- Ready
+- Likely to succeed
+
+waitlist_available:
+- Waitlist available
+
+full:
+- Full
+- Class is currently full
+
+already_registered:
+- Already registered
+
+closed:
+- Registration closed
+
+unknown:
+- Needs review
+
+Remove misleading phrases for non-bookable states:
+- Registration path confirmed
+- Likely to succeed
+- Will register at [time]
+
+Only use those for bookable.
+
+Success criteria:
+- Now messaging matches actual action state
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — UPDATE READINESS ROW
+==================================================
+
+Goal:
+Keep readiness useful but accurate.
+
+Change readiness so the last line reflects action state truth:
+
+- Session verified
+- Schedule loaded
+- Class found
+- Modal reached
+- Action state: Bookable / Waitlist / Full / Already registered / Closed
+
+Do not show all-green readiness for full classes.
+
+Success criteria:
+- readiness reflects actual availability
+- green does not imply booking when class is full
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — UPDATE CONFIDENCE LOGIC
+==================================================
+
+Goal:
+Confidence must depend on action state.
+
+Rules:
+
+- bookable → can be high confidence
+- waitlist_available → medium or waitlist-specific confidence
+- full / closed → low confidence for booking success
+- already_registered → not applicable
+- unknown → low confidence
+
+Never show:
+- Likely to succeed
+for full classes.
+
+Success criteria:
+- confidence reflects real booking opportunity
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — TOOLS / FAILURE VISIBILITY
+==================================================
+
+Goal:
+Explain why the bot did not proceed.
+
+If class is full, add a clear reason in Tools / run results:
+- Class full
+- Booking unavailable
+- 0 spots left
+- Waitlist only, if applicable
+
+This should not be treated as a mysterious failure.
+
+Success criteria:
+- full classes are classified clearly in diagnostics
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — FINAL QA PASS
+==================================================
+
+Goal:
+Verify the following cases:
+
+1. Bookable class
+2. Waitlist-only class
+3. Full class
+4. Already registered class
+5. Unknown/ambiguous class
+
+Ensure the UI and state model behave correctly for each.
+
+Success criteria:
+- full class no longer appears bookable
+- Now tab is truthful
+- readiness and confidence are aligned
+
+After Stage 8:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH:
+Stage complete. Say "continue" to proceed.

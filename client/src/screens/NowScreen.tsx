@@ -1248,6 +1248,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [execSteps,  setExecSteps]  = useState<ExecSteps>(BLANK_STEPS)
   const [execDone,   setExecDone]   = useState<{ ok: boolean; text: string; color: 'green' | 'amber' | 'red' } | null>(null)
   const [execStepList, setExecStepList] = useState<StepKey[]>(PREFLIGHT_STEP_LIST)
+  // Guard state — live preflight check before committing to a booking run.
+  // Shown only in late phase so we don't add latency to the sniper window.
+  const [guardState,   setGuardState]   = useState<'checking' | 'waitlist_only' | 'blocked' | null>(null)
+  const [guardMessage, setGuardMessage] = useState<string | null>(null)
 
   const stepTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
   const doneTimerRef     = useRef<ReturnType<typeof setTimeout>  | null>(null)
@@ -1420,13 +1424,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
   const handleDisarm = () => { haptic('light'); setArmed(false) }
 
-  const handleNowBook = async () => {
-    if (!job || (execMode !== 'idle' && execMode !== 'done')) return
-    if (bgReadiness?.armed?.state === 'booking') return
-    // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
+  // Core booking flow — runs directly without any guard check.
+  // Call this only after the guard has passed (or when guard is not needed).
+  const performBooking = async () => {
+    if (!job) return
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
-    setLastFailedAction(null)   // clear stale failure before starting
-    setExecSteps(BLANK_STEPS)   // reset step state for fresh booking run
+    setGuardState(null)
+    setGuardMessage(null)
+    setLastFailedAction(null)
+    setExecSteps(BLANK_STEPS)
     setExecMode('running_booking')
     setExecDone(null)
     startStepSimulation(BOOK_STEP_LIST)
@@ -1467,6 +1473,57 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       scheduleDoneReset()
     }
   }
+
+  // Entry point for booking — runs a live preflight guard when the registration
+  // window is past (phase === 'late') so the user gets informed BEFORE attempting
+  // a booking that might fail because the class is full or session has expired.
+  // In sniper/warmup phase the guard is skipped to avoid adding latency.
+  const handleNowBook = async () => {
+    if (!job || (execMode !== 'idle' && execMode !== 'done')) return
+    if (bgReadiness?.armed?.state === 'booking') return
+
+    if (phase === 'late') {
+      setGuardState('checking')
+      setGuardMessage(null)
+      try {
+        const r = await api.runPreflight(job.id)
+        if (r.status === 'success') {
+          // All clear — proceed straight to booking with no extra prompt.
+          await performBooking()
+          return
+        }
+        if (r.status === 'waitlist_only') {
+          haptic('medium')
+          setGuardState('waitlist_only')
+          setGuardMessage('Class is full — only Waitlist is available')
+          return
+        }
+        // Any other non-success: surface the reason and stop.
+        haptic('error')
+        const errText =
+          r.status === 'not_found'                           ? 'Class not found on schedule'          :
+          r.authDetail?.verdict === 'session_expired'        ? 'Session expired — sign in in Settings' :
+          r.authDetail?.verdict === 'login_required'         ? 'Not logged in — sign in in Settings'  :
+          r.status === 'found_not_open_yet'                  ? 'Registration window not open yet'     :
+          (r.message ?? 'Registration check failed')
+        setGuardState('blocked')
+        setGuardMessage(errText)
+      } catch (e) {
+        haptic('error')
+        setGuardState('blocked')
+        setGuardMessage(e instanceof Error ? e.message : 'Could not check registration status')
+      }
+      return
+    }
+
+    // Not in late phase — proceed directly (no guard latency in sniper window).
+    await performBooking()
+  }
+
+  // Confirm: user chose to join waitlist after the guard detected class is full.
+  const handleGuardJoinWaitlist = () => performBooking()
+  // Dismiss the guard overlay and return to idle.
+  const handleGuardCancel = () => { setGuardState(null); setGuardMessage(null) }
 
   // ── Check Now (preflight) ──────────────────────────────────────────────────
   // Stage 2: stable display result — applies hysteresis so the card doesn't flicker.
@@ -2119,6 +2176,60 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     clearTimeout(longPressTimerRef.current)
                     longPressTimerRef.current = null
                   }
+                }
+
+                // ── Guard overlay — shown when a live preflight check is in progress
+                // or has returned a non-success result that needs user acknowledgement.
+                if (guardState !== null) {
+                  return (
+                    <div className="space-y-2.5">
+                      {guardState === 'checking' && (
+                        <div className="rounded-2xl bg-surface border border-divider px-4 py-3 flex items-center gap-2.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-pulse shrink-0" />
+                          <span className="text-[14px] text-text-secondary">Checking registration status…</span>
+                        </div>
+                      )}
+                      {guardState === 'waitlist_only' && (
+                        <>
+                          <div className="rounded-2xl bg-accent-amber/10 border border-accent-amber/20 px-4 py-3 flex items-start gap-2.5">
+                            <span className="mt-0.5 shrink-0"><StatusDot color="amber" /></span>
+                            <div>
+                              <p className="text-[14px] font-medium text-amber-700">{guardMessage}</p>
+                              <p className="text-[12px] text-text-muted mt-0.5">Tap "Join Waitlist" to be added if a spot opens.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-stretch gap-2">
+                            <button
+                              onClick={handleGuardJoinWaitlist}
+                              className="flex-1 rounded-2xl py-3 text-[15px] font-semibold bg-accent-amber text-white shadow-sm active:scale-[0.97] active:opacity-90 transition-[transform,opacity] duration-150 ease-out"
+                            >
+                              Join Waitlist
+                            </button>
+                            <button
+                              onClick={handleGuardCancel}
+                              className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-text-primary/[0.06] text-[14px] font-medium text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      {guardState === 'blocked' && (
+                        <>
+                          <div className="rounded-2xl bg-accent-red/[0.07] border border-accent-red/20 px-4 py-3 flex items-start gap-2.5">
+                            <span className="mt-0.5 shrink-0"><StatusDot color="red" /></span>
+                            <p className="text-[14px] font-medium text-accent-red">{guardMessage}</p>
+                          </div>
+                          <button
+                            onClick={handleGuardCancel}
+                            className="w-full rounded-2xl py-3 text-[15px] font-semibold bg-text-primary/[0.06] text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
+                          >
+                            OK
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
                 }
 
                 return (
