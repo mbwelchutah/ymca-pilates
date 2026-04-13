@@ -3926,7 +3926,7 @@ const server = http.createServer((req, res) => {
           dayOfWeek:   dbJob.day_of_week,
           targetDate:  dbJob.target_date  || null,
         }, { dryRun: getDryRun() });
-        const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found'];
+        const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found', 'full', 'closed'];
         setLastRun(dbJob.id, result.status, NON_SUCCESS_STATUSES.includes(result.status) ? (result.message || null) : null);
         json({ success: !NON_SUCCESS_STATUSES.includes(result.status), message: `Job #${jobId}: ${result.status} — ${result.message}` });
       } catch (err) {
@@ -4086,14 +4086,17 @@ const server = http.createServer((req, res) => {
 
           // Map raw bot status to a user-readable label and color.
           const label =
-            result.status === 'success'      ? 'Would register'    :
-            result.status === 'waitlist_only'? 'Would join waitlist':
-            result.status === 'found_not_open_yet' ? 'Not open yet' :
-            result.status === 'not_found'    ? 'Class not found'   :
+            result.status === 'success'            ? 'Would register'      :
+            result.status === 'waitlist_only'      ? 'Would join waitlist'  :
+            result.status === 'found_not_open_yet' ? 'Not open yet'        :
+            result.status === 'not_found'          ? 'Class not found'     :
+            result.status === 'full'               ? 'Class is full'       :
+            result.status === 'closed'             ? 'Registration closed' :
             'Run failed';
           const color =
-            result.status === 'success'      ? 'green' :
-            result.status === 'waitlist_only'? 'amber' :
+            result.status === 'success'       ? 'green' :
+            result.status === 'waitlist_only' ? 'amber' :
+            result.status === 'full'          ? 'amber' :
             'red';
 
           json({ success: result.status === 'success', status: result.status, message: result.message, label, color });

@@ -477,8 +477,13 @@ export function deriveNowCardState(opts: {
   if (domActionState === 'waitlist') return 'registration_open_full'
   if (domActionState === 'ready' && phase === 'sniper') return 'registration_open_with_spots'
 
-  // 6. Planning signals — class confirmed full via preflight overall status
+  // 6. Planning signals — class confirmed full/unavailable via preflight overall status
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
+  // Stage 2: 'full' = class is full (0 spots, "Closed - Full" button detected)
+  // Map to registration_open_full so armed state shows "class full" not "Likely to succeed"
+  if (effectivePreflightStatus === 'full')          return 'registration_open_full'
+  // 'closed' = registration explicitly closed (not just window timing)
+  if (effectivePreflightStatus === 'closed')        return 'registration_not_open'
 
   // 7. Registration window is open — assume spots available unless DOM/preflight says otherwise
   if (phase === 'sniper') return 'registration_open_with_spots'
@@ -707,6 +712,18 @@ export function resolveConfidenceSummary(opts: {
       level:  'check_recommended',
       label:  'Check recommended',
       reason,
+    }
+  }
+
+  // Stage 2: Full class guard — registration_open_full means the class is known
+  // to be full regardless of what the composite badge says. Never show "Likely to
+  // succeed" in this state; always surface "Waitlist only" so the user knows
+  // the bot will join the waitlist, not claim an open spot.
+  if (nowCardState === 'registration_open_full') {
+    return {
+      level:  'needs_attention',
+      label:  'Waitlist only',
+      reason: 'Class is currently full. Auto-registration will join the waitlist when the window opens.',
     }
   }
 
@@ -1501,6 +1518,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         // Any other non-success: surface the reason and stop.
         haptic('error')
         const errText =
+          r.status === 'full'                                ? 'Class is full — no spots available'   :
+          r.status === 'closed'                              ? 'Registration is closed'               :
           r.status === 'not_found'                           ? 'Class not found on schedule'          :
           r.authDetail?.verdict === 'session_expired'        ? 'Session expired — sign in in Settings' :
           r.authDetail?.verdict === 'login_required'         ? 'Not logged in — sign in in Settings'  :
@@ -2503,6 +2522,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 s === 'waitlist_only'     ? 'Class is full — waitlist open' :
                 s === 'found_not_open_yet'? 'Registration window not open'  :
                 s === 'not_found'         ? 'Class not found on schedule'   :
+                s === 'full'              ? 'Class is full — no spots available' :
+                s === 'closed'            ? 'Registration is closed'        :
                                             'Registration check failed'
               const isFailure = s !== 'success' && s !== 'waitlist_only' && s !== 'found_not_open_yet'
               return { label, isFailure, ts: snap.checkedAt }

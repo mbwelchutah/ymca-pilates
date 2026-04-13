@@ -1926,6 +1926,23 @@ async function runBookingJob(job, opts = {}) {
         emitFailure('MODAL', 'MODAL_LOGIN_REQUIRED', 'Preflight: session expired — modal shows Login to Register');
         _saveFwStatus({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Preflight: Login to Register shown in modal — FamilyWorks session missing' });
         return logRunSummary({ status: 'error', message: 'Preflight: session expired in modal — Login to Register shown', screenshotPath, phase: 'auth', reason: 'session_expired', category: 'auth', label: 'Preflight: session expired in modal', url: page.url() });
+
+      // ── Stage 2: Full / Closed detection ────────────────────────────────────
+      // These two branches run BEFORE hasRegister / hasWaitlist so that strong
+      // full/closed signals always win — even in the (unlikely) edge case where
+      // both a "Register" button and a "Closed - Full" indicator are present.
+      } else if (_actionStateClassified === 'full') {
+        _state.bundle.action = 'ACTION_BLOCKED';
+        _saveFwStatus({ ready: false, status: 'CLASS_FULL', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Class is full — 0 spots available' });
+        await snap('preflight-full');
+        return logRunSummary({ status: 'full', message: 'Class is full — no spots available', screenshotPath, phase: 'action', reason: 'class_full', category: 'availability', label: 'Class full' });
+      } else if (_actionStateClassified === 'closed') {
+        _state.bundle.action = 'ACTION_BLOCKED';
+        _saveFwStatus({ ready: false, status: 'CLASS_CLOSED', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Registration is closed' });
+        await snap('preflight-closed');
+        return logRunSummary({ status: 'closed', message: 'Registration is closed', screenshotPath, phase: 'action', reason: 'registration_closed', category: 'availability', label: 'Registration closed' });
+      // ────────────────────────────────────────────────────────────────────────
+
       } else if (hasRegister) {
         _state.bundle.action = 'ACTION_READY';
         _state.sniperState   = 'SNIPER_READY';
