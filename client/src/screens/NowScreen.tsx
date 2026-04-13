@@ -1281,6 +1281,28 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     try { await api.setDryRun(enabled); refresh() } catch { /* ignored */ }
   }
 
+  // Map raw bot cancel error strings to user-friendly messages.
+  const friendlyCancelError = (raw: string): string => {
+    if (!raw) return 'Could not cancel — try again'
+    const r = raw.toLowerCase()
+    if (r.includes('different class time') || r.includes('modal time does not match') || r.includes('verification_failed'))
+      return 'Wrong class detected — cancel was stopped to protect your booking. Try again or cancel on the YMCA website.'
+    if (r.includes('session not established') || r.includes('requires login'))
+      return 'Not signed in — tap the account icon to reconnect, then try again.'
+    if (r.includes('auth lock') || r.includes('in progress'))
+      return 'Another operation is running — wait a moment and try again.'
+    if (r.includes('login failed') || r.includes('login err'))
+      return 'Login failed — check your YMCA credentials in Settings.'
+    if (r.includes('could not find class') || r.includes('not found on the schedule'))
+      return 'Class not found on the schedule — it may have already ended or been removed.'
+    if (r.includes('no cancel') || r.includes('no cancel/unregister') || r.includes('no unregister'))
+      return 'No cancel button found — you may not be registered, or the class has already started.'
+    if (r.includes('job is missing') || r.includes('missing classtitle'))
+      return 'This class record is incomplete — try refreshing the page.'
+    // Strip leading technical prefix like "verification_failed: " or "error: "
+    return raw.replace(/^[\w_]+:\s*/i, '')
+  }
+
   const handleCancelConfirm = async () => {
     if (!job || cancelInProgress) return
     setCancelInProgress(true)
@@ -1288,7 +1310,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setCancelResult(null)
     try {
       const r = await api.cancelRegistration(job.id)
-      setCancelResult({ ok: r.success, text: r.success ? (r.action === 'left_waitlist' ? 'Left waitlist' : 'Registration cancelled') : (r.message || 'Could not cancel') })
+      setCancelResult({ ok: r.success, text: r.success ? (r.action === 'left_waitlist' ? 'Left waitlist' : 'Registration cancelled') : friendlyCancelError(r.message) })
       if (r.success) refresh()
     } catch (e) {
       setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed' })
@@ -2109,7 +2131,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </button>
               {cancelInProgress && (
                 <p className="text-[11px] text-text-muted text-center mt-1.5 leading-snug">
-                  Connecting to YMCA — this usually takes 30–60 seconds
+                  Connecting to YMCA — usually takes 15–30 seconds
                 </p>
               )}
             </div>

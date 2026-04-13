@@ -2430,10 +2430,10 @@ async function cancelRegistration(job) {
     let card = await findCard(page);
     if (card) return card;
     // Scroll up (reset to top first, then gentle scan down)
-    await scrollPanel(page,-999999); await page.waitForTimeout(80);
+    await scrollPanel(page,-999999); await page.waitForTimeout(50);
     card = await findCard(page); if (card) return card;
     for (let i=0;i<40;i++) {
-      await scrollPanel(page,120); await page.waitForTimeout(80);
+      await scrollPanel(page,120); await page.waitForTimeout(50);
       card = await findCard(page); if (card) return card;
     }
     return null;
@@ -2493,14 +2493,17 @@ async function cancelRegistration(job) {
       if (opts.some(o => /yoga.*pilates|pilates.*yoga/i.test(o))) {
         const before = await page.locator('[data-repeater-item], .bbl-rg-item, .schedule-row, [class*="rg-item"]').count().catch(()=>0);
         await selects.nth(i).selectOption({ label: 'Yoga/Pilates' });
-        await page.waitForTimeout(1000);
+        // Wait for the list to refresh after filtering — use a selector-based
+        // gate so we don't over-sleep when the page is fast.
+        await page.waitForSelector('[data-repeater-item], .bbl-rg-item, .schedule-row, [class*="rg-item"]', { timeout:600 }).catch(()=>{});
+        await page.waitForTimeout(200);
         filterApplied = true;
         console.log(`[cancel] Yoga/Pilates filter applied (select #${i})`);
         break;
       }
     }
     if (!filterApplied) console.log('[cancel] ⚠️ Could not apply Yoga/Pilates filter — scanning without it.');
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(150);
 
     // ── Find day tab & card ───────────────────────────────────────────────────
     const dayTabs   = page.locator(`text=/${dayShort} \\d+/`);
@@ -2535,7 +2538,7 @@ async function cancelRegistration(job) {
 
     // ── Open modal ────────────────────────────────────────────────────────────
     try { await card.scrollIntoViewIfNeeded({ timeout:5000 }); } catch {}
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
     const clickable = card.locator("button, [role='button'], a").first();
     const clickTarget = (await clickable.count()) > 0 ? clickable : card;
     try {
@@ -2547,7 +2550,7 @@ async function cancelRegistration(job) {
 
     // Wait for modal action buttons
     await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout:3000 }).catch(()=>null);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
 
     // ── "View Reservation" intermediary — FamilyWorks shows this button in the
     //    class detail modal when you're registered/waitlisted. Clicking it opens
@@ -2560,18 +2563,26 @@ async function cancelRegistration(job) {
       // Wait for the popup's Cancel button (or a close/confirm action) rather than fixed sleep
       const cancelPopupReady = 'button:has-text("Cancel"), [role="button"]:has-text("Cancel"), button:has-text("Unregister"), [role="button"]:has-text("Unregister")';
       await page.waitForSelector(cancelPopupReady, { timeout:3000 }).catch(()=>null);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(150);
     }
 
     // ── Modal verification ────────────────────────────────────────────────────
     const rawModal  = (await page.locator('body').innerText().catch(()=>'')).toLowerCase();
     const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g,' ');
-    const verifyTime = classTimeNorm ? modalText.includes(classTimeNorm) : true;
+    // Use a flex-whitespace regex (e.g. "4:20\s*p") — the YMCA page sometimes
+    // renders "4:20pm" (no space) where classTimeNorm is "4:20 p". Direct
+    // String.includes("4:20 p") fails in that case; regex with \s* handles both.
+    let verifyTime = !classTimeNorm; // if no classTimeNorm, skip check
+    if (classTimeNorm) {
+      const _m = classTimeNorm.match(/^(\d+:\d+)\s*([ap])/i);
+      const timeRe = _m ? new RegExp(_m[1] + '\\s*' + _m[2], 'i') : null;
+      verifyTime = timeRe ? timeRe.test(modalText) : modalText.includes(classTimeNorm);
+    }
     const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
-    console.log(`[cancel] Modal verify — time:${verifyTime} instr:${verifyInst}`);
+    console.log(`[cancel] Modal verify — time:${verifyTime} instr:${verifyInst} classTimeNorm:${classTimeNorm}`);
 
     if (!verifyTime) {
-      return { success:false, action:null, message:'verification_failed: modal time does not match job — will not cancel' };
+      return { success:false, action:null, message:`The bot found a different class time in the modal — cancelled to avoid removing the wrong booking. Try again or cancel on the YMCA website. (expected: ${classTimeNorm})` };
     }
 
     // ── Find cancel / unregister / leave-waitlist button ──────────────────────
