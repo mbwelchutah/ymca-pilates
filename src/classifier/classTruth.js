@@ -73,16 +73,16 @@ function makeResult(state, partial = {}) {
 //   targetDate  {string|null}   ISO date e.g. "2026-04-17"
 // }
 //
-// Returns Promise<ClassTruthResult>
+// Returns ClassTruthResult (synchronous)
 //
 // Stages 2+3: reads from the schedule cache populated by Playwright API
 // response interception and maps entry booleans to normalized ClassStates.
 // Returns UNKNOWN when cache is missing/stale; NOT_FOUND when no entry matches.
-async function classifyClass(job) {
+// Synchronous — all cache I/O uses fs.readFileSync.
+function classifyClass(job) {
   const { findEntry, isCacheStale, loadAll } = require('./scheduleCache');
 
   const raw   = loadAll();
-  const entry = findEntry(job);
 
   if (!raw) {
     return makeResult(CLASS_STATES.UNKNOWN, {
@@ -97,24 +97,35 @@ async function classifyClass(job) {
     });
   }
 
-  if (!entry) {
+  // Stage 4: use scored fuzzy findEntry (returns { entry, matchType, confidence } | null)
+  const match = findEntry(job);
+
+  if (!match) {
     return makeResult(CLASS_STATES.NOT_FOUND, {
       reason: `No schedule entry matched "${job.classTitle}" on ${job.targetDate ?? job.dayOfWeek}`,
       fetchedAt: raw.savedAt,
+      matchType:  'none',
+      confidence: 0,
     });
   }
 
-  // ── Stage 3: map entry booleans → normalized ClassState ──────────────────
+  const { entry, matchType, confidence } = match;
+
+  // ── Stage 3+5: map entry booleans → normalized ClassState ─────────────────
+  // Stage 5: `matchType`, `isFuzzyMatch`, `confidence` are now populated from
+  // the scored fuzzy match so the UI can surface exact-vs-fuzzy distinction.
 
   const shared = {
     matchedClassName: entry.title,
+    matchedInstructor:entry.instructor,
     matchedTime:      entry.timeLocal,
     matchedDate:      entry.dateISO,
     openSpots:        entry.openSpots,
     totalCapacity:    entry.totalCapacity,
     fetchedAt:        entry.capturedAt,
-    matchType:        'exact',
-    confidence:       90,
+    matchType,
+    isFuzzyMatch:     matchType === 'fuzzy',
+    confidence,
   };
 
   if (entry.isCancelled) {

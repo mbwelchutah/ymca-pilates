@@ -27,6 +27,7 @@ import type { SniperPhase } from '../lib/sniperPhase'
 import { isThisWeekUTC } from '../lib/bookingCycle'
 import { useCountdown } from '../lib/countdown'
 import { formatOpens, formatOpensRelative } from '../lib/timing'
+import type { ClassTruthResult } from '../lib/classTruth'
 
 interface NowScreenProps {
   appState: AppState
@@ -1007,6 +1008,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   //       'error' = genuine unresolved failure (red + Clear status link)
   const [cancelResult,     setCancelResult]     = useState<{ ok: boolean; text: string; kind: 'success' | 'recovered' | 'error' } | null>(null)
 
+  // ── Classifier truth state ─────────────────────────────────────────────────
+  // Populated from /api/jobs/:id/classify — reads the schedule cache without
+  // launching Playwright.  Provides pre-flight availability truth for the UI.
+  const [classifierResult, setClassifierResult] = useState<ClassTruthResult | null>(null)
+
+  useEffect(() => {
+    if (selectedJobId == null) { setClassifierResult(null); return }
+    api.classifyJob(selectedJobId).then(setClassifierResult).catch(() => setClassifierResult(null))
+  }, [selectedJobId])
+
   // ── Sniper readiness state ─────────────────────────────────────────────────
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
 
@@ -1837,17 +1848,31 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     actionDetailVerdict,
   })
 
+  // Classifier truth — supplements Playwright when Playwright hasn't confirmed
+  // availability. When Playwright says 'success' (Register button confirmed),
+  // Playwright wins; the classifier only fills in when Playwright has no opinion.
+  const classifierFull =
+    classifierResult?.state === 'full' &&
+    effectivePreflightStatus !== 'success' &&
+    effectivePreflightStatus !== 'waitlist_only'
+
+  const classifierWaitlist =
+    classifierResult?.state === 'waitlist_available' &&
+    effectivePreflightStatus !== 'success' &&
+    effectivePreflightStatus !== 'full'
+
   // Stage 3 / Stage 6: single smart button config — drives the IDLE action button + helper text
   // isWaitlistScenario: class is full AND a waitlist button is visible → bot will join the waitlist.
   //   NOTE: effectivePreflightStatus === 'full' is excluded — that means "full, NO waitlist button"
   //   (e.g. "Closed - Full" only), where there's no waitlist to join.
   const isWaitlistScenario =
     effectivePreflightStatus === 'waitlist_only' ||
-    actionDetailVerdict      === 'waitlist_only'
+    actionDetailVerdict      === 'waitlist_only' ||
+    classifierWaitlist
 
   // Stage 6: class is completely full with no waitlist button visible.
   // Distinct from isWaitlistScenario — no action the bot can take here.
-  const isClassFull = effectivePreflightStatus === 'full'
+  const isClassFull = effectivePreflightStatus === 'full' || classifierFull
 
   // Stage 4: registration explicitly closed by YMCA (not just pre-window timing).
   // Distinct from pre-window 'not open yet' — the YMCA has ended sign-ups entirely.
@@ -2348,6 +2373,37 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                             {reason}
                           </p>
                         )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* ── Classifier availability row ───────────────────────────────
+                       Shows schedule-API availability state when the classifier has
+                       a non-trivial result that hasn't already been surfaced by the
+                       Playwright preflight (avoids duplicate messaging).
+                       Only shown in idle mode so it doesn't clutter running states. */}
+                  {execMode === 'idle' && classifierResult && classifierResult.state !== 'unknown' && (() => {
+                    // Don't show when Playwright has already confirmed the same signal.
+                    const st = classifierResult.state
+                    if (st === 'full'               && effectivePreflightStatus === 'full')          return null
+                    if (st === 'waitlist_available' && effectivePreflightStatus === 'waitlist_only') return null
+                    if (st === 'already_registered')                                                return null
+
+                    const [icon, textColor, label] =
+                      st === 'full'               ? ['✗', 'text-accent-red',   'Schedule: Class full']           :
+                      st === 'waitlist_available' ? ['!', 'text-accent-amber', 'Schedule: Waitlist only']        :
+                      st === 'not_found'          ? ['?', 'text-text-muted',   'Schedule: Class not found in cache'] :
+                      st === 'bookable'           ? ['✓', 'text-accent-green', classifierResult.openSpots != null ? `Schedule: ${classifierResult.openSpots} spot${classifierResult.openSpots === 1 ? '' : 's'} available` : 'Schedule: Class available'] :
+                      null
+
+                    if (!label) return null
+                    const fuzzyNote = classifierResult.isFuzzyMatch ? ' (fuzzy)' : ''
+                    return (
+                      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-divider/20 animate-fade-in-up">
+                        <span className={`text-[14px] w-4 text-center shrink-0 leading-none select-none ${textColor}`}>
+                          {icon}
+                        </span>
+                        <span className={`text-[13px] ${textColor}`}>{label}{fuzzyNote}</span>
                       </div>
                     )
                   })()}

@@ -4999,6 +4999,32 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'GET' && path === '/api/jobs') {
     json(getAllJobs());
 
+  } else if (req.method === 'GET' && path.startsWith('/api/jobs/') && path.endsWith('/classify')) {
+    // Stage 6: return classifier truth for a specific job.
+    // Reads from the schedule cache populated by Playwright response interception.
+    // Never launches Playwright — cache-only, responds in < 5 ms.
+    const idStr = path.slice('/api/jobs/'.length, -'/classify'.length);
+    const jobId = parseInt(idStr, 10);
+    if (isNaN(jobId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Invalid job ID' }));
+    }
+    const allJobs = getAllJobs();
+    const classifyJob = allJobs.find(j => j.id === jobId);
+    if (!classifyJob) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Job not found' }));
+    }
+    const { classifyClass } = require('../classifier/classTruth');
+    const result = classifyClass({
+      classTitle: classifyJob.class_title,
+      dayOfWeek:  classifyJob.day_of_week,
+      classTime:  classifyJob.class_time,
+      instructor: classifyJob.instructor,
+      targetDate: classifyJob.target_date,
+    });
+    json(result);
+
   } else if (req.method === 'GET' && path === '/api/state') {
     const rawJobs = getAllJobs();
     // Enrich every job with its own phase + bookingOpenMs (one getPhase call each).

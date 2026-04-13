@@ -1,4 +1,5 @@
 import type { Job, AppState, ScrapedClass, SessionStatus } from '../types'
+import type { ClassTruthResult } from './classTruth'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
 
@@ -387,4 +388,7 @@ export const api = {
 
   fetchReplayHistory: (jobId: number | string): Promise<{ runs: import('./replayEvent').ReplayRunMeta[] }> =>
     apiFetch(`/api/replay-history/${jobId}`).catch(() => ({ runs: [] })),
+
+  classifyJob: (id: number): Promise<ClassTruthResult> =>
+    apiFetch(`/api/jobs/${id}/classify`),
 }
