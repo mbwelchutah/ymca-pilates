@@ -569,14 +569,15 @@ export interface SmartButtonConfig {
 }
 
 export function resolveSmartButton(opts: {
-  cardState:         NowCardState
-  countdown:         string | null
-  bookingOpenMs:     number | null
-  nextWindow:        string | null
-  isWaitlistScenario?: boolean
-  isClassFull?:        boolean   // Stage 6: full = no waitlist button visible
+  cardState:            NowCardState
+  countdown:            string | null
+  bookingOpenMs:        number | null
+  nextWindow:           string | null
+  isWaitlistScenario?:    boolean
+  isClassFull?:           boolean   // Stage 6: full = no waitlist button visible
+  isRegistrationClosed?:  boolean   // Stage 4: YMCA has explicitly closed registration
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false } = opts
 
   switch (cardState) {
     case 'registered':
@@ -605,6 +606,10 @@ export function resolveSmartButton(opts: {
     case 'preflight_failed':
       return { label: 'Run Check Again',   actionType: 'arm',      helperText: "Last check didn't pass",           disabled: false, emphasis: 'primary-blue' }
     case 'registration_not_open': {
+      // Stage 4: YMCA has explicitly closed registration — no action available.
+      if (isRegistrationClosed) {
+        return { label: 'Registration Closed', actionType: 'none', helperText: null, disabled: true, emphasis: 'muted' }
+      }
       // Prefer absolute time ("opens at 10:35 AM") — more useful on mobile than
       // a raw countdown that requires mental math.  Fall back to countdown when
       // we have it but can't compute the absolute time, and to null when neither
@@ -1751,6 +1756,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Distinct from isWaitlistScenario — no action the bot can take here.
   const isClassFull = effectivePreflightStatus === 'full'
 
+  // Stage 4: registration explicitly closed by YMCA (not just pre-window timing).
+  // Distinct from pre-window 'not open yet' — the YMCA has ended sign-ups entirely.
+  const isRegistrationClosed = effectivePreflightStatus === 'closed'
+
   const smartButton: SmartButtonConfig = resolveSmartButton({
     cardState:    nowCardState,
     countdown,
@@ -1758,6 +1767,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
     isWaitlistScenario,
     isClassFull,
+    isRegistrationClosed,
   })
 
   // Secondary action state — drives the dynamic label + sheet contents.
@@ -2094,6 +2104,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                           // Virtual final step: armed → success; active only after
                           // all 4 real steps have completed so it progresses naturally
                           // in sequence rather than activating from the start.
+                          if (localArmed && isRegistrationClosed) return 'failed'  // closed = no path
                           if (localArmed) return 'success'
                           if (execMode === 'running_preflight' && execSteps['modal'] === 'success')
                             return 'running'
@@ -2105,11 +2116,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         return execSteps[step]
                       })()
 
-                      // 'confirmed' changes its label while actively being checked,
-                      // and also when the class is known to be full (waitlist path).
+                      // 'confirmed' label adapts to the actual booking path:
+                      //   closed        → "Registration is closed" (red ✗)
+                      //   full          → "Monitoring for an open spot" (green ✓ — bot will try)
+                      //   waitlist_only → "Waitlist path confirmed" (green ✓)
+                      //   default       → "Registration path confirmed"
                       const label =
                         step === 'confirmed' && status === 'running'
                           ? (isWaitlistScenario ? 'Confirming waitlist access…' : 'Confirming registration access…')
+                          : step === 'confirmed' && isRegistrationClosed
+                          ? 'Registration is closed'
+                          : step === 'confirmed' && isClassFull
+                          ? 'Monitoring for an open spot'
                           : step === 'confirmed' && isWaitlistScenario
                           ? 'Waitlist path confirmed'
                           : STEP_LABELS[step]
