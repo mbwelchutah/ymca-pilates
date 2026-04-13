@@ -552,6 +552,10 @@ async function runBookingJob(job, opts = {}) {
   let _lastBestScore   = 0;
   let _lastBestText    = '';
   let _lastSecondCard  = null;
+  // Populated by findTargetCard() when the matched row explicitly shows
+  // capacity state ('full' | 'waitlist') in the schedule-page text.
+  // Checked before attemptClickAndVerify() to bail early without clicking.
+  let _rowCapacityFromSchedule = null;
   let _lastSecondScore = 0;
   let _lastSecondText  = '';
   let _lastModalPreview = '';
@@ -1170,12 +1174,20 @@ async function runBookingJob(job, opts = {}) {
           secondRow.el.setAttribute('data-target-class-second', 'yes');
         }
 
+        // Detect capacity signals in the matched row text so the caller can
+        // bail early before clicking rather than timing out on a full card.
+        const matchedTxtLower = allRows[0].txt.toLowerCase();
+        const rowFull     = /\bfull\b/.test(matchedTxtLower);
+        const rowWaitlist = !rowFull && /\bwaitlist\b/.test(matchedTxtLower);
+
         return {
           matched:      allRows[0].txt,
           score:        allRows[0].score,
           reasons:      allRows[0].reasons,
           desc:         allRows[0].desc,
           visible:      allRows[0].visible,
+          rowFull,
+          rowWaitlist,
           secondMatched: secondRow && secondRow.score >= confidenceThreshold - 2 ? secondRow.txt : null,
           secondScore:   secondRow ? secondRow.score : null,
           allResults: allRows.slice(0, 15).map(r => ({
@@ -1217,6 +1229,11 @@ async function runBookingJob(job, opts = {}) {
       }
 
       // Update side-channel closure vars for the second-best fallback
+      _rowCapacityFromSchedule = result.rowFull    ? 'full'     :
+                                 result.rowWaitlist ? 'waitlist' : null;
+      if (_rowCapacityFromSchedule) {
+        console.log(`[row-capacity] Matched row shows "${_rowCapacityFromSchedule}" in schedule text — will bail before click`);
+      }
       _lastBestScore   = result.score;
       _lastBestText    = result.matched;
       _lastSecondScore = result.secondScore || 0;
@@ -1621,7 +1638,19 @@ async function runBookingJob(job, opts = {}) {
           console.log(`⚠️ [${candidateLabel}] scrollIntoViewIfNeeded timed out:`, scrollErr.message.split('\n')[0]);
         }
         await page.waitForTimeout(300);
-        console.log(`Card visible (${candidateLabel}):`, await card.isVisible(), '| box:', JSON.stringify(await card.boundingBox()));
+        // Use 5s timeouts: Bubble.io may re-render and strip the data-target-class
+        // attribute between findTargetCard()'s page.evaluate() and this locator call.
+        // A 5s timeout caps the hang at 5s and surfaces a clear error rather than
+        // silently blocking for 30s.
+        const [isVis, box] = await Promise.all([
+          card.isVisible({ timeout: 5000 }).catch(() => false),
+          card.boundingBox({ timeout: 5000 }).catch(() => null),
+        ]);
+        console.log(`Card visible (${candidateLabel}):`, isVis, '| box:', JSON.stringify(box));
+        if (!isVis && !box) {
+          // Element was detached — Bubble re-rendered between findTargetCard() and here.
+          return { ok: false, failMsg: 'Card element detached after Bubble.io DOM re-render (attribute lost)', reasonTag: 'error', recorded: false };
+        }
 
         // Step 1: prefer button / [role="button"] / <a> inside the card
         const clickable    = card.locator("button, [role='button'], a").first();
@@ -1818,6 +1847,35 @@ async function runBookingJob(job, opts = {}) {
     //   - Instructor mismatch or unexpected exception → error
     //     (something unexpected happened that warrants investigation)
     const isTimeMismatch = r => r.reasonTag === 'time' || r.reasonTag === 'time-instructor';
+
+    // Row-capacity bail: if the schedule row already showed "full" or "waitlist"
+    // in its text content, clicking the card will either time out (full cards
+    // have no interactive register button) or open a modal we cannot act on.
+    // Return the correct status immediately rather than hanging for 30 s.
+    if (_rowCapacityFromSchedule === 'full') {
+      console.log('[row-capacity] Bailing out before click — schedule row shows class is full');
+      await captureFailure('action', 'class_full');
+      return logRunSummary({
+        status: 'full',
+        message: 'Class is full (schedule row indicator — no register button present)',
+        screenshotPath,
+        phase:    'action',
+        reason:   'class_full',
+        category: 'availability',
+        label:    'Class full',
+      });
+    }
+    if (_rowCapacityFromSchedule === 'waitlist') {
+      console.log('[row-capacity] Bailing out before click — schedule row shows waitlist only');
+      return logRunSummary({
+        status:   'waitlist_only',
+        message:  'Class is full — waitlist shown on schedule row',
+        screenshotPath,
+        phase:    'action',
+        reason:   'class_full',
+        category: 'availability',
+      });
+    }
 
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
 
@@ -2295,7 +2353,8 @@ async function runBookingJob(job, opts = {}) {
             console.log('⚠️ Retry scrollIntoViewIfNeeded timed out:', scrollErr.message.split('\n')[0]);
           }
           await page.waitForTimeout(300);
-          console.log('Retry card visible:', await targetCard.isVisible(), '| box:', JSON.stringify(await targetCard.boundingBox()));
+          const retryBox = await targetCard.boundingBox({ timeout: 5000 }).catch(() => null);
+          console.log('Retry card visible:', await targetCard.isVisible({ timeout: 5000 }).catch(() => false), '| box:', JSON.stringify(retryBox));
           const clickableRetry = targetCard.locator("button, a, [role='button'], [tabindex='0']").first();
           const hasClickableRetry = (await clickableRetry.count()) > 0;
           if (DEBUG_HIGHLIGHT) {
