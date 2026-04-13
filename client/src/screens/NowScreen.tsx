@@ -576,8 +576,9 @@ export function resolveSmartButton(opts: {
   isWaitlistScenario?:    boolean
   isClassFull?:           boolean   // Stage 6: full = no waitlist button visible
   isRegistrationClosed?:  boolean   // Stage 4: YMCA has explicitly closed registration
+  isAlreadyRegistered?:   boolean   // Stage 5: cancel-only DOM — user appears already registered
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false, isAlreadyRegistered = false } = opts
 
   switch (cardState) {
     case 'registered':
@@ -606,6 +607,11 @@ export function resolveSmartButton(opts: {
     case 'preflight_failed':
       return { label: 'Run Check Again',   actionType: 'arm',      helperText: "Last check didn't pass",           disabled: false, emphasis: 'primary-blue' }
     case 'registration_not_open': {
+      // Stage 5: DOM shows only a cancel button — user appears already registered.
+      // Suppress "Get Spot" entirely; show a settled, non-actionable label.
+      if (isAlreadyRegistered) {
+        return { label: 'Already Registered', actionType: 'none', helperText: null, disabled: true, emphasis: 'muted' }
+      }
       // Stage 4: YMCA has explicitly closed registration — no action available.
       if (isRegistrationClosed) {
         return { label: 'Registration Closed', actionType: 'none', helperText: null, disabled: true, emphasis: 'muted' }
@@ -803,6 +809,16 @@ export function resolveConfidenceSummary(opts: {
       level:  'very_likely',
       label:  'Very likely to succeed',
       reason: 'Session, class, and registration button all confirmed.',
+    }
+  }
+
+  // Stage 6: nothing has been checked yet — no preflight, no session ping, no discovery.
+  // Don't claim "Core checks passed" when no checks have actually run.
+  if (compositeStatus === 'COMPOSITE_NOT_TESTED') {
+    return {
+      level:  'needs_attention',
+      label:  'Not yet checked',
+      reason: 'Run a check before the window opens to confirm everything is set up.',
     }
   }
 
@@ -1760,6 +1776,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Distinct from pre-window 'not open yet' — the YMCA has ended sign-ups entirely.
   const isRegistrationClosed = effectivePreflightStatus === 'closed'
 
+  // Stage 5: DOM shows cancel-only — user appears registered outside this bot.
+  // DB hasn't recorded the booking (e.g. manual registration). Suppress "Get Spot".
+  const isAlreadyRegistered = actionDetailVerdict === 'cancel_only'
+
+  // Stage 6: no preflight or session data exists — nothing has been checked yet.
+  // Prevents "Core checks passed" claim when no checks have actually run.
+  const isNotYetChecked = composite.status === 'COMPOSITE_NOT_TESTED'
+
   const smartButton: SmartButtonConfig = resolveSmartButton({
     cardState:    nowCardState,
     countdown,
@@ -1768,6 +1792,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     isWaitlistScenario,
     isClassFull,
     isRegistrationClosed,
+    isAlreadyRegistered,
   })
 
   // Secondary action state — drives the dynamic label + sheet contents.
@@ -2105,6 +2130,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                           // all 4 real steps have completed so it progresses naturally
                           // in sequence rather than activating from the start.
                           if (localArmed && isRegistrationClosed) return 'failed'  // closed = no path
+                          if (localArmed && isNotYetChecked)      return 'pending' // never checked → not confirmed
                           if (localArmed) return 'success'
                           if (execMode === 'running_preflight' && execSteps['modal'] === 'success')
                             return 'running'
@@ -2117,13 +2143,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                       })()
 
                       // 'confirmed' label adapts to the actual booking path:
-                      //   closed        → "Registration is closed" (red ✗)
-                      //   full          → "Monitoring for an open spot" (green ✓ — bot will try)
-                      //   waitlist_only → "Waitlist path confirmed" (green ✓)
-                      //   default       → "Registration path confirmed"
+                      //   not_yet_checked → "Awaiting first check" (gray · — nothing confirmed)
+                      //   closed          → "Registration is closed" (red ✗)
+                      //   full            → "Monitoring for an open spot" (green ✓ — bot will try)
+                      //   waitlist_only   → "Waitlist path confirmed" (green ✓)
+                      //   default         → "Registration path confirmed"
                       const label =
                         step === 'confirmed' && status === 'running'
                           ? (isWaitlistScenario ? 'Confirming waitlist access…' : 'Confirming registration access…')
+                          : step === 'confirmed' && isNotYetChecked
+                          ? 'Awaiting first check'
                           : step === 'confirmed' && isRegistrationClosed
                           ? 'Registration is closed'
                           : step === 'confirmed' && isClassFull
