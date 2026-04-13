@@ -764,13 +764,13 @@ export function resolveConfidenceSummary(opts: {
       return {
         level:  'very_likely',
         label:  'Very likely to succeed',
-        reason: 'Session, class, and registration link are all confirmed. Waiting for the window to open.',
+        reason: 'Session, class, and registration button all confirmed.',
       }
     }
     return {
       level:  'likely',
       label:  'Likely to succeed',
-      reason: 'Core checks passed — will register as soon as the window opens.',
+      reason: 'Core checks passed.',
     }
   }
 
@@ -797,7 +797,7 @@ export function resolveConfidenceSummary(opts: {
     return {
       level:  'very_likely',
       label:  'Very likely to succeed',
-      reason: 'Session, class, and registration link are all confirmed.',
+      reason: 'Session, class, and registration button all confirmed.',
     }
   }
 
@@ -805,7 +805,7 @@ export function resolveConfidenceSummary(opts: {
   return {
     level:  'likely',
     label:  'Likely to succeed',
-    reason: 'Core checks passed — will register when the window opens.',
+    reason: 'Core checks passed.',
   }
 }
 
@@ -1785,14 +1785,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     switch (secondaryAction) {
       case 'check':
         return [
-          { label: 'Run Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
-          { label: 'Register Now',            sub: 'Attempt immediate registration',              handler: handleNowBook       },
+          { label: 'Run Registration Check', sub: 'Verify session, class, and registration', handler: handleNowPreflight },
+          { label: 'Register Now',            sub: 'Attempt immediate registration',         handler: handleNowBook       },
           { label: 'Auto-register',           sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
         ]
       case 'fix':
         return [
-          { label: 'Run Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
-          { label: 'Retry Registration',     sub: 'Attempt registration again',                   handler: handleNowBook       },
+          { label: 'Run Registration Check', sub: 'Verify session, class, and registration', handler: handleNowPreflight },
+          { label: 'Retry Registration',     sub: 'Attempt registration again',              handler: handleNowBook       },
           { label: 'Auto-register',          sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
         ]
       case 'ready':
@@ -1802,7 +1802,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         return [
           { label: 'Register Now',       sub: 'Attempt immediate registration',              handler: handleNowBook       },
           { label: 'Auto-register',      sub: 'Set up auto-registration for when the window opens', handler: handleNowPreflight },
-          { label: 'Registration Check', sub: 'Verify session, class, and registration link', handler: handleNowPreflight },
+          { label: 'Registration Check', sub: 'Verify session, class, and registration',     handler: handleNowPreflight },
         ]
     }
   })()
