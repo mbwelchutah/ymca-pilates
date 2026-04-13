@@ -87,8 +87,9 @@ function classifyFailure(botResult) {
 
   // ── Action not open yet ────────────────────────────────────────────────────
   if (
-    status === 'not_open'       ||
-    reason === 'not_open'       ||
+    status === 'not_open'            ||
+    status === 'found_not_open_yet'  ||  // modal reachable, session valid, window not open yet
+    reason === 'not_open'            ||
     reason === 'action_not_open'
   ) return FAILURE_TYPES.ACTION_NOT_OPEN;
 
