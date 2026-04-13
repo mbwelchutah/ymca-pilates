@@ -16,6 +16,7 @@ const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
 const { updateAuthState } = require('./auth-state');
 const { saveCookies, pingSessionHttp } = require('./session-ping');
 const replayStore = require('./replay-store');
+const { mergeAndSaveEntries } = require('../classifier/scheduleCache');
 
 // ── Session-file helpers ──────────────────────────────────────────────────────
 // Write to familyworks-session.json from the booking/preflight pipeline so that
@@ -745,9 +746,71 @@ async function runBookingJob(job, opts = {}) {
     // Step 2: Go to schedule and filter by the job's instructor
     advance(_state, 'NAVIGATION');
     console.log('Navigating to schedule...');
+
+    // Stage 2: Capture API responses (eventinstance) during schedule page load.
+    // The Bubble.io JS makes authenticated API calls as the page renders.
+    // We intercept those responses and feed them into the schedule cache so the
+    // classifier can determine availability without an extra browser launch.
+    const _apiCapture = [];
+    const _captureResponse = async (resp) => {
+      try {
+        if (!resp.url().includes('my.familyworks.app/api/1.1/')) return;
+        if (resp.status() >= 400) return;
+        const body = await resp.json().catch(() => null);
+        const results = body?.response?.results;
+        if (!Array.isArray(results) || results.length === 0) return;
+        const first = results[0];
+        // eventinstance shape: has start_date_date + title_text
+        if (first.start_date_date && (first.title_text || first.type_option_event_type)) {
+          _apiCapture.push(...results);
+        }
+      } catch { /* non-blocking — ignore any parse errors */ }
+    };
+    page.on('response', _captureResponse);
+
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000); // waitForFunction below is the real gate
+
+    // Save captured API entries to cache (best-effort — never throws).
+    page.off('response', _captureResponse);
+    if (_apiCapture.length > 0) {
+      try {
+        const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const TZ = 'America/Los_Angeles';
+        const entries = _apiCapture
+          .filter(r => r.start_date_date && r.title_text)
+          .map(r => {
+            const d    = new Date(r.start_date_date);
+            const cap  = (r.current_capacity__text__text || '').replace(/<[^>]+>/g, '');
+            const m    = cap.match(/(\d+)\/(\d+)/);
+            const cur  = m ? parseInt(m[1], 10) : (r.current_capacity_number ?? null);
+            const tot  = m ? parseInt(m[2], 10) : (r.max_capacity_number ?? null);
+            return {
+              title:         r.title_text,
+              dayOfWeek:     DAY_NAMES[d.getDay()],
+              dateISO:       d.toLocaleDateString('en-CA', { timeZone: TZ }),
+              timeLocal:     d.toLocaleTimeString('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: true }),
+              instructor:    null,
+              location:      null,
+              openSpots:     tot != null && cur != null ? tot - cur : null,
+              totalCapacity: tot,
+              isFull:        tot != null && cur != null && cur >= tot,
+              isWaitlist:    (r.waitlist_number_number ?? 0) > 0,
+              isCancelled:   r.cancelled__boolean === true,
+              isOpen:        r.isopen_boolean === true,
+              capturedAt:    new Date().toISOString(),
+            };
+          });
+        if (entries.length > 0) {
+          mergeAndSaveEntries(entries);
+          console.log(`[schedule-cache] Captured ${entries.length} class entries from API responses.`);
+        }
+      } catch (cacheErr) {
+        console.warn('[schedule-cache] Failed to save captured entries:', cacheErr.message);
+      }
+    }
+
     console.log('Schedule loaded. URL:', page.url());
 
     // Auth check: if the schedule page is asking us to log in, session didn't carry over

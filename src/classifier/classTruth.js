@@ -75,10 +75,93 @@ function makeResult(state, partial = {}) {
 //
 // Returns Promise<ClassTruthResult>
 //
-// Stage 1: returns UNKNOWN (stub) — API fetch + classification added in Stages 2–3.
+// Stages 2+3: reads from the schedule cache populated by Playwright API
+// response interception and maps entry booleans to normalized ClassStates.
+// Returns UNKNOWN when cache is missing/stale; NOT_FOUND when no entry matches.
 async function classifyClass(job) {
-  return makeResult(CLASS_STATES.UNKNOWN, {
-    reason: 'Classifier pending API integration (Stage 2)',
+  const { findEntry, isCacheStale, loadAll } = require('./scheduleCache');
+
+  const raw   = loadAll();
+  const entry = findEntry(job);
+
+  if (!raw) {
+    return makeResult(CLASS_STATES.UNKNOWN, {
+      reason: 'Schedule cache does not exist — run a preflight to populate it',
+    });
+  }
+
+  if (isCacheStale(raw)) {
+    return makeResult(CLASS_STATES.UNKNOWN, {
+      reason: 'Schedule cache is stale — run a preflight to refresh',
+      fetchedAt: raw.savedAt,
+    });
+  }
+
+  if (!entry) {
+    return makeResult(CLASS_STATES.NOT_FOUND, {
+      reason: `No schedule entry matched "${job.classTitle}" on ${job.targetDate ?? job.dayOfWeek}`,
+      fetchedAt: raw.savedAt,
+    });
+  }
+
+  // ── Stage 3: map entry booleans → normalized ClassState ──────────────────
+
+  const shared = {
+    matchedClassName: entry.title,
+    matchedTime:      entry.timeLocal,
+    matchedDate:      entry.dateISO,
+    openSpots:        entry.openSpots,
+    totalCapacity:    entry.totalCapacity,
+    fetchedAt:        entry.capturedAt,
+    matchType:        'exact',
+    confidence:       90,
+  };
+
+  if (entry.isCancelled) {
+    return makeResult(CLASS_STATES.NOT_FOUND, {
+      ...shared,
+      reason: 'Class is cancelled',
+    });
+  }
+
+  if (!entry.isOpen) {
+    // Not open for registration yet — still classifiable as "bookable" for
+    // planning purposes (it exists and should open before booking window).
+    return makeResult(CLASS_STATES.BOOKABLE, {
+      ...shared,
+      reason: 'Class exists but registration is not yet open',
+    });
+  }
+
+  if (entry.isFull) {
+    if (entry.isWaitlist) {
+      return makeResult(CLASS_STATES.WAITLIST_AVAILABLE, {
+        ...shared,
+        openSpots: 0,
+        reason: 'Class is full — waitlist is available',
+      });
+    }
+    return makeResult(CLASS_STATES.FULL, {
+      ...shared,
+      openSpots: 0,
+      reason: 'Class is full with no waitlist',
+    });
+  }
+
+  // openSpots may be null when the API didn't return capacity detail.
+  if (entry.openSpots != null && entry.openSpots <= 0) {
+    return makeResult(CLASS_STATES.FULL, {
+      ...shared,
+      openSpots: 0,
+      reason: 'No open spots remaining',
+    });
+  }
+
+  return makeResult(CLASS_STATES.BOOKABLE, {
+    ...shared,
+    reason: entry.openSpots != null
+      ? `${entry.openSpots} spot${entry.openSpots === 1 ? '' : 's'} available`
+      : 'Class appears open for registration',
   });
 }
 
