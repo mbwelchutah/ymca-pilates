@@ -311,7 +311,7 @@ export const api = {
       modalPreview:   string | null       // text snippet of modal content
     } | null
     actionDetail: {
-      verdict:          'ready' | 'waitlist_only' | 'login_required' | 'full' | 'not_open_yet' | 'unknown'
+      verdict:          'ready' | 'waitlist_only' | 'cancel_only' | 'not_available' | 'login_required' | 'not_open_yet' | 'unknown'
       actionState:      string | null     // raw e.g. 'REGISTER_AVAILABLE', 'WAITLIST_AVAILABLE'
       buttonsVisible:   string[] | null   // all button labels seen in the modal
       registerStrategy: string | null     // how the Register button is identified

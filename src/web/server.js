@@ -4005,11 +4005,11 @@ const server = http.createServer((req, res) => {
            || rawActionState === 'RESERVE_AVAILABLE'   ? 'ready'
             : rawActionState === 'WAITLIST_AVAILABLE'  ? 'waitlist_only'
             : rawActionState === 'LOGIN_REQUIRED'      ? 'login_required'
-            : rawActionState === 'CANCEL_ONLY'         ? 'full'
+            : rawActionState === 'CANCEL_ONLY'         ? 'cancel_only'
             : rawActionState === 'UNKNOWN_ACTION'      ? 'not_open_yet'
             // No detection evidence — fall back to resolution event failureType
             : actionResolveEvt?.failureType === 'WAITLIST_ONLY'    ? 'waitlist_only'
-            : actionResolveEvt?.failureType === 'ACTION_NOT_FOUND' ? 'full'
+            : actionResolveEvt?.failureType === 'ACTION_NOT_FOUND' ? 'not_available'
             : actionResolveEvt && !actionResolveEvt.failureType    ? 'ready'
             : 'unknown';
 

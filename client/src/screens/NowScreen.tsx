@@ -436,11 +436,12 @@ export function deriveNowCardState(opts: {
   effectivePreflightStatus: string | null
   localArmed:               boolean
   lastFailedAction:         'registration' | 'preflight' | null
-  domActionState:           string | null
+  domActionState:           string | null   // bgReadiness.action normalized: 'ready'|'not_open'|'waitlist'|'unknown'
+  actionDetailVerdict:      string | null   // lastPreflightSnapshot.actionDetail.verdict: 'ready'|'waitlist_only'|'cancel_only'|'not_available'|…
 }): NowCardState {
-  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction, domActionState } = opts
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction, domActionState, actionDetailVerdict } = opts
 
-  // 1. Cycle outcome already determined
+  // 1. Cycle outcome already determined (DB source of truth)
   if (isBooked && lastResult === 'waitlist') return 'waitlisted'
   if (isBooked)                              return 'registered'
 
@@ -457,14 +458,26 @@ export function deriveNowCardState(opts: {
   if (lastFailedAction === 'preflight')    return 'preflight_failed'
 
   // 5. DOM action state (most recent modal observation) — used as availability truth.
-  //    'ready'        = Register button visible in DOM → spots available
-  //    'waitlist_only'= Waitlist button visible in DOM → class full, waitlist open
-  //    Other values (full, login_required, not_open_yet, unknown) fall through to
-  //    planning signals below.
-  if (domActionState === 'waitlist_only') return 'registration_open_full'
+  //
+  //    actionDetailVerdict (from lastPreflightSnapshot.actionDetail.verdict):
+  //      'cancel_only'   = Cancel button was the only action visible → user is likely already
+  //                        registered. Do NOT map this to any "open" state — let DB (step 1)
+  //                        serve as the definitive registered signal once it propagates.
+  //                        Safe fallback: registration_not_open (no actionable path shown).
+  //      'waitlist_only' = Waitlist button visible via preflight → class full, waitlist open.
+  //      'not_available' = No actionable button found (not_available/ACTION_NOT_FOUND) →
+  //                        unknown state; cannot confirm class is full. Fall through.
+  //
+  //    domActionState (from bgReadiness.action, normalised readiness signal):
+  //      'ready'    = Register button visible in live DOM → spots available
+  //      'waitlist' = Waitlist button visible in live DOM → class full, waitlist open
+  //      Others ('not_open', 'unknown') fall through to planning signals below.
+  if (actionDetailVerdict === 'cancel_only') return 'registration_not_open'
+  if (actionDetailVerdict === 'waitlist_only') return 'registration_open_full'
+  if (domActionState === 'waitlist') return 'registration_open_full'
   if (domActionState === 'ready' && phase === 'sniper') return 'registration_open_with_spots'
 
-  // 6. Planning signals — class confirmed full via preflight
+  // 6. Planning signals — class confirmed full via preflight overall status
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
 
   // 7. Registration window is open — assume spots available unless DOM/preflight says otherwise
@@ -479,12 +492,13 @@ export function deriveNowCardState(opts: {
 // for planning and action routing. Used by resolveNowState and as documentation
 // for the decision logic below.
 //
-//   before_open   — registration window has not opened yet; arm auto-registration
-//   register_now  — spots available; attempt immediate registration
-//   join_waitlist — class is full; waitlist is open
-//   unavailable   — window closed or no action possible
+//   before_open       — registration window has not opened yet; arm auto-registration
+//   register_now      — spots available; attempt immediate registration
+//   join_waitlist     — class is full; waitlist is open
+//   already_registered — cancel button visible in DOM; user appears already registered
+//   unavailable       — window closed or no actionable path
 
-export type NowState = 'before_open' | 'register_now' | 'join_waitlist' | 'unavailable'
+export type NowState = 'before_open' | 'register_now' | 'join_waitlist' | 'already_registered' | 'unavailable'
 
 // Resolver: derives NowState from time, availability signals, and DOM observation.
 //
@@ -498,15 +512,27 @@ export type NowState = 'before_open' | 'register_now' | 'join_waitlist' | 'unava
 // executing — DOM state here is for display intent, not click routing.
 export function resolveNowState(opts: {
   phase:                    Phase
-  domActionState:           string | null
+  domActionState:           string | null   // bgReadiness.action normalized: 'ready'|'not_open'|'waitlist'|'unknown'
+  actionDetailVerdict:      string | null   // actionDetail.verdict: 'ready'|'waitlist_only'|'cancel_only'|'not_available'|…
   effectivePreflightStatus: string | null
 }): NowState {
-  const { phase, domActionState, effectivePreflightStatus } = opts
+  const { phase, domActionState, actionDetailVerdict, effectivePreflightStatus } = opts
 
-  // DOM state as final availability truth when definitive
-  if (domActionState === 'ready')         return 'register_now'
-  if (domActionState === 'waitlist_only') return 'join_waitlist'
-  if (domActionState === 'full')          return 'unavailable'
+  // Cancel button visible in DOM → user is already registered (most likely).
+  // This is higher-confidence than phase-based guessing; check before open/closed logic.
+  if (actionDetailVerdict === 'cancel_only') return 'already_registered'
+
+  // DOM normalized readiness as availability truth (bgReadiness.action)
+  //   'ready'    = Register button visible → spots available
+  //   'waitlist' = Waitlist button visible → class full, waitlist open
+  //   Others fall through to planning signals
+  if (domActionState === 'ready')    return 'register_now'
+  if (domActionState === 'waitlist') return 'join_waitlist'
+
+  // actionDetail verdict provides richer signal when bgReadiness is stale
+  if (actionDetailVerdict === 'ready')        return 'register_now'
+  if (actionDetailVerdict === 'waitlist_only') return 'join_waitlist'
+  if (actionDetailVerdict === 'not_available' || actionDetailVerdict === 'login_required') return 'unavailable'
 
   // Fall back to planning signals
   if (phase === 'late') return 'unavailable'
@@ -1589,6 +1615,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // ── Stage 2: NowCardState — drives action buttons ──────────────────────────
   // Computed from existing signals; no new API calls required.
   // Only used when execMode === 'idle' (running/done states have their own UI).
+  // Richer per-preflight action verdict (from lastPreflightSnapshot.actionDetail.verdict).
+  // Unlike the normalized bgReadiness.action, this preserves 'cancel_only', 'waitlist_only',
+  // 'not_available', etc. — used for precise state interpretation without over-claiming.
+  const actionDetailVerdict: string | null = isReadinessForSelectedJob
+    ? (sniperRunState?.lastPreflightSnapshot?.actionDetail?.verdict ?? null)
+    : null
+
   const nowCardState: NowCardState = deriveNowCardState({
     isBooked,
     lastResult:               job?.last_result ?? null,
@@ -1598,6 +1631,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     localArmed,
     lastFailedAction,
     domActionState:           isReadinessForSelectedJob ? (bgReadiness?.action ?? null) : null,
+    actionDetailVerdict,
   })
 
   // Stage 3: single smart button config — drives the IDLE action button + helper text
@@ -1761,6 +1795,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </span>
               </div>
             )
+          ) : actionDetailVerdict === 'cancel_only' ? (
+            // DOM shows only a cancel button — most likely already registered outside this bot.
+            // DB hasn't recorded the booking (e.g. manual registration). Show a soft confirmation
+            // without claiming the class is full or that registration is unavailable.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="green" />
+              <span className="text-[17px] font-semibold text-accent-green">You're already registered</span>
+            </div>
           ) : isInactive ? (
             // Scheduling off — flat, no surface box
             <div className="py-0.5">
