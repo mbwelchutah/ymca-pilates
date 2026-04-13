@@ -1851,6 +1851,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="blue" />
               <span className="text-[16px] font-semibold text-accent-blue">Registration is open</span>
             </div>
+          ) : phase === 'late' && effectivePreflightStatus === 'not_found' ? (
+            // Class wasn't found on the schedule — window is past but the mismatch
+            // deserves a more specific message than "Registration has closed".
+            // User may need to update the class name or check the YMCA schedule.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] text-text-secondary">Class not found on schedule</span>
+            </div>
           ) : phase === 'late' ? (
             // Truly closed — no actionable path remaining
             <div className="flex items-center gap-2.5 py-0.5">
@@ -2363,15 +2371,41 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         )}
 
         {/* ── Stage 5: Last activity summary — single line, minimal weight.
-             Only milestone events shown; setup-phase steps live in the checklist. */}
-        {sniperRunState && sniperRunState.events.length > 0 && (() => {
+             Priority: preflight snapshot (when more recent) > latest milestone event.
+             This keeps the checklist and "Last activity" in sync — both reflect the
+             same run, so they never show contradictory failure reasons. */}
+        {sniperRunState && (() => {
+          const snap    = sniperRunState.lastPreflightSnapshot
           const entries = [...sniperRunState.events].reverse().filter(isMilestoneEvent)
-          if (entries.length === 0) return null
-          const latest    = entries[0]
-          const label     = friendlyEventLabel(latest)
-          const isFailure = !!latest.failureType
-          const timeStr   = (() => {
-            try { return new Date(latest.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+          const latest  = entries[0]
+
+          // Use the snapshot when it's more recent than the latest milestone event.
+          // ISO timestamps sort lexicographically so string comparison is valid.
+          const snapIsNewer = snap?.checkedAt && (!latest || snap.checkedAt > latest.timestamp)
+
+          // Resolve label, failure flag, and timestamp from whichever source is newer.
+          const resolved: { label: string; isFailure: boolean; ts: string } | null = (() => {
+            if (snapIsNewer && snap) {
+              const s = snap.status
+              const label =
+                s === 'success'           ? 'Ready to register'             :
+                s === 'waitlist_only'     ? 'Class is full — waitlist open' :
+                s === 'found_not_open_yet'? 'Registration window not open'  :
+                s === 'not_found'         ? 'Class not found on schedule'   :
+                                            'Registration check failed'
+              const isFailure = s !== 'success' && s !== 'waitlist_only' && s !== 'found_not_open_yet'
+              return { label, isFailure, ts: snap.checkedAt }
+            }
+            if (latest) {
+              return { label: friendlyEventLabel(latest), isFailure: !!latest.failureType, ts: latest.timestamp }
+            }
+            return null
+          })()
+          if (!resolved) return null
+          const { label, isFailure, ts: activityTs } = resolved
+
+          const timeStr = (() => {
+            try { return new Date(activityTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
             catch { return null }
           })()
           return (
