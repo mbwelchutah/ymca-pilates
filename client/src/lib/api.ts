@@ -28,7 +28,7 @@ export interface SniperRunState {
     authDetail:      { verdict: string; provider: string | null; detail: string | null } | null
     discoveryDetail: { found: boolean; matched: string | null; score: string | null; signals: string | null; second: string | null; nearMisses: string | null } | null
     modalDetail:     { verdict: string; detail: string | null; screenshot: string | null; buttonsVisible: string[] | null; modalPreview: string | null } | null
-    actionDetail:    { verdict: string; actionState: string | null; buttonsVisible: string[] | null; registerStrategy: string | null; waitlistStrategy: string | null; detail: string | null } | null
+    actionDetail:    { verdict: string; actionState: string | null; actionStateClassified: string | null; buttonsVisible: string[] | null; registerStrategy: string | null; waitlistStrategy: string | null; detail: string | null } | null
   } | null
 }
 
@@ -311,12 +311,13 @@ export const api = {
       modalPreview:   string | null       // text snippet of modal content
     } | null
     actionDetail: {
-      verdict:          'ready' | 'waitlist_only' | 'cancel_only' | 'not_available' | 'login_required' | 'not_open_yet' | 'unknown'
-      actionState:      string | null     // raw e.g. 'REGISTER_AVAILABLE', 'WAITLIST_AVAILABLE'
-      buttonsVisible:   string[] | null   // all button labels seen in the modal
-      registerStrategy: string | null     // how the Register button is identified
-      waitlistStrategy: string | null     // how the Waitlist button is identified
-      detail:           string | null     // human-readable resolution message
+      verdict:               'ready' | 'waitlist_only' | 'cancel_only' | 'not_available' | 'login_required' | 'not_open_yet' | 'unknown'
+      actionState:           string | null     // raw e.g. 'REGISTER_AVAILABLE', 'WAITLIST_AVAILABLE'
+      actionStateClassified: string | null     // Stage 6/7: classifier result: bookable/waitlist_available/full/closed/already_registered/unknown
+      buttonsVisible:        string[] | null   // all button labels seen in the modal
+      registerStrategy:      string | null     // how the Register button is identified
+      waitlistStrategy:      string | null     // how the Waitlist button is identified
+      detail:                string | null     // human-readable resolution message
     } | null
     discoveryDetail: {
       found:      boolean

@@ -167,6 +167,8 @@ const RESULT_LABELS: Record<string, string> = {
   dry_run:            'Simulated',
   found_not_open_yet: 'Not Open Yet',
   not_found:          'Class Not Found',
+  full:               'Class Full',        // Stage 7: explicit non-error outcome
+  closed:             'Registration Closed', // Stage 7: explicit non-error outcome
   failed:             'Failed',
   error:              'Error',
   skipped:            'Skipped',
@@ -426,16 +428,35 @@ function KVRow({ label, value, mono = false }: { label: string; value: string; m
   )
 }
 
+// Stage 7: verdict badge colours
+//   green  — ready / found / reachable
+//   amber  — informational (full, closed, waitlist, not_open_yet, not_available)
+//   red    — hard error (login_required treated as blockage; anything else unknown)
+const VERDICT_LABELS: Record<string, string> = {
+  ready:        'ready',
+  found:        'found',
+  reachable:    'reachable',
+  waitlist_only:'waitlist only',
+  not_open_yet: 'not open yet',
+  not_available:'not available',
+  full:         'class full',
+  closed:       'closed',
+  cancel_only:  'already registered',
+  login_required:'login required',
+  unknown:      'unknown',
+}
 function CheckNowVerdictBadge({ verdict }: { verdict: string }) {
-  const color =
-    verdict === 'ready' || verdict === 'found' || verdict === 'reachable'
-      ? 'text-accent-green bg-accent-green/10'
-      : verdict === 'waitlist_only' || verdict === 'login_required'
-      ? 'text-accent-amber bg-accent-amber/10'
-      : 'text-accent-red bg-accent-red/10'
+  const isGreen  = verdict === 'ready' || verdict === 'found' || verdict === 'reachable'
+  const isAmber  = verdict === 'waitlist_only' || verdict === 'not_open_yet'
+                || verdict === 'not_available'  || verdict === 'full'
+                || verdict === 'closed'          || verdict === 'cancel_only'
+  const color = isGreen  ? 'text-accent-green bg-accent-green/10'
+              : isAmber  ? 'text-accent-amber bg-accent-amber/10'
+              :             'text-accent-red bg-accent-red/10'
+  const display = VERDICT_LABELS[verdict] ?? verdict.replace(/_/g, ' ')
   return (
     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${color}`}>
-      {verdict.replace(/_/g, ' ')}
+      {display}
     </span>
   )
 }
@@ -563,16 +584,26 @@ function LastCheckNowSection({ sniperRunState }: { sniperRunState: SniperRunStat
           <CheckNowPhaseRow
             id="action" phase="Action"
             verdict={actionDetail.verdict}
-            summary={
-              actionDetail.actionState
-                ? actionDetail.actionState.replace(/_/g, ' ').toLowerCase()
-                : (actionDetail.detail ?? '').slice(0, 65)
-            }
+            summary={(() => {
+              // Stage 7: prefer classifier label over raw "UNKNOWN_ACTION" for full/closed
+              const classified = actionDetail.actionStateClassified
+              if (classified === 'full')             return 'class full — no spots or waitlist'
+              if (classified === 'closed')           return 'registration closed by YMCA'
+              if (classified === 'waitlist_available') return 'waitlist available'
+              if (classified === 'already_registered') return 'already registered (cancel visible)'
+              if (actionDetail.actionState && actionDetail.actionState !== 'UNKNOWN_ACTION')
+                return actionDetail.actionState.replace(/_/g, ' ').toLowerCase()
+              return (actionDetail.detail ?? '').slice(0, 65)
+            })()}
             expanded={expandedPhase === 'action'}
             onToggle={() => toggle('action')}
           >
-            {actionDetail.detail          && <KVRow label="Result"       value={actionDetail.detail} />}
-            {actionDetail.actionState     && <KVRow label="State"        value={actionDetail.actionState} mono />}
+            {actionDetail.detail               && <KVRow label="Result"      value={actionDetail.detail} />}
+            {/* Stage 7: classifier result — more readable than raw actionState */}
+            {actionDetail.actionStateClassified && (
+              <KVRow label="Classified as"  value={actionDetail.actionStateClassified.replace(/_/g, ' ')} />
+            )}
+            {actionDetail.actionState          && <KVRow label="Raw state"   value={actionDetail.actionState} mono />}
             {actionDetail.buttonsVisible?.length && (
               <KVRow label="Buttons" value={actionDetail.buttonsVisible.join(', ')} />
             )}
@@ -597,19 +628,26 @@ function resultToOutcome(result: string | null): {
 } {
   switch (result) {
     case 'booked':
-      return { label: 'Registered',  reason: 'Spot reserved successfully',       color: 'text-accent-green', dot: 'bg-accent-green' }
+      return { label: 'Registered',           reason: 'Spot reserved successfully',                            color: 'text-accent-green', dot: 'bg-accent-green' }
     case 'waitlisted':
-      return { label: 'Waitlisted',  reason: 'Added to the waitlist',            color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
+      return { label: 'Waitlisted',           reason: 'Added to the waitlist',                                 color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'dry_run':
-      return { label: 'Simulated',   reason: 'Simulated registration (test mode)', color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
+      return { label: 'Simulated',            reason: 'Simulated registration (test mode)',                    color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'found_not_open_yet':
-      return { label: 'Not Open Yet',reason: 'Registration not open yet — will retry', color: 'text-text-muted', dot: 'bg-text-muted' }
+      return { label: 'Not Open Yet',         reason: 'Registration not open yet — will retry at window open', color: 'text-text-muted',   dot: 'bg-text-muted'   }
     case 'not_found':
-      return { label: 'Not Found',   reason: 'Class not found on schedule',      color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+      return { label: 'Not Found',            reason: 'Class not found on schedule — check class name',        color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+    // Stage 7: full / closed are informational outcomes — not errors
+    case 'full':
+      return { label: 'Class Full',           reason: 'No spots or waitlist available — booking unavailable',  color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+    case 'waitlist_only':
+      return { label: 'Waitlist Only',        reason: 'Class is full — bot will join the waitlist',            color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+    case 'closed':
+      return { label: 'Registration Closed',  reason: 'YMCA has closed registration for this class',           color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'skipped':
-      return { label: 'Skipped',     reason: 'Class skipped — already booked or paused', color: 'text-text-muted', dot: 'bg-text-muted' }
+      return { label: 'Skipped',             reason: 'Class skipped — already booked or paused',              color: 'text-text-muted',   dot: 'bg-text-muted'   }
     default:
-      return { label: 'Failed',      reason: 'Registration failed — see reason below', color: 'text-accent-red',   dot: 'bg-accent-red'   }
+      return { label: 'Failed',              reason: 'Registration failed — see reason below',                 color: 'text-accent-red',   dot: 'bg-accent-red'   }
   }
 }
 
