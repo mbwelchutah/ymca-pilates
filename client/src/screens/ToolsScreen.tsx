@@ -10,7 +10,7 @@ import type { SniperRunState, SniperTiming } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
-import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL } from '../lib/readinessResolver'
+import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL } from '../lib/readinessResolver'
 import type { ClassTruthResult } from '../lib/classTruth'
 import { CLASS_STATE_LABEL } from '../lib/classTruth'
 
@@ -1349,7 +1349,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                         </div>
                       )
                     })()}
-                    {sniperRunState?.bundle && sniperRunState.bundle.discovery !== 'DISCOVERY_NOT_TESTED' && (
+                    {sniperRunState?.bundle && (
                       <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
                         <span className="text-[14px] text-text-secondary">Class</span>
                         <div className="flex items-center gap-2">
@@ -1360,19 +1360,19 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                         </div>
                       </div>
                     )}
-                    {sniperRunState?.bundle && sniperRunState.bundle.modal &&
-                     sniperRunState.bundle.modal !== 'MODAL_NOT_TESTED' && (
+                    {sniperRunState?.bundle && sniperRunState.bundle.modal && (
                       <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
                         <span className="text-[14px] text-text-secondary">Modal</span>
                         <div className="flex items-center gap-2">
                           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${bundleDot(sniperRunState.bundle.modal)}`} />
                           <span className="text-[14px] font-medium text-text-primary">
-                            {(sniperRunState.bundle.modal as string).replace(/_/g, ' ').replace('MODAL ', '')}
+                            {MODAL_LABEL[sniperRunState.bundle.modal as keyof typeof MODAL_LABEL]
+                              ?? sniperRunState.bundle.modal}
                           </span>
                         </div>
                       </div>
                     )}
-                    {sniperRunState?.bundle && sniperRunState.bundle.action !== 'ACTION_NOT_TESTED' && (
+                    {sniperRunState?.bundle && (
                       <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
                         <span className="text-[14px] text-text-secondary">Action</span>
                         <div className="flex items-center gap-2">

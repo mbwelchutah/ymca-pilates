@@ -109,28 +109,28 @@ export const SNIPER_STATE_LABEL: Record<SniperState, string> = {
 
 export const SESSION_LABEL: Record<SessionReadiness, string> = {
   SESSION_READY:    'Ready',
-  SESSION_REQUIRED: 'Login required',
-  SESSION_UNKNOWN:  'Unknown',
+  SESSION_REQUIRED: 'Needs login',
+  SESSION_UNKNOWN:  'Monitoring',
   SESSION_EXPIRED:  'Expired',
 }
 
 export const DISCOVERY_LABEL: Record<DiscoveryReadiness, string> = {
   DISCOVERY_READY:      'Found',
-  DISCOVERY_NOT_TESTED: 'Not tested',
-  DISCOVERY_FAILED:     'Not found',
+  DISCOVERY_NOT_TESTED: 'Monitoring',
+  DISCOVERY_FAILED:     'Missing',
 }
 
 export const ACTION_LABEL: Record<ActionReadiness, string> = {
-  ACTION_READY:      'Reachable',
-  ACTION_NOT_TESTED: 'Not tested',
+  ACTION_READY:      'Ready',
+  ACTION_NOT_TESTED: 'Not open yet',
   ACTION_BLOCKED:    'Not open yet',
 }
 
 export const MODAL_LABEL: Record<ModalReadiness, string> = {
   MODAL_READY:           'Reachable',
-  MODAL_NOT_TESTED:      'Not tested',
-  MODAL_BLOCKED:         'Not reachable',
-  MODAL_LOGIN_REQUIRED:  'Login required',
+  MODAL_NOT_TESTED:      'Monitoring',
+  MODAL_BLOCKED:         'Blocked',
+  MODAL_LOGIN_REQUIRED:  'Needs login',
 }
 
 export const PREFLIGHT_LABEL: Record<PreflightResult, string> = {
