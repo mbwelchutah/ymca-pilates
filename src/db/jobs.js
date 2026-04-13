@@ -90,8 +90,12 @@ function clearLastRun(id) {
   const db  = openDb();
   const job = db.prepare('SELECT target_date FROM jobs WHERE id = ?').get(id);
   if (job && job.target_date) {
-    const today = new Date().toISOString().slice(0, 10);
-    if (job.target_date < today) {
+    // Stage 5: use Pacific time for today so same-day classes (where UTC hasn't
+    // rolled over yet) are also advanced to next week.  Previously used UTC which
+    // left the card stuck on phase:'late' / "Window Closed" after an evening cancel.
+    // <= todayPT covers both past dates AND same day (class already ran today).
+    const todayPT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    if (job.target_date <= todayPT) {
       const d = new Date(job.target_date + 'T12:00:00Z');
       d.setDate(d.getDate() + 7);
       db.prepare('UPDATE jobs SET target_date = ? WHERE id = ?')

@@ -1328,10 +1328,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       setCancelResult({ ok: r.success || isStale, text, kind })
       // Stage 4: for real success refresh immediately; for stale recovery delay
       // 2 s so the confirmation banner is readable before the card transitions.
+      // Stage 5: also null out bgReadiness so stale actionDetailVerdict /
+      // effectivePreflightStatus values don't linger and mislead deriveNowCardState.
       if (r.success) {
         refresh()
       } else if (isStale) {
-        setTimeout(() => refresh(), 2000)
+        setTimeout(() => { setBgReadiness(null); refresh() }, 2000)
       }
     } catch (e) {
       setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed', kind: 'error' })
