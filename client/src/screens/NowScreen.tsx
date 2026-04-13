@@ -1002,7 +1002,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const [showActionSheet,  setShowActionSheet]  = useState(false)
   const [showCancelSheet,  setShowCancelSheet]  = useState(false)
   const [cancelInProgress, setCancelInProgress] = useState(false)
-  const [cancelResult,     setCancelResult]     = useState<{ ok: boolean; text: string } | null>(null)
+  // kind: 'success' = real cancel confirmed (green)
+  //       'recovered' = stale state auto-corrected — already cleared on YMCA (blue)
+  //       'error' = genuine unresolved failure (red + Clear status link)
+  const [cancelResult,     setCancelResult]     = useState<{ ok: boolean; text: string; kind: 'success' | 'recovered' | 'error' } | null>(null)
 
   // ── Sniper readiness state ─────────────────────────────────────────────────
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
@@ -1318,15 +1321,20 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         ? (r.action === 'left_waitlist' ? 'Left waitlist' : 'Registration cancelled')
         : isStale
           ? r.stateAutoCorrected
-            ? 'Already cleared on YMCA — your status has been updated'
-            : 'Already cleared on YMCA — syncing local status…'
+            ? 'Already cleared — your status has been updated'
+            : 'Already cleared on YMCA'
           : friendlyCancelError(r.message)
-      setCancelResult({ ok: r.success || isStale, text })
-      // Stage 3: refresh for both real success AND stale-state correction so the
-      // card immediately drops the "Registered"/"Waitlisted" badge.
-      if (r.success || isStale) refresh()
+      const kind: 'success' | 'recovered' | 'error' = r.success ? 'success' : isStale ? 'recovered' : 'error'
+      setCancelResult({ ok: r.success || isStale, text, kind })
+      // Stage 4: for real success refresh immediately; for stale recovery delay
+      // 2 s so the confirmation banner is readable before the card transitions.
+      if (r.success) {
+        refresh()
+      } else if (isStale) {
+        setTimeout(() => refresh(), 2000)
+      }
     } catch (e) {
-      setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed' })
+      setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed', kind: 'error' })
     } finally {
       setCancelInProgress(false)
     }
@@ -2111,11 +2119,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           {isBooked && execMode === 'idle' && job && (
             <div className="mt-2">
               {cancelResult && (
-                <div className={`rounded-xl px-3.5 py-2.5 mb-2 ${cancelResult.ok ? 'bg-accent-green/10' : 'bg-accent-red/10'}`}>
-                  <p className={`text-[13px] font-medium ${cancelResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {cancelResult.ok ? '✓ ' : '✗ '}{cancelResult.text}
+                <div className={`rounded-xl px-3.5 py-2.5 mb-2 ${
+                  cancelResult.kind === 'recovered' ? 'bg-accent-blue/10'
+                  : cancelResult.kind === 'success'  ? 'bg-accent-green/10'
+                  :                                    'bg-accent-red/10'
+                }`}>
+                  <p className={`text-[13px] font-medium ${
+                    cancelResult.kind === 'recovered' ? 'text-accent-blue'
+                    : cancelResult.kind === 'success'  ? 'text-accent-green'
+                    :                                    'text-accent-red'
+                  }`}>
+                    {cancelResult.kind === 'error' ? '✗ ' : '✓ '}{cancelResult.text}
                   </p>
-                  {!cancelResult.ok && (
+                  {/* Stage 4: "Clear status" only for genuine hard failures —
+                      not for stale-state recovery (DB already auto-corrected). */}
+                  {cancelResult.kind === 'error' && (
                     <p className="text-[11px] text-text-muted mt-1.5 leading-snug">
                       Already cancelled on the YMCA site?{' '}
                       <button
