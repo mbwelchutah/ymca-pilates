@@ -163,12 +163,14 @@ function formatEvidenceValue(v: unknown): string {
 
 const RESULT_LABELS: Record<string, string> = {
   booked:             'Registered',
-  waitlisted:         'Waitlisted',
+  waitlist:           'Waitlisted',        // Stage 8: bot writes 'waitlist' (not 'waitlisted')
+  waitlisted:         'Waitlisted',        // keep for legacy data
+  success:            'Preflight Passed',  // Stage 8: pre-window bot run found class bookable
   dry_run:            'Simulated',
   found_not_open_yet: 'Not Open Yet',
   not_found:          'Class Not Found',
-  full:               'Class Full',        // Stage 7: explicit non-error outcome
-  closed:             'Registration Closed', // Stage 7: explicit non-error outcome
+  full:               'Class Full',
+  closed:             'Registration Closed',
   failed:             'Failed',
   error:              'Error',
   skipped:            'Skipped',
@@ -629,15 +631,19 @@ function resultToOutcome(result: string | null): {
   switch (result) {
     case 'booked':
       return { label: 'Registered',           reason: 'Spot reserved successfully',                            color: 'text-accent-green', dot: 'bg-accent-green' }
+    // Stage 8: bot writes 'waitlist' (not 'waitlisted'); keep 'waitlisted' for legacy data
+    case 'waitlist':
     case 'waitlisted':
       return { label: 'Waitlisted',           reason: 'Added to the waitlist',                                 color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
+    // Stage 8: 'success' = preflight passed (class is bookable); NOT a failed result
+    case 'success':
+      return { label: 'Preflight Passed',     reason: 'Class confirmed bookable — bot will register at open',  color: 'text-accent-green', dot: 'bg-accent-green' }
     case 'dry_run':
       return { label: 'Simulated',            reason: 'Simulated registration (test mode)',                    color: 'text-accent-blue',  dot: 'bg-accent-blue'  }
     case 'found_not_open_yet':
       return { label: 'Not Open Yet',         reason: 'Registration not open yet — will retry at window open', color: 'text-text-muted',   dot: 'bg-text-muted'   }
     case 'not_found':
       return { label: 'Not Found',            reason: 'Class not found on schedule — check class name',        color: 'text-accent-amber', dot: 'bg-accent-amber'  }
-    // Stage 7: full / closed are informational outcomes — not errors
     case 'full':
       return { label: 'Class Full',           reason: 'No spots or waitlist available — booking unavailable',  color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'waitlist_only':
