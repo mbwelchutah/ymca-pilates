@@ -129,6 +129,60 @@ async function detectActionButtons(page) {
   return { hasRegister, hasWaitlist, hasCancel, hasLoginRequired, registerBtn, waitlistBtn, cancelBtn, allBtnTexts, registerStrategy, waitlistStrategy };
 }
 
+// ── Action-state classifier ───────────────────────────────────────────────────
+// Classifies the *actual* booking opportunity available in the open modal.
+// This is intentionally separate from modal reachability: a reachable modal
+// can still belong to a class that is full, closed, or already registered.
+//
+// Returns one of:
+//   'bookable'           — Register / Reserve button available; spot(s) exist
+//   'waitlist_available' — Waitlist button available, no Register
+//   'full'               — Class is full; strong full/closed signals present
+//   'already_registered' — Cancel/Unregister button visible, no booking action
+//   'closed'             — Closed without explicit full signal (e.g. registration ended)
+//   'unknown'            — Could not determine state from available signals
+//
+// Strong full/closed signals in button text OR page body always override
+// soft structural signals (modal reachable, class card found).
+//
+// @param {string[]} allBtnTexts  All visible button texts (from detectActionButtons)
+// @param {string}   pageText     Raw page body text for broader signal detection
+function classifyActionState(allBtnTexts, pageText = '') {
+  const btnLower  = allBtnTexts.map(t => (t || '').toLowerCase().trim());
+  const pageLower = (pageText || '').toLowerCase();
+
+  // ── Button-text signals ─────────────────────────────────────────────────────
+  const hasRegisterBtn = btnLower.some(t => /\bregister\b|\breserve\b/.test(t));
+  const hasWaitlistBtn = btnLower.some(t => /\bwaitlist\b|\bwait\s*list\b/.test(t));
+  const hasCancelBtn   = btnLower.some(t => /\bcancel\b|\bunregister\b/.test(t));
+  // "Closed - Full", "Closed", "Full" in a button slot = strong full/closed signal
+  const hasFullBtn     = btnLower.some(t => /\bfull\b/.test(t));
+  const hasClosedBtn   = btnLower.some(t => /\bclosed\b/.test(t));
+
+  // ── Page-body signals ───────────────────────────────────────────────────────
+  // "0 spot left", "0 spots left", "no spots available"
+  const hasZeroSpots      = /\b0\s+spots?\s*(left|available|remaining)|\bno\s+spots?\s*(left|available)/i.test(pageLower);
+  // "Registration Unavailable" / "Booking Unavailable"
+  const hasRegUnavailable = /registration\s+unavailable|booking\s+unavailable/i.test(pageLower);
+  // "N/N attendees" where first N ≥ 1 — we pair with zeroSpots to confirm full
+  const hasFullAttendeeCount = /\b\d+\/\d+\s*attendees?\b/i.test(pageLower);
+
+  // ── Derived flags ───────────────────────────────────────────────────────────
+  // isFull: any strong signal that no booking spot exists
+  const isFull   = hasFullBtn || hasZeroSpots || hasRegUnavailable || (hasClosedBtn && hasFullBtn);
+  // isClosed: explicit closed state without a specific "full" signal
+  const isClosed = hasClosedBtn && !isFull;
+
+  // ── Classification (priority order) ────────────────────────────────────────
+  // Strong full/closed signals win even if softer booking signals are also present
+  if (isFull)                              return 'full';
+  if (isClosed)                            return 'closed';
+  if (hasRegisterBtn)                      return 'bookable';          // Register beats Waitlist
+  if (hasWaitlistBtn)                      return 'waitlist_available';
+  if (hasCancelBtn && !hasRegisterBtn)     return 'already_registered';
+  return 'unknown';
+}
+
 // ── Post-click booking confirmation ───────────────────────────────────────────
 // After clicking Register / Waitlist (and optionally a "Reserve" popup), this
 // checks whether the booking actually completed on the YMCA server.
@@ -1759,6 +1813,14 @@ async function runBookingJob(job, opts = {}) {
       const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy } = await detectActionButtons(page);
       console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
 
+      // ── Stage 1: Action-state classification ────────────────────────────────
+      // Fetch page body text once so the classifier can check both button signals
+      // and broader page-level signals (0 spots left, Registration Unavailable, etc.)
+      const _pageBodyText = await page.locator('body').innerText().catch(() => '');
+      const _actionStateClassified = classifyActionState(allBtnTexts, _pageBodyText);
+      console.log('[preflight] Action state classified:', _actionStateClassified,
+        '| buttons:', JSON.stringify(allBtnTexts));
+
       // ── Stage 8: Modal Reachability Check ─────────────────────────────────
       // We reached this gate via a successful attemptClickAndVerify(), which
       // confirmed the modal opened and showed the expected time + instructor.
@@ -1785,10 +1847,16 @@ async function runBookingJob(job, opts = {}) {
         : hasWaitlist   ? 'WAITLIST_AVAILABLE'
         : _hasCancelOnly ? 'CANCEL_ONLY'
         : 'UNKNOWN_ACTION';
-      emitEvent(_state, 'ACTION', null, `Preflight: detected action state — ${_actionState}`, {
-        evidence: { actionState: _actionState, buttonsVisible: allBtnTexts, registerStrategy, waitlistStrategy }
+      emitEvent(_state, 'ACTION', null, `Preflight: detected action state — ${_actionState} (classified: ${_actionStateClassified})`, {
+        evidence: {
+          actionState:           _actionState,
+          actionStateClassified: _actionStateClassified,   // Stage 1: richer classification
+          buttonsVisible:        allBtnTexts,
+          registerStrategy,
+          waitlistStrategy,
+        }
       });
-      console.log('[preflight] Action state:', _actionState);
+      console.log('[preflight] Action state:', _actionState, '| classified:', _actionStateClassified);
 
       // ── Stage 2: Booking access confirmed ─────────────────────────────────
       // The modal opened successfully (proved by attemptClickAndVerify above).
