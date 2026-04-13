@@ -2163,6 +2163,60 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           )}
 
+          {/* ── Sniper timeline strip — 5-segment progress: monitoring→locked→armed→countdown→firing ── */}
+          {job && !isBooked && !isInactive && phase !== 'late' && (() => {
+            const sp: SniperPhase = deriveSniperPhase({
+              armedState:    sniperArmed?.state ?? null,
+              clientPhase:   phase,
+              execPhase:     execPhase ?? null,
+              bookingActive: bgReadiness?.armed?.state === 'booking',
+            })
+            const filledCount =
+              sp === 'monitoring' ? 1 :
+              sp === 'locked'     ? 2 :
+              sp === 'armed'      ? 3 :
+              sp === 'countdown'  ? 4 :
+              5 // firing | confirming
+
+            const segColor = (idx: number, filled: boolean): string => {
+              if (!filled) return 'bg-divider'
+              if (sp === 'confirming') return 'bg-accent-blue'
+              if (idx === 0) return 'bg-accent-gray'
+              if (idx === 1) return 'bg-accent-amber'
+              return 'bg-accent-green'
+            }
+
+            const isFiring = sp === 'firing' || sp === 'confirming'
+
+            return (
+              <div key={sp} className="mt-3 mb-0.5 animate-sniper-phase">
+                <div className="flex items-center gap-2">
+                  {[0, 1, 2, 3, 4].map(idx => {
+                    const filled = idx < filledCount
+                    const isActiveFrontier = idx === 3 && sp === 'countdown'
+                    const isFireSegment    = idx === 4 && isFiring
+                    return (
+                      <span
+                        key={idx}
+                        className={[
+                          'h-[5px] flex-1 rounded-full transition-colors duration-300',
+                          segColor(idx, filled),
+                          isActiveFrontier ? 'ring-1 ring-accent-green/40 ring-offset-[1px]' : '',
+                          isFireSegment    ? 'animate-sniper-fire' : '',
+                        ].filter(Boolean).join(' ')}
+                      />
+                    )
+                  })}
+                  {sp === 'countdown' && countdown && (
+                    <span className="text-[12px] font-semibold tabular-nums whitespace-nowrap text-accent-green ml-1">
+                      {countdown}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* ── Cancel registration button — shown when booked/waitlisted ─────── */}
           {isBooked && execMode === 'idle' && job && (
             <div className="mt-2">

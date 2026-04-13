@@ -167,7 +167,7 @@ const MANIFEST_JSON = JSON.stringify({
   scope: '/',
   display: 'standalone',
   orientation: 'portrait',
-  background_color: '#f9f9fb',
+  background_color: '#000000',
   theme_color: '#f9f9fb',
   icons: [
     // 180px — Apple Home Screen preferred size (also served as apple-touch-icon)
