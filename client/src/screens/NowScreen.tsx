@@ -1394,6 +1394,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     action:    'Registration action',
     result:    'Confirmation detected',
   }
+  // Shown on the row while it is actively running (replaces completion text).
+  const STEP_RUNNING_LABELS: Partial<Record<StepKey, string>> = {
+    session:   'Checking session…',
+    schedule:  'Loading schedule…',
+    class:     'Finding class…',
+    modal:     'Opening booking modal…',
+    action:    'Checking availability…',
+    result:    'Waiting for confirmation…',
+  }
   const BLANK_STEPS: ExecSteps = {
     session: 'pending', schedule: 'pending', class: 'pending',
     modal: 'pending', confirmed: 'pending', action: 'pending', result: 'pending',
@@ -2282,7 +2291,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               {!isBooked && !isBookingFlow && (
                 <div className="mb-3">
                   <p className="text-[12px] text-text-secondary mb-3">
-                    Registration readiness
+                    {execMode === 'running_preflight'
+                      ? (() => {
+                          const running = PREFLIGHT_CHECKLIST_STEPS.find(s => execSteps[s] === 'running')
+                          return running && STEP_RUNNING_LABELS[running]
+                            ? STEP_RUNNING_LABELS[running]!
+                            : 'Checking…'
+                        })()
+                      : 'Registration readiness'}
                   </p>
 
                   {/* Step rows — icon spans are keyed on `step+status` so
@@ -2329,6 +2345,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                           ? 'Monitoring for an open spot'
                           : step === 'confirmed' && isWaitlistScenario
                           ? 'Waitlist path confirmed'
+                          : status === 'running' && STEP_RUNNING_LABELS[step]
+                          ? STEP_RUNNING_LABELS[step]!
                           : STEP_LABELS[step]
 
                       const icon =
@@ -2620,10 +2638,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         status === 'failed'  ? 'text-accent-red' :
                         status === 'running' ? 'text-text-primary font-medium' :
                         'text-text-primary'
+                      const stepLabel = status === 'running' && STEP_RUNNING_LABELS[step]
+                        ? STEP_RUNNING_LABELS[step]!
+                        : STEP_LABELS[step]
                       return (
                         <div key={step} className="flex items-center gap-2.5">
                           <span className="text-[13px] w-4 text-center shrink-0 tabular-nums">{icon}</span>
-                          <span className={`text-[13px] ${textClass}`}>{STEP_LABELS[step]}</span>
+                          <span className={`text-[13px] ${textClass}`}>{stepLabel}</span>
                         </div>
                       )
                     })}
