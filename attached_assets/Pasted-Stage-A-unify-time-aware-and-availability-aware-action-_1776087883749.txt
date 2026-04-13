@@ -1,0 +1,116 @@
+Stage A — unify time-aware and availability-aware action logic without changing the overall feel of the Now screen
+
+Goal:
+Keep the Now screen visually and structurally the same, but make the bot intelligently decide what "Get Spot" should do based on:
+- current time vs registration opening time
+- spots remaining
+- waitlist availability
+- live DOM/button state as final truth
+
+Important:
+- Do NOT redesign the Now screen
+- Do NOT change the main visual hierarchy
+- Do NOT change the primary button label
+- Keep the same overall calm, checklist-first experience
+
+Part 1 — Unified state model
+
+Define a single NowState:
+- before_open
+- register_now
+- join_waitlist
+- unavailable
+
+This state should drive:
+- primary action behavior
+- helper/status text
+- execution strategy
+
+Part 2 — Resolver logic
+
+Implement a resolver like:
+
+resolveNowState({
+  now,
+  registrationOpenAt,
+  spotsRemaining,
+  capacityMax,
+  waitlistAvailable,
+  waitlistCount,
+  waitlistMax,
+  domActionState
+})
+
+Decision order:
+
+1. If now < registrationOpenAt:
+   state = before_open
+
+2. Else:
+   - if spotsRemaining > 0 -> register_now
+   - else if waitlistAvailable -> join_waitlist
+   - else -> unavailable
+
+3. Before executing action:
+   Use live DOM/button state as final truth:
+   - if Register button visible -> register_now
+   - if Waitlist button visible -> join_waitlist
+   - if neither -> unavailable
+
+Important:
+- API/probe data is planning input
+- DOM state is final execution truth
+
+Part 3 — Action mapping
+
+- before_open -> arm auto-registration
+- register_now -> immediate registration
+- join_waitlist -> join waitlist
+- unavailable -> no action
+
+Primary button:
+- always labeled "Get Spot"
+
+Part 4 — Helper/status messaging rewrite
+
+Use calm human-friendly copy:
+
+before_open:
+- "Registration opens at [time]"
+- after arming: "Auto-registration ready"
+- "Will register at [time]"
+- optional standby: "Waiting for registration window"
+
+register_now:
+- "17 of 30 spots open" if known
+- "Only 2 spots left" if low
+- optional while acting: "Registering now"
+
+join_waitlist:
+- "Class is full"
+- "Waitlist available"
+- "Joining waitlist"
+
+unavailable:
+- "Class is full"
+- "Waitlist is full"
+- "Registration not possible"
+
+Do NOT use misleading copy like:
+- "Registration window has closed"
+unless the class is truly no longer actionable
+
+Part 5 — Guardrails
+
+- Preserve sticky armed state
+- Preserve cancel auto-registration behavior
+- Do not redesign layout
+- Do not change overall feel of the Now screen
+
+Deliver:
+1. files changed
+2. resolver implementation
+3. state -> action mapping
+4. state -> helper text mapping
+5. where DOM state overrides API data
+6. old messages removed
