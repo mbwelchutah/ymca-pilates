@@ -71,10 +71,21 @@ export default function App() {
     return saved ? parseInt(saved, 10) : null
   })
 
+  // When the user explicitly selects or creates a job, we pin that choice for a
+  // short window so that a concurrent jobs-list refresh can't overwrite it before
+  // the new job appears in the list.  The ref holds { id, until } where `until`
+  // is the timestamp after which the pin expires.
+  const stickySelectionRef = useRef<{ id: number; until: number } | null>(null)
+
   useEffect(() => {
     if (state.jobs.length === 0) return
     const isValid = selectedJobId !== null && state.jobs.some(j => j.id === selectedJobId)
     if (!isValid) {
+      // If we recently pinned a specific job (e.g. just after create/select) and
+      // it hasn't shown up in the list yet, wait — don't fall back to a random job.
+      const sticky = stickySelectionRef.current
+      if (sticky && Date.now() < sticky.until && selectedJobId === sticky.id) return
+
       const fallback = state.jobs.find(j => j.is_active) ?? state.jobs[0]
       const newId = fallback?.id ?? null
       if (newId !== selectedJobId) {
@@ -120,6 +131,7 @@ export default function App() {
   }, [state.jobs, selectedJobId, tab])
 
   const handleSelectJob = (id: number) => {
+    stickySelectionRef.current = { id, until: Date.now() + 15_000 }
     setSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
     setTab('now')

@@ -156,51 +156,55 @@ async function createSession(opts = {}) {
   const HOME_URL     = 'https://my.familyworks.app';
   const SCHEDULE_URL = 'https://my.familyworks.app/schedulesembed/eugeneymca?search=yes';
 
-  // ── Step 1: Check FamilyWorks member home page ────────────────────────────
-  // Navigate to the FW home page first.  If the session cookie is valid, FW
-  // renders the member dashboard (My Schedule, Browse, etc.).  If not, it
-  // shows a "Login to Y Account" button.  This is faster than loading the
-  // schedule embed and clicking a class card to probe the modal.
-  console.log('[session] Checking FamilyWorks member home page for existing session...');
-  await page.goto(HOME_URL, { timeout: 30000 });
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(2000); // allow Bubble.io SPA to render
-
-  const homeUrl = page.url();
-  console.log('[session] FamilyWorks home URL:', homeUrl);
-
-  // Read visible button/link text to determine login state.
-  const homeBtnTexts = await page.locator('button:visible, [role="button"]:visible, a:visible').allTextContents().catch(() => []);
-  const homeClean    = homeBtnTexts.map(t => t.trim()).filter(Boolean);
-  console.log('[session] Home page buttons/links:', JSON.stringify(homeClean.slice(0, 15)));
-
-  const homeShowsLoginBtn  = homeClean.some(t => /login\s+to\s+y\s+account|sign\s+in/i.test(t));
-  // Member dashboard indicators — any of these confirms an active session.
-  const homeBodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-  const homeShowsMember = !homeShowsLoginBtn && (
-    homeBodyText.includes('my schedule') ||
-    homeBodyText.includes('browse') ||
-    homeBodyText.includes('eugene y') ||
-    homeBodyText.includes('health & wellness') ||
-    homeClean.some(t => /my favorites|new app feedback|donate/i.test(t))
-  );
-
-  console.log(`[session] Home check: loginBtn=${homeShowsLoginBtn} memberDash=${homeShowsMember}`);
-
-  // ── Fast path: Tier-2 ping already confirmed sessions valid ──────────────
-  // Skip the entire FW OAuth modal probe — sessions are trusted, no login needed.
+  // ── Step 1: Check FamilyWorks member home page (skipped when ping-trusted) ──
+  // When the Tier-2 HTTP ping already confirmed sessions are valid we skip the
+  // expensive home-page goto entirely — it can time out in production due to
+  // network latency, and the information it provides (session valid/not) is
+  // already known from the ping.  Only when the ping was NOT trusted do we load
+  // the home page to detect whether a full OAuth re-login is required.
   let sessionAlreadyValid = false;
   let homeValidated       = false;  // true when home page confirmed active session
+  let homeShowsMember     = false;
+  let homeShowsLoginBtn   = false;
 
   if (pingTrusted) {
-    console.log('[session] Ping-trusted fast path — skipping OAuth probe, sessions assumed valid.');
+    console.log('[session] Ping-trusted fast path — skipping home page check, sessions assumed valid.');
     sessionAlreadyValid = true;
     updateAuthState({
       daxkoValid:    true,
       familyworksValid: true,
       lastCheckedAt: Date.now(),
     });
-  } else if (homeShowsMember) {
+  } else {
+    // Navigate to the FW home page.  If the session cookie is valid, FW renders
+    // the member dashboard (My Schedule, Browse, etc.).  If not, it shows a
+    // "Login to Y Account" button.
+    console.log('[session] Checking FamilyWorks member home page for existing session...');
+    await page.goto(HOME_URL, { timeout: 60000, waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(2000); // allow Bubble.io SPA to render
+
+    const homeUrl = page.url();
+    console.log('[session] FamilyWorks home URL:', homeUrl);
+
+    const homeBtnTexts = await page.locator('button:visible, [role="button"]:visible, a:visible').allTextContents().catch(() => []);
+    const homeClean    = homeBtnTexts.map(t => t.trim()).filter(Boolean);
+    console.log('[session] Home page buttons/links:', JSON.stringify(homeClean.slice(0, 15)));
+
+    homeShowsLoginBtn = homeClean.some(t => /login\s+to\s+y\s+account|sign\s+in/i.test(t));
+    const homeBodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+    homeShowsMember = !homeShowsLoginBtn && (
+      homeBodyText.includes('my schedule') ||
+      homeBodyText.includes('browse') ||
+      homeBodyText.includes('eugene y') ||
+      homeBodyText.includes('health & wellness') ||
+      homeClean.some(t => /my favorites|new app feedback|donate/i.test(t))
+    );
+
+    console.log(`[session] Home check: loginBtn=${homeShowsLoginBtn} memberDash=${homeShowsMember}`);
+  }
+
+  if (!pingTrusted && homeShowsMember) {
     // Member dashboard visible → session is active, no login needed.
     const reuseMsg = cookiesInjected > 0
       ? `[session-reuse] ✓ Session reused — member dashboard visible (${cookiesInjected} cookies active).`
@@ -215,7 +219,7 @@ async function createSession(opts = {}) {
       bookingAccessConfirmedAt: Date.now(),
       lastCheckedAt:            Date.now(),
     });
-  } else {
+  } else if (!pingTrusted) {
     // "Login to Y Account" visible (or unrecognised state) — need Daxko OAuth.
     // The OAuth flow MUST go through the schedule embed: navigate there, click a
     // class card, and click "Login to Register" so FW triggers the Daxko OAuth
