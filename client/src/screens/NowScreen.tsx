@@ -436,8 +436,9 @@ export function deriveNowCardState(opts: {
   effectivePreflightStatus: string | null
   localArmed:               boolean
   lastFailedAction:         'registration' | 'preflight' | null
+  domActionState:           string | null
 }): NowCardState {
-  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction } = opts
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction, domActionState } = opts
 
   // 1. Cycle outcome already determined
   if (isBooked && lastResult === 'waitlist') return 'waitlisted'
@@ -447,22 +448,75 @@ export function deriveNowCardState(opts: {
   if (bookingActive) return 'registration_in_progress'
 
   // 3. User explicitly armed auto-registration — takes priority over window-open states.
-  //    When armed the scheduler fires automatically; showing "Register Now" would be
-  //    misleading (it implies manual action is required) and contradicts the armed state.
+  //    When armed the scheduler fires automatically; the window-open states below would
+  //    be misleading (they imply manual action is required).
   if (localArmed) return 'auto_registration_armed'
 
   // 4. Last manual action failed — show retry before falling to generic pre-open states
   if (lastFailedAction === 'registration') return 'registration_failed'
   if (lastFailedAction === 'preflight')    return 'preflight_failed'
 
-  // 5. Class is full — waitlist the only option (set by preflight)
+  // 5. DOM action state (most recent modal observation) — used as availability truth.
+  //    'ready'        = Register button visible in DOM → spots available
+  //    'waitlist_only'= Waitlist button visible in DOM → class full, waitlist open
+  //    Other values (full, login_required, not_open_yet, unknown) fall through to
+  //    planning signals below.
+  if (domActionState === 'waitlist_only') return 'registration_open_full'
+  if (domActionState === 'ready' && phase === 'sniper') return 'registration_open_with_spots'
+
+  // 6. Planning signals — class confirmed full via preflight
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
 
-  // 6. Registration window is open — assume spots unless preflight says otherwise
+  // 7. Registration window is open — assume spots available unless DOM/preflight says otherwise
   if (phase === 'sniper') return 'registration_open_with_spots'
 
-  // 7. Default — window not yet open (too_early, warmup, late, unknown)
+  // 8. Default — window not yet open (too_early, warmup, late, unknown)
   return 'registration_not_open'
+}
+
+// ── Unified NowState — four-value availability model ─────────────────────────
+// Collapses the multi-state NowCardState down to a single availability answer
+// for planning and action routing. Used by resolveNowState and as documentation
+// for the decision logic below.
+//
+//   before_open   — registration window has not opened yet; arm auto-registration
+//   register_now  — spots available; attempt immediate registration
+//   join_waitlist — class is full; waitlist is open
+//   unavailable   — window closed or no action possible
+
+export type NowState = 'before_open' | 'register_now' | 'join_waitlist' | 'unavailable'
+
+// Resolver: derives NowState from time, availability signals, and DOM observation.
+//
+// Decision order:
+//   1. DOM action state (most recent modal observation) = final execution truth
+//      when it provides a definitive answer
+//   2. Phase-based planning: sniper = window open, too_early/warmup = before open
+//   3. Preflight signals for waitlist detection
+//
+// Note: the bot's handleNowBook always re-reads the live DOM when actually
+// executing — DOM state here is for display intent, not click routing.
+export function resolveNowState(opts: {
+  phase:                    Phase
+  domActionState:           string | null
+  effectivePreflightStatus: string | null
+}): NowState {
+  const { phase, domActionState, effectivePreflightStatus } = opts
+
+  // DOM state as final availability truth when definitive
+  if (domActionState === 'ready')         return 'register_now'
+  if (domActionState === 'waitlist_only') return 'join_waitlist'
+  if (domActionState === 'full')          return 'unavailable'
+
+  // Fall back to planning signals
+  if (phase === 'late') return 'unavailable'
+  if (phase === 'sniper') {
+    if (effectivePreflightStatus === 'waitlist_only') return 'join_waitlist'
+    return 'register_now'
+  }
+
+  // Window has not opened yet (too_early, warmup, unknown)
+  return 'before_open'
 }
 
 // ── Stage 3: SmartButtonConfig — single primary action resolver ─────────────
@@ -498,9 +552,9 @@ export function resolveSmartButton(opts: {
     case 'registration_in_progress':
       return { label: 'Registering…',  actionType: 'none',    helperText: null,                                 disabled: true,  emphasis: 'primary-blue'  }
     case 'registration_open_with_spots':
-      return { label: 'Register Now',  actionType: 'register', helperText: 'Spots available',                  disabled: false, emphasis: 'primary-blue'  }
+      return { label: 'Get Spot', actionType: 'register', helperText: 'Spots available',                    disabled: false, emphasis: 'primary-blue'  }
     case 'registration_open_full':
-      return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full — waitlist available', disabled: false, emphasis: 'primary-amber' }
+      return { label: 'Get Spot', actionType: 'waitlist', helperText: 'Class is full · Waitlist available', disabled: false, emphasis: 'primary-amber' }
     case 'auto_registration_armed': {
       const windowTime = nextWindow ? fmtWindowTime(nextWindow) : null
       const helperText = windowTime
@@ -513,9 +567,17 @@ export function resolveSmartButton(opts: {
     case 'preflight_failed':
       return { label: 'Run Check Again',   actionType: 'arm',      helperText: "Last check didn't pass",           disabled: false, emphasis: 'primary-blue' }
     case 'registration_not_open': {
-      const helperText = (bookingOpenMs != null && countdown)
-        ? `Registration opens in ${countdown}`
+      // Prefer absolute time ("opens at 10:35 AM") — more useful on mobile than
+      // a raw countdown that requires mental math.  Fall back to countdown when
+      // we have it but can't compute the absolute time, and to null when neither
+      // is available (e.g. job has no class_time configured).
+      const openAt = bookingOpenMs != null ? new Date(Date.now() + bookingOpenMs) : null
+      const timeStr = openAt
+        ? openAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
         : null
+      const helperText = timeStr
+        ? `Registration opens at ${timeStr}`
+        : (countdown ? `Registration opens in ${countdown}` : null)
       return { label: 'Get Spot', actionType: 'arm', helperText, disabled: false, emphasis: 'primary-blue' }
     }
   }
@@ -1535,6 +1597,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     effectivePreflightStatus,
     localArmed,
     lastFailedAction,
+    domActionState:           isReadinessForSelectedJob ? (bgReadiness?.action ?? null) : null,
   })
 
   // Stage 3: single smart button config — drives the IDLE action button + helper text
