@@ -137,6 +137,11 @@ function createRunState(jobId) {
     // Most recent failure/uncertain screenshot from the run (set by logRunSummary).
     // Stored as a DB-style ref: "YYYY-MM-DD/filename.png" (new) or "filename.png" (legacy).
     screenshotPath: null,
+    // Stage 10E — true only in the window between a Register/Waitlist click and
+    // receiving the confirmation result.  Set by register-pilates.js after each
+    // button click and cleared when checkBookingConfirmed() resolves.
+    // Allows computeExecutionTiming() to report phase='confirming' precisely.
+    isConfirming: false,
     // Persisted across runs so the NowScreen badge survives page refreshes
     // and scheduler cycles.  Only savePreflightSnapshot() ever writes this.
     lastPreflightSnapshot: prior?.lastPreflightSnapshot ?? null,

@@ -5068,6 +5068,7 @@ const server = http.createServer((req, res) => {
     // Stage 10A — Execution timing phase appended to response.
     // Stage 10D — Escalation record appended when click_failed has fired.
     const { loadReadiness }          = require('../bot/readiness-state');
+    const { loadState: loadSniperState } = require('../bot/sniper-readiness');
     const { computeArmedState }      = require('../bot/armed-state');
     const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('../scheduler/execution-timing');
     const { loadEscalations }        = require('../scheduler/escalation');
@@ -5107,9 +5108,13 @@ const server = http.createServer((req, res) => {
             observationCount:     learned.observationCount,
           };
         }
+        // Stage 10E — read precise isConfirming from the sniper state file.
+        // Falls back to jobState.active as a coarse signal when state is unavailable.
+        const _sniperStateForTiming = (() => { try { return loadSniperState(); } catch { return null; } })();
         executionTiming = computeExecutionTiming(job, {
-          // Stage 10E — isConfirming: true while a booking run is active after opensAt.
-          isConfirming: jobState.active,
+          // Precise: only true after Register/Waitlist click until confirmation resolves.
+          // Fallback: jobState.active (whole booking run) for backward compatibility.
+          isConfirming: _sniperStateForTiming?.isConfirming ?? jobState.active,
           // Stage 10F — apply learned offsets when available (null = use defaults).
           warmupOffsetOverrideMs: learned?.adjustedWarmupOffsetMs ?? null,
           armedOffsetOverrideMs:  learned?.adjustedArmedOffsetMs  ?? null,

@@ -2179,7 +2179,9 @@ async function runBookingJob(job, opts = {}) {
           replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
           _tc.actionClickAt = new Date().toISOString();
           await registerBtn.first().click();
+          _state.isConfirming = true; saveState(_state);
           const wlResult2 = await checkBookingConfirmed(page, _jobId, attempt, 'Register(full→waitlist)', replayStore);
+          _state.isConfirming = false;
           if (wlResult2.confirmed) {
             replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (via Register button${wlResult2.viaPopup ? ' + popup' : ''}) — Cancel button: ${wlResult2.cancelFound}`);
             console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
@@ -2200,7 +2202,9 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
+        _state.isConfirming = true; saveState(_state);
         const regResult = await checkBookingConfirmed(page, _jobId, attempt, 'Register', replayStore);
+        _state.isConfirming = false;
 
         if (!regResult.confirmed) {
           // Booking genuinely did not complete — record the failure and retry next attempt.
@@ -2233,7 +2237,9 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
+        _state.isConfirming = true; saveState(_state);
         const wlResult = await checkBookingConfirmed(page, _jobId, attempt, 'Waitlist', replayStore);
+        _state.isConfirming = false;
         if (wlResult.confirmed) {
           replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (cancelFound=${wlResult.cancelFound}, viaPopup=${wlResult.viaPopup})`);
           console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
