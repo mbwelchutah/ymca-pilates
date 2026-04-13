@@ -1336,7 +1336,28 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         setTimeout(() => { setBgReadiness(null); refresh() }, 2000)
       }
     } catch (e) {
+      // Show immediate error — user gets feedback right away.
       setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed', kind: 'error' })
+      // Stage 6: Follow-up truth check after any network/server error.
+      // The server may have written clearLastRun to the DB before the connection
+      // dropped. Re-fetch job list shortly after to see if last_result was cleared.
+      // If it was: update the banner to "recovered" and refresh the card.
+      // If it wasn't: keep the existing error banner (no second update).
+      const jobId = job?.id
+      if (jobId != null) {
+        setTimeout(async () => {
+          try {
+            const jobs = await api.getJobs()
+            const fresh = jobs.find(j => j.id === jobId)
+            const ENROLLED = new Set(['booked', 'waitlist', 'waitlisted'])
+            const nowCleared = fresh && !ENROLLED.has(fresh.last_result ?? '')
+            if (nowCleared) {
+              setCancelResult({ ok: true, text: 'Already cleared — your status has been updated', kind: 'recovered' })
+              setTimeout(() => { setBgReadiness(null); refresh() }, 1500)
+            }
+          } catch { /* re-check failed — keep original error, no action */ }
+        }, 800)
+      }
     } finally {
       setCancelInProgress(false)
     }
