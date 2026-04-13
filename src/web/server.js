@@ -3997,7 +3997,9 @@ const server = http.createServer((req, res) => {
           const actionDetectEvt  = actionEvts.find(e => e.evidence?.actionState);
           const actionResolveEvt = actionEvts[0]; // most recent = final resolution
 
-          const rawActionState = actionDetectEvt?.evidence?.actionState ?? null;
+          const rawActionState      = actionDetectEvt?.evidence?.actionState             ?? null;
+          // Stage 6: classifier result (more precise than _actionState for full/closed)
+          const actionStateClassified = actionDetectEvt?.evidence?.actionStateClassified ?? null;
           // Map detection actionState → user-facing verdict. Fall back to the
           // resolution event failureType when the detection event is absent.
           const actionVerdict =
@@ -4014,12 +4016,13 @@ const server = http.createServer((req, res) => {
             : 'unknown';
 
           const actionDetail = (actionDetectEvt || actionResolveEvt) ? {
-            verdict:          actionVerdict,
-            actionState:      rawActionState,
-            buttonsVisible:   actionDetectEvt?.evidence?.buttonsVisible  ?? null,
-            registerStrategy: actionDetectEvt?.evidence?.registerStrategy ?? null,
-            waitlistStrategy: actionDetectEvt?.evidence?.waitlistStrategy ?? null,
-            detail:           actionResolveEvt?.message ?? actionDetectEvt?.message ?? null,
+            verdict:               actionVerdict,
+            actionState:           rawActionState,
+            actionStateClassified,              // Stage 6: raw classifier result
+            buttonsVisible:        actionDetectEvt?.evidence?.buttonsVisible  ?? null,
+            registerStrategy:      actionDetectEvt?.evidence?.registerStrategy ?? null,
+            waitlistStrategy:      actionDetectEvt?.evidence?.waitlistStrategy ?? null,
+            detail:                actionResolveEvt?.message ?? actionDetectEvt?.message ?? null,
           } : null;
 
           // Modal detail — whether the class modal could be opened after card click.

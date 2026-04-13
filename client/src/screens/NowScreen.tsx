@@ -404,7 +404,7 @@ const PHASE_CONFIG: Record<Phase, { label: string }> = {
 // State priority (highest → lowest):
 //   waitlisted / registered  — outcome already known this cycle
 //   registration_in_progress — background booking run is active
-//   registration_open_full   — preflight confirmed waitlist-only
+//   registration_open_full   — preflight confirmed class full (waitlist or no-waitlist)
 //   registration_open_with_spots — window open, spots available
 //   registration_not_open    — window hasn't opened yet (default / fallback)
 
@@ -416,7 +416,7 @@ export type NowCardState =
   | 'registration_failed'        // last manual registration attempt failed
   | 'preflight_failed'           // last preflight check failed
   | 'registration_open_with_spots' // window open — Register Now
-  | 'registration_open_full'     // window open — class full, Join Waitlist
+  | 'registration_open_full'     // window open — class full (isClassFull=no waitlist, else waitlist visible)
   | 'registration_not_open'      // window not open yet
 
 // State priority (highest → lowest):
@@ -479,8 +479,9 @@ export function deriveNowCardState(opts: {
 
   // 6. Planning signals — class confirmed full/unavailable via preflight overall status
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
-  // Stage 2: 'full' = class is full (0 spots, "Closed - Full" button detected)
-  // Map to registration_open_full so armed state shows "class full" not "Likely to succeed"
+  // Stage 2/6: 'full' = class is full with NO waitlist button ("Closed - Full" only).
+  // Uses registration_open_full so the armed state shows class-full banners/confidence.
+  // isClassFull flag (NowScreen) differentiates button/banner/confidence from waitlist_only.
   if (effectivePreflightStatus === 'full')          return 'registration_open_full'
   // 'closed' = registration explicitly closed (not just window timing)
   if (effectivePreflightStatus === 'closed')        return 'registration_not_open'
@@ -573,8 +574,9 @@ export function resolveSmartButton(opts: {
   bookingOpenMs:     number | null
   nextWindow:        string | null
   isWaitlistScenario?: boolean
+  isClassFull?:        boolean   // Stage 6: full = no waitlist button visible
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false } = opts
 
   switch (cardState) {
     case 'registered':
@@ -586,6 +588,10 @@ export function resolveSmartButton(opts: {
     case 'registration_open_with_spots':
       return { label: 'Get Spot',      actionType: 'register', helperText: 'Spots available',                   disabled: false, emphasis: 'primary-blue'  }
     case 'registration_open_full':
+      // Stage 6: distinguish "full, no waitlist" from "full, waitlist visible"
+      if (isClassFull) {
+        return { label: 'Class Full',    actionType: 'none',    helperText: 'No spots or waitlist available',    disabled: true,  emphasis: 'muted'         }
+      }
       return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full · Waitlist available', disabled: false, emphasis: 'primary-amber' }
     case 'auto_registration_armed': {
       const windowTime = nextWindow ? fmtWindowTime(nextWindow) : null
@@ -683,8 +689,9 @@ export function resolveConfidenceSummary(opts: {
   bgSession:           string | null
   bgDiscovery:         string | null
   sessionFailureType?: string | null
+  isClassFull?:        boolean   // Stage 6: full = no waitlist button (vs waitlist_only = waitlist visible)
 }): ConfidenceSummary {
-  const { nowCardState, compositeColor, compositeStatus, confidenceLabel, bgSession, bgDiscovery, sessionFailureType } = opts
+  const { nowCardState, compositeColor, compositeStatus, confidenceLabel, bgSession, bgDiscovery, sessionFailureType, isClassFull = false } = opts
 
   // check_recommended: any error/failure signal present
   const hasIssue =
@@ -718,11 +725,19 @@ export function resolveConfidenceSummary(opts: {
     }
   }
 
-  // Stage 2: Full class guard — registration_open_full means the class is known
-  // to be full regardless of what the composite badge says. Never show "Likely to
-  // succeed" in this state; always surface "Waitlist only" so the user knows
-  // the bot will join the waitlist, not claim an open spot.
+  // Stage 2/6: Full class guard — registration_open_full means the class is known
+  // to be full regardless of what the composite badge says.
+  // Stage 6 distinction: full (no waitlist button) vs waitlist_only (waitlist visible).
   if (nowCardState === 'registration_open_full') {
+    if (isClassFull) {
+      // No waitlist button visible — class is full with nowhere to join.
+      return {
+        level:  'check_recommended',
+        label:  'Class full',
+        reason: 'Class is full with no waitlist available. Auto-registration will attempt when the window opens in case a spot is released.',
+      }
+    }
+    // Waitlist button visible — bot will join the waitlist.
     return {
       level:  'needs_attention',
       label:  'Waitlist only',
@@ -1724,13 +1739,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     actionDetailVerdict,
   })
 
-  // Stage 3: single smart button config — drives the IDLE action button + helper text
-  // True when the armed/open class is known to be full — bot will join the waitlist
-  // rather than claim a spot.  Used to switch "Will register" → "Will join waitlist".
+  // Stage 3 / Stage 6: single smart button config — drives the IDLE action button + helper text
+  // isWaitlistScenario: class is full AND a waitlist button is visible → bot will join the waitlist.
+  //   NOTE: effectivePreflightStatus === 'full' is excluded — that means "full, NO waitlist button"
+  //   (e.g. "Closed - Full" only), where there's no waitlist to join.
   const isWaitlistScenario =
     effectivePreflightStatus === 'waitlist_only' ||
-    effectivePreflightStatus === 'full'          ||
     actionDetailVerdict      === 'waitlist_only'
+
+  // Stage 6: class is completely full with no waitlist button visible.
+  // Distinct from isWaitlistScenario — no action the bot can take here.
+  const isClassFull = effectivePreflightStatus === 'full'
 
   const smartButton: SmartButtonConfig = resolveSmartButton({
     cardState:    nowCardState,
@@ -1738,6 +1757,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     bookingOpenMs,
     nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
     isWaitlistScenario,
+    isClassFull,
   })
 
   // Secondary action state — drives the dynamic label + sheet contents.
@@ -1798,6 +1818,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
         bgSession:            reconciledBgSession,
         bgDiscovery:          isReadinessForSelectedJob ? (bgReadiness?.discovery ?? null) : null,
         sessionFailureType:   sessionStatus?.failureType ?? null,
+        isClassFull,
       })
     : null
 
@@ -1913,11 +1934,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </p>
             </div>
           ) : phase === 'sniper' && nowCardState === 'registration_open_full' ? (
-            // Window open but class is full — waitlist is the path; suppress blue "Registering…"
-            // which implies spots, and show the accurate availability state instead.
+            // Window open but class is full — show waitlist or full-no-waitlist banner.
+            // Suppress blue "Registering…" which implies spots.
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="amber" />
-              <span className="text-[16px] font-semibold text-amber-600">Class is full · Waitlist available</span>
+              <span className="text-[16px] font-semibold text-amber-600">
+                {isClassFull ? 'Class is full' : 'Class is full · Waitlist available'}
+              </span>
             </div>
           ) : phase === 'sniper' ? (
             // Actively registering — keep blue tint (urgency)
@@ -1938,10 +1961,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <span className="text-[17px] font-semibold text-accent-blue">Registering…</span>
             </div>
           ) : phase === 'late' && nowCardState === 'registration_open_full' ? (
-            // Past window but waitlist is confirmed available — more specific than "closed"
+            // Past window — class full; distinguish waitlist available vs no waitlist
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="amber" />
-              <span className="text-[16px] font-semibold text-amber-600">Class is full · Waitlist available</span>
+              <span className="text-[16px] font-semibold text-amber-600">
+                {isClassFull ? 'Class is full' : 'Class is full · Waitlist available'}
+              </span>
             </div>
           ) : phase === 'late' && nowCardState === 'registration_open_with_spots' ? (
             // Past window but DOM confirms spots still available (rare but possible)
