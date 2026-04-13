@@ -150,6 +150,8 @@ export const PREFLIGHT_LABEL: Record<PreflightResult, string> = {
 export type CompositeStatus =
   | 'COMPOSITE_READY'
   | 'COMPOSITE_WAITLIST'
+  | 'COMPOSITE_CLASS_FULL'
+  | 'COMPOSITE_CLASS_CLOSED'
   | 'COMPOSITE_LOGIN_REQUIRED'
   | 'COMPOSITE_CLASS_NOT_FOUND'
   | 'COMPOSITE_MODAL_ISSUE'
@@ -213,7 +215,28 @@ export function computeCompositeReadiness(
     }
   }
 
-  // 5. Action not available yet (cancel-only, unknown, or no register button)
+  // 5a. Class is explicitly full (no spots, "Closed - Full" / "0 spots left" detected)
+  //     Separate from waitlist_only — these classes have NO waitlist button visible.
+  if (preflightStatus === 'full') {
+    return {
+      status: 'COMPOSITE_CLASS_FULL',
+      label:  'Class full',
+      color:  'amber',
+      detail: 'Class is full — no spots available',
+    }
+  }
+
+  // 5b. Registration explicitly closed (not a timing issue — YMCA closed it)
+  if (preflightStatus === 'closed') {
+    return {
+      status: 'COMPOSITE_CLASS_CLOSED',
+      label:  'Registration closed',
+      color:  'red',
+      detail: 'Registration is closed for this class',
+    }
+  }
+
+  // 5c. Action not available yet (cancel-only, unknown, or no register button)
   if (bundle.action === 'ACTION_BLOCKED' || preflightStatus === 'action_blocked') {
     return {
       status: 'COMPOSITE_ACTION_BLOCKED',

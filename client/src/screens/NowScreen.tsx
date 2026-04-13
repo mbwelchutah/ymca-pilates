@@ -704,14 +704,16 @@ export function resolveConfidenceSummary(opts: {
         ? 'Session issue detected — tap the account icon to re-authenticate.'
         : bgDiscovery === 'missing'
           ? 'Class could not be found on the schedule. Run a fresh check before the window opens.'
-          : nowCardState === 'registration_failed'
-            ? 'Last registration attempt failed. Run a fresh check to diagnose.'
-            : nowCardState === 'preflight_failed'
-              ? 'Last readiness check found a problem. Review and re-run when ready.'
-              : 'A potential issue was detected. Run a check to confirm status before the window opens.'
+          : compositeStatus === 'COMPOSITE_CLASS_CLOSED'
+            ? 'Registration is closed for this class — the YMCA has ended sign-ups.'
+            : nowCardState === 'registration_failed'
+              ? 'Last registration attempt failed. Run a fresh check to diagnose.'
+              : nowCardState === 'preflight_failed'
+                ? 'Last readiness check found a problem. Review and re-run when ready.'
+                : 'A potential issue was detected. Run a check to confirm status before the window opens.'
     return {
       level:  'check_recommended',
-      label:  'Check recommended',
+      label:  compositeStatus === 'COMPOSITE_CLASS_CLOSED' ? 'Registration closed' : 'Check recommended',
       reason,
     }
   }
@@ -725,6 +727,17 @@ export function resolveConfidenceSummary(opts: {
       level:  'needs_attention',
       label:  'Waitlist only',
       reason: 'Class is currently full. Auto-registration will join the waitlist when the window opens.',
+    }
+  }
+
+  // Stage 5: Safety net — COMPOSITE_CLASS_FULL shouldn't reach here (the
+  // registration_open_full guard above catches it), but if the composite status
+  // and card state diverge, return the truthful label rather than "Likely to succeed".
+  if (compositeStatus === 'COMPOSITE_CLASS_FULL') {
+    return {
+      level:  'needs_attention',
+      label:  'Class full',
+      reason: 'Class is full — no spots available.',
     }
   }
 
