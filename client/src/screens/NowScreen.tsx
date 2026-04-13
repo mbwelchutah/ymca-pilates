@@ -2060,6 +2060,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     ? 'Leave Waitlist'
                     : 'Cancel Registration'}
               </button>
+              {cancelInProgress && (
+                <p className="text-[11px] text-text-muted text-center mt-1.5 leading-snug">
+                  Connecting to YMCA — this usually takes 30–60 seconds
+                </p>
+              )}
             </div>
           )}
 

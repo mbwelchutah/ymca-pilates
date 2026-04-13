@@ -2430,10 +2430,10 @@ async function cancelRegistration(job) {
     let card = await findCard(page);
     if (card) return card;
     // Scroll up (reset to top first, then gentle scan down)
-    await scrollPanel(page,-999999); await page.waitForTimeout(150);
+    await scrollPanel(page,-999999); await page.waitForTimeout(80);
     card = await findCard(page); if (card) return card;
     for (let i=0;i<40;i++) {
-      await scrollPanel(page,120); await page.waitForTimeout(150);
+      await scrollPanel(page,120); await page.waitForTimeout(80);
       card = await findCard(page); if (card) return card;
     }
     return null;
@@ -2468,7 +2468,10 @@ async function cancelRegistration(job) {
     // ── Navigate ─────────────────────────────────────────────────────────────
     console.log('[cancel] Navigating to schedule...');
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout:60000 });
-    await page.waitForLoadState('networkidle');
+    // Use domcontentloaded instead of networkidle — the Bubble.io SPA keeps
+    // background XHR alive for 15-20 extra seconds after the page is usable.
+    // The waitForFunction below (waiting for <select> options) is the real gate.
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
 
     const loginPrompt = await page.locator('text=/login to register/i').count();
     if (loginPrompt > 0) return { success:false, action:null, message:'Session not established — schedule page requires login' };
