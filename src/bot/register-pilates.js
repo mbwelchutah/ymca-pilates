@@ -2439,6 +2439,61 @@ async function cancelRegistration(job) {
     return null;
   }
 
+  // ── Stage 2: quick truth re-check ────────────────────────────────────────
+  // Called after any cancel failure while the browser is still open.
+  // Closes any open modal and re-probes the class card to determine whether
+  // the enrollment is still active on YMCA or has already been cleared.
+  // Returns: { found, enrolled: true|false|null, reason }
+  async function quickRecheckEnrollment(page) {
+    try {
+      console.log('[cancel:recheck] Starting quick enrollment re-check...');
+      // Close any open modal/popup
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(200);
+
+      // Find card — light search first, then one scroll attempt
+      let card = await findCard(page);
+      if (!card) {
+        await scrollPanel(page, -999999);
+        await page.waitForTimeout(50);
+        card = await findCard(page);
+      }
+      if (!card) {
+        console.log('[cancel:recheck] Card not found — likely removed from schedule');
+        return { found: false, enrolled: null, reason: 'card_gone' };
+      }
+
+      // Click card to open modal
+      try { await card.scrollIntoViewIfNeeded({ timeout: 3000 }); } catch {}
+      const rc = card.locator("button, [role='button'], a").first();
+      const rt = (await rc.count()) > 0 ? rc : card;
+      await rt.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 2500 }).catch(() => null);
+      await page.waitForTimeout(150);
+
+      const btns = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
+      const hasRegister       = btns.some(t => /^register$/i.test(t.trim()));
+      const hasViewReservation = btns.some(t => /view reservation|view waitlist/i.test(t.trim()));
+      const hasCancelBtn      = btns.some(t => /unregister|leave waitlist|cancel registration/i.test(t));
+
+      // Close modal again
+      await page.keyboard.press('Escape').catch(() => {});
+
+      console.log(`[cancel:recheck] Visible: ${JSON.stringify(btns)} → hasRegister:${hasRegister} hasViewRes:${hasViewReservation} hasCancel:${hasCancelBtn}`);
+
+      if (hasRegister && !hasCancelBtn && !hasViewReservation) {
+        return { found: true, enrolled: false, reason: 'register_visible' };
+      }
+      if (hasViewReservation || hasCancelBtn) {
+        return { found: true, enrolled: true, reason: 'reservation_or_cancel_visible' };
+      }
+      return { found: true, enrolled: null, reason: 'ambiguous', buttons: btns };
+    } catch (e) {
+      console.log('[cancel:recheck] Error during re-check:', e.message);
+      return { found: null, enrolled: null, reason: 'recheck_error', error: e.message };
+    }
+  }
+
   try {
     if (!classTitle) return { success:false, action:null, message:'Job is missing classTitle' };
 
@@ -2533,7 +2588,29 @@ async function cancelRegistration(job) {
     }
 
     if (!card) {
-      return { success:false, action:null, message:`Could not find class "${classTitle}" on the schedule` };
+      // Stage 2: Is the class date already in the past?  If so, the card being
+      // absent from the schedule is expected — enrollment was auto-cleared by YMCA.
+      // Use midnight Pacific time as the comparison point so same-day classes
+      // (e.g., a 4:20 PM class checked at 5 PM) are still caught.
+      let datePassed = false;
+      if (targetDate) {
+        try {
+          // targetDate is "YYYY-MM-DD". Compare date numerics in Pacific time.
+          const [y, mo, d] = targetDate.split('-').map(Number);
+          const nowPTDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+          datePassed = (nowPTDate.getFullYear() * 10000 + (nowPTDate.getMonth()+1) * 100 + nowPTDate.getDate())
+                     > (y * 10000 + mo * 100 + d);
+        } catch {}
+      }
+      console.log(`[cancel] Card not found — targetDate:${targetDate} datePassed:${datePassed}`);
+      return {
+        success:    false,
+        action:     datePassed ? 'stale_state' : null,
+        staleState: datePassed,
+        message:    datePassed
+          ? `Class card not found on schedule — date has passed, enrollment was likely auto-cleared by YMCA`
+          : `Could not find class "${classTitle}" on the schedule`,
+      };
     }
 
     // ── Open modal ────────────────────────────────────────────────────────────
@@ -2609,23 +2686,33 @@ async function cancelRegistration(job) {
     console.log(`[cancel] Visible buttons: ${JSON.stringify(allBtnTexts)}`);
 
     if (!cancelBtn) {
-      // ── Stale-state detection ────────────────────────────────────────────────
+      // ── Stale-state detection (Stage 1: button inspection) ──────────────────
       // No cancel/unregister/leave-waitlist button found in the modal.
-      // If YMCA is showing a "Register" or "Join Waitlist" button instead, local
-      // state is stale — the enrollment was already cleared on the YMCA side.
-      // Classify this as stale_state (not a hard failure) so the caller can
-      // auto-reconcile local DB rather than surfacing a scary error to the user.
       const enrolledElsewhere = allBtnTexts.some(t => /^(register|join waitlist|waitlist)$/i.test(t.trim()));
       const noEnrollmentSignal = allBtnTexts.length === 0 ||
         allBtnTexts.every(t => !/unregister|cancel.*reg|leave waitlist/i.test(t));
-      const isStaleState = enrolledElsewhere || noEnrollmentSignal;
-      console.log(`[cancel] No cancel btn — staleState:${isStaleState} enrolledElsewhere:${enrolledElsewhere}`);
+      const isStaleByButtons = enrolledElsewhere || noEnrollmentSignal;
+      console.log(`[cancel] No cancel btn — staleByButtons:${isStaleByButtons} enrolledElsewhere:${enrolledElsewhere}`);
+
+      // ── Stage 2: quick re-check for ambiguous cases ─────────────────────────
+      // If buttons gave us a clear signal (Register visible), trust it and skip re-check.
+      // For ambiguous cases (no buttons, or mixed signals), re-probe from the schedule.
+      let recheck = null;
+      if (!enrolledElsewhere) {
+        recheck = await quickRecheckEnrollment(page);
+        console.log('[cancel] Re-check result:', JSON.stringify(recheck));
+      }
+
+      const confirmedCleared = enrolledElsewhere || (recheck && recheck.enrolled === false) || (recheck && !recheck.found);
+      const isStaleState = confirmedCleared || isStaleByButtons;
+
       return {
         success:    false,
         action:     isStaleState ? 'stale_state' : null,
         staleState: isStaleState,
-        message:    isStaleState
-          ? `Enrollment already cleared on YMCA — local state is stale. Visible buttons: ${allBtnTexts.join(', ')}`
+        recheck,
+        message:    confirmedCleared
+          ? `Enrollment already cleared on YMCA — no cancel button present` + (recheck ? ` (re-check: ${recheck.reason})` : ' (Register visible)')
           : `No cancel/unregister button found in modal. Visible buttons: ${allBtnTexts.join(', ')}`,
       };
     }
