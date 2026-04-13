@@ -568,12 +568,13 @@ export interface SmartButtonConfig {
 }
 
 export function resolveSmartButton(opts: {
-  cardState:    NowCardState
-  countdown:    string | null
-  bookingOpenMs: number | null
-  nextWindow:   string | null
+  cardState:         NowCardState
+  countdown:         string | null
+  bookingOpenMs:     number | null
+  nextWindow:        string | null
+  isWaitlistScenario?: boolean
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs, nextWindow } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false } = opts
 
   switch (cardState) {
     case 'registered':
@@ -583,14 +584,14 @@ export function resolveSmartButton(opts: {
     case 'registration_in_progress':
       return { label: 'Registering…',  actionType: 'none',    helperText: null,                                 disabled: true,  emphasis: 'primary-blue'  }
     case 'registration_open_with_spots':
-      return { label: 'Get Spot', actionType: 'register', helperText: 'Spots available',                    disabled: false, emphasis: 'primary-blue'  }
+      return { label: 'Get Spot',      actionType: 'register', helperText: 'Spots available',                   disabled: false, emphasis: 'primary-blue'  }
     case 'registration_open_full':
-      return { label: 'Get Spot', actionType: 'waitlist', helperText: 'Class is full · Waitlist available', disabled: false, emphasis: 'primary-amber' }
+      return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full · Waitlist available', disabled: false, emphasis: 'primary-amber' }
     case 'auto_registration_armed': {
       const windowTime = nextWindow ? fmtWindowTime(nextWindow) : null
-      const helperText = windowTime
-        ? `Will register at ${windowTime}`
-        : 'Will register when the window opens'
+      const helperText = isWaitlistScenario
+        ? (windowTime ? `Will join waitlist at ${windowTime}` : 'Will join waitlist when the window opens')
+        : (windowTime ? `Will register at ${windowTime}`      : 'Will register when the window opens')
       return { label: 'Cancel Auto-registration', actionType: 'disarm', helperText, disabled: false, emphasis: 'outline-red' }
     }
     case 'registration_failed':
@@ -1711,11 +1712,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   })
 
   // Stage 3: single smart button config — drives the IDLE action button + helper text
+  // True when the armed/open class is known to be full — bot will join the waitlist
+  // rather than claim a spot.  Used to switch "Will register" → "Will join waitlist".
+  const isWaitlistScenario =
+    effectivePreflightStatus === 'waitlist_only' ||
+    effectivePreflightStatus === 'full'          ||
+    actionDetailVerdict      === 'waitlist_only'
+
   const smartButton: SmartButtonConfig = resolveSmartButton({
     cardState:    nowCardState,
     countdown,
     bookingOpenMs,
     nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
+    isWaitlistScenario,
   })
 
   // Secondary action state — drives the dynamic label + sheet contents.
@@ -2053,10 +2062,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         return execSteps[step]
                       })()
 
-                      // 'confirmed' changes its label while actively being checked
+                      // 'confirmed' changes its label while actively being checked,
+                      // and also when the class is known to be full (waitlist path).
                       const label =
                         step === 'confirmed' && status === 'running'
-                          ? 'Confirming registration access…'
+                          ? (isWaitlistScenario ? 'Confirming waitlist access…' : 'Confirming registration access…')
+                          : step === 'confirmed' && isWaitlistScenario
+                          ? 'Waitlist path confirmed'
                           : STEP_LABELS[step]
 
                       const icon =
@@ -2141,7 +2153,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                              row above; duplicating it here adds noise. */}
                         {showTiming && timeStr && (
                           <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
-                            Will register at {timeStr}
+                            {isWaitlistScenario
+                              ? `Will join waitlist at ${timeStr}`
+                              : `Will register at ${timeStr}`}
                           </p>
                         )}
                       </div>
