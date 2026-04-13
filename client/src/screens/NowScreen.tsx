@@ -734,14 +734,14 @@ export function resolveConfidenceSummary(opts: {
       return {
         level:  'check_recommended',
         label:  'Class full',
-        reason: 'Class is full with no waitlist available. Auto-registration will attempt when the window opens in case a spot is released.',
+        reason: 'No spots or waitlist available.',
       }
     }
     // Waitlist button visible — bot will join the waitlist.
     return {
       level:  'needs_attention',
       label:  'Waitlist only',
-      reason: 'Class is currently full. Auto-registration will join the waitlist when the window opens.',
+      reason: 'Class is full — bot will join the waitlist.',
     }
   }
 
@@ -779,7 +779,7 @@ export function resolveConfidenceSummary(opts: {
     return {
       level:  'needs_attention',
       label:  'Waitlist only',
-      reason: 'Class is currently full. Auto-registration will join the waitlist when the window opens.',
+      reason: 'Class is full — bot will join the waitlist.',
     }
   }
 
@@ -788,7 +788,7 @@ export function resolveConfidenceSummary(opts: {
     return {
       level:  'needs_attention',
       label:  'Needs attention',
-      reason: 'Moderate confidence — some signals were inconclusive. Consider running a fresh check.',
+      reason: 'Some signals were inconclusive — consider a fresh check.',
     }
   }
 
@@ -2191,14 +2191,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         <p className={`text-[13px] font-medium leading-snug ${labelClass}`}>
                           {confLabel}
                         </p>
-                        {/* Only show timing when we have a concrete window time.
-                             The "waiting" message is already carried by the standby
-                             row above; duplicating it here adds noise. */}
+                        {/* Timing line — only when very_likely / likely (timing line
+                             is suppressed for needs_attention / check_recommended since
+                             reason text covers the context instead). */}
                         {showTiming && timeStr && (
                           <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
                             {isWaitlistScenario
                               ? `Will join waitlist at ${timeStr}`
                               : `Will register at ${timeStr}`}
+                          </p>
+                        )}
+                        {/* Reason sub-line — shown when timing line is hidden (needs_attention).
+                             Gives context for waitlist-only and ambiguous states. */}
+                        {level === 'needs_attention' && reason && (
+                          <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
+                            {reason}
                           </p>
                         )}
                       </div>
