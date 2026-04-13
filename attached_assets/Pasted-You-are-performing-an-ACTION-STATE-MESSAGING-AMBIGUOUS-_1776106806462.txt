@@ -1,0 +1,401 @@
+You are performing an ACTION-STATE MESSAGING + AMBIGUOUS-STATE CLEANUP PASS for the YMCA Booker app.
+
+CONTEXT
+
+The full/waitlist/bookable/already-registered classifier has already been implemented and verified.
+
+Verified action states now exist:
+- bookable
+- waitlist_available
+- full
+- already_registered
+- unknown
+
+The system truth is now much better.
+
+This pass is NOT about changing classifier architecture.
+This pass is about making the UI messaging, button behavior, confidence text, and Tools labels fully aligned with that truth.
+
+PRIMARY GOAL
+
+Make every action state feel:
+- truthful
+- calm
+- obvious
+- non-contradictory
+
+Especially:
+
+- full classes must never look bookable
+- waitlist-only classes must never look like direct booking
+- unknown / ambiguous classes must not inherit overconfident “likely to succeed” messaging
+- Tools labels must reflect the actual state cleanly
+
+IMPORTANT RULES
+
+- Do NOT redesign the app
+- Do NOT add unrelated new features
+- Do NOT expand scope beyond messaging, labels, button behavior, and ambiguous-state cleanup
+- Keep app runnable after each stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY.
+
+==================================================
+STAGE 1 — AUDIT ALL USER-FACING ACTION-STATE MESSAGING
+==================================================
+
+Goal:
+Identify every place where action-state language appears and make sure all of it is driven by the classifier truth.
+
+Tasks:
+
+1. Audit all user-facing surfaces that display action-state-dependent messaging:
+   - Now tab
+   - banners
+   - readiness rows
+   - button labels
+   - confidence text
+   - Tools / Last Run
+   - Tools / recent failures
+   - status badges
+
+2. Make a clean mapping table from state → UI language:
+   - bookable
+   - waitlist_available
+   - full
+   - already_registered
+   - unknown
+
+3. Remove any places where old bookable wording can still leak through
+
+Success criteria:
+- one clear mapping exists
+- all user-facing copy is traceable to action state
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — POLISH BOOKABLE STATE MESSAGING
+==================================================
+
+Goal:
+Make bookable feel confident but not overstated.
+
+Tasks:
+
+For bookable:
+- keep language like:
+  - Ready
+  - Ready to book
+  - Will register at open
+  - Likely to succeed
+- ensure buttons are active and appropriate
+- ensure green/readiness language is used only here
+
+Audit and remove:
+- overlong wording
+- duplicate confidence/readiness messages
+- technical language
+
+Success criteria:
+- bookable feels clearly ready
+- no unnecessary clutter
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — POLISH WAITLIST-ONLY STATE MESSAGING
+==================================================
+
+Goal:
+Make waitlist behavior feel distinct from direct booking.
+
+Tasks:
+
+For waitlist_available:
+- ensure wording is explicitly waitlist-specific, such as:
+  - Join Waitlist
+  - Will join waitlist
+  - Waitlist available
+  - Waitlist only
+
+Do NOT allow this state to use:
+- Get Spot
+- Ready to book
+- Will register at open
+- Likely to succeed as if direct booking is available
+
+Confidence text should reflect:
+- waitlist path, not booking path
+
+Success criteria:
+- waitlist-only classes never look directly bookable
+- UI language is calm and unambiguous
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — POLISH FULL / CLOSED STATE MESSAGING
+==================================================
+
+Goal:
+Make full classes informative and truthful, not misleading and not overly dramatic.
+
+Tasks:
+
+For full:
+- use calm labels like:
+  - Class Full
+  - Full
+  - No spots available
+- disabled button text should match this truth
+
+For closed:
+- use:
+  - Registration closed
+  - Booking window closed
+
+Do NOT allow:
+- Get Spot
+- Will register at open
+- Registration path confirmed
+- Likely to succeed
+
+Make sure banners, buttons, and readiness rows all agree
+
+Success criteria:
+- full/closed states are unmistakable
+- they do not read like bookable states
+- they do not look like unexplained failures
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — POLISH ALREADY-REGISTERED STATE
+==================================================
+
+Goal:
+Make already-registered feel settled and non-actionable.
+
+Tasks:
+
+For already_registered:
+- use calm labels like:
+  - Registered
+  - Already registered
+- show appropriate settled styling
+- do not show booking or waitlist actions
+- do not show misleading confidence language
+
+If useful:
+- keep this state clearly distinct from success/confirmed just completed
+- but still calm and resolved
+
+Success criteria:
+- already-registered classes feel complete
+- no contradictory action prompts remain
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — CLEAN UP UNKNOWN / AMBIGUOUS STATE
+==================================================
+
+Goal:
+Stop ambiguous state from inheriting optimistic bookable language.
+
+This is the most important cleanup target.
+
+Tasks:
+
+For unknown:
+- remove overly optimistic language such as:
+  - Likely to succeed
+  - Will register at open
+  - Ready to book
+unless there is a very strong reason
+
+Replace with calmer wording such as:
+- Needs review
+- Availability unclear
+- Not yet confirmed
+- Booking status unclear
+
+Button behavior should also be conservative:
+- do not imply direct booking certainty
+- if action remains available, label it carefully
+
+Review the current case where unknown was showing:
+- “Get Spot”
+- “Not open yet”
+- “Likely to succeed”
+
+That combination is too optimistic unless classifier confidence is very strong.
+Tighten this logic and messaging.
+
+Success criteria:
+- ambiguous states are no longer overconfident
+- user is not misled by optimistic wording in unclear cases
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — ALIGN READINESS ROW + CONFIDENCE TEXT
+==================================================
+
+Goal:
+Make readiness and confidence work together without contradiction.
+
+Tasks:
+
+1. Ensure readiness row reflects structural truth:
+- Session verified
+- Schedule loaded
+- Class found
+- Modal reached
+- Action state: [Bookable / Waitlist / Full / Already registered / Unknown]
+
+2. Ensure confidence text reflects action-state truth:
+- bookable → likely / high confidence
+- waitlist_available → waitlist-specific confidence
+- full → class full / no booking confidence
+- already_registered → confidence not needed or settled
+- unknown → cautious / low-confidence wording
+
+3. Remove duplicated emotional messaging where readiness and confidence say the same thing twice
+
+Success criteria:
+- readiness = structural truth
+- confidence = likely outcome
+- both agree
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — ALIGN BUTTON STATES + BUTTON LABELS
+==================================================
+
+Goal:
+Make every button tell the truth.
+
+Tasks:
+
+For each state, verify button label + enabled/disabled behavior:
+
+bookable:
+- active booking button
+- truthful label
+
+waitlist_available:
+- active waitlist button
+- not labeled like a booking button
+
+full:
+- disabled or non-primary button
+- clearly labeled Full / Class Full
+
+already_registered:
+- no booking action
+- settled state
+
+unknown:
+- conservative button behavior and wording
+
+Ensure there is no leftover mismatch where:
+- disabled button says one thing
+- banner says another
+- confidence says something else
+
+Success criteria:
+- buttons match state exactly
+- no contradictory action affordances remain
+
+After Stage 8:
+Summarize changes and STOP.
+
+==================================================
+STAGE 9 — NORMALIZE TOOLS RESULT LABELS
+==================================================
+
+Goal:
+Make Tools reflect action-state truth cleanly.
+
+Tasks:
+
+Normalize Tools / Last Run / recent run labels to human-readable outcomes such as:
+- Preflight Passed
+- Confirmed
+- Waitlisted
+- Class Full
+- Already Registered
+- Registration Closed
+- Needs Review
+
+Remove vague fallback labels like:
+- Failed
+unless it is truly a failure
+- generic Issue
+unless no better label exists
+
+Ensure full classes and already-registered states do not appear as confusing failures
+
+Success criteria:
+- Tools labels match reality
+- diagnostics feel calmer and more useful
+
+After Stage 9:
+Summarize changes and STOP.
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY + QA PASS
+==================================================
+
+Goal:
+Verify the whole action-state experience is consistent and trustworthy.
+
+Test all cases end-to-end:
+
+1. bookable
+2. waitlist_available
+3. full
+4. already_registered
+5. unknown
+
+Verify across:
+- Now tab
+- banners
+- buttons
+- readiness row
+- confidence text
+- Tools labels
+
+Confirm:
+- no state inherits another state’s wording
+- no optimistic language leaks into full/unknown
+- no settled state looks like a failure
+- user can understand status instantly
+
+Success criteria:
+- all five action states are visually and verbally distinct
+- the UI feels truthful and calm
+- no contradictory messaging remains
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
