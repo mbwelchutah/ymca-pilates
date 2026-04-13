@@ -148,6 +148,37 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       }
     }
 
+    // Classifier gate — warmup phase only.
+    // If the schedule cache (populated by Playwright API interception) shows
+    // the class is full, there is no point launching a full browser session
+    // during warmup.  Sniper and late phases always proceed — the booking
+    // window is open and the cache may be out of date.
+    if (phase === 'warmup') {
+      try {
+        const { classifyClass } = require('../classifier/classTruth');
+        const cr = classifyClass({
+          classTitle: dbJob.class_title,
+          dayOfWeek:  dbJob.day_of_week,
+          classTime:  dbJob.class_time,
+          instructor: dbJob.instructor || null,
+          targetDate: dbJob.target_date || null,
+        });
+        if (cr.state === 'full') {
+          const reason = 'CLASSIFIER_FULL';
+          const msg    = `Skipped warmup: schedule cache shows class is full (${cr.reason})`;
+          console.log(`  => SKIPPING Job #${dbJob.id} (classifier gate) — ${msg}`);
+          emitTickSkip(dbJob.id, reason, msg);
+          results.push({ jobId: dbJob.id, phase, status: 'skipped', message: msg });
+          continue;
+        }
+        if (cr.state !== 'unknown') {
+          console.log(`  Job #${dbJob.id}: classifier → ${cr.state} (${cr.matchType}, conf: ${cr.confidence})`);
+        }
+      } catch (classifyErr) {
+        console.warn(`  Job #${dbJob.id}: classifier gate error — ${classifyErr.message}. Proceeding anyway.`);
+      }
+    }
+
     // Readiness gate — warmup phase only.
     // During warmup (30 min before the window), skip the run if we have
     // fresh evidence that auth is blocked: either the most recent sniper run

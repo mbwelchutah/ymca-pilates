@@ -6,6 +6,7 @@ import { StatusDot } from '../components/ui/StatusDot'
 import { SecondaryButton } from '../components/ui/SecondaryButton'
 import type { AppState, Job, Phase, ScrapedClass, AuthStatusEnum } from '../types'
 import { api } from '../lib/api'
+import type { ClassTruthResult } from '../lib/classTruth'
 import { deriveSniperPhase, SNIPER_PHASE_INFO } from '../lib/sniperPhase'
 import type { SniperPhase } from '../lib/sniperPhase'
 import { useCountdown } from '../lib/countdown'
@@ -139,6 +140,14 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
+  const [cacheInfo, setCacheInfo]   = useState<ClassTruthResult | null>(null)
+
+  useEffect(() => {
+    api.classifyJob(job.id)
+      .then(r => { if (r.fetchedAt) setCacheInfo(r) })
+      .catch(() => {})
+  }, [job.id])
+
   const dayName  = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
   const phase    = (job.phase ?? 'unknown') as Phase
   const countdown = useCountdown(job.bookingOpenMs ?? null)
@@ -283,6 +292,23 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             {timingLine}
           </p>
         )}
+
+        {/* Row 5: Schedule cache availability (light indicator from classifier) */}
+        {job.is_active && cacheInfo && (() => {
+          const st = cacheInfo.state
+          const [dot, label] =
+            st === 'full'               ? ['bg-accent-red',   'Full']         :
+            st === 'waitlist_available' ? ['bg-accent-amber', 'Waitlist only'] :
+            st === 'bookable'           ? ['bg-accent-green', cacheInfo.openSpots != null ? `${cacheInfo.openSpots} spot${cacheInfo.openSpots === 1 ? '' : 's'} open` : 'Available'] :
+            [null, null]
+          if (!label) return null
+          return (
+            <div className="flex items-center gap-1.5 mt-1">
+              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+              <span className="text-[12px] text-text-muted">{label}</span>
+            </div>
+          )
+        })()}
 
         {/* Sniper detail row — watched card only, unchanged logic */}
         {isWatching && sniperRow && (() => {

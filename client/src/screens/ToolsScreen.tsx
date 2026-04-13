@@ -11,6 +11,8 @@ import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
 import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL } from '../lib/readinessResolver'
+import type { ClassTruthResult } from '../lib/classTruth'
+import { CLASS_STATE_LABEL } from '../lib/classTruth'
 
 interface FailureEntry {
   id:           number | null
@@ -793,6 +795,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   } | null>(null)
   const [kaToggling, setKaToggling] = useState(false)
 
+  // ── Schedule cache / classifier result ────────────────────────────────────
+  const [classifierResult, setClassifierResult] = useState<ClassTruthResult | null>(null)
+
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setBotStatus).catch(() => {})
@@ -801,6 +806,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!selectedJobId) return
+    api.classifyJob(selectedJobId).then(setClassifierResult).catch(() => setClassifierResult(null))
+  }, [selectedJobId])
 
   // ── Auto-scroll to linked section when arriving from Now ─────────────────
   useEffect(() => {
@@ -1390,6 +1400,49 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
                   {/* Last Check Now (per-phase diagnostics) */}
                   <LastCheckNowSection sniperRunState={sniperRunState} />
+
+                  {/* Schedule Cache (classifier result for selected job) */}
+                  {selectedJob && classifierResult && classifierResult.fetchedAt && (() => {
+                    const cr  = classifierResult
+                    const st  = cr.state
+                    const dot =
+                      st === 'bookable'           ? 'bg-accent-green' :
+                      st === 'waitlist_available' ? 'bg-accent-amber' :
+                      st === 'full'               ? 'bg-accent-red'   :
+                      st === 'not_found'          ? 'bg-text-muted'   : 'bg-divider'
+                    return (
+                      <>
+                        <SectionHeader title="Schedule Cache" id="tools-cache" />
+                        <Card padding="none">
+                          <div className="flex items-center gap-2 px-4 py-3 border-b border-divider">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                            <span className="text-[13px] font-semibold text-text-primary">
+                              {CLASS_STATE_LABEL[st]}
+                            </span>
+                            {cr.openSpots != null && (
+                              <span className="text-[12px] text-text-secondary ml-auto">
+                                {cr.openSpots} / {cr.totalCapacity ?? '?'} open
+                              </span>
+                            )}
+                          </div>
+                          {cr.reason     && <KVRow label="Reason"     value={cr.reason} />}
+                          {cr.matchType !== 'none' && (
+                            <KVRow label="Match"   value={`${cr.matchType} · conf ${cr.confidence}`} />
+                          )}
+                          {cr.isFuzzyMatch && cr.matchedClassName && (
+                            <KVRow label="Matched as"  value={cr.matchedClassName} />
+                          )}
+                          {cr.matchedTime && (
+                            <KVRow label="Time"        value={cr.matchedTime} />
+                          )}
+                          {cr.matchedInstructor && (
+                            <KVRow label="Instructor"  value={cr.matchedInstructor} />
+                          )}
+                          <KVRow label="Fetched"       value={fmtStr(cr.fetchedAt!)} />
+                        </Card>
+                      </>
+                    )
+                  })()}
                 </div>
               )}
             </>
