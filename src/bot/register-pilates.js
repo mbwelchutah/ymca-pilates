@@ -164,12 +164,15 @@ function classifyActionState(allBtnTexts, pageText = '') {
   const hasZeroSpots      = /\b0\s+spots?\s*(left|available|remaining)|\bno\s+spots?\s*(left|available)/i.test(pageLower);
   // "Registration Unavailable" / "Booking Unavailable"
   const hasRegUnavailable = /registration\s+unavailable|booking\s+unavailable/i.test(pageLower);
-  // "N/N attendees" where first N ≥ 1 — we pair with zeroSpots to confirm full
-  const hasFullAttendeeCount = /\b\d+\/\d+\s*attendees?\b/i.test(pageLower);
+  // "N/N attendees" where both numbers match and N > 0 — full roster (e.g. "30/30 Attendees")
+  const _attendeeMatch    = pageLower.match(/\b(\d+)\/(\d+)\s*attendees?\b/);
+  const hasFullAttendeeCount = _attendeeMatch !== null
+    && _attendeeMatch[1] === _attendeeMatch[2]
+    && parseInt(_attendeeMatch[1], 10) > 0;
 
   // ── Derived flags ───────────────────────────────────────────────────────────
   // isFull: any strong signal that no booking spot exists
-  const isFull   = hasFullBtn || hasZeroSpots || hasRegUnavailable || (hasClosedBtn && hasFullBtn);
+  const isFull   = hasFullBtn || hasZeroSpots || hasRegUnavailable || hasFullAttendeeCount;
   // isClosed: explicit closed state without a specific "full" signal
   const isClosed = hasClosedBtn && !isFull;
 
@@ -1943,22 +1946,29 @@ async function runBookingJob(job, opts = {}) {
         return logRunSummary({ status: 'closed', message: 'Registration is closed', screenshotPath, phase: 'action', reason: 'registration_closed', category: 'availability', label: 'Registration closed' });
       // ────────────────────────────────────────────────────────────────────────
 
-      } else if (hasRegister) {
+      // ── Stage 3: Classifier-first gate ──────────────────────────────────────
+      // The classifier is now the primary authority.  DOM signals (hasRegister /
+      // hasWaitlist) are used as a safe fallback only when the classifier returns
+      // 'unknown' — preventing mismatches where a stale DOM element disagrees with
+      // the visible page text.
+      } else if (_actionStateClassified === 'bookable'
+               || (_actionStateClassified === 'unknown' && hasRegister)) {
         _state.bundle.action = 'ACTION_READY';
         _state.sniperState   = 'SNIPER_READY';
         emitEvent(_state, 'ACTION', null, 'Preflight: Register button visible — action ready');
         _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Register button visible' });
         await snap('preflight-pass');
         return logRunSummary({ status: 'success', message: 'Preflight passed — Register button available and ready', screenshotPath });
-      } else if (hasWaitlist) {
+      } else if (_actionStateClassified === 'waitlist_available'
+               || (_actionStateClassified === 'unknown' && hasWaitlist)) {
         _state.bundle.action = 'ACTION_READY';
         emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: only Waitlist button visible — class is full');
         _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Waitlist button visible (class full)' });
         await snap('preflight-waitlist');
         return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class is full — only Waitlist available', screenshotPath });
       } else {
-        if (_hasCancelOnly) {
-          // Cancel button visible with no Register/Waitlist — user is already enrolled.
+        if (_actionStateClassified === 'already_registered' || _hasCancelOnly) {
+          // Cancel/Unregister button visible with no Register/Waitlist — user is already enrolled.
           // This is a fully successful preflight state, not a failure.
           _state.bundle.action = 'ACTION_READY';
           _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks session active — Cancel button visible (already registered)' });
