@@ -1,0 +1,108 @@
+Stage 2 — Refine Now-screen messaging for full / waitlist / closed / failure states
+
+Goal:
+Improve the on-screen status and helper messaging so the Now screen reflects the real reason a class is not immediately registerable.
+
+Important:
+- Do NOT redesign the Now screen
+- Do NOT change the overall feel, hierarchy, or layout
+- Do NOT change the main CTA label ("Get Spot")
+- This stage is focused on messaging/state-text refinement only
+- Stop after this stage and report results
+
+Current issue:
+The screen is overusing generic wording like "Registration window has closed" even when the more accurate state is:
+- class full
+- waitlist available
+- waitlist full
+- registration not possible
+- session check failed / needs attention
+
+What I want:
+The top status line and helper text should explain the actual reason and correct next state.
+
+Part 1 — Messaging rules
+
+1. before_open
+Use:
+- "Registration opens at [time]"
+- after arming: "Auto-registration ready"
+- "Will register at [time]"
+- optional standby: "Waiting for registration window"
+
+Do NOT use:
+- "Registration window has closed"
+
+2. register_now
+Use:
+- "Registration is open"
+- or "17 of 30 spots open" if counts are known
+- optional: "Getting your spot now"
+
+3. join_waitlist
+Use:
+- "Class is full"
+- "Waitlist available"
+- or "Joining waitlist"
+
+4. unavailable because class and waitlist are full
+Use:
+- "Class is full"
+- "Waitlist is full"
+- "Registration not possible"
+
+5. truly closed by time / no longer actionable
+Use:
+- "Registration has closed"
+
+Only use this when the class is truly over or no longer actionable due to time, not as a generic fallback.
+
+6. session/auth/readiness failure
+Use:
+- "Needs attention"
+- "Session check failed"
+- or other specific readiness failure wording
+
+Do NOT use closed/full messaging for auth/session/readiness failures.
+
+Part 2 — State priority for messaging
+
+Make sure status text is chosen in this priority order:
+
+1. readiness/session failure
+2. unavailable because full + waitlist full
+3. join_waitlist
+4. register_now
+5. before_open
+6. truly closed by time
+
+Do not let "registration window closed" override a more specific full/waitlist/failure message.
+
+Part 3 — Use available data
+
+Use:
+- spotsRemaining / capacity
+- waitlistAvailable
+- waitlistCount / waitlistMax if present
+- DOM button state
+- readiness/session failure state
+
+Examples:
+- 30/30 and waitlist button visible -> "Class is full" + "Waitlist available"
+- 30/30 and neither register nor waitlist available -> "Class is full" + "Waitlist is full" + "Registration not possible"
+- session check failed -> "Needs attention" + "Session check failed"
+
+Part 4 — Guardrails
+
+- Do not redesign layout
+- Do not change button layout
+- Do not change overall feel of the Now screen
+- Do not move on to prediction work yet
+- Stop after implementing this stage
+
+Deliver:
+1. files changed
+2. old messages removed
+3. new message mapping by state
+4. state priority used for messaging
+5. any unresolved edge cases

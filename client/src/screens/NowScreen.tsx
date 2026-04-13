@@ -1772,6 +1772,13 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 Turn this class on in the Plan tab to resume registration
               </p>
             </div>
+          ) : phase === 'sniper' && nowCardState === 'registration_open_full' ? (
+            // Window open but class is full — waitlist is the path; suppress blue "Registering…"
+            // which implies spots, and show the accurate availability state instead.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] font-semibold text-amber-600">Class is full · Waitlist available</span>
+            </div>
           ) : phase === 'sniper' ? (
             // Actively registering — keep blue tint (urgency)
             <div className="bg-accent-blue/10 rounded-2xl px-4 py-3 flex items-center gap-2.5">
@@ -1790,11 +1797,23 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="blue" />
               <span className="text-[17px] font-semibold text-accent-blue">Registering…</span>
             </div>
+          ) : phase === 'late' && nowCardState === 'registration_open_full' ? (
+            // Past window but waitlist is confirmed available — more specific than "closed"
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] font-semibold text-amber-600">Class is full · Waitlist available</span>
+            </div>
+          ) : phase === 'late' && nowCardState === 'registration_open_with_spots' ? (
+            // Past window but DOM confirms spots still available (rare but possible)
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="blue" />
+              <span className="text-[16px] font-semibold text-accent-blue">Registration is open</span>
+            </div>
           ) : phase === 'late' ? (
-            // Window closed — flat, neutral
+            // Truly closed — no actionable path remaining
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="gray" />
-              <span className="text-[16px] text-text-secondary">Registration window has closed</span>
+              <span className="text-[16px] text-text-secondary">Registration has closed</span>
             </div>
           ) : execPhase === 'armed' ? (
             // Stage 10H — ≤45 s to open; amber keeps urgency
