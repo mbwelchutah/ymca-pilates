@@ -177,7 +177,7 @@ export const api = {
       body: JSON.stringify({ id }),
     }),
 
-  cancelRegistration: (id: number): Promise<{ success: boolean; action: string | null; message: string }> =>
+  cancelRegistration: (id: number): Promise<{ success: boolean; action: string | null; message: string; staleState?: boolean }> =>
     apiFetch('/cancel-registration', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

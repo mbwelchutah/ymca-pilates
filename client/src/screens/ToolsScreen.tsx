@@ -172,6 +172,7 @@ const RESULT_LABELS: Record<string, string> = {
   full:               'Class Full',
   closed:             'Registration Closed',
   already_registered: 'Already Registered', // Stage 9: settled positive state — not a failure
+  stale_state:        'Already Cleared',    // Stage 1: YMCA already removed enrollment; local was stale
   failed:             'Failed',
   error:              'Needs Review',      // Stage 9: technical error — softer than "Error"
   skipped:            'Skipped',
@@ -654,6 +655,9 @@ function resultToOutcome(result: string | null): {
     // Stage 9: already_registered is a settled, positive state — not a failure
     case 'already_registered':
       return { label: 'Already Registered',   reason: 'Cancel button visible — you appear already registered', color: 'text-accent-green', dot: 'bg-accent-green'  }
+    // Stage 1: stale_state — YMCA had already cleared the enrollment; not a booking failure
+    case 'stale_state':
+      return { label: 'Already Cleared',      reason: 'YMCA already removed enrollment — local state was stale', color: 'text-text-muted',   dot: 'bg-text-muted'   }
     case 'failed':
       return { label: 'Failed',               reason: 'Registration failed — see reason below',                color: 'text-accent-red',   dot: 'bg-accent-red'    }
     // Stage 9: 'error' = technical problem, not booking failure — softer label

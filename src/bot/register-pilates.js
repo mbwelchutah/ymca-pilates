@@ -2609,10 +2609,24 @@ async function cancelRegistration(job) {
     console.log(`[cancel] Visible buttons: ${JSON.stringify(allBtnTexts)}`);
 
     if (!cancelBtn) {
+      // ── Stale-state detection ────────────────────────────────────────────────
+      // No cancel/unregister/leave-waitlist button found in the modal.
+      // If YMCA is showing a "Register" or "Join Waitlist" button instead, local
+      // state is stale — the enrollment was already cleared on the YMCA side.
+      // Classify this as stale_state (not a hard failure) so the caller can
+      // auto-reconcile local DB rather than surfacing a scary error to the user.
+      const enrolledElsewhere = allBtnTexts.some(t => /^(register|join waitlist|waitlist)$/i.test(t.trim()));
+      const noEnrollmentSignal = allBtnTexts.length === 0 ||
+        allBtnTexts.every(t => !/unregister|cancel.*reg|leave waitlist/i.test(t));
+      const isStaleState = enrolledElsewhere || noEnrollmentSignal;
+      console.log(`[cancel] No cancel btn — staleState:${isStaleState} enrolledElsewhere:${enrolledElsewhere}`);
       return {
-        success: false,
-        action:  null,
-        message: `No cancel/unregister button found in modal. Visible buttons: ${allBtnTexts.join(', ')}`,
+        success:    false,
+        action:     isStaleState ? 'stale_state' : null,
+        staleState: isStaleState,
+        message:    isStaleState
+          ? `Enrollment already cleared on YMCA — local state is stale. Visible buttons: ${allBtnTexts.join(', ')}`
+          : `No cancel/unregister button found in modal. Visible buttons: ${allBtnTexts.join(', ')}`,
       };
     }
 

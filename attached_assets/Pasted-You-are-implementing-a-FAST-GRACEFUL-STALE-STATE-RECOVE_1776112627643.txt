@@ -1,0 +1,282 @@
+You are implementing a FAST + GRACEFUL STALE-STATE RECOVERY PASS for YMCA Booker.
+
+PRIMARY GOAL
+
+When the user tries to cancel a registration or leave a waitlist, and the class has already been removed on my.familyworks.app, the app should recover quickly and calmly instead of showing a harsh error.
+
+This is NOT a broad redesign.
+This pass is ONLY about graceful recovery when local app state is stale but YMCA already cleared the enrollment.
+
+Examples of current bad behavior:
+- "No cancel button found — you may not be registered"
+- "Could not reach the server"
+- red error card remains even though the class is already gone on YMCA
+
+We want:
+- fast stale-state detection
+- auto-reconciliation
+- calm messaging
+- local state corrected automatically
+
+IMPORTANT RULES
+
+- Do NOT redesign the app
+- Do NOT expand beyond cancel / leave-waitlist stale-state recovery
+- Keep app runnable after each stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize changes
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+STAGE 1 — DEFINE STALE-STATE RECOVERY CASE
+==================================================
+
+Goal:
+Treat “already removed on YMCA” as a recoverable sync state, not a normal failure.
+
+Tasks:
+
+1. Add explicit recovery classification for cases like:
+   - cancel requested but no cancel/unregister button found
+   - leave waitlist requested but no waitlist/cancel button found
+   - local state says registered/waitlisted but YMCA does not
+
+2. Add new outcome/state such as:
+   - stale_local_state
+   - already_removed
+   - cleared_remotely
+   - local_state_corrected
+
+3. Do not classify these as generic failure by default
+
+Success criteria:
+- stale-state mismatch is recognized as its own recovery case
+- not all missing cancel-button cases become hard errors
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — ADD FAST RE-CHECK AFTER CANCEL/LEAVE FAILURE
+==================================================
+
+Goal:
+When cancel/leave action cannot complete normally, do a quick truth re-check.
+
+Tasks:
+
+1. If cancel or leave-waitlist flow fails due to:
+   - button missing
+   - action unavailable
+   - ambiguous post-click state
+
+then immediately perform a fast re-check of the current YMCA class state
+
+2. Re-check should determine whether class is now:
+   - still registered
+   - still waitlisted
+   - already cleared
+   - unknown
+
+3. Prefer a lightweight re-check first if possible
+4. Only escalate if result is still ambiguous
+
+Success criteria:
+- cancel/leave failures trigger immediate truth reconciliation
+- stale local state can be corrected quickly
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — AUTO-CORRECT LOCAL STATE WHEN YMCA IS ALREADY CLEARED
+==================================================
+
+Goal:
+If YMCA already shows the user is not registered / not waitlisted, update local state automatically.
+
+Tasks:
+
+1. If re-check shows enrollment is already gone:
+   - update local class state immediately
+   - clear local registered/waitlisted badge
+   - remove pending cancel/leave state
+   - mark outcome as recovered, not failed
+
+2. Add a correction event like:
+   - stale_state_corrected
+   - already_removed_on_ymca
+
+3. Ensure no further cancel attempts keep retrying against stale local state
+
+Success criteria:
+- local state self-heals
+- user is not stuck in an error loop
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — ADD CALM RECOVERY MESSAGING
+==================================================
+
+Goal:
+Replace harsh error language with calm sync-correction language when recovery succeeds.
+
+Tasks:
+
+1. When stale-state recovery succeeds, use messaging like:
+   - Already removed
+   - This class was already cleared on YMCA
+   - Your status has been updated
+   - No action needed
+
+2. Remove harsh messaging for recovered cases such as:
+   - No cancel button found
+   - You may not be registered
+   - Could not reach server
+if the state has already been reconciled successfully
+
+3. Keep real errors only for truly unresolved failures
+
+Success criteria:
+- recovered stale-state cases feel calm and self-healing
+- user is not alarmed by false failure language
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — UPDATE NOW CARD BUTTON / STATUS BEHAVIOR
+==================================================
+
+Goal:
+Once stale state is corrected, the Now card should immediately reflect truth.
+
+Tasks:
+
+1. If a registered class was already removed:
+   - remove "Registered"
+   - show the correct current state
+
+2. If a waitlisted class was already removed:
+   - remove "Waitlisted"
+   - show the correct current state
+
+3. Ensure the main action button updates immediately after recovery
+4. Do not leave the card in a cancelling/leaving state after reconciliation succeeds
+
+Success criteria:
+- card state updates immediately
+- user no longer sees stale status after recovery
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — HANDLE NETWORK ERROR + STALE-STATE RECOVERY CLEANLY
+==================================================
+
+Goal:
+Avoid misleading network errors when the end truth is already resolved.
+
+Tasks:
+
+1. If a network/server error occurs during cancel/leave flow:
+   - do a follow-up truth re-check
+
+2. If the follow-up shows the state is already cleared:
+   - treat final outcome as recovered
+   - do not keep the network error as the primary user-facing result
+
+3. Preserve network detail in diagnostics if helpful, but not as the main card message
+
+Success criteria:
+- transient network issues do not produce scary UX if final truth is already good
+- final user message reflects resolved state, not transient transport noise
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — ADVANCE / RESET CLASS STATE CLEANLY
+==================================================
+
+Goal:
+After successful stale-state correction, move the class into the correct next state.
+
+Tasks:
+
+1. If the class is recurring and local state has been cleared:
+   - reset the card to the appropriate upcoming state
+   - optionally advance to the next week if your existing model already does this for completed registrations
+
+2. If not recurring:
+   - clear the stale status and show neutral current state
+
+3. Ensure no old failure or stale cancel state lingers
+
+Success criteria:
+- user sees a clean next state after correction
+- stale completed/failed UI is removed
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — TOOLS / DIAGNOSTICS LABELING
+==================================================
+
+Goal:
+Record this as a sync correction, not a mysterious failure.
+
+Tasks:
+
+1. In Tools / run events, label these cases clearly:
+   - Local state corrected
+   - Already removed on YMCA
+   - Waitlist already cleared
+   - Registration already removed
+
+2. Do not classify recovered cases as hard failure unless the truth remains unresolved
+
+3. If screenshot/debug evidence exists, keep it secondary
+
+Success criteria:
+- diagnostics explain what happened clearly
+- recovered stale-state cases no longer pollute failure counts unnecessarily
+
+After Stage 8:
+Summarize changes and STOP.
+
+==================================================
+STAGE 9 — FINAL QA CASES
+==================================================
+
+Goal:
+Verify the main stale-state recovery scenarios.
+
+Test these cases:
+
+1. Registered locally, already removed on YMCA
+2. Waitlisted locally, already removed on YMCA
+3. Cancel fails first, re-check shows cleared
+4. Leave-waitlist fails first, re-check shows cleared
+5. True unresolved failure still shows as real error
+
+Success criteria:
+- stale-state cases recover gracefully
+- unresolved cases still surface correctly
+- local UI updates immediately after correction
+
+After Stage 9:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
