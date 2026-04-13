@@ -1,0 +1,362 @@
+You are implementing a SHARED API CLASSIFIER + NOW INTEGRATION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Stop using Playwright to discover basic class truth.
+
+Instead:
+
+- use the FamilyWorks API as the source of truth
+- classify each planned class before booking runs
+- feed that truth into the Now screen
+- optionally expose a light preview in Plan
+
+CORE PRINCIPLE
+
+- Plan = what the user wants
+- Now = what is true right now
+- API classifier = the shared source of truth
+
+This pass should fix cases where Now incorrectly shows:
+- Get Spot
+- Likely to succeed
+- Registration path confirmed
+
+when the class is actually:
+- Full
+- Waitlist only
+- Not found
+- Changed on the schedule
+
+IMPORTANT RULES
+
+- Do NOT redesign the app
+- Do NOT replace Playwright execution entirely
+- Playwright is still used for actual booking / waitlist actions
+- The classifier only determines truth BEFORE execution
+- Keep app runnable after each stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize changes
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+STAGE 1 — CREATE A SHARED CLASSIFIER MODULE
+==================================================
+
+Goal:
+Create one shared place where class truth is determined from the API.
+
+Tasks:
+
+1. Add a shared module, for example:
+   - classifier.ts
+   - availabilityClassifier.ts
+   - classTruth.ts
+
+2. This module should accept a planned class/job and return a normalized state
+
+Return states:
+- bookable
+- waitlist_available
+- full
+- already_registered (if detectable)
+- not_found
+- unknown
+
+3. Keep this separate from UI code and separate from Playwright execution code
+
+Success criteria:
+- shared classifier module exists
+- it defines normalized class truth states
+- both Plan and Now can consume it later
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — FETCH FAMILYWORKS API DATA FOR CLASSIFICATION
+==================================================
+
+Goal:
+Use the direct API schedule data as classifier input.
+
+Tasks:
+
+1. Reuse existing FamilyWorks API fetch path if already implemented
+2. For a given planned class/job, fetch relevant schedule data from the API
+3. Use the correct day / time range / filter scope needed to classify the class accurately
+4. Do not depend on Playwright DOM for this step
+
+Success criteria:
+- classifier receives live schedule/API data
+- no browser is required just to determine availability truth
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — ADD NORMALIZED AVAILABILITY CLASSIFICATION
+==================================================
+
+Goal:
+Map raw API results into normalized states.
+
+Tasks:
+
+1. Determine:
+- bookable
+- waitlist_available
+- full
+- not_found
+- unknown
+
+2. Use raw signals like:
+- open spots
+- full / waitlist status
+- capacity counts
+- availability text
+- actionability indicators from API data if available
+
+3. Only classify as bookable when actual booking is plausibly available
+4. Full and waitlist must be distinct
+5. Not_found must mean:
+   - no acceptable match found in API data
+
+Success criteria:
+- API data is converted into reliable normalized states
+- full vs waitlist vs bookable is not ambiguous
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — ADD FUZZY MATCHING FOR CLASS IDENTITY
+==================================================
+
+Goal:
+Avoid fragile exact-match failures when a class shifts slightly.
+
+Tasks:
+
+1. Implement best-match logic using priority like:
+   - class name (strongest)
+   - day/date
+   - closest time
+   - instructor (helpful, but not always required)
+
+2. Support reasonable tolerance for time shifts, for example:
+   - +/- 30 minutes
+   - or configurable tolerance
+
+3. Distinguish:
+- exact match
+- fuzzy match
+- no match
+
+4. If fuzzy matched, preserve that fact for diagnostics
+
+Success criteria:
+- minor schedule shifts no longer become immediate “not found”
+- classifier can identify closest likely class safely
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — ADD CLASSIFIER OUTPUT SHAPE FOR UI
+==================================================
+
+Goal:
+Return enough information for the UI to explain truth cleanly.
+
+Tasks:
+
+1. Classifier result should include fields like:
+- state
+- matchedClassName
+- matchedInstructor
+- matchedTime
+- confidence
+- isFuzzyMatch
+- reason
+- capacity/openSpots if available
+
+2. Keep the result normalized and clean for UI use
+3. Do not expose raw API complexity directly to the UI
+
+Success criteria:
+- Now screen can render truthful state from classifier result
+- future Plan preview can use same result
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — INTEGRATE CLASSIFIER INTO NOW SCREEN
+==================================================
+
+Goal:
+Make Now show truth BEFORE Playwright runs.
+
+Tasks:
+
+1. Before showing booking-readiness messaging in Now, run the classifier (or use cached classifier result)
+2. Use classifier output to drive:
+- primary button label
+- banner/status text
+- confidence/readiness messaging
+
+3. Mapping examples:
+
+bookable:
+- Get Spot
+- Ready to book
+- Will register at open
+
+waitlist_available:
+- Join Waitlist
+- Waitlist available
+
+full:
+- Class Full
+- No spots available
+
+not_found:
+- Unavailable
+- Class no longer on schedule
+
+unknown:
+- Needs review
+- Availability unclear
+
+4. Do not let Playwright failure be the first source of truth anymore
+
+Success criteria:
+- Now is truthful before execution
+- misleading “Get Spot” states are removed when class is actually full / unavailable
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — PREVENT EXECUTION WHEN CLASSIFIER SAYS NOT TO
+==================================================
+
+Goal:
+Do not launch Playwright unnecessarily.
+
+Tasks:
+
+1. If classifier returns:
+- full
+- not_found
+- unknown (depending on policy)
+
+then prevent standard booking execution
+
+2. Only allow Playwright booking when classifier says:
+- bookable
+or
+- waitlist_available (if allowed by action path)
+
+3. Show calm UI messaging instead of trying and failing
+
+Success criteria:
+- Playwright is no longer used to discover obvious non-bookable states
+- execution becomes more efficient and trustworthy
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — ADD LIGHT PLAN PREVIEW (OPTIONAL / LIGHTWEIGHT)
+==================================================
+
+Goal:
+Let Plan benefit lightly from classifier truth without turning it into a live diagnostics screen.
+
+Tasks:
+
+1. Add subtle optional status preview in Plan using the same classifier result, such as:
+- Scheduled
+- Likely full
+- Waitlist likely
+- Unavailable
+
+2. Keep Plan lightweight:
+- no heavy error language
+- no execution messaging
+- no Playwright diagnostics
+
+3. If classifier data is stale, prefer neutral language
+
+Success criteria:
+- Plan gets light awareness
+- Now remains the primary live truth surface
+
+After Stage 8:
+Summarize changes and STOP.
+
+==================================================
+STAGE 9 — ADD TOOLS / DIAGNOSTIC VISIBILITY FOR CLASSIFIER
+==================================================
+
+Goal:
+Make the classifier observable without cluttering Now.
+
+Tasks:
+
+1. In Tools or diagnostics, record classifier outcomes such as:
+- exact match
+- fuzzy match
+- full
+- waitlist only
+- not found
+
+2. If fuzzy matching happened, surface that in diagnostics
+3. If classifier blocked execution, record the reason clearly
+
+Success criteria:
+- classifier decisions are inspectable
+- debugging becomes easier if matching goes wrong
+
+After Stage 9:
+Summarize changes and STOP.
+
+==================================================
+STAGE 10 — FINAL QA PASS
+==================================================
+
+Goal:
+Verify the classifier-driven flow works end to end.
+
+Test cases:
+1. Bookable exact match
+2. Waitlist-only class
+3. Full class
+4. Slightly shifted time / fuzzy match
+5. Class removed / not found
+6. Unknown / ambiguous result
+
+Verify:
+- Now shows truthful state before Playwright runs
+- Playwright is skipped when appropriate
+- Plan remains lightweight
+- Tools shows classifier outcomes clearly
+
+Success criteria:
+- state is determined before execution
+- Now stops showing misleading bookable states
+- system feels smarter and more reliable
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
