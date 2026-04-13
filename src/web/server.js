@@ -4848,6 +4848,12 @@ const server = http.createServer((req, res) => {
         if (result.success) {
           clearLastRun(id);
           console.log(`[cancel-registration] Job #${id} cancelled successfully — booking state cleared`);
+        } else if (result.staleState) {
+          // Stage 3: YMCA already cleared the enrollment — local state was stale.
+          // Auto-correct DB so the card stops showing "Registered"/"Waitlisted".
+          clearLastRun(id);
+          result.stateAutoCorrected = true;
+          console.log(`[cancel-registration] Job #${id} stale state auto-corrected — YMCA enrollment already cleared (${result.action}, recheck: ${result.recheck?.reason ?? 'n/a'})`);
         } else {
           console.log(`[cancel-registration] Job #${id} cancel failed: ${result.message}`);
         }

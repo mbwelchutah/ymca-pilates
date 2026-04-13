@@ -1310,17 +1310,21 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     setCancelResult(null)
     try {
       const r = await api.cancelRegistration(job.id)
-      // Stage 1: stale_state is a recognized recovery case — bot couldn't find
-      // a cancel button because YMCA already cleared the enrollment. Treat it
-      // as a soft non-failure so later stages (3+) can auto-correct local state.
+      // Stage 1+3: stale_state is a recognized recovery case — bot detected that
+      // YMCA already cleared the enrollment. Server auto-corrects local DB via
+      // clearLastRun(), so we refresh the card immediately to reflect truth.
       const isStale = r.action === 'stale_state' || r.staleState === true
       const text = r.success
         ? (r.action === 'left_waitlist' ? 'Left waitlist' : 'Registration cancelled')
         : isStale
-          ? 'Already cleared on YMCA — syncing local status…'
+          ? r.stateAutoCorrected
+            ? 'Already cleared on YMCA — your status has been updated'
+            : 'Already cleared on YMCA — syncing local status…'
           : friendlyCancelError(r.message)
       setCancelResult({ ok: r.success || isStale, text })
-      if (r.success) refresh()
+      // Stage 3: refresh for both real success AND stale-state correction so the
+      // card immediately drops the "Registered"/"Waitlisted" badge.
+      if (r.success || isStale) refresh()
     } catch (e) {
       setCancelResult({ ok: false, text: e instanceof Error ? e.message : 'Cancel failed' })
     } finally {
