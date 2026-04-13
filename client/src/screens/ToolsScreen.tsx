@@ -171,8 +171,9 @@ const RESULT_LABELS: Record<string, string> = {
   not_found:          'Class Not Found',
   full:               'Class Full',
   closed:             'Registration Closed',
+  already_registered: 'Already Registered', // Stage 9: settled positive state — not a failure
   failed:             'Failed',
-  error:              'Error',
+  error:              'Needs Review',      // Stage 9: technical error — softer than "Error"
   skipped:            'Skipped',
 }
 
@@ -650,10 +651,18 @@ function resultToOutcome(result: string | null): {
       return { label: 'Waitlist Only',        reason: 'Class is full — bot will join the waitlist',            color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'closed':
       return { label: 'Registration Closed',  reason: 'YMCA has closed registration for this class',           color: 'text-accent-amber', dot: 'bg-accent-amber'  }
+    // Stage 9: already_registered is a settled, positive state — not a failure
+    case 'already_registered':
+      return { label: 'Already Registered',   reason: 'Cancel button visible — you appear already registered', color: 'text-accent-green', dot: 'bg-accent-green'  }
+    case 'failed':
+      return { label: 'Failed',               reason: 'Registration failed — see reason below',                color: 'text-accent-red',   dot: 'bg-accent-red'    }
+    // Stage 9: 'error' = technical problem, not booking failure — softer label
+    case 'error':
+      return { label: 'Needs Review',         reason: 'A check or run encountered an error — see details',    color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'skipped':
       return { label: 'Skipped',             reason: 'Class skipped — already booked or paused',              color: 'text-text-muted',   dot: 'bg-text-muted'   }
     default:
-      return { label: 'Failed',              reason: 'Registration failed — see reason below',                 color: 'text-accent-red',   dot: 'bg-accent-red'   }
+      return { label: 'Unknown',             reason: 'Outcome not recognized — check Tools for details',      color: 'text-text-muted',   dot: 'bg-text-muted'   }
   }
 }
 

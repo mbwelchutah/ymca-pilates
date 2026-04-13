@@ -577,8 +577,9 @@ export function resolveSmartButton(opts: {
   isClassFull?:           boolean   // Stage 6: full = no waitlist button visible
   isRegistrationClosed?:  boolean   // Stage 4: YMCA has explicitly closed registration
   isAlreadyRegistered?:   boolean   // Stage 5: cancel-only DOM — user appears already registered
+  isNotYetChecked?:       boolean   // Stage 10: COMPOSITE_NOT_TESTED — nothing verified yet
 }): SmartButtonConfig {
-  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false, isAlreadyRegistered = false } = opts
+  const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false, isAlreadyRegistered = false, isNotYetChecked = false } = opts
 
   switch (cardState) {
     case 'registered':
@@ -597,7 +598,17 @@ export function resolveSmartButton(opts: {
       return { label: 'Join Waitlist', actionType: 'waitlist', helperText: 'Class is full · Waitlist available', disabled: false, emphasis: 'primary-amber' }
     case 'auto_registration_armed': {
       const windowTime = nextWindow ? fmtWindowTime(nextWindow) : null
-      const helperText = isWaitlistScenario
+      // Stage 8/10: override helper text for states where "Will register" is a false promise.
+      // Registration closed → bot cannot register regardless of timing.
+      // Already registered → user is already in the class; arming is pointless.
+      // Not yet checked → no preflight data; claiming a time is overconfident.
+      const helperText = isRegistrationClosed
+        ? 'Registration is closed — disarm and check status'
+        : isAlreadyRegistered
+        ? 'You appear already registered — consider disarming'
+        : isNotYetChecked
+        ? 'Run a check to confirm readiness before the window opens'
+        : isWaitlistScenario
         ? (windowTime ? `Will join waitlist at ${windowTime}` : 'Will join waitlist when the window opens')
         : (windowTime ? `Will register at ${windowTime}`      : 'Will register when the window opens')
       return { label: 'Cancel Auto-registration', actionType: 'disarm', helperText, disabled: false, emphasis: 'outline-red' }
@@ -1793,6 +1804,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     isClassFull,
     isRegistrationClosed,
     isAlreadyRegistered,
+    isNotYetChecked,
   })
 
   // Secondary action state — drives the dynamic label + sheet contents.
@@ -2136,8 +2148,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                             return 'running'
                           return 'pending'
                         }
-                        // When armed, all real steps are confirmed green
-                        if (localArmed) return 'success'
+                        // When armed and checks have run, all real steps show green.
+                        // When not yet checked (COMPOSITE_NOT_TESTED), keep pending —
+                        // nothing has been verified; showing green would contradict
+                        // the "Not yet checked" confidence label below.
+                        if (localArmed && !isNotYetChecked) return 'success'
                         // Otherwise use live execSteps (pending/running/success/failed)
                         return execSteps[step]
                       })()
@@ -2248,9 +2263,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                               : `Will register at ${timeStr}`}
                           </p>
                         )}
-                        {/* Reason sub-line — shown when timing line is hidden (needs_attention).
-                             Gives context for waitlist-only and ambiguous states. */}
-                        {level === 'needs_attention' && reason && (
+                        {/* Reason sub-line — shown when timing line is hidden.
+                             needs_attention: waitlist-only, full, ambiguous states.
+                             check_recommended: session errors, class-not-found, closed —
+                             gives specific why + what-to-do context the label alone lacks. */}
+                        {(level === 'needs_attention' || level === 'check_recommended') && reason && (
                           <p className="text-[12px] text-text-muted mt-0.5 leading-snug">
                             {reason}
                           </p>
