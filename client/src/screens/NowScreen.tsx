@@ -1349,7 +1349,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
           try {
             const jobs = await api.getJobs()
             const fresh = jobs.find(j => j.id === jobId)
-            const ENROLLED = new Set(['booked', 'waitlist', 'waitlisted'])
+            const ENROLLED = new Set(['booked', 'success', 'waitlist', 'waitlisted', 'already_registered'])
             const nowCleared = fresh && !ENROLLED.has(fresh.last_result ?? '')
             if (nowCleared) {
               setCancelResult({ ok: true, text: 'Already cleared — your status has been updated', kind: 'recovered' })
