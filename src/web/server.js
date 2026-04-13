@@ -3846,7 +3846,7 @@ let _scrapeRunning = false;
 // ---------------------------------------------------------------------------
 const server = http.createServer((req, res) => {
   const json = (data) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(data));
   };
 
