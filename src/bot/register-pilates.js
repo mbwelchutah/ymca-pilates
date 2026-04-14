@@ -640,16 +640,40 @@ async function runBookingJob(job, opts = {}) {
     // the ping misses do we need to do a full Playwright sign-in (and only
     // then do we need to hold the lock to prevent concurrent auth attempts).
     let _tier2Trusted = false;
+    let _pingResult   = null;
     try {
-      const pingResult = await pingSessionHttp();
-      _tier2Trusted = pingResult.trusted === true;
+      _pingResult   = await pingSessionHttp();
+      _tier2Trusted = _pingResult.trusted === true;
       if (_tier2Trusted) {
         console.log(`[auth-lock] ${_runSource} — Tier-2 ping trusted, skipping auth lock.`);
       } else {
-        console.log(`[auth-lock] ${_runSource} — Tier-2 ping miss (${pingResult.detail}), will need full auth.`);
+        console.log(`[auth-lock] ${_runSource} — Tier-2 ping miss (${_pingResult.detail}), will need full auth.`);
       }
     } catch (pingErr) {
       console.log(`[auth-lock] ${_runSource} — Tier-2 ping error (${pingErr.message}), falling back to full auth.`);
+    }
+
+    // ── Preflight ping-timeout guard ──────────────────────────────────────────
+    // When BOTH HTTP pings time out simultaneously (network blip, YMCA site
+    // slow), skip browser auth in preflight mode.  A preflight is a health
+    // check — deferring it is always safe.  Without this guard a 20s ping
+    // timeout cascades into a 120s+ browser auth that holds the auth lock and
+    // makes the server unresponsive to API calls for the entire window.
+    if (PREFLIGHT_ONLY && !_tier2Trusted && _pingResult) {
+      const daxkoTimedOut = _pingResult.daxkoResult?.valid === null;
+      const fwTimedOut    = _pingResult.fwResult?.valid    === null;
+      if (daxkoTimedOut && fwTimedOut) {
+        console.log(`[auth-lock] ${_runSource} — both pings timed out; skipping browser auth in preflight mode.`);
+        return logRunSummary({
+          status:   'session_uncertain',
+          message:  'HTTP pings timed out — session state unknown (network blip); deferring preflight',
+          screenshotPath,
+          phase:    'auth',
+          reason:   'ping_timeout',
+          category: 'auth',
+          label:    'Session uncertain (ping timeout)',
+        });
+      }
     }
 
     // ── Auth lock — only when credentials are actually needed ─────────────────

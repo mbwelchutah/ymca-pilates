@@ -85,12 +85,14 @@ function classifyFailure(botResult) {
     reason   === 'modal_failed'
   ) return FAILURE_TYPES.MODAL_NOT_REACHABLE;
 
-  // ── Action not open yet ────────────────────────────────────────────────────
+  // ── Action not open yet / session temporarily uncertain ───────────────────
   if (
     status === 'not_open'            ||
     status === 'found_not_open_yet'  ||  // modal reachable, session valid, window not open yet
+    status === 'session_uncertain'   ||  // both HTTP pings timed out — network blip, not auth failure
     reason === 'not_open'            ||
-    reason === 'action_not_open'
+    reason === 'action_not_open'     ||
+    reason === 'ping_timeout'            // network blip — do not escalate to auth failure
   ) return FAILURE_TYPES.ACTION_NOT_OPEN;
 
   // ── Click / verify failed ──────────────────────────────────────────────────
