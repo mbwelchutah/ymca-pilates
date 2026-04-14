@@ -242,13 +242,14 @@ async function runBurstCheck(dbJob) {
     // Stage 3 (write-order fix) — confirmed-ready must be written before readiness
     // so that computeReadiness()'s lazy-loaded loadConfirmedReadyState() reads the
     // current run's classTruth freshness, not the previous run's file.
+    // Stage 6: source='browser' — a full Playwright burst run just completed.
     refreshConfirmedReadyState({
       classTitle: dbJob.class_title,
       classTime:  dbJob.class_time,
       instructor: dbJob.instructor  || null,
       dayOfWeek:  dbJob.day_of_week,
       targetDate: dbJob.target_date || null,
-    });
+    }, { source: 'browser' });
     refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
     const failureType = classifyFailure(result);
@@ -561,13 +562,14 @@ async function runPreflightLoop({ isActive = false } = {}) {
       console.log(`[preflight-loop] run:result — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
       // Stage 3 (write-order fix) — confirmed-ready before readiness (same cycle truth).
+      // Stage 6: source='browser' — a full Playwright preflight run just completed.
       refreshConfirmedReadyState({
         classTitle: dbJob.class_title,
         classTime:  dbJob.class_time,
         instructor: dbJob.instructor  || null,
         dayOfWeek:  dbJob.day_of_week,
         targetDate: dbJob.target_date || null,
-      });
+      }, { source: 'browser' });
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
       // Stage 10B — compute phase-aware retry context from outcome.
@@ -631,13 +633,14 @@ async function runPreflightLoop({ isActive = false } = {}) {
     } catch (err) {
       console.error(`[preflight-loop] run:error — Job #${dbJob.id}:`, err.message);
       // Stage 3 (write-order fix) — confirmed-ready before readiness (same cycle truth).
+      // Stage 6: source='browser' — browser run attempted (even though it errored).
       refreshConfirmedReadyState({
         classTitle: dbJob.class_title,
         classTime:  dbJob.class_time,
         instructor: dbJob.instructor  || null,
         dayOfWeek:  dbJob.day_of_week,
         targetDate: dbJob.target_date || null,
-      });
+      }, { source: 'browser' });
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
       // Timeout / unexpected error — treat as ambiguous, plan a retry.

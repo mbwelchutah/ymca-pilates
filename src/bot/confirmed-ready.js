@@ -295,9 +295,17 @@ function _deriveStatus(auth, classTruth, preflight) {
  * requests, or state mutations.  It composes what is already on disk.
  *
  * @param {{ classTitle?, dayOfWeek?, classTime?, instructor?, targetDate? }|null} job
+ * @param {{ source?: 'ping'|'browser'|'tick'|'unknown' }} [options]
+ *   source — what kind of validation triggered this refresh.
+ *   'ping'    — HTTP session ping confirmed sessions alive; no browser ran.
+ *   'browser' — full Playwright preflight/burst run completed.
+ *   'tick'    — scheduler tick finally-block refresh (post booking attempt).
+ *   'unknown' — source not specified (e.g. manual /api/preflight call).
+ *   Recorded in overall.refreshSource so consumers can distinguish ping-only
+ *   refreshes from browser-verified refreshes without inspecting timestamps.
  * @returns {ConfirmedReadyState}
  */
-function computeConfirmedReadyState(job = null) {
+function computeConfirmedReadyState(job = null, { source = 'unknown' } = {}) {
   const auth       = _buildAuth();
   const classTruth = _buildClassTruth(job);
   const preflight  = _buildPreflight();
@@ -312,9 +320,10 @@ function computeConfirmedReadyState(job = null) {
     classTruth,
     preflight,
     overall: {
-      checkedAt: Date.now(),
-      freshness: overallFreshness,
+      checkedAt:     Date.now(),
+      freshness:     overallFreshness,
       reason,
+      refreshSource: source,   // Stage 6 — what type of check last wrote this file
     },
   };
 }
@@ -340,10 +349,11 @@ function saveConfirmedReadyState(state) {
 /**
  * Compute + save the canonical state in one call.
  * @param {{ classTitle?, dayOfWeek?, classTime?, instructor?, targetDate? }|null} job
+ * @param {{ source?: 'ping'|'browser'|'tick'|'unknown' }} [options]
  * @returns {ConfirmedReadyState}
  */
-function refreshConfirmedReadyState(job = null) {
-  const state = computeConfirmedReadyState(job);
+function refreshConfirmedReadyState(job = null, options = {}) {
+  const state = computeConfirmedReadyState(job, options);
   saveConfirmedReadyState(state);
   return state;
 }

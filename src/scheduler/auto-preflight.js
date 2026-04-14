@@ -416,13 +416,15 @@ async function checkAutoPreflights({ isActive = false } = {}) {
         // ── Stage 4 — persist canonical confirmed-ready state ─────────────
         // Called unconditionally: fires after the ping fast-path AND after a
         // full browser run so the state file always reflects the latest evidence.
+        // Stage 6: pass refreshSource so the file records what kind of validation
+        // last wrote it — 'ping' means no Playwright ran; 'browser' means it did.
         refreshConfirmedReadyState({
           classTitle: dbJob.class_title,
           classTime:  dbJob.class_time,
           instructor: dbJob.instructor  || null,
           dayOfWeek:  dbJob.day_of_week,
           targetDate: dbJob.target_date || null,
-        });
+        }, { source: pingConfirmed ? 'ping' : 'browser' });
 
       } catch (err) {
         console.error(`[auto-preflight] ${trigger.name} error:`, err.message);

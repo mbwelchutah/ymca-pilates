@@ -277,13 +277,14 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       // Stage 7 — refresh confirmed-ready state so the UI and /api/confirmed-ready
       // reflect the outcome of this booking attempt without waiting for the next
       // scheduled preflight run.
+      // Stage 6: source='tick' — post booking-attempt refresh, no new browser preflight.
       try {
         refreshConfirmedReadyState({
           classTitle: job.classTitle,
           dayOfWeek:  job.dayOfWeek,
           classTime:  job.classTime,
           instructor: job.instructor ?? null,
-        });
+        }, { source: 'tick' });
       } catch (crErr) {
         console.warn(`  [confirmed-ready] post-tick refresh failed: ${crErr.message}`);
       }
