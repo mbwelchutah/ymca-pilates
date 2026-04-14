@@ -85,10 +85,18 @@ function syncJobsToPg() {
 }
 
 async function _doSyncJobsToPg() {
-  // Read from SQLite via the seed-jobs.json that syncSeed() just wrote.
-  // (This file is always up-to-date because jobs.js writes it on every mutation.)
-  if (!fs.existsSync(SEED_PATH)) return;
-  const jobs = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
+  // Read the current job list from SQLite (authoritative runtime source).
+  // Falls back to seed-jobs.json only if SQLite hasn't been initialised yet
+  // (e.g. during a very early startup before openDb() is first called).
+  let jobs;
+  try {
+    const { openDb } = require('./init');
+    const db = openDb();
+    jobs = db.prepare('SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs').all();
+  } catch (_) {
+    if (!fs.existsSync(SEED_PATH)) return;
+    jobs = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
+  }
 
   await ensurePgSchema();
   const pool = getPool();
@@ -121,4 +129,4 @@ async function _doSyncJobsToPg() {
   }
 }
 
-module.exports = { initFromPg, syncJobsToPg };
+module.exports = { initFromPg, syncJobsToPg, syncJobsToPgAsync: _doSyncJobsToPg };

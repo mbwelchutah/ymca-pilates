@@ -3,19 +3,16 @@
 const fs   = require('fs');
 const path = require('path');
 const { openDb } = require('./init');
-const { syncJobsToPg } = require('./pg-sync');
-
 const SEED_PATH = path.join(__dirname, '../../data/seed-jobs.json');
 
-// Writes the current jobs table to seed-jobs.json AND syncs to PostgreSQL so
-// that the next fresh deployment restores from PG instead of the stale git
-// snapshot.  Called after every write operation (create, delete, toggle, update).
+// Writes the current jobs table to seed-jobs.json.  PostgreSQL sync is now
+// awaited explicitly by the server.js mutation handlers so the response is
+// only sent after PG is durable — preventing stale restores on server restart.
 function syncSeed() {
   try {
     const db   = openDb();
     const jobs = db.prepare('SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs').all();
     fs.writeFileSync(SEED_PATH, JSON.stringify(jobs, null, 2), 'utf8');
-    syncJobsToPg(); // fire-and-forget: persists jobs to PostgreSQL for cross-deployment durability
   } catch (e) {
     console.warn('[db] syncSeed failed (non-fatal):', e.message);
   }

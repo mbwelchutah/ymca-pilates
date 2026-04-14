@@ -3,6 +3,7 @@
 const http = require('http');
 const { URL } = require('url');
 const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun } = require('../db/jobs');
+const { syncJobsToPgAsync } = require('../db/pg-sync');
 const { openDb } = require('../db/init');
 const { runBookingJob, cancelRegistration } = require('../bot/register-pilates');
 const { scrapeSchedule } = require('../bot/scrape-schedule');
@@ -4638,7 +4639,7 @@ const server = http.createServer((req, res) => {
     const isJsonUp = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let id, classTitle, dayOfWeek, classTime, instructor, targetDate;
 
       if (isJsonUp) {
@@ -4671,6 +4672,7 @@ const server = http.createServer((req, res) => {
         }
         updateJob(id, { classTitle, dayOfWeek, classTime, instructor: instructor || null, targetDate: targetDate || null });
         console.log(`Updated job #${id} via React UI: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] update-job await failed:', e.message));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       } else {
@@ -4698,6 +4700,7 @@ const server = http.createServer((req, res) => {
         }
         updateJob(id, { classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
         console.log(`Updated job #${id} via web form`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] update-job await failed:', e.message));
         res.writeHead(302, { Location: '/' }); res.end();
       }
     });
@@ -4706,7 +4709,7 @@ const server = http.createServer((req, res) => {
     const isJsonTa = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let id, newActive;
       if (isJsonTa) {
         try {
@@ -4731,6 +4734,7 @@ const server = http.createServer((req, res) => {
       if (id) {
         setJobActive(id, newActive);
         console.log(`Set job #${id} is_active=${newActive}`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] toggle-active await failed:', e.message));
       }
       if (isJsonTa) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -4745,7 +4749,7 @@ const server = http.createServer((req, res) => {
     const isJsonDel = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let id;
       if (isJsonDel) {
         try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
@@ -4760,6 +4764,7 @@ const server = http.createServer((req, res) => {
       if (id) {
         deleteJob(id);
         console.log(`Deleted job #${id}`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] delete-job await failed:', e.message));
       }
       if (isJsonDel) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -4857,7 +4862,7 @@ const server = http.createServer((req, res) => {
     const isJson = (req.headers['content-type'] || '').includes('application/json');
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let classTitle, dayOfWeek, classTime, instructor, targetDate;
 
       if (isJson) {
@@ -4885,6 +4890,7 @@ const server = http.createServer((req, res) => {
         }
         const id = createJob({ classTitle, dayOfWeek, classTime, instructor: instructor || null, targetDate: targetDate || null });
         console.log(`Created job #${id} via React UI: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] add-job await failed:', e.message));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, id }));
       } else {
@@ -4913,6 +4919,7 @@ const server = http.createServer((req, res) => {
         }
         const id = createJob({ classTitle, dayOfWeek, classTime, instructor, targetDate: targetDate || null });
         console.log(`Created job #${id} via web form: ${classTitle} / ${dayOfWeek} / ${classTime}`);
+        await syncJobsToPgAsync().catch(e => console.error('[pg-sync] add-job await failed:', e.message));
         res.writeHead(302, { Location: '/' });
         res.end();
       }
@@ -5343,6 +5350,16 @@ server.on('error', (err) => {
   }
 });
 server.listen(PORT, HOST, () => console.log('Server running on ' + HOST + ':' + PORT));
+
+// Startup sync (production only, PORT=5000): push the current SQLite jobs
+// state to PostgreSQL so any changes whose PG sync was interrupted by a
+// container restart are recovered.  Skipped in dev (PORT=5001) to avoid
+// overwriting the deployed app's PG state with a divergent dev SQLite.
+if (PORT === 5000) {
+  syncJobsToPgAsync()
+    .then(() => console.log('[pg-sync] Startup sync: SQLite → PostgreSQL complete.'))
+    .catch(e  => console.error('[pg-sync] Startup sync failed (non-fatal):', e.message));
+}
 
 // Stage 2: Clear any stale isAuthInProgress/authOperation left in auth-state.json
 // by a previous server crash.  The in-memory lock is always false on a fresh
