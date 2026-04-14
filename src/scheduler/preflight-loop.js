@@ -338,15 +338,25 @@ async function runBurstCheck(dbJob) {
       // booking run's own poll loop waits for the Register button — far better
       // than a burst that would arrive after window-open.
       //
-      // Guard: only fires when learnedSpeed has enough observations (≥ MIN_OBS).
-      // Falls through to normal burst scheduling when the learner has no data.
-      const _preemptLeadMs = getLearnedRunSpeed(dbJob.id)?.neededLeadTimeMs ?? null;
+      // Stage 9 guard used getLearnedRunSpeed() != null — which silently disabled
+      // preemptive launch for the first MIN_OBS (3) runs before the learner had
+      // data.  Stage 10 replaces the null-gate with a conservative cold-start
+      // default so even run #1 benefits from preemptive launch.
+      //
+      // DEFAULT_PREEMPT_MS (60 s) is chosen to be:
+      //   • above the typical learned neededLeadTimeMs (~50 s = median_total + 15 s)
+      //   • within the learner's [MIN_LEAD_TIME_MS=20 s, MAX_LEAD_TIME_MS=180 s] range
+      //   • conservative enough that arriving 10 s early at the modal is fine
+      //     (bot polls cheaply for the Register button until window opens)
+      const DEFAULT_PREEMPT_MS = 60_000;  // cold-start fallback before MIN_OBS runs
+      const _learnedSpeed   = getLearnedRunSpeed(dbJob.id);
+      const _preemptLeadMs  = _learnedSpeed?.neededLeadTimeMs ?? DEFAULT_PREEMPT_MS;
+      const _preemptSource  = _learnedSpeed ? 'learned' : 'default';
       const PREEMPT_BUFFER_MS = 5_000;  // 5 s safety buffer on top of lead time
 
       if (
         failureType === 'action_not_open'   &&
         result.status === 'found_not_open_yet' &&
-        _preemptLeadMs !== null             &&
         execTiming.msUntilOpen > 0          &&
         execTiming.msUntilOpen <= _preemptLeadMs + PREEMPT_BUFFER_MS
       ) {
@@ -356,7 +366,7 @@ async function runBurstCheck(dbJob) {
         console.log(
           `[preflight-loop] burst:preempt — Job #${dbJob.id} ` +
           `${Math.round(execTiming.msUntilOpen / 1000)}s until open, ` +
-          `neededLead=${Math.round(_preemptLeadMs / 1000)}s; ` +
+          `neededLead=${Math.round(_preemptLeadMs / 1000)}s (${_preemptSource}); ` +
           `launching booking run now so bot arrives at modal before window opens.`
         );
         resetBurst(dbJob.id);
