@@ -5,7 +5,7 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ScreenshotLightbox } from '../components/ui/ScreenshotLightbox'
-import type { AppState, SessionStatus, AuthStatusEnum } from '../types'
+import type { AppState, SessionStatus, AuthStatusEnum, Job } from '../types'
 import type { SniperRunState, SniperTiming, ConfirmedReadyState } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
@@ -769,6 +769,180 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
   )
 }
 
+// ── Recovery / Repair panel ────────────────────────────────────────────────────
+// Three bounded repair actions — each requires an inline confirmation click
+// before executing.  Visually secondary (placed last, labelled "Repair Tools").
+// Never exposes wipe-all, factory-reset, or any broad destructive path.
+
+type RecoveryPhase = 'idle' | 'confirming' | 'loading' | 'done' | 'error'
+interface RecoveryState { phase: RecoveryPhase; message?: string }
+
+function RecoveryAction({
+  label, description, buttonLabel, confirmLabel, disabled, disabledHint,
+  state, onRequest, onConfirm, onCancel,
+}: {
+  label:        string
+  description:  string
+  buttonLabel:  string
+  confirmLabel: string
+  disabled?:    boolean
+  disabledHint?: string
+  state:        RecoveryState
+  onRequest:    () => void
+  onConfirm:    () => void
+  onCancel:     () => void
+}) {
+  const { phase, message } = state
+
+  return (
+    <div className="px-4 py-3.5 border-b border-divider last:border-0">
+      {/* Label + description */}
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-medium text-text-primary leading-snug">{label}</p>
+          <p className="text-[11px] text-text-muted mt-0.5 leading-snug">{description}</p>
+        </div>
+        {/* Action button — hidden while confirming or done */}
+        {phase === 'idle' && (
+          <button
+            onClick={onRequest}
+            disabled={disabled}
+            className={`flex-shrink-0 text-[12px] font-medium px-3 py-1.5 rounded-lg border transition-colors
+              ${disabled
+                ? 'text-text-muted border-divider bg-bg-secondary cursor-not-allowed'
+                : 'text-accent-blue border-accent-blue/40 bg-accent-blue/8 active:bg-accent-blue/15'}`}
+          >
+            {buttonLabel}
+          </button>
+        )}
+      </div>
+
+      {/* Disabled hint */}
+      {phase === 'idle' && disabled && disabledHint && (
+        <p className="text-[11px] text-text-muted italic">{disabledHint}</p>
+      )}
+
+      {/* Inline confirmation */}
+      {phase === 'confirming' && (
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-[12px] text-text-secondary flex-1">{confirmLabel}</p>
+          <button
+            onClick={onCancel}
+            className="text-[12px] text-text-muted px-2.5 py-1 rounded-lg border border-divider active:bg-divider/60"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="text-[12px] font-semibold text-accent-blue px-2.5 py-1 rounded-lg border border-accent-blue/40 bg-accent-blue/8 active:bg-accent-blue/15"
+          >
+            Confirm
+          </button>
+        </div>
+      )}
+
+      {/* Loading */}
+      {phase === 'loading' && (
+        <p className="text-[12px] text-text-muted animate-pulse mt-1">Working…</p>
+      )}
+
+      {/* Result */}
+      {(phase === 'done' || phase === 'error') && message && (
+        <div className={`mt-1 flex items-start gap-1.5`}>
+          <span className={`text-[11px] font-semibold flex-shrink-0 ${phase === 'done' ? 'text-accent-green' : 'text-accent-red'}`}>
+            {phase === 'done' ? '✓' : '✗'}
+          </span>
+          <p className={`text-[12px] leading-snug ${phase === 'done' ? 'text-text-secondary' : 'text-accent-red'}`}>
+            {message}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecoveryPanel({ jobs, selectedJobId }: { jobs: Job[]; selectedJobId: number | null }) {
+  const [clearState,  setClear]  = useState<RecoveryState>({ phase: 'idle' })
+  const [resyncState, setResync] = useState<RecoveryState>({ phase: 'idle' })
+  const [resetState,  setReset]  = useState<RecoveryState>({ phase: 'idle' })
+
+  const selectedJob = jobs.find(j => j.id === selectedJobId) ?? null
+
+  const reset = (set: (s: RecoveryState) => void) => set({ phase: 'idle' })
+
+  async function runClear() {
+    setClear({ phase: 'loading' })
+    try {
+      const r = await api.clearTransient()
+      setClear({ phase: 'done', message: r.summary })
+    } catch (e) {
+      setClear({ phase: 'error', message: e instanceof Error ? e.message : 'Unknown error' })
+    }
+  }
+
+  async function runResync() {
+    setResync({ phase: 'loading' })
+    try {
+      const r = await api.resyncPg()
+      setResync({ phase: 'done', message: r.message })
+    } catch (e) {
+      setResync({ phase: 'error', message: e instanceof Error ? e.message : 'Unknown error' })
+    }
+  }
+
+  async function runReset() {
+    if (!selectedJob) return
+    setReset({ phase: 'loading' })
+    try {
+      const r = await api.resetJobState(selectedJob.id)
+      setReset({ phase: 'done', message: r.message })
+    } catch (e) {
+      setReset({ phase: 'error', message: e instanceof Error ? e.message : 'Unknown error' })
+    }
+  }
+
+  return (
+    <Card padding="none">
+      <RecoveryAction
+        label="Clear transient state"
+        description="Removes cached readiness, sniper, preflight, and schedule replay files. The app rebuilds them automatically on the next cycle."
+        buttonLabel="Clear"
+        confirmLabel="Clear runtime caches and state files?"
+        state={clearState}
+        onRequest={() => setClear({ phase: 'confirming' })}
+        onConfirm={() => runClear()}
+        onCancel={() => reset(setClear)}
+      />
+      <RecoveryAction
+        label="Resync jobs to PostgreSQL"
+        description="Pushes the current class plan from local storage to the cloud database. Useful if a restart may have left the cloud copy out of date."
+        buttonLabel="Resync"
+        confirmLabel="Push all jobs from local storage to PostgreSQL now?"
+        state={resyncState}
+        onRequest={() => setResync({ phase: 'confirming' })}
+        onConfirm={() => runResync()}
+        onCancel={() => reset(setResync)}
+      />
+      <RecoveryAction
+        label={selectedJob ? `Reset "${selectedJob.class_title}" runtime state` : 'Reset job runtime state'}
+        description={
+          selectedJob
+            ? `Clears last-run history for ${selectedJob.class_title} only. Does not delete the job or affect other classes.`
+            : 'Select a class from the Plan tab first, then return here to reset its last-run history.'
+        }
+        buttonLabel="Reset"
+        confirmLabel={`Clear last-run history for "${selectedJob?.class_title}"?`}
+        disabled={!selectedJob}
+        disabledHint="No class selected — go to Plan, select a class, then come back."
+        state={resetState}
+        onRequest={() => setReset({ phase: 'confirming' })}
+        onConfirm={() => runReset()}
+        onCancel={() => reset(setReset)}
+      />
+    </Card>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo, tab = 'tools', onTabChange = () => {}, scrolled = false }: ToolsScreenProps) {
@@ -1512,6 +1686,16 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             </>
           )
         })()}
+
+        {/* ── Repair Tools — placed last, visually secondary ─────────────── */}
+        <SectionHeader title="Repair Tools" id="tools-recovery" />
+        <div className="px-4 pb-1">
+          <p className="text-[11px] text-text-muted leading-relaxed">
+            Targeted repair actions for stale caches and runtime state. Jobs and credentials are never touched.
+          </p>
+        </div>
+        <RecoveryPanel jobs={appState.jobs} selectedJobId={selectedJobId} />
+
       </ScreenContainer>
 
       <ScreenshotLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />

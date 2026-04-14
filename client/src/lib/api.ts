@@ -430,6 +430,32 @@ export const api = {
   classifyJob: (id: number): Promise<ClassTruthResult> =>
     apiFetch(`/api/jobs/${id}/classify`),
 
+  // ── Recovery actions ───────────────────────────────────────────────────────
+  clearTransient: (): Promise<{
+    success: boolean; cleared: string[]; skipped: string[]; errors: { file: string; error: string }[]; summary: string
+  }> =>
+    apiFetch('/api/recovery/clear-transient', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    }),
+
+  resyncPg: (): Promise<{ success: boolean; jobCount: number; message: string }> =>
+    apiFetch('/api/recovery/resync-pg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    }),
+
+  resetJobState: (id: number): Promise<{
+    success: boolean; job: { id: number; classTitle: string }; clearedFields: string[]; message: string
+  }> =>
+    apiFetch('/api/recovery/reset-job-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, confirm: true }),
+    }),
+
   getConfirmedReady: (jobId?: number): Promise<ConfirmedReadyState> =>
     apiFetch(`/api/confirmed-ready${jobId != null ? `?jobId=${jobId}` : ''}`),
 }
