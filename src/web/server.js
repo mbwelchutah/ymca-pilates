@@ -4121,64 +4121,30 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'GET' && path === '/api/session-status') {
     // Returns the persisted result of the last session check (fast, no browser).
-    // Also derives per-provider status from sniper-state.json (no browser launched).
-    const { loadStatus } = require('../bot/session-check');
-    const raw = loadStatus() || { valid: null, checkedAt: null, detail: null, screenshot: null };
+    //
+    // Stage 7 (auth-truth-unification): all auth status fields (daxko, familyworks,
+    // overall, valid, checkedAt, lastVerified) now derive exclusively from
+    // getCanonicalAuthTruth() (auth-state.json), which is kept current by every
+    // tier of session validation (ping + Playwright + keepalive).
+    //
+    // loadStatus() (session-status.json) is still read, but ONLY for the display-
+    // only fields `detail` and `screenshot` from the last Playwright browser run.
+    // No auth decision is based on session-status.json in this handler.
+    const { getCanonicalAuthTruth, getAuthState } = require('../bot/auth-state');
+    const { loadStatus }                           = require('../bot/session-check');
+
+    const canonicalAuth = getCanonicalAuthTruth();
+    // Display-only: Playwright detail string + screenshot (no canonical equivalent).
+    const displayData   = loadStatus() || {};
 
     // ── Derive Daxko status ───────────────────────────────────────────────────
-    let daxko = 'AUTH_UNKNOWN';
-    if (raw.valid === true)  daxko = 'DAXKO_READY';
-    if (raw.valid === false) daxko = 'AUTH_NEEDS_LOGIN';
+    const daxko = canonicalAuth.sessionValid === true  ? 'DAXKO_READY'
+                : canonicalAuth.sessionValid === false ? 'AUTH_NEEDS_LOGIN'
+                :                                        'AUTH_UNKNOWN';
 
-    // ── Derive FamilyWorks status ─────────────────────────────────────────────
-    // Priority 1: familyworks-session.json written by Settings > Log in now
-    // Priority 2: sniper-state.json bundle.session (written by booking runs)
-    // Whichever has the more recent checkedAt/timestamp wins.
-    let familyworks = 'AUTH_UNKNOWN';
-    let sniperLastEventAt = null;
-    let fwCheckedAt = null;
-
-    // Read familyworks-session.json (Settings login result)
-    let fwSettingsEntry = null;
-    try {
-      const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
-      if (fsStatic.existsSync(fwPath)) {
-        fwSettingsEntry = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
-        fwCheckedAt = fwSettingsEntry?.checkedAt || null;
-      }
-    } catch (_) { /* non-fatal */ }
-
-    // Read sniper-state.json (booking run result)
-    let sniperEntry = null;
-    try {
-      const sniperPath = pathStatic.join(__dirname, '../data/sniper-state.json');
-      if (fsStatic.existsSync(sniperPath)) {
-        sniperEntry = JSON.parse(fsStatic.readFileSync(sniperPath, 'utf8'));
-        const events = Array.isArray(sniperEntry?.events) ? sniperEntry.events : [];
-        if (events.length > 0) {
-          sniperLastEventAt = events[events.length - 1].timestamp || null;
-        }
-      }
-    } catch (_) { /* non-fatal */ }
-
-    // Determine which source is more recent and use it
-    const fwSettingsMs = fwCheckedAt ? new Date(fwCheckedAt).getTime() : 0;
-    const sniperMs     = sniperLastEventAt ? new Date(sniperLastEventAt).getTime() : 0;
-
-    if (fwSettingsMs >= sniperMs && fwSettingsEntry) {
-      // Settings login result is newer (or equal) — use it
-      familyworks = fwSettingsEntry.status || 'AUTH_UNKNOWN';
-    } else if (sniperEntry) {
-      // Booking run result is newer — derive from sniper-state
-      const bundleSession = sniperEntry?.bundle?.session;
-      const events = Array.isArray(sniperEntry?.events) ? sniperEntry.events : [];
-      const hasModalLoginEvent = events.some(e => e.failureType === 'MODAL_LOGIN_REQUIRED');
-      if (bundleSession === 'SESSION_READY') {
-        familyworks = 'FAMILYWORKS_READY';
-      } else if (bundleSession === 'SESSION_EXPIRED' || hasModalLoginEvent) {
-        familyworks = 'FAMILYWORKS_SESSION_MISSING';
-      }
-    }
+    // ── FamilyWorks status — directly from canonical auth truth ───────────────
+    // No more familyworks-session.json or sniper-state.json reads in this handler.
+    const familyworks = canonicalAuth.fwStatusCode;
 
     // ── Derive overall status ─────────────────────────────────────────────────
     let overall = 'AUTH_UNKNOWN';
@@ -4189,16 +4155,28 @@ const server = http.createServer((req, res) => {
     } else if (daxko === 'DAXKO_READY' && familyworks === 'FAMILYWORKS_READY') {
       overall = 'DAXKO_READY';
     }
-    // else: at least one side is AUTH_UNKNOWN → overall stays AUTH_UNKNOWN
+    // else: at least one side is UNKNOWN → overall stays AUTH_UNKNOWN
 
-    // ── Last verified: most recent known timestamp ────────────────────────────
-    const candidates = [raw.checkedAt, sniperLastEventAt, fwCheckedAt].filter(Boolean);
-    const lastVerified = candidates.length > 0
-      ? candidates.reduce((a, b) => (a > b ? a : b))
+    // ── Timestamps ───────────────────────────────────────────────────────────
+    // canonicalAuth.lastCheckedAt is an ms epoch updated by every validation tier
+    // (HTTP ping, Playwright, keepalive) — strictly more current than any single file.
+    const lastVerified = canonicalAuth.lastCheckedAt
+      ? new Date(canonicalAuth.lastCheckedAt).toISOString()
       : null;
 
-    const { getAuthState } = require('../bot/auth-state');
-    json({ ...raw, daxko, familyworks, overall, lastVerified, locked: !!(jobState.active || isAuthLocked()), bookingActive: !!jobState.active, authState: getAuthState() });
+    json({
+      valid:         canonicalAuth.sessionValid,
+      checkedAt:     lastVerified,
+      detail:        displayData.detail        ?? null,
+      screenshot:    displayData.screenshot    ?? null,
+      daxko,
+      familyworks,
+      overall,
+      lastVerified,
+      locked:        !!(jobState.active || isAuthLocked()),
+      bookingActive: !!jobState.active,
+      authState:     getAuthState(),
+    });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
     // Session verification — Tier 2 (HTTP ping) first, Tier 3 (Playwright) as fallback.
