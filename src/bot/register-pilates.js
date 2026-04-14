@@ -513,11 +513,42 @@ async function runBookingJob(job, opts = {}) {
 
   // ── Timing capture — filled in during the sniper poll and action phases ──────
   // Written to _state.timing at the end of the run so it persists to the UI.
+  // Stage 2 (timing markers): every major phase is now timestamped so metrics
+  // can be derived in Stage 3.  All values are ISO strings (or null if the
+  // phase was not reached).  run_start is always set at entry.
   const _tc = {
-    bookingOpenAt:        null, // ISO: when booking window was scheduled to open
-    cardFoundAt:          null, // ISO: when the class card appeared after open
-    actionClickAt:        null, // ISO: when Register/Waitlist was actually clicked
-    pollAttemptsPostOpen: 0,    // tab re-clicks that happened at or after open time
+    // ── Entry ──────────────────────────────────────────────────────────────
+    run_start:                  new Date().toISOString(),
+    // ── Auth / session ─────────────────────────────────────────────────────
+    session_ping_start:         null,
+    session_ping_done:          null,
+    browser_launch_start:       null,
+    browser_launch_done:        null,
+    // ── Navigation ─────────────────────────────────────────────────────────
+    page_nav_start:             null,
+    page_nav_done:              null,
+    // ── Class discovery ────────────────────────────────────────────────────
+    class_discovery_start:      null,
+    class_discovery_done:       null,
+    // ── Modal open ─────────────────────────────────────────────────────────
+    modal_open_start:           null,
+    modal_open_done:            null,
+    // ── Action attempt (first) ─────────────────────────────────────────────
+    first_click_attempt_start:  null,
+    first_click_attempt_done:   null,
+    // ── Action attempt (per-attempt; overwritten each iteration) ───────────
+    action_attempt_start:       null,
+    action_attempt_done:        null,
+    // ── Confirmation check (per-attempt; overwritten each iteration) ───────
+    confirmation_check_start:   null,
+    confirmation_check_done:    null,
+    // ── Legacy fields (kept for backward compat with UI readers) ───────────
+    bookingOpenAt:              null, // ISO: when booking window was scheduled to open
+    cardFoundAt:                null, // ISO: when the class card appeared after open
+    actionClickAt:              null, // ISO: when Register/Waitlist was actually clicked
+    pollAttemptsPostOpen:       0,    // tab re-clicks that happened at or after open time
+    // ── Final outcome ──────────────────────────────────────────────────────
+    final_outcome:              null, // status string from logRunSummary
   };
 
   // Convert "Wednesday" → "Wed" to match tab labels like "Wed 02"
@@ -569,6 +600,8 @@ async function runBookingJob(job, opts = {}) {
     // Attach the run-level screenshot ref to the persisted state so UI can access it.
     const _ref = _screenshotRef(screenshotPath);
     if (_ref) _state.screenshotPath = _ref;
+    // Stage 2: record the final outcome status in the timing context.
+    if (!_tc.final_outcome) _tc.final_outcome = result.status ?? null;
 
     console.log('\n--- RUN SUMMARY ---');
     console.log(JSON.stringify({
@@ -642,7 +675,9 @@ async function runBookingJob(job, opts = {}) {
     let _tier2Trusted = false;
     let _pingResult   = null;
     try {
+      _tc.session_ping_start = new Date().toISOString();
       _pingResult   = await pingSessionHttp();
+      _tc.session_ping_done  = new Date().toISOString();
       _tier2Trusted = _pingResult.trusted === true;
       if (_tier2Trusted) {
         console.log(`[auth-lock] ${_runSource} — Tier-2 ping trusted, skipping auth lock.`);
@@ -688,7 +723,9 @@ async function runBookingJob(job, opts = {}) {
 
     let _session;
     try {
+      _tc.browser_launch_start = new Date().toISOString();
       _session = await createSession({ headless: isHeadless });
+      _tc.browser_launch_done  = new Date().toISOString();
       // Auth succeeded — update session-status.json so the UI reflects the fresh result.
       saveSessionStatus({
         valid:     true,
@@ -807,6 +844,7 @@ async function runBookingJob(job, opts = {}) {
     };
     page.on('response', _captureResponse);
 
+    _tc.page_nav_start = new Date().toISOString();
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
     // Use domcontentloaded (best-effort) instead of networkidle — the Bubble.io
     // SPA keeps background XHR alive for 15-20 extra seconds after the page is
@@ -888,6 +926,7 @@ async function runBookingJob(job, opts = {}) {
       }
       return false;
     }, { timeout: 15000 }).catch(() => console.log('⚠️ Dropdown options slow to load, proceeding anyway'));
+    _tc.page_nav_done = new Date().toISOString();
 
     // Log all selects and their options so we can see what filters are available.
     const allSelectInfo = await page.evaluate(() => {
@@ -1061,6 +1100,7 @@ async function runBookingJob(job, opts = {}) {
     // ─────────────────────────────────────────────────────────────────────────
 
     advance(_state, 'DISCOVERY');
+    _tc.class_discovery_start = new Date().toISOString();
     await captureDebug('navigate', 'schedule_ready');
     console.log(`Looking for: "${classTitle}" on ${dayOfWeek || 'any day'} at "${classTime || 'any time'}" (normalized: "${classTimeNorm || 'n/a'}")`);
 
@@ -1548,6 +1588,9 @@ async function runBookingJob(job, opts = {}) {
       }
     }
 
+    // Initial tab scan complete — record discovery end before entering poll mode.
+    _tc.class_discovery_done = new Date().toISOString();
+
     // ── HOLD-AND-POLL ────────────────────────────────────────────────────────
     // If the class still isn't visible, check whether the booking window opens
     // within the next 15 minutes.  If so, keep the browser alive, sleep until
@@ -1772,6 +1815,7 @@ async function runBookingJob(job, opts = {}) {
         await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
         // Small settle buffer so the modal text is fully populated.
         await page.waitForTimeout(300);
+        _tc.modal_open_done = new Date().toISOString();
         await captureDebug('modal', 'modal_opened');
 
         // Verify the modal matches expected time + instructor.
@@ -1919,6 +1963,7 @@ async function runBookingJob(job, opts = {}) {
       console.log(`[row-capacity] Row shows "${_rowCapacityFromSchedule}" — proceeding to click modal for full action detection`);
     }
 
+    _tc.modal_open_start = new Date().toISOString();
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
 
     if (!firstResult.ok) {
@@ -2168,6 +2213,9 @@ async function runBookingJob(job, opts = {}) {
     // ──────────────────────────────────────────────────────────────────────────
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (attempt === 1) _tc.first_click_attempt_start = new Date().toISOString();
+      if (attempt === 2 && !_tc.first_click_attempt_done) _tc.first_click_attempt_done = new Date().toISOString();
+      _tc.action_attempt_start = new Date().toISOString();
       let { hasRegister, hasWaitlist, hasCancel: hasCancelNow, hasLoginRequired: hasLoginButton,
             registerBtn, waitlistBtn, cancelBtn, allBtnTexts: allBtns,
             registerStrategy, waitlistStrategy } = await detectActionButtons(page);
@@ -2233,7 +2281,9 @@ async function runBookingJob(job, opts = {}) {
           _tc.actionClickAt = new Date().toISOString();
           await registerBtn.first().click();
           _state.isConfirming = true; saveState(_state);
+          _tc.confirmation_check_start = new Date().toISOString();
           const wlResult2 = await checkBookingConfirmed(page, _jobId, attempt, 'Register(full→waitlist)', replayStore);
+          _tc.confirmation_check_done = new Date().toISOString();
           _state.isConfirming = false;
           if (wlResult2.confirmed) {
             replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (via Register button${wlResult2.viaPopup ? ' + popup' : ''}) — Cancel button: ${wlResult2.cancelFound}`);
@@ -2256,7 +2306,9 @@ async function runBookingJob(job, opts = {}) {
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
         _state.isConfirming = true; saveState(_state);
+        _tc.confirmation_check_start = new Date().toISOString();
         const regResult = await checkBookingConfirmed(page, _jobId, attempt, 'Register', replayStore);
+        _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming = false;
 
         if (!regResult.confirmed) {
@@ -2291,7 +2343,9 @@ async function runBookingJob(job, opts = {}) {
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
         _state.isConfirming = true; saveState(_state);
+        _tc.confirmation_check_start = new Date().toISOString();
         const wlResult = await checkBookingConfirmed(page, _jobId, attempt, 'Waitlist', replayStore);
+        _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming = false;
         if (wlResult.confirmed) {
           replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (cancelFound=${wlResult.cancelFound}, viaPopup=${wlResult.viaPopup})`);
@@ -2444,6 +2498,10 @@ async function runBookingJob(job, opts = {}) {
       }
     }
 
+    // Attempt loop complete — close out any open timing windows.
+    if (!_tc.action_attempt_done)      _tc.action_attempt_done      = new Date().toISOString();
+    if (!_tc.first_click_attempt_done) _tc.first_click_attempt_done = new Date().toISOString();
+
     if (!registered) {
       const classDesc = [
         classTitle,
@@ -2489,18 +2547,57 @@ async function runBookingJob(job, opts = {}) {
     if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'failure', 'Booking failed', err.message.split('\n')[0]);
     return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
-    // ── Compute and persist timing deltas ────────────────────────────────────
-    if (_tc.bookingOpenAt) {
-      const openMs = new Date(_tc.bookingOpenAt).getTime();
-      recordTiming(_state, {
-        bookingOpenAt:        _tc.bookingOpenAt,
-        cardFoundAt:          _tc.cardFoundAt,
-        actionClickAt:        _tc.actionClickAt,
-        openToCardMs:         _tc.cardFoundAt   ? (new Date(_tc.cardFoundAt).getTime()   - openMs) : null,
-        openToClickMs:        _tc.actionClickAt ? (new Date(_tc.actionClickAt).getTime() - openMs) : null,
-        pollAttemptsPostOpen: _tc.pollAttemptsPostOpen,
-      });
-    }
+    // ── Compute and persist timing deltas (Stage 2: full marker set) ─────────
+    // Always persist the complete _tc snapshot so every run produces a
+    // timing trail, even runs that exit early (auth fail, not_found, etc.).
+    // Derived delta fields (ms) are computed inline from the ISO timestamps.
+    const _openMs = _tc.bookingOpenAt ? new Date(_tc.bookingOpenAt).getTime() : null;
+    recordTiming(_state, {
+      // ── Raw ISO markers ───────────────────────────────────────────────────
+      run_start:                  _tc.run_start,
+      session_ping_start:         _tc.session_ping_start,
+      session_ping_done:          _tc.session_ping_done,
+      browser_launch_start:       _tc.browser_launch_start,
+      browser_launch_done:        _tc.browser_launch_done,
+      page_nav_start:             _tc.page_nav_start,
+      page_nav_done:              _tc.page_nav_done,
+      class_discovery_start:      _tc.class_discovery_start,
+      class_discovery_done:       _tc.class_discovery_done,
+      modal_open_start:           _tc.modal_open_start,
+      modal_open_done:            _tc.modal_open_done,
+      first_click_attempt_start:  _tc.first_click_attempt_start,
+      first_click_attempt_done:   _tc.first_click_attempt_done,
+      action_attempt_start:       _tc.action_attempt_start,
+      action_attempt_done:        _tc.action_attempt_done,
+      confirmation_check_start:   _tc.confirmation_check_start,
+      confirmation_check_done:    _tc.confirmation_check_done,
+      bookingOpenAt:              _tc.bookingOpenAt,
+      cardFoundAt:                _tc.cardFoundAt,
+      actionClickAt:              _tc.actionClickAt,
+      final_outcome:              _tc.final_outcome,
+      // ── Derived delta fields (ms) — null when either endpoint missing ──────
+      session_ping_ms:      (_tc.session_ping_start && _tc.session_ping_done)
+        ? new Date(_tc.session_ping_done).getTime()  - new Date(_tc.session_ping_start).getTime()  : null,
+      browser_launch_ms:    (_tc.browser_launch_start && _tc.browser_launch_done)
+        ? new Date(_tc.browser_launch_done).getTime() - new Date(_tc.browser_launch_start).getTime() : null,
+      page_nav_ms:          (_tc.page_nav_start && _tc.page_nav_done)
+        ? new Date(_tc.page_nav_done).getTime()       - new Date(_tc.page_nav_start).getTime()       : null,
+      class_discovery_ms:   (_tc.class_discovery_start && _tc.class_discovery_done)
+        ? new Date(_tc.class_discovery_done).getTime() - new Date(_tc.class_discovery_start).getTime() : null,
+      modal_open_ms:        (_tc.modal_open_start && _tc.modal_open_done)
+        ? new Date(_tc.modal_open_done).getTime()     - new Date(_tc.modal_open_start).getTime()     : null,
+      first_attempt_ms:     (_tc.first_click_attempt_start && _tc.first_click_attempt_done)
+        ? new Date(_tc.first_click_attempt_done).getTime() - new Date(_tc.first_click_attempt_start).getTime() : null,
+      confirmation_ms:      (_tc.confirmation_check_start && _tc.confirmation_check_done)
+        ? new Date(_tc.confirmation_check_done).getTime() - new Date(_tc.confirmation_check_start).getTime()   : null,
+      run_start_to_nav_ms:  (_tc.run_start && _tc.page_nav_start)
+        ? new Date(_tc.page_nav_start).getTime()     - new Date(_tc.run_start).getTime()             : null,
+      openToCardMs:         (_openMs && _tc.cardFoundAt)
+        ? new Date(_tc.cardFoundAt).getTime()   - _openMs : null,
+      openToClickMs:        (_openMs && _tc.actionClickAt)
+        ? new Date(_tc.actionClickAt).getTime() - _openMs : null,
+      pollAttemptsPostOpen: _tc.pollAttemptsPostOpen,
+    });
     // ─────────────────────────────────────────────────────────────────────────
     saveState(_state);
     if (browser) await browser.close();
