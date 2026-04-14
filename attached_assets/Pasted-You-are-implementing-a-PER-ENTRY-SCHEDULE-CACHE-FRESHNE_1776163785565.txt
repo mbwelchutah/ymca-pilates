@@ -1,0 +1,393 @@
+You are implementing a PER-ENTRY SCHEDULE-CACHE FRESHNESS + CLASSIFIER FRESHNESS CORRECTION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the remaining class-truth freshness problem by moving from coarse file-level freshness to entry-aware classifier freshness.
+
+This pass should ensure:
+
+- class truth is only treated as strong when it is fresh enough
+- old cache entries do not silently remain authoritative
+- classifier decisions reflect the freshness of the specific matched class entry, not just the cache file as a whole
+- warmup / Now / Plan / confidence stop over-trusting stale class data
+
+This is NOT a broad redesign.
+This is a focused reliability pass on schedule-cache freshness and classifier correctness.
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole booking architecture
+- Do NOT remove the schedule cache
+- Do NOT change unrelated auth/session logic
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / PROBLEMS TO FIX
+==================================================
+
+Known issues from earlier audits:
+
+1. schedule-cache freshness is currently too coarse
+- freshness is derived mainly from file-level savedAt / merge time
+- this can make old entries appear fresher than they really are
+
+2. classifier freshness may not reflect the specific matched entry age
+- a fresh cache merge can still contain stale class rows / stale dates / outdated slot states
+
+3. stale or aging class truth can still influence behavior too strongly
+- suppressing warmup
+- making Now too confident
+- making Plan show stronger preview than evidence supports
+
+We want to make freshness specific to the matched class truth, not just the cache container.
+
+==================================================
+STAGE 1 — AUDIT CURRENT SCHEDULE-CACHE ENTRY SHAPE
+==================================================
+
+Goal:
+Understand exactly what each cached class entry currently stores and what timestamps already exist.
+
+Tasks:
+
+1. Inspect schedule-cache write paths and entry shape
+2. Document for each cached entry:
+   - class title
+   - instructor
+   - time/date
+   - capacity / availability fields
+   - whether there is any per-entry timestamp already
+   - whether entries carry source timing from interception / merge / scrape
+
+3. Identify:
+   - where file-level freshness is currently computed
+   - where per-entry freshness is currently missing
+
+Do not change behavior yet except minimal instrumentation if needed.
+
+Success criteria:
+- current cache entry structure is clearly known
+- gap between file freshness and entry freshness is explicitly identified
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — ADD PER-ENTRY FRESHNESS METADATA
+==================================================
+
+Goal:
+Track freshness for each cached class entry, not just the whole file.
+
+Tasks:
+
+1. Extend schedule-cache entries to include per-entry freshness metadata, such as:
+   - observedAt
+   - sourceUpdatedAt
+   - mergedAt
+   - cacheEntryAge basis
+Use the simplest timestamp model that matches the current ingestion flow.
+
+2. Ensure every entry written to schedule-cache gets a per-entry timestamp that represents when that entry was actually observed or refreshed
+
+3. Preserve backward compatibility:
+   - old cache files without per-entry timestamps should still load safely
+
+Success criteria:
+- every new cache entry carries its own freshness timestamp
+- older cache files degrade safely
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — DEFINE ENTRY-LEVEL FRESHNESS BUCKETS
+==================================================
+
+Goal:
+Compute freshness from the matched entry itself.
+
+Tasks:
+
+1. Define normalized freshness buckets for class entries:
+   - fresh
+   - aging
+   - stale
+   - unknown
+
+2. Base these on the entry timestamp, not just file savedAt
+3. Use practical thresholds appropriate for booking relevance
+4. Keep file-level freshness available if still useful, but separate it from entry freshness
+
+Success criteria:
+- entry freshness is computed independently
+- freshness buckets are normalized and explicit
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — MAKE CLASSIFIER RETURN MATCHED ENTRY FRESHNESS
+==================================================
+
+Goal:
+Classifier output must reflect the matched entry’s freshness.
+
+Tasks:
+
+1. Update classifyClass() (or equivalent classifier output) so it returns:
+   - state
+   - source
+   - matched entry freshness
+   - matched entry timestamp
+   - file freshness if still needed separately
+   - isFuzzyMatch if applicable
+   - reason
+
+2. Ensure freshness in classifier output refers to the matched entry truth, not just the container file
+
+3. If no per-entry timestamp exists, return freshness: unknown conservatively
+
+Success criteria:
+- classifier freshness becomes entry-aware
+- UI and scheduler can trust the classifier result more accurately
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — PREVENT AGING / STALE ENTRY TRUTH FROM ACTING AUTHORITATIVELY
+==================================================
+
+Goal:
+Only fresh enough class truth should strongly influence behavior.
+
+Tasks:
+
+1. Audit places where classifier result affects behavior:
+   - warmup gate
+   - confirmed-ready
+   - Now state
+   - confidence
+   - Plan preview if applicable
+
+2. Ensure:
+   - fresh entry truth can act strongly
+   - aging truth is softened
+   - stale truth cannot act as a strong blocker
+   - unknown truth is conservative
+
+3. Specifically:
+   - stale/aging full should not suppress warmup as if it were fresh truth
+   - stale/aging not_found should not be treated as authoritative unavailability
+
+Success criteria:
+- classifier strength now depends on matched entry freshness
+- stale entry truth no longer blocks or over-guides the system
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — UPDATE NOW SCREEN TO USE ENTRY-AWARE FRESHNESS
+==================================================
+
+Goal:
+Make Now honest about how fresh class truth really is.
+
+Tasks:
+
+1. Use matched-entry freshness in Now for:
+   - availability messaging
+   - confidence support
+   - “cache outdated” / “checking current availability” type cues
+
+2. Prevent:
+   - strong “Get Spot” / “Likely to succeed” language
+when matched entry freshness is aging/stale/unknown
+
+3. Keep UI calm:
+   - fresh → stronger readiness wording
+   - aging → softer wording
+   - stale/unknown → conservative wording
+
+Success criteria:
+- Now no longer overstates old class truth
+- class-state UI is tied to entry freshness honestly
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — UPDATE PLAN PREVIEW LIGHTLY
+==================================================
+
+Goal:
+Let Plan benefit from better freshness without becoming noisy.
+
+Tasks:
+
+1. Use entry-aware classifier freshness lightly in Plan
+2. Keep Plan preview subtle:
+   - do not show strong availability messaging unless freshness is strong enough
+   - prefer neutral preview when truth is aging/stale
+
+3. Ensure Plan remains lighter than Now
+
+Success criteria:
+- Plan preview becomes less misleading
+- Plan stays calm and non-diagnostic
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — UPDATE CONFIRMED-READY / CONFIDENCE TO USE ENTRY FRESHNESS
+==================================================
+
+Goal:
+Make readiness and confidence respect the freshness of the specific class truth.
+
+Tasks:
+
+1. Ensure confirmed-ready uses matched-entry freshness, not just file freshness
+2. Ensure confidence logic softens appropriately when:
+   - entry freshness is aging
+   - entry freshness is stale
+   - entry freshness is unknown
+
+3. Prevent:
+   - high confidence from stale matched class data
+   - confirmed_ready from relying on stale class truth unless explicitly intended
+
+Success criteria:
+- readiness and confidence become more evidence-based
+- stale matched entries no longer make the system look overly certain
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — ADD DIAGNOSTIC VISIBILITY FOR ENTRY FRESHNESS
+==================================================
+
+Goal:
+Make the new entry-aware freshness inspectable.
+
+Tasks:
+
+1. In Tools / diagnostics, expose enough to inspect:
+   - matched entry timestamp
+   - matched entry freshness
+   - cache file timestamp
+   - whether match was exact or fuzzy
+
+2. Keep it secondary and calm
+3. Make it possible to tell:
+   - “the cache file is fresh but this specific entry is old”
+   - or vice versa if relevant
+
+Success criteria:
+- operators can verify entry freshness behavior
+- debugging classifier issues becomes easier
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA PASS
+==================================================
+
+Goal:
+Verify entry-aware freshness works end to end.
+
+Test these scenarios:
+
+1. Fresh matched entry in fresh cache
+- classifier returns fresh
+- Now can use stronger truth
+
+2. Aging matched entry in recently merged cache
+- classifier returns aging
+- system softens confidence / does not overstate certainty
+
+3. Stale matched entry in cache
+- classifier returns stale
+- stale truth does not block warmup as authoritative truth
+
+4. Fresh full class
+- can still suppress appropriately if policy says yes
+
+5. Aging/stale full class
+- should not suppress warmup as strongly
+
+6. not_found with stale/unknown entry situation
+- should not be treated as a strong unavailability claim
+
+7. Old cache file without per-entry timestamps
+- system degrades safely to unknown where needed
+
+Success criteria:
+- class truth now depends on matched entry freshness
+- stale entry truth no longer acts stronger than it should
+- Now / Plan / confirmed-ready / confidence all behave more honestly
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- schedule cache has per-entry freshness metadata
+- classifier returns matched entry freshness
+- stale matched entries no longer act as strong truth
+- warmup suppression respects entry freshness
+- Now and Plan become more honest about class availability freshness
+- confirmed-ready and confidence are less likely to overstate stale class truth
+- Tools can diagnose entry freshness clearly
+
+The result should feel:
+- smarter
+- more trustworthy
+- less overconfident
+- less vulnerable to stale cache artifacts
+
+It should NOT feel like:
+- a fresh file makes every old entry look fresh
+- stale full/not_found truth blocks useful work
+- UI is more certain than the specific class evidence supports
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
