@@ -20,6 +20,7 @@ const { loadStatus }       = require('../bot/session-check');
 const { isLocked }         = require('../bot/auth-lock');
 const { getAuthState, updateAuthState } = require('../bot/auth-state');
 const { pingSessionHttp }  = require('../bot/session-ping');
+const { isCacheAdequate }  = require('../classifier/scheduleCache');
 // Stage 2: Use tiered validation (Tier 1→2→3) for recovery so session reuse
 // is the default path.  runSessionCheck() skips Tier 1; validateSessionFastThenFallback()
 // tries file freshness first and only escalates to HTTP ping or Playwright when needed.
@@ -316,9 +317,17 @@ async function checkAutoPreflights({ isActive = false } = {}) {
         let pingConfirmed = false;
         try {
           const pingResult = await pingSessionHttp();
-          if (pingResult.trusted && currentAuthState.bookingAccessConfirmed) {
-            // Both sessions confirmed AND booking surface was previously verified.
-            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping (booking access confirmed) — skipping browser.`);
+          // Stage 3: The browser fast-path is only valid when the schedule cache
+          // is still fresh enough (≤ 4 h old).  A stale or absent cache means we
+          // have not confirmed class availability recently — the browser must run
+          // so Playwright's API interception can repopulate the schedule cache.
+          // Without this guard the ping fast-path would silently prevent cache
+          // refresh across multiple successive auto-preflight checkpoints.
+          const cacheOk = isCacheAdequate();
+
+          if (pingResult.trusted && currentAuthState.bookingAccessConfirmed && cacheOk) {
+            // Sessions confirmed + booking access confirmed + cache is fresh — skip browser.
+            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping (booking access confirmed, cache fresh) — skipping browser.`);
             updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
             appendLog({
               timestamp:   firedAt,
@@ -326,9 +335,13 @@ async function checkAutoPreflights({ isActive = false } = {}) {
               classTitle:  dbJob.class_title,
               triggerName: trigger.name,
               status:      'pass',
-              message:     `Session + booking access confirmed via HTTP ping — no browser launch needed`,
+              message:     `Session + booking access confirmed via HTTP ping (cache fresh) — no browser launch needed`,
             });
             pingConfirmed = true;
+          } else if (pingResult.trusted && currentAuthState.bookingAccessConfirmed && !cacheOk) {
+            // Sessions and booking access confirmed but schedule cache is stale or missing.
+            // Must run the browser so Playwright refreshes the schedule cache.
+            console.log(`[auto-preflight] ${trigger.name} ping OK + booking confirmed but schedule cache is stale/absent — running browser to refresh.`);
           } else if (pingResult.trusted && !currentAuthState.bookingAccessConfirmed) {
             // Sessions alive but booking surface not yet confirmed — browser needed to probe modal.
             console.log(`[auto-preflight] ${trigger.name} ping OK but booking access not confirmed — browser preflight needed to probe modal.`);

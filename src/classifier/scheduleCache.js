@@ -212,4 +212,20 @@ function findEntry(job) {
   return { entry: best.entry, matchType: best.matchType, confidence };
 }
 
-module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness };
+/**
+ * Returns true when the cache is fresh enough that a browser run is NOT
+ * required purely for cache-refresh purposes.
+ *
+ * "Adequate" means fresh or aging (≤ 4 h old).  Stale (> 4 h) or missing
+ * cache must trigger a browser run so schedule data is not indefinitely skipped
+ * by the HTTP-ping fast path in auto-preflight.
+ *
+ * @returns {boolean}
+ */
+function isCacheAdequate() {
+  const raw = loadAll();
+  const f = computeCacheFreshness(raw);
+  return f === 'fresh' || f === 'aging';
+}
+
+module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness, isCacheAdequate };
