@@ -152,9 +152,14 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
 
     // Classifier gate — warmup phase only.
     // If the schedule cache (populated by Playwright API interception) shows
-    // the class is full, there is no point launching a full browser session
-    // during warmup.  Sniper and late phases always proceed — the booking
-    // window is open and the cache may be out of date.
+    // the class is full AND that result is fresh, there is no point launching
+    // a full browser session during warmup.  Sniper and late phases always
+    // proceed — the booking window is open and the cache may be out of date.
+    //
+    // Freshness guard (Stage 1 — Warmup Freshness Guard pass):
+    // An aging or stale "full" result is NOT authoritative enough to suppress
+    // a warmup run.  The class may have opened since the cache was populated.
+    // Only a fresh (< 30 min) "full" result may gate the warmup.
     if (phase === 'warmup') {
       try {
         const { classifyClass } = require('../classifier/classTruth');
@@ -165,15 +170,20 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
           instructor: dbJob.instructor || null,
           targetDate: dbJob.target_date || null,
         });
-        if (cr.state === 'full') {
+        if (cr.state === 'full' && cr.freshness === 'fresh') {
           const reason = 'CLASSIFIER_FULL';
-          const msg    = `Skipped warmup: schedule cache shows class is full (${cr.reason})`;
+          const msg    = `Skipped warmup: schedule cache shows class is full — fresh (${cr.reason})`;
           console.log(`  => SKIPPING Job #${dbJob.id} (classifier gate) — ${msg}`);
           emitTickSkip(dbJob.id, reason, msg);
           results.push({ jobId: dbJob.id, phase, status: 'skipped', message: msg });
           continue;
         }
-        if (cr.state !== 'unknown') {
+        if (cr.state === 'full' && cr.freshness !== 'fresh') {
+          console.log(
+            `  Job #${dbJob.id}: classifier → full (freshness: ${cr.freshness}) — ` +
+            `NOT suppressing warmup (non-fresh full result is not authoritative)`
+          );
+        } else if (cr.state !== 'unknown') {
           console.log(`  Job #${dbJob.id}: classifier → ${cr.state} (${cr.matchType}, conf: ${cr.confidence})`);
         }
       } catch (classifyErr) {

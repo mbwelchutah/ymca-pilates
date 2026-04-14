@@ -1,0 +1,336 @@
+You are implementing a WARMUP FRESHNESS GUARD + READINESS WRITE-ORDER CORRECTION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the most important remaining readiness/freshness reliability issues without expanding scope.
+
+This pass targets these specific problems:
+
+1. the warmup classifier gate can still suppress useful warmup runs using aging/stale “full” class truth
+2. readiness-state.json can lag one run behind confirmed-ready-state.json due to write ordering
+3. ping-confirmed fast paths can leave confirmed-ready freshness aging on disk even though reality was just checked
+
+This is NOT a broad redesign.
+This is a focused correctness and reliability pass.
+
+IMPORTANT RULES
+
+- Do NOT redesign the entire readiness architecture
+- Do NOT add unrelated features
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / PROBLEMS TO FIX
+==================================================
+
+Known issues from the post-refactor audit:
+
+A. Warmup classifier gate ignores freshness
+- tick.js suppresses a warmup run when classifier says state === 'full'
+- it does not also require freshness to be fresh
+- this means an aging/stale "full" result can suppress the only useful warmup run
+
+B. Write-order lag
+- refreshReadiness() runs before refreshConfirmedReadyState()
+- readiness-state.json reads confirmed-ready-state.json from disk
+- therefore readiness can be one run behind confirmed-ready truth
+
+C. Ping fast-path does not refresh confirmed-ready state
+- when auto-preflight succeeds via ping + booking confirmed + fresh cache
+- confirmed-ready-state.json may not be rewritten
+- freshness silently ages even though the system just validated truth
+
+We want to fix these without introducing new architecture complexity.
+
+==================================================
+STAGE 1 — FIX WARMUP CLASSIFIER GATE TO RESPECT FRESHNESS
+==================================================
+
+Goal:
+Do not let aging/stale class truth suppress warmup runs.
+
+Tasks:
+
+1. Find the warmup classifier gate in tick.js where the run is skipped if class state is full
+2. Change the logic so a warmup skip happens ONLY when:
+   - classifier state === 'full'
+   AND
+   - classifier freshness === 'fresh'
+
+3. If classifier state is full but freshness is:
+   - aging
+   - stale
+   - unknown
+then DO NOT suppress the warmup run automatically
+
+4. In those non-fresh cases:
+   - allow the warmup run to continue
+   OR
+   - downgrade the classifier result to effectively “unknown” for gate purposes
+
+5. Keep fresh “full” cache useful, but make non-fresh “full” non-authoritative for warmup suppression
+
+Success criteria:
+- aging/stale "full" can no longer block a useful warmup run
+- only fresh full-state truth is authoritative enough to suppress warmup
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — MAKE GATE LOGGING EXPLICIT ABOUT FRESHNESS
+==================================================
+
+Goal:
+Make it obvious in logs why a warmup run was skipped or allowed.
+
+Tasks:
+
+1. Update logging around the classifier gate so it records:
+   - class state
+   - freshness
+   - whether suppression occurred
+2. Example outcomes:
+   - classifier_skip_full_fresh
+   - classifier_full_but_aging_allow_run
+   - classifier_full_but_stale_allow_run
+   - classifier_unknown_allow_run
+
+3. Keep logs structured and easy to inspect
+
+Success criteria:
+- warmup suppression decisions are explainable
+- logs now distinguish fresh vs non-fresh gating
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — FIX WRITE ORDER: CONFIRMED READY BEFORE READINESS
+==================================================
+
+Goal:
+Stop readiness-state from reading stale confirmed-ready truth.
+
+Tasks:
+
+1. Audit all places where both are written in sequence:
+   - preflight-loop.js
+   - tick.js finally
+   - any other shared update paths
+
+2. Change the order so:
+   - confirmed-ready is computed/written first
+   - readiness is computed/written second
+if readiness depends on confirmed-ready-derived fields
+
+3. Ensure readiness no longer reads the previous run’s confirmed-ready file in those paths
+
+4. Keep behavior otherwise unchanged
+
+Success criteria:
+- classTruthFreshness and related readiness fields are no longer one run behind
+- readiness uses fresh confirmed-ready truth from the same cycle
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — VERIFY READINESS FILE NO LONGER LAGS
+==================================================
+
+Goal:
+Make sure the write-order fix actually resolves the lag behavior.
+
+Tasks:
+
+1. Add lightweight verification/logging to confirm that in a given run:
+   - confirmed-ready updated at time X
+   - readiness updated after it
+   - readiness now sees the same classifier freshness / readiness truth from that run
+
+2. Do not add noisy permanent logs if not needed
+3. Keep this focused on correctness verification
+
+Success criteria:
+- there is clear evidence that readiness is no longer one run behind
+- same-cycle truth is reflected consistently
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — REFRESH CONFIRMED-READY ON PING FAST-PATH
+==================================================
+
+Goal:
+Do not let confirmed-ready silently age when ping has just validated useful truth.
+
+Tasks:
+
+1. Find the ping-confirmed fast path in auto-preflight.js
+2. When ping confirms:
+   - session valid
+   - booking confirmed
+   - cache fresh enough
+and the code exits early,
+also refresh/write confirmed-ready-state.json for that successful validation cycle
+
+3. Ensure this does not require a full browser run
+4. Keep the write lightweight and truthful to what was actually confirmed
+
+Success criteria:
+- confirmed-ready freshness is refreshed on successful ping fast-path
+- freshness no longer silently ages during successful checkpoint validation
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — ENSURE PING-CONFIRMED WRITES USE HONEST TRUTH
+==================================================
+
+Goal:
+Avoid overstating what the ping fast-path actually knows.
+
+Tasks:
+
+1. When writing confirmed-ready from a ping-confirmed fast path:
+   - preserve source/freshness accurately
+   - do not pretend Playwright/modal truth was newly confirmed if it was not
+2. Make sure the resulting confirmed-ready state reflects:
+   - auth freshness = fresh
+   - class truth freshness = whatever current classifier truth actually is
+   - preflight/modal freshness = only as fresh as last known real evidence allows
+
+3. Keep the model honest and not artificially over-upgraded
+
+Success criteria:
+- ping refresh improves freshness without inflating certainty
+- confirmed-ready stays truthful about what source confirmed what
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — REDUCE UI DISAGREEMENT BETWEEN READINESS SOURCES
+==================================================
+
+Goal:
+Make the UI less likely to show conflicting freshness truth while the full architecture still has two files.
+
+Tasks:
+
+1. Audit current UI use of:
+   - confirmedReady.classTruth.freshness
+   - bgReadiness.classTruthFreshness
+2. Choose a clear priority rule for display in Now / Plan while both models still exist
+3. Prefer the more canonical / current source consistently
+4. Avoid mixed rendering where one widget uses one file and another widget uses the other if they can disagree
+
+Success criteria:
+- Now and Plan show less conflicting freshness info
+- UI becomes more stable even before deeper model consolidation
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — TIGHTEN AUTH FRESHNESS SEMANTICS (LIGHT PASS)
+==================================================
+
+Goal:
+Reduce cases where auth can look fresher than it really is.
+
+Tasks:
+
+1. Audit current auth freshness derivation using:
+   - lastCheckedAt
+   - bookingAccessConfirmedAt
+2. Tighten logic so freshness is not overly optimistic when:
+   - old session validity is being carried forward
+   - booking access was confirmed long enough ago that current session truth is questionable
+
+3. This does NOT need a full auth redesign
+4. Prefer a conservative interpretation over a falsely fresh one
+
+Success criteria:
+- auth freshness is less likely to overstate reality
+- confirmed-ready is less likely to remain green on stale auth evidence
+
+After Stage 8:
+Summarize changes and STOP.
+
+==================================================
+STAGE 9 — TOOLS / DIAGNOSTIC VISIBILITY FOR THESE FIXES
+==================================================
+
+Goal:
+Make these corrections inspectable.
+
+Tasks:
+
+1. In Tools / diagnostics, expose enough to understand:
+   - whether classifier suppression used freshness
+   - current class truth freshness
+   - confirmed-ready updated time
+   - readiness updated time
+   - source of current readiness truth
+
+2. Keep this lightweight and secondary
+3. Do not clutter Now with these details
+
+Success criteria:
+- these fixes are diagnosable if issues remain
+- operators can verify freshness behavior
+
+After Stage 9:
+Summarize changes and STOP.
+
+==================================================
+STAGE 10 — FINAL QA PASS
+==================================================
+
+Goal:
+Verify the specific bugs from the audit are resolved.
+
+Test these cases:
+
+1. Fresh full cache in warmup
+- should suppress warmup
+
+2. Aging full cache in warmup
+- should NOT suppress warmup
+
+3. Stale full cache in warmup
+- should NOT suppress warmup
+
+4. Readiness + confirmed-ready written in same cycle
+- readiness should no longer lag
+
+5. Ping-confirmed fast path
+- confirmed-ready freshness should refresh
+
+6. UI freshness rendering
+- should not show conflicting freshness from different sources when avoidable
+
+Success criteria:
+- warmup gate now respects freshness
+- write-order lag is fixed
+- ping fast-path freshness is refreshed
+- UI truth is more consistent
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
