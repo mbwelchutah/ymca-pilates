@@ -75,16 +75,36 @@ async function initFromPg() {
 }
 
 // ── syncJobsToPg ─────────────────────────────────────────────────────────────
-// Called fire-and-forget after every job mutation (create / delete / toggle /
-// update).  Replaces the entire PG jobs table with the current SQLite state.
+// Called after every job mutation (create / delete / toggle / update).
+// Replaces the entire PG jobs table with the current SQLite state.
 // Uses a transaction so PG is never left in a partial state.
+//
+// Concurrent-safe via _syncChain serialisation: if two mutations fire at the
+// same time, the second sync waits for the first to complete and then reads a
+// fresh SQLite snapshot that captures both mutations.  This prevents the
+// interleaved-DELETE bug where two concurrent BEGIN/DELETE/INSERT/COMMIT cycles
+// each omit the other's rows and both COMMITs, resulting in duplicate rows.
+
+let _syncChain = Promise.resolve();
+
+// Serialised public entry point.  Returns a promise that resolves/rejects with
+// the outcome of THIS sync so callers can await it for durability.
+function _doSyncJobsToPg() {
+  const slot = _syncChain.then(() => _doSyncJobsToPgCore());
+  // Advance the chain; swallow errors so a failed sync never blocks later ones.
+  _syncChain = slot.catch(() => {});
+  return slot;
+}
+
 function syncJobsToPg() {
   _doSyncJobsToPg().catch(err =>
     console.error('[pg-sync] syncJobsToPg failed (non-fatal):', err.message)
   );
 }
 
-async function _doSyncJobsToPg() {
+// Core work — reads SQLite at execution time (not enqueue time) so it always
+// captures the most-recent committed state of the jobs table.
+async function _doSyncJobsToPgCore() {
   // Read the current job list from SQLite (authoritative runtime source).
   // Falls back to seed-jobs.json only if SQLite hasn't been initialised yet
   // (e.g. during a very early startup before openDb() is first called).

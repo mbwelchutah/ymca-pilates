@@ -27,7 +27,7 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 | `src/scheduler/escalation.js` | Escalation records for persistent click failures. |
 | `src/db/jobs.js` | SQLite CRUD for jobs table (via better-sqlite3). `syncSeed()` writes seed-jobs.json only; PG sync is now awaited explicitly by server.js mutation handlers. |
 | `src/db/pg-init.js` | PostgreSQL sync: restores jobs from PostgreSQL → `data/seed-jobs.json` on startup (PG → SQLite direction only). |
-| `src/db/pg-sync.js` | Bidirectional PG helpers: `initFromPg` (startup restore), `syncJobsToPg` (fire-and-forget, legacy), `syncJobsToPgAsync` (awaitable, used by server.js mutation handlers and production startup sync). `_doSyncJobsToPg` now reads from SQLite directly (not seed-jobs.json) to avoid stale-seed race on restart. |
+| `src/db/pg-sync.js` | Bidirectional PG helpers: `initFromPg` (startup restore), `syncJobsToPg` (fire-and-forget, legacy), `syncJobsToPgAsync` (awaitable, used by server.js mutation handlers and production startup sync). Serialised via `_syncChain` promise queue — concurrent mutations wait their turn and always read a fresh SQLite snapshot, preventing the interleaved-DELETE duplicate-row bug. `_doSyncJobsToPgCore` reads from SQLite directly (not seed-jobs.json). |
 
 ### Frontend (`client/src/`)
 
