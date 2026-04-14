@@ -128,14 +128,32 @@ function computeFreshness(checkedAtMs, domain) {
 function _buildAuth() {
   const a = getAuthState();
 
-  // Use the most recent of lastCheckedAt and bookingAccessConfirmedAt as the
-  // authoritative "we last verified auth" timestamp.
+  // Stage 8 (auth freshness tightening):
+  //
+  // lastCheckedAt    — set whenever sessions are actively verified: HTTP ping
+  //                    (auto-preflight fast path) or Playwright browser run.
+  //                    This is the authoritative "we checked the session" timestamp.
+  //
+  // bookingAccessConfirmedAt — set when the booking modal surface was confirmed
+  //                    reachable in a browser run.  It says the MODAL was there,
+  //                    not that the underlying Daxko/FamilyWorks tokens are still
+  //                    valid RIGHT NOW.  Using it to bump auth freshness would
+  //                    falsely suggest the session was verified more recently
+  //                    than it was.
+  //
+  // Conservative rule: auth.freshness is driven by lastCheckedAt alone.
+  // bookingAccessConfirmedAt is only used as a fallback when lastCheckedAt has
+  // never been set (e.g. first-run before any session check has completed).
+  // We deliberately do NOT take Math.max(lastCheckedAt, bookingAccessConfirmedAt)
+  // because that inflates freshness with a timestamp from a weaker check.
   let checkedAtMs = null;
-  if (a.lastCheckedAt != null)             checkedAtMs = a.lastCheckedAt;
-  if (a.bookingAccessConfirmedAt != null) {
-    checkedAtMs = checkedAtMs == null
-      ? a.bookingAccessConfirmedAt
-      : Math.max(checkedAtMs, a.bookingAccessConfirmedAt);
+  if (a.lastCheckedAt != null) {
+    checkedAtMs = a.lastCheckedAt;
+  } else if (a.bookingAccessConfirmedAt != null) {
+    // No lastCheckedAt yet — use bookingAccess as the only available signal.
+    // This is conservative: freshness reflects access confirmation, not a
+    // dedicated session ping/check.
+    checkedAtMs = a.bookingAccessConfirmedAt;
   }
 
   return {
