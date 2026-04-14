@@ -28,24 +28,20 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { loadState }         = require('./sniper-readiness');
-// Stage 4 (auth-truth-unification): loadStatus reads session-status.json,
-// which is a non-canonical auth source.  Stage 6 will replace this with
-// getCanonicalAuthTruth().sessionValid from auth-state.js.
-const { loadStatus }        = require('./session-check');
-const { computeConfidence } = require('./confidence');
+const { loadState }             = require('./sniper-readiness');
+// Stage 6 (auth-truth-unification): session and schedule truth now come from
+// getCanonicalAuthTruth() (auth-state.json) instead of the legacy files
+// session-status.json (loadStatus) and familyworks-session.json (readFwStatus).
+// Both sources are now replaced by this single canonical read.
+const { getCanonicalAuthTruth } = require('./auth-state');
+const { computeConfidence }     = require('./confidence');
 // NOTE: confirmed-ready.js is NOT top-level required here because it also
 // requires readiness-state.js (circular).  loadConfirmedReadyState is instead
-// require lazily inside computeReadiness() to avoid Node's circular-dependency
+// required lazily inside computeReadiness() to avoid Node's circular-dependency
 // initialisation race (Stage 8).
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'readiness-state.json');
-// Stage 4 (auth-truth-unification): FW_FILE / readFwStatus() reads
-// familyworks-session.json directly, which is a non-canonical auth source.
-// Stage 6 will replace readFwStatus() with getCanonicalAuthTruth().fwStatusCode
-// from auth-state.js so session and schedule both derive from one file.
-const FW_FILE    = path.join(DATA_DIR, 'familyworks-session.json');
 
 // ── File helpers ──────────────────────────────────────────────────────────────
 
@@ -67,11 +63,12 @@ function saveReadiness(record) {
 
 // ── Raw-code normalizers ──────────────────────────────────────────────────────
 
-function normalizeSession(bundleSession, sessionStatusValid) {
-  // Prefer the live session-status.json result when available.
-  if (sessionStatusValid === true)  return 'ready';
-  if (sessionStatusValid === false) return 'error';
-  // Fall back to sniper bundle code.
+// sessionValid is boolean|null from getCanonicalAuthTruth() (auth-state.json).
+// null means auth has never been checked — fall back to sniper bundle code.
+function normalizeSession(bundleSession, sessionValid) {
+  if (sessionValid === true)  return 'ready';
+  if (sessionValid === false) return 'error';
+  // Auth not yet checked — fall back to sniper bundle code.
   if (bundleSession === 'SESSION_READY')   return 'ready';
   if (bundleSession === 'SESSION_EXPIRED') return 'error';
   return 'unknown';
@@ -104,19 +101,6 @@ function normalizeAction(bundleAction) {
   return 'unknown';
 }
 
-// ── FamilyWorks session reader ────────────────────────────────────────────────
-// Mirrors the logic in /api/session-status: treats entries older than 6 h as unknown.
-
-function readFwStatus() {
-  try {
-    if (!fs.existsSync(FW_FILE)) return 'FAMILYWORKS_SESSION_MISSING';
-    const raw   = JSON.parse(fs.readFileSync(FW_FILE, 'utf8'));
-    const ageMs = Date.now() - new Date(raw.checkedAt || 0).getTime();
-    if (ageMs >= 6 * 3600 * 1000) return 'FAMILYWORKS_UNKNOWN'; // stale
-    return raw.status || 'FAMILYWORKS_UNKNOWN';
-  } catch { return 'FAMILYWORKS_UNKNOWN'; }
-}
-
 // ── Core: compute the normalized object from live state ───────────────────────
 
 function computeReadiness({ jobId, classTitle, source }) {
@@ -127,13 +111,17 @@ function computeReadiness({ jobId, classTitle, source }) {
     console.warn('[readiness-state] loadState failed (partial result):', e.message);
   }
 
-  let sessionStatus = null;
-  try { sessionStatus = loadStatus(); } catch (e) {
-    console.warn('[readiness-state] loadStatus failed (partial result):', e.message);
+  // Stage 6 (auth-truth-unification): session and schedule truth come from
+  // the canonical auth source (auth-state.json) via getCanonicalAuthTruth().
+  // This replaces the previous dual reads of session-status.json (loadStatus)
+  // and familyworks-session.json (readFwStatus) which could disagree with each
+  // other and with confirmed-ready.js, which always read auth-state.json.
+  let canonicalAuth = null;
+  try { canonicalAuth = getCanonicalAuthTruth(); } catch (e) {
+    console.warn('[readiness-state] getCanonicalAuthTruth failed (partial result):', e.message);
   }
 
-  const bundle   = sniperState?.bundle ?? {};
-  const fwStatus = readFwStatus();
+  const bundle = sniperState?.bundle ?? {};
 
   const record = {
     lastCheckedAt:  new Date().toISOString(),
@@ -145,12 +133,12 @@ function computeReadiness({ jobId, classTitle, source }) {
     sniperUpdatedAt: sniperState?.updatedAt ?? null,
     jobId:         jobId  ?? sniperState?.jobId  ?? null,
     classTitle:    classTitle ?? sniperState?.classTitle ?? null,
-    // Stage 6 migration target: replace sessionStatus?.valid with
-    // getCanonicalAuthTruth().sessionValid (reads auth-state.json, not session-status.json)
-    session:       normalizeSession(bundle.session,   sessionStatus?.valid ?? null),
-    // Stage 6 migration target: replace fwStatus with
-    // getCanonicalAuthTruth().fwStatusCode (reads auth-state.json, not familyworks-session.json)
-    schedule:      normalizeSchedule(fwStatus),
+    // canonicalAuth.sessionValid: boolean|null from auth-state.json — replaces
+    // session-status.json valid field.  Falls back to sniper bundle when null.
+    session:       normalizeSession(bundle.session,   canonicalAuth?.sessionValid ?? null),
+    // canonicalAuth.fwStatusCode: status string from auth-state.json — replaces
+    // familyworks-session.json status field.
+    schedule:      normalizeSchedule(canonicalAuth?.fwStatusCode ?? 'FAMILYWORKS_UNKNOWN'),
     discovery:     normalizeDiscovery(bundle.discovery),
     modal:         normalizeModal(bundle.modal),
     action:        normalizeAction(bundle.action),
