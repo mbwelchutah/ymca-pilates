@@ -4043,9 +4043,8 @@ const server = http.createServer((req, res) => {
           savePreflightSnapshot(result.status, { authDetail, discoveryDetail, modalDetail, actionDetail });
           const stateAfterSnapshot = loadState();
 
-          // Stage 9B — update the normalized persisted readiness state.
-          const { refreshReadiness } = require('../bot/readiness-state');
-          refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'manual' });
+          // Write-order invariant: confirmed-ready MUST be written before readiness
+          // so that computeReadiness() reads same-cycle confirmed-ready truth.
           // Stage 5 (freshness) — persist canonical confirmed-ready state after manual preflight.
           const { refreshConfirmedReadyState: refreshCR } = require('../bot/confirmed-ready');
           refreshCR({
@@ -4055,6 +4054,9 @@ const server = http.createServer((req, res) => {
             dayOfWeek:  dbJob.day_of_week,
             targetDate: dbJob.target_date || null,
           });
+          // Stage 9B — update the normalized persisted readiness state (after confirmed-ready).
+          const { refreshReadiness } = require('../bot/readiness-state');
+          refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'manual' });
 
           json({
             success:         result.status === 'success',

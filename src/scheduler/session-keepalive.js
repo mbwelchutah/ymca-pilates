@@ -12,19 +12,18 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { runSessionCheck, loadStatus } = require('../bot/session-check');
+const { runSessionCheck }             = require('../bot/session-check');
 const { recordFailure }               = require('../db/failures');
 const { getAllJobs }                   = require('../db/jobs');
 const { refreshReadiness }            = require('../bot/readiness-state');
 const { refreshConfirmedReadyState }  = require('../bot/confirmed-ready');
 const { pingSessionHttp }             = require('../bot/session-ping');
 const { isLocked }                    = require('../bot/auth-lock');
-const { updateAuthState }             = require('../bot/auth-state');
+const { updateAuthState, getCanonicalAuthTruth } = require('../bot/auth-state');
 
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'session-keepalive-settings.json');
 const LOG_FILE      = path.join(DATA_DIR, 'session-keepalive-log.json');
-const FW_FILE       = path.join(DATA_DIR, 'familyworks-session.json');
 
 const DEFAULT_INTERVAL_MINUTES = 12;  // silent background check every 12 minutes
 const TRUST_THRESHOLD_MIN      = 30;  // Tier-1: trust cached data within this window
@@ -108,56 +107,48 @@ function getNextKeepaliveInfo() {
 
 // ── Tier-1: File-freshness check ─────────────────────────────────────────────
 //
-// Reads the two on-disk session files and decides whether they are recent
-// enough to be trusted without launching a browser.
+// Stage 9 (auth-truth-unification): migrated from reading session-status.json
+// + familyworks-session.json directly to getCanonicalAuthTruth() (auth-state.json).
+//
+// auth-state.json.lastCheckedAt is a single unified ms timestamp updated by
+// every successful validation tier (HTTP ping, Playwright, startup ping) for
+// both Daxko and FamilyWorks.  Using it as the freshness gate is strictly more
+// accurate than the previous per-file age approach:
+//   - A successful HTTP ping updates lastCheckedAt even though session-status.json
+//     is only written by Playwright (Tier-3), so the old Tier-1 gate would
+//     incorrectly miss the cache after a ping-trusted check.
+//   - A single unified timestamp removes the separate Daxko/FW age comparison.
 //
 // Returns { trusted: boolean, detail: string }.
 
 function checkFreshness(thresholdMs = TRUST_THRESHOLD_MIN * 60 * 1000) {
   try {
-    const now = Date.now();
+    const now           = Date.now();
+    const canonicalAuth = getCanonicalAuthTruth();
 
-    // ── Daxko (session-status.json) ─────────────────────────────────────────
-    const sessionStatus = loadStatus();
-    if (!sessionStatus) {
-      return { trusted: false, detail: 'Daxko session file missing — running full check' };
+    // ── Validity check ───────────────────────────────────────────────────────
+    if (canonicalAuth.sessionValid !== true) {
+      return { trusted: false, detail: 'Daxko session not confirmed valid — running full check' };
     }
-    if (sessionStatus.valid !== true) {
-      return { trusted: false, detail: 'Daxko session invalid — running full check' };
-    }
-    const daxkoAgeMs = now - new Date(sessionStatus.checkedAt).getTime();
-    if (!Number.isFinite(daxkoAgeMs)) {
-      return { trusted: false, detail: 'Daxko session has invalid checkedAt — running full check' };
-    }
-    if (daxkoAgeMs > thresholdMs) {
-      return { trusted: false, detail: `Daxko session stale (${Math.round(daxkoAgeMs / 60000)}m old) — running full check` };
+    if (canonicalAuth.fwStatusCode !== 'FAMILYWORKS_READY') {
+      return { trusted: false, detail: `FamilyWorks session not ready (${canonicalAuth.fwStatusCode}) — running full check` };
     }
 
-    // ── FamilyWorks (familyworks-session.json) ───────────────────────────────
-    let fwStatus = null;
-    try {
-      if (fs.existsSync(FW_FILE)) fwStatus = JSON.parse(fs.readFileSync(FW_FILE, 'utf8'));
-    } catch { /* fwStatus stays null */ }
-
-    if (!fwStatus) {
-      return { trusted: false, detail: 'FamilyWorks session file missing — running full check' };
+    // ── Freshness check (single unified timestamp) ───────────────────────────
+    if (canonicalAuth.lastCheckedAt == null) {
+      return { trusted: false, detail: 'No prior validation timestamp — running full check' };
     }
-    if (fwStatus.ready !== true || fwStatus.status !== 'FAMILYWORKS_READY') {
-      return { trusted: false, detail: 'FamilyWorks session invalid — running full check' };
+    const ageMs = now - canonicalAuth.lastCheckedAt;
+    if (!Number.isFinite(ageMs)) {
+      return { trusted: false, detail: 'Invalid validation timestamp — running full check' };
     }
-    const fwAgeMs = now - new Date(fwStatus.checkedAt).getTime();
-    if (!Number.isFinite(fwAgeMs)) {
-      return { trusted: false, detail: 'FamilyWorks session has invalid checkedAt — running full check' };
-    }
-    if (fwAgeMs > thresholdMs) {
-      return { trusted: false, detail: `FamilyWorks session stale (${Math.round(fwAgeMs / 60000)}m old) — running full check` };
+    if (ageMs > thresholdMs) {
+      return { trusted: false, detail: `Session data stale (${Math.round(ageMs / 60000)}m since last validation) — running full check` };
     }
 
-    const daxkoAge = Math.round(daxkoAgeMs / 60000);
-    const fwAge    = Math.round(fwAgeMs    / 60000);
     return {
       trusted: true,
-      detail:  `Session data fresh — Daxko verified ${daxkoAge}m ago, FamilyWorks ${fwAge}m ago (threshold ${TRUST_THRESHOLD_MIN}m)`,
+      detail:  `Session data fresh — last validated ${Math.round(ageMs / 60000)}m ago (threshold ${TRUST_THRESHOLD_MIN}m)`,
     };
   } catch (err) {
     return { trusted: false, detail: `Freshness check error: ${err.message}` };
