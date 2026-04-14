@@ -1,0 +1,295 @@
+You are implementing a CLOSE REMAINING AUTH-STATE WRITE GAP + REMOVE POST-CANONICAL LEGACY FW READS PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the remaining high/medium impact auth truth cleanup items identified in the post-auth-unification audit, without expanding scope.
+
+This pass targets ONLY these concrete issues:
+
+1. Booking-run Daxko auth success/failure updates session-status.json but does NOT immediately update auth-state.json
+2. session-validator.js Tier-3 still reads legacy FamilyWorks status after canonical auth truth has already been updated
+3. settings-refresh Tier-2 still uses legacy FamilyWorks status for the response familyworks field even though canonical truth is available
+
+This is NOT a broad redesign.
+This is a narrow correctness and cleanup pass.
+
+IMPORTANT RULES
+
+- Do NOT redesign the architecture
+- Do NOT change unrelated auth/session flows
+- Do NOT touch low-priority or deferred audit items in this pass
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / ISSUES TO FIX
+==================================================
+
+Known remaining issues from the audit:
+
+A. Booking-run Daxko auth write gap
+- register-pilates.js writes session-status.json on Daxko auth success/failure
+- but does not update auth-state.json at that moment
+- if the run crashes before FamilyWorks modal detection, canonical auth truth can remain stale
+
+B. session-validator.js Tier-3 post-canonical legacy FW read
+- runSessionCheck() already updates auth-state.json
+- validator still reads familyworks-session.json afterward to build the Tier-3 result
+- this can briefly disagree with canonical auth truth
+
+C. settings-refresh Tier-2 FamilyWorks field
+- response familyworks field is still populated from legacy FW file data
+- canonical auth truth already has fwStatusCode
+- this is unnecessary mixed truth for the status field
+
+We want to fix ONLY these items.
+
+==================================================
+STAGE 1 — PATCH BOOKING-RUN DAXKO AUTH SUCCESS WRITE GAP
+==================================================
+
+Goal:
+When booking-run Daxko auth succeeds, auth-state.json must be updated immediately, not only later when FW modal detection happens.
+
+Tasks:
+
+1. Find the booking-run Daxko auth success path in register-pilates.js (identified in the audit around line ~693)
+2. At that success point, add updateAuthState(...) so canonical auth truth is updated immediately
+3. Write at least:
+   - daxkoValid: true
+   - lastCheckedAt: Date.now()
+   - lastFailureType: null
+4. Preserve existing behavior otherwise
+5. Do not wait until later FamilyWorks modal detection to reflect Daxko success in auth-state.json
+
+Success criteria:
+- booking-run Daxko auth success updates auth-state.json immediately
+- canonical auth truth no longer lags during this phase
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — PATCH BOOKING-RUN DAXKO AUTH FAILURE WRITE GAP
+==================================================
+
+Goal:
+When booking-run Daxko auth fails, canonical auth truth should record that immediately too.
+
+Tasks:
+
+1. Find the booking-run Daxko auth failure path in register-pilates.js (identified in the audit around line ~708)
+2. At that failure point, add updateAuthState(...) so auth-state.json reflects the failure immediately
+3. Set at least:
+   - daxkoValid: false
+   - lastCheckedAt: Date.now()
+   - lastFailureType:
+     - timeout if timeout case
+     - auth_failed otherwise
+4. Preserve current session-status.json behavior too
+5. Keep failure handling otherwise unchanged
+
+Success criteria:
+- booking-run Daxko auth failure updates auth-state.json immediately
+- canonical auth truth no longer stays stale after a failed booking-run auth attempt
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — VERIFY BOOKING-RUN AUTH GAP IS CLOSED
+==================================================
+
+Goal:
+Confirm the booking-run auth write gap is actually gone.
+
+Tasks:
+
+1. Add lightweight verification/logging if helpful
+2. Confirm the booking-run auth path now updates:
+   - session-status.json
+   - auth-state.json
+in the same phase, for both success and failure
+3. Verify no obvious path remains where session-status changes without canonical auth state changing
+
+Success criteria:
+- booking-run auth success/failure no longer leaves canonical auth truth stale
+- the gap identified in the audit is closed
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — REMOVE POST-CANONICAL LEGACY FW READ IN session-validator.js TIER-3
+==================================================
+
+Goal:
+After runSessionCheck() updates canonical truth, stop reading familyworks-session.json to determine the Tier-3 FamilyWorks status.
+
+Tasks:
+
+1. In session-validator.js, locate the Tier-3 path after runSessionCheck() returns
+2. Replace the post-run legacy FW read (readFwStatus() or equivalent) with:
+   - getCanonicalAuthTruth().fwStatusCode
+3. Ensure the returned Tier-3 result now uses canonical FamilyWorks truth
+4. Keep the rest of the validator behavior unchanged
+5. Remove or isolate the legacy helper if it is no longer needed
+
+Success criteria:
+- validator Tier-3 result uses canonical FW truth
+- post-canonical legacy FW read is removed from that path
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — VERIFY TIER-3 VALIDATOR OUTPUT AGREES WITH CANONICAL TRUTH
+==================================================
+
+Goal:
+Prove that the validator no longer disagrees with canonical FamilyWorks truth in the normal case.
+
+Tasks:
+
+1. Add lightweight verification/logging if needed
+2. Confirm:
+   - runSessionCheck() updates auth-state.json
+   - Tier-3 result now uses canonical fwStatusCode
+3. Verify no remaining code in that Tier-3 path re-reads legacy FamilyWorks status for the main returned value
+
+Success criteria:
+- validator output matches canonical auth truth
+- no stale legacy FamilyWorks status can leak into the Tier-3 return value
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — USE CANONICAL FAMILYWORKS STATUS IN settings-refresh TIER-2
+==================================================
+
+Goal:
+Remove one more unnecessary mixed-truth field from settings-refresh.
+
+Tasks:
+
+1. In server.js, locate /api/settings-refresh Tier-2 response composition
+2. Replace the response familyworks status field assignment that currently uses legacy FW file status with:
+   - getCanonicalAuthTruth().fwStatusCode
+3. If the handler still needs legacy FW checkedAt for lastVerified or similar, leave that timestamp logic alone for now
+4. Change ONLY the FamilyWorks status field for Tier-2 in this pass
+
+Success criteria:
+- settings-refresh Tier-2 familyworks field now uses canonical truth
+- timestamp fallback behavior is unchanged unless required
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — VERIFY settings-refresh TIER-2 NO LONGER MIXES STATUS TRUTH
+==================================================
+
+Goal:
+Confirm settings-refresh Tier-2 now returns canonical FamilyWorks status cleanly.
+
+Tasks:
+
+1. Verify the response familyworks field now agrees with canonical auth truth
+2. Confirm only timestamp/detail composition still depends on legacy data if needed
+3. Do not touch Tier-3 sniper-recency logic in this pass
+
+Success criteria:
+- Tier-2 response no longer mixes legacy status with canonical auth truth
+- scope remains narrow
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — FINAL QA OF THE TARGETED FIXES
+==================================================
+
+Goal:
+Verify all three targeted issues are fixed.
+
+Test / verify these scenarios:
+
+1. Booking-run Daxko success
+- auth-state.json updates immediately
+- canonical auth no longer waits for later FW modal detection
+
+2. Booking-run Daxko failure
+- auth-state.json updates immediately
+- lastFailureType reflects timeout vs auth_failed appropriately
+
+3. session-validator Tier-3
+- returned FamilyWorks status comes from canonical truth
+
+4. settings-refresh Tier-2
+- familyworks field comes from canonical truth
+
+5. No unintended regressions in:
+- confirmed-ready
+- readiness
+- /api/session-status
+- keepalive behavior
+
+Success criteria:
+- remaining write-gap issue is closed
+- post-canonical legacy FW reads are removed from the targeted paths
+- canonical auth truth is now used more consistently
+
+After Stage 8:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- booking-run Daxko auth success updates auth-state.json immediately
+- booking-run Daxko auth failure updates auth-state.json immediately
+- canonical auth truth no longer lags during booking-run auth phase
+- session-validator Tier-3 no longer uses legacy FamilyWorks status after canonical truth is already available
+- settings-refresh Tier-2 familyworks status uses canonical truth
+- overall auth/session truth becomes even more consistent and less crash-sensitive
+
+This pass should make the system:
+- more robust
+- less contradictory
+- less vulnerable to stale post-crash auth state
+
+It should NOT attempt to fix:
+- settings-refresh Tier-3 sniper-recency arbitration
+- suspicion-age granularity redesign
+- broad legacy-file removal
+- full architecture consolidation
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.

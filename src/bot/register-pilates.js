@@ -697,6 +697,12 @@ async function runBookingJob(job, opts = {}) {
         detail:    'Daxko login succeeded',
         screenshot: null,
       });
+      // Close the write gap identified in the post-auth-unification audit:
+      // session-status.json was updated above but auth-state.json was not,
+      // leaving canonical auth truth stale until FW modal detection at line ~2016.
+      // Writing daxkoValid:true here immediately so canonical truth reflects the
+      // successful Daxko login even if the run crashes before reaching the modal.
+      updateAuthState({ daxkoValid: true, lastCheckedAt: Date.now(), lastFailureType: null });
     } catch (loginErr) {
       // Distinguish transient timeouts from real auth failures.
       // A Playwright page-load timeout means the YMCA site was slow — credentials
