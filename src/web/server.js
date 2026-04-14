@@ -5090,6 +5090,11 @@ const server = http.createServer((req, res) => {
       schedulerPaused: isSchedulerPaused(),
     });
 
+    // Stage 8 — load sniper state once; used for isConfirming (Stage 10E) and
+    // lastTimingMetrics (Stage 8).  Hoisted out of the if(job) block so the
+    // timing data is available even when job resolution fails.
+    const _sniperState = (() => { try { return loadSniperState(); } catch { return null; } })();
+
     // Stage 10A: compute execution timing fresh (never stale — derived from clock + job).
     // Stage 10F: apply learned timing adjustments when sufficient observations exist.
     let executionTiming = null;
@@ -5106,19 +5111,21 @@ const server = http.createServer((req, res) => {
             observationCount:     learned.observationCount,
           };
         }
-        // Stage 10E — read precise isConfirming from the sniper state file.
-        // Falls back to jobState.active as a coarse signal when state is unavailable.
-        const _sniperStateForTiming = (() => { try { return loadSniperState(); } catch { return null; } })();
         executionTiming = computeExecutionTiming(job, {
-          // Precise: only true after Register/Waitlist click until confirmation resolves.
-          // Fallback: jobState.active (whole booking run) for backward compatibility.
-          isConfirming: _sniperStateForTiming?.isConfirming ?? jobState.active,
+          // Stage 10E — precise isConfirming from sniper state; falls back to jobState.active.
+          isConfirming:           _sniperState?.isConfirming ?? jobState.active,
           // Stage 10F — apply learned offsets when available (null = use defaults).
           warmupOffsetOverrideMs: learned?.adjustedWarmupOffsetMs ?? null,
           armedOffsetOverrideMs:  learned?.adjustedArmedOffsetMs  ?? null,
         });
       } catch (_) { /* non-fatal — job shape may be incomplete */ }
     }
+
+    // Stage 8 — expose the last run's timing metrics (Stages 2-7) in this response.
+    // Includes: per-phase durations, slowest_phase, open_to_confirmation SLA,
+    // and degradation ({ detected, slowPhases }) from Stage 7.
+    // null when no booking/preflight run has completed yet in this server session.
+    const lastTimingMetrics = _sniperState?.timingMetrics ?? null;
 
     // Stage 6 — run-speed learned data for the focused job.
     // neededLeadTimeMs drives the adaptive armed-offset in preflight-loop.js.
@@ -5136,7 +5143,7 @@ const server = http.createServer((req, res) => {
       if (jobId != null) escalation = allEscalations[String(jobId)] ?? null;
     } catch (_) { /* non-fatal */ }
 
-    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, learnedRunSpeed, escalation });
+    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, learnedRunSpeed, lastTimingMetrics, escalation });
 
   } else if (req.method === 'GET' && path === '/api/confirmed-ready') {
     // Stage 5 (freshness) — canonical confirmed-ready state for a job.
