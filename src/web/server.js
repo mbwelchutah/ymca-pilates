@@ -4324,20 +4324,20 @@ const server = http.createServer((req, res) => {
           // Both Daxko and FamilyWorks confirmed via HTTP — no browser needed.
           console.log('[settings-refresh] Tier-2 ping succeeded:', pingResult.detail);
 
-          // Read the FamilyWorks status from the freshly-stamped session file.
-          // pingSessionHttp() verified FamilyWorks via HTTP AND called refreshStatusTimestamps(),
-          // so familyworks-session.json is up to date with a fresh checkedAt.
-          // Sniper-state recency comparison is intentionally skipped here: the HTTP ping
-          // already confirmed the live FamilyWorks session, making sniper-state stale
-          // by definition. Defaulting to FAMILYWORKS_READY when the file is absent is
-          // correct because the ping just proved the session is active.
-          let familyworks = 'FAMILYWORKS_READY';
+          // Stage 6 (auth-truth-unification): familyworks status now comes from
+          // canonical auth truth.  pingSessionHttp() calls updateAuthState() before
+          // returning (session-ping.js), so getCanonicalAuthTruth().fwStatusCode is
+          // already fresh and agrees with what GET /api/session-status returns.
+          const { getCanonicalAuthTruth: _srGetCanAuth } = require('../bot/auth-state');
+          const familyworks = _srGetCanAuth().fwStatusCode;
+
+          // fwCheckedAt is still read from the legacy file — canonical truth does not
+          // expose per-source timestamps, and lastVerified needs a real checkedAt value.
           let fwCheckedAt = null;
           try {
             const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
             if (fsStatic.existsSync(fwPath)) {
               const fwEntry = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
-              familyworks = fwEntry?.status || 'FAMILYWORKS_READY';
               fwCheckedAt = fwEntry?.checkedAt || null;
             }
           } catch (_) { /* non-fatal */ }
