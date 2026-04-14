@@ -1,0 +1,306 @@
+You are implementing a CLI JOB DURABILITY + PG-SYNC SAFETY HARDENING PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the two remaining persistence/safety risks identified in the mutation durability audit:
+
+1. CLI job creation scripts currently write to SQLite and seed-jobs.json but do NOT sync to PostgreSQL, so those jobs can be lost on a fresh container restart
+2. syncJobsToPg (fire-and-forget) is still exported and could be accidentally reused by future code, reintroducing unsafe mutation behavior
+
+This pass should make CLI-created jobs durable and make the safe PG sync path the only practical path.
+
+IMPORTANT RULES
+
+- Do NOT redesign the persistence architecture
+- Do NOT change unrelated booking logic
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / PROBLEMS TO FIX
+==================================================
+
+Known issues:
+
+A. CLI durability gap
+- src/db/add-job.js and src/db/create-test-job.js call createJob()
+- createJob() writes SQLite and seed-jobs.json
+- but these CLI scripts do NOT call syncJobsToPgAsync()
+- a fresh container restart restores from PG and loses those jobs
+
+B. PG sync safety trap
+- syncJobsToPg (fire-and-forget) is still exported from pg-sync.js
+- current production handlers do not use it
+- but future developers could accidentally import and use it
+- that would reintroduce unsafe or misleading sync behavior
+
+We want:
+- CLI scripts to durably sync to PG
+- future code to strongly prefer or only use the safe awaitable path
+
+==================================================
+STAGE 1 — AUDIT CLI JOB CREATION PATHS
+==================================================
+
+Goal:
+Confirm exactly how the CLI scripts currently behave.
+
+Tasks:
+
+1. Trace:
+- src/db/add-job.js
+- src/db/create-test-job.js
+
+2. Confirm for each:
+- whether it calls createJob()
+- whether createJob() updates SQLite
+- whether createJob() updates seed-jobs.json
+- whether the script currently calls syncJobsToPgAsync()
+- whether the script is async or sync
+- whether success can currently be reported before PG durability exists
+
+3. Do NOT change behavior yet except minimal instrumentation if needed
+
+Success criteria:
+- exact CLI durability gap is confirmed in code
+- current script flow is documented clearly
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — MAKE src/db/add-job.js DURABLE
+==================================================
+
+Goal:
+Ensure jobs created via the add-job CLI script are persisted to PG before the script exits successfully.
+
+Tasks:
+
+1. Update src/db/add-job.js so it can call and await syncJobsToPgAsync()
+2. Ensure the flow becomes:
+- createJob()
+- await syncJobsToPgAsync()
+- then report success / exit cleanly
+
+3. Preserve existing CLI behavior and arguments as much as possible
+4. If PG sync fails, do NOT silently pretend the script was fully durable
+
+Success criteria:
+- add-job CLI path now syncs to PG
+- fresh restart will not lose the created job
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — MAKE src/db/create-test-job.js DURABLE
+==================================================
+
+Goal:
+Ensure test jobs created via the CLI test-job script are also durable.
+
+Tasks:
+
+1. Update src/db/create-test-job.js so it can call and await syncJobsToPgAsync()
+2. Ensure the flow becomes:
+- createJob()
+- await syncJobsToPgAsync()
+- then report success / exit cleanly
+
+3. Keep existing test-job creation semantics unchanged otherwise
+
+Success criteria:
+- create-test-job CLI path now syncs to PG
+- fresh restart will not lose the created test job
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — VERIFY CLI-CREATED JOBS SURVIVE RESTART
+==================================================
+
+Goal:
+Prove the CLI durability fix works end to end.
+
+Tasks:
+
+1. Use one or both CLI scripts to create test jobs
+2. Verify after creation:
+- SQLite contains the job
+- seed-jobs.json contains the job
+- PostgreSQL contains the job
+
+3. Restart appropriately
+4. Verify the job still exists after restart
+
+Success criteria:
+- CLI-created jobs now survive fresh restart
+- the previous persistence gap is closed
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — AUDIT syncJobsToPg EXPORT USAGE
+==================================================
+
+Goal:
+Find every place the fire-and-forget PG sync export still exists or could still be used.
+
+Tasks:
+
+1. Audit pg-sync.js exports
+2. Search for all imports/usages of:
+- syncJobsToPg
+- syncJobsToPgAsync
+- _doSyncJobsToPg
+- _doSyncJobsToPgCore if accessible
+3. Confirm current production/runtime callsites only use the safe serializer path
+4. Identify whether syncJobsToPg is truly unused or still referenced anywhere
+
+Success criteria:
+- current PG sync usage map is known
+- any unsafe entrypoints are identified
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — HARDEN OR REMOVE syncJobsToPg FIRE-AND-FORGET EXPORT
+==================================================
+
+Goal:
+Prevent accidental future misuse of the unsafe fire-and-forget export.
+
+Tasks:
+
+Choose the safest minimal hardening approach, preferably one of:
+
+Option A — Remove export entirely if unused
+OR
+Option B — Keep export only if necessary, but deprecate/harden it clearly:
+- rename to something explicitly unsafe/deprecated
+- add a loud comment
+- optionally log a warning if called
+- ensure internal implementation still routes through the serializer if retained
+
+Requirements:
+- future developers should not casually choose the wrong function
+- the awaitable path should be the obvious/default path
+
+Success criteria:
+- accidental future use of the wrong PG sync function becomes much less likely
+- safe API is the default
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — VERIFY ALL PG SYNC CALLS NOW USE THE SAFE PATH
+==================================================
+
+Goal:
+Make sure the codebase no longer has an easy route back to unsafe sync usage.
+
+Tasks:
+
+1. Re-audit all PG sync callsites
+2. Confirm:
+- mutation handlers use syncJobsToPgAsync()
+- CLI scripts use syncJobsToPgAsync()
+- startup sync uses the serialized safe path
+- no production path uses the deprecated/unsafe export
+
+3. If any remaining path still uses the unsafe export, identify and fix it if trivial and in-scope; otherwise report it clearly
+
+Success criteria:
+- all important PG sync paths use the safe awaitable serializer-backed function
+- codebase is harder to misuse
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — FINAL QA + SAFETY PASS
+==================================================
+
+Goal:
+Verify both remaining risks are now resolved.
+
+Tasks:
+
+1. Confirm:
+- CLI-created jobs persist to PG
+- CLI-created jobs survive restart
+- fire-and-forget sync is removed or strongly hardened
+- no current important path bypasses the safe serializer-backed sync function
+
+2. Provide a short final verdict:
+- CLI durability fixed?
+- PG sync safety hardened?
+- any remaining related risks?
+
+3. Rank any remaining residual risk:
+- high
+- medium
+- low
+
+Success criteria:
+- CLI persistence bug is closed
+- PG sync API is safer for future developers
+- persistence layer is more robust and harder to misuse
+
+After Stage 8:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- add-job CLI writes are durable to PG
+- create-test-job CLI writes are durable to PG
+- CLI-created jobs survive fresh restart
+- unsafe fire-and-forget sync is removed or strongly hardened
+- all important PG sync paths go through the safe serializer-backed awaitable path
+- future accidental misuse is less likely
+
+The result should feel:
+- durable
+- consistent
+- safer for future edits
+- less fragile across restart
+
+It should NOT remain true that:
+- CLI-created jobs can disappear on restart
+- a future developer can casually pick the wrong sync function and reintroduce durability problems
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
