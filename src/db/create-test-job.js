@@ -10,6 +10,7 @@
 //
 // Usage: npm run db:create-test-job
 const { createJob, getAllJobs } = require('./jobs');
+const { syncJobsToPgAsync } = require('./pg-sync');
 
 const LEAD_DAYS    = 3;
 const LEAD_MINUTES = 60;
@@ -33,20 +34,32 @@ const get = type => pacParts.find(p => p.type === type).value;
 const dayOfWeek = get('weekday');                         // e.g. "Wednesday"
 const classTime = `${get('hour')}:${get('minute')} ${get('dayPeriod')}`; // e.g. "7:45 AM"
 
-const id = createJob({
-  classTitle:  'Core Pilates',
-  instructor:  'Stephanie Sanders',
-  dayOfWeek,
-  classTime,
-  isActive:    true,
-});
+(async () => {
+  const id = createJob({
+    classTitle:  'Core Pilates',
+    instructor:  'Stephanie Sanders',
+    dayOfWeek,
+    classTime,
+    isActive:    true,
+  });
 
-const allJobs = getAllJobs();
-const created = allJobs.find(j => j.id === id);
+  const allJobs = getAllJobs();
+  const created = allJobs.find(j => j.id === id);
 
-console.log('Created test job:');
-console.log(created);
-console.log();
-console.log(`Booking window opens in ~${BUFFER_MINUTES} minutes.`);
-console.log(`Run "npm run scheduler:once" to check the phase.`);
-console.log(`Run "npm run scheduler:run"  to launch the bot if eligible.`);
+  console.log('Created test job:');
+  console.log(created);
+  console.log();
+  console.log(`Booking window opens in ~${BUFFER_MINUTES} minutes.`);
+  console.log(`Run "npm run scheduler:once" to check the phase.`);
+  console.log(`Run "npm run scheduler:run"  to launch the bot if eligible.`);
+
+  try {
+    await syncJobsToPgAsync();
+    console.log('[pg-sync] Synced to PostgreSQL — test job is durable across restarts.');
+  } catch (e) {
+    console.error('[pg-sync] WARNING — PostgreSQL sync failed: ' + e.message);
+    console.error('          Test job exists in SQLite and seed-jobs.json but NOT in PG.');
+    console.error('          It may be lost on a fresh container restart.');
+    process.exit(1);
+  }
+})();
