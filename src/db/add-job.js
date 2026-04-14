@@ -3,6 +3,7 @@
 //   npm run db:add -- --title "Core Pilates" --day Wednesday --time "7:45 AM" \
 //                     --instructor "Stephanie Sanders" --target-date 2026-04-08
 const { createJob } = require('./jobs');
+const { syncJobsToPgAsync } = require('./pg-sync');
 
 const args = process.argv.slice(2);
 
@@ -38,10 +39,22 @@ if (missing.length > 0) {
 
 const job = { classTitle, dayOfWeek, classTime, instructor, targetDate };
 
-const id = createJob(job);
-console.log('Created job #' + id + ':');
-console.log('  class_title : ' + job.classTitle);
-console.log('  day_of_week : ' + job.dayOfWeek);
-console.log('  class_time  : ' + job.classTime);
-console.log('  instructor  : ' + job.instructor);
-console.log('  target_date : ' + (job.targetDate || '—'));
+(async () => {
+  const id = createJob(job);
+  console.log('Created job #' + id + ':');
+  console.log('  class_title : ' + job.classTitle);
+  console.log('  day_of_week : ' + job.dayOfWeek);
+  console.log('  class_time  : ' + job.classTime);
+  console.log('  instructor  : ' + job.instructor);
+  console.log('  target_date : ' + (job.targetDate || '—'));
+
+  try {
+    await syncJobsToPgAsync();
+    console.log('  [pg-sync]   : synced to PostgreSQL — job is durable across restarts.');
+  } catch (e) {
+    console.error('  [pg-sync]   : WARNING — PostgreSQL sync failed: ' + e.message);
+    console.error('                Job exists in SQLite and seed-jobs.json but NOT in PG.');
+    console.error('                It may be lost on a fresh container restart.');
+    process.exit(1);
+  }
+})();
