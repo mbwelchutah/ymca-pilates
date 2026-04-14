@@ -1,0 +1,121 @@
+Do NOT change any code.
+
+I want a DATABASE MUTATION + PERSISTENCE AUDIT.
+
+Focus ONLY on data mutations and persistence behavior across:
+- SQLite
+- PostgreSQL
+- seed-jobs.json
+- any job-related runtime state
+
+Goal:
+Find every code path that can mutate persisted job state, and verify whether that mutation is durably synchronized.
+
+--------------------------------------------------
+
+SECTION A — ALL JOB-STATE MUTATION PATHS
+
+Find every function, endpoint, background task, and helper that can mutate any persisted job field, including:
+- create
+- update
+- delete
+- toggle active
+- reset booking / clearLastRun
+- target_date advance
+- last_result
+- last_run_at
+- last_success_at
+- any other job metadata
+
+For each mutation path, show:
+- file
+- function
+- fields changed
+- whether SQLite is written
+- whether seed-jobs.json is updated
+- whether PostgreSQL is synced
+- whether sync is awaited
+- whether restart persistence is guaranteed
+
+--------------------------------------------------
+
+SECTION B — NON-HTTP / BACKGROUND MUTATIONS
+
+Identify any mutations that happen outside the main HTTP handlers, such as:
+- scheduler
+- booking engine
+- preflight
+- auto-advance logic
+- repair/migration helpers
+- startup sync
+- debug/admin flows
+
+For each:
+- what it mutates
+- whether it persists durably
+- whether it could be lost on restart
+
+--------------------------------------------------
+
+SECTION C — PG WRITE PATHS
+
+List every path that writes to PostgreSQL.
+
+For each:
+- file
+- function
+- whether it goes through syncJobsToPgAsync()
+- whether it is serialized by _syncChain
+- whether any direct PG write bypass exists
+
+Highlight any PG write path that does NOT use the canonical serializer.
+
+--------------------------------------------------
+
+SECTION D — SCHEMA / FIELD CONSISTENCY
+
+Compare the job fields stored in:
+- SQLite
+- PostgreSQL
+- seed-jobs.json
+
+Identify:
+- fields that exist in one but not another
+- fields that are runtime-only
+- fields that are not persisted to PG
+- fields that are persisted inconsistently
+
+Call out any fields that could affect restart behavior if lost.
+
+--------------------------------------------------
+
+SECTION E — STARTUP / RESTORE RISKS
+
+Explain:
+- how PostgreSQL restore to seed-jobs.json works
+- how SQLite is seeded
+- how production startup sync works
+- whether any ordering or overwrite risks remain
+
+Identify any scenario where:
+- newer runtime truth could be overwritten by older persisted truth
+- dev/prod startup behavior could accidentally cross-contaminate
+
+--------------------------------------------------
+
+SECTION F — REMAINING PERSISTENCE RISKS
+
+Rank remaining risks:
+- high
+- medium
+- low
+
+Focus on:
+- mutation paths not durably synced
+- background mutations
+- schema mismatches
+- serializer bypass
+- restart persistence gaps
+
+Do NOT propose fixes yet.
+Audit only.
