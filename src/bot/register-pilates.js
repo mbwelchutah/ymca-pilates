@@ -2547,6 +2547,13 @@ async function runBookingJob(job, opts = {}) {
   } catch (err) {
     console.error('❌ Error:', err.message);
     if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'failure', 'Booking failed', err.message.split('\n')[0]);
+    // Playwright renderer crash ("page.goto: Page crashed") — the Chrome process was
+    // killed by the OS (OOM / segfault).  A fresh browser launch on the next attempt
+    // will succeed.  Classify as a transient navigate failure so retry-strategy picks
+    // it up as PAGE_CRASHED and schedules a fast retry instead of escalating.
+    if (/Page crashed/i.test(err.message)) {
+      return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'navigate', reason: 'page_crashed', category: 'system', label: 'Playwright renderer crash (transient)' });
+    }
     return logRunSummary({ status: 'error', message: err.message, screenshotPath, phase: 'system', reason: 'unexpected_error', category: 'system', label: 'Unhandled exception in booking job' });
   } finally {
     // ── Compute and persist timing deltas (Stage 2: full marker set) ─────────

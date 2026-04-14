@@ -58,6 +58,7 @@ const FAILURE_TYPES = Object.freeze({
   CLICK_TIMEOUT:       'click_timeout',        // locator.click timed out
   BUTTON_NOT_VISIBLE:  'button_not_visible',   // modal open, no action buttons yet
   SERVER_SLOW:         'server_slow',           // TCP / connection error
+  PAGE_CRASHED:        'page_crashed',          // Playwright renderer crash (transient)
 });
 
 // ── Transient classification (Stage 4) ───────────────────────────────────────
@@ -71,6 +72,7 @@ const TRANSIENT_FAILURE_TYPES = new Set([
   FAILURE_TYPES.CLICK_TIMEOUT,
   FAILURE_TYPES.BUTTON_NOT_VISIBLE,
   FAILURE_TYPES.SERVER_SLOW,
+  FAILURE_TYPES.PAGE_CRASHED,         // renderer crash — fresh launch usually succeeds
   FAILURE_TYPES.MODAL_NOT_REACHABLE,  // may recover on next attempt
   FAILURE_TYPES.ACTION_NOT_OPEN,      // normal pre-open polling
   FAILURE_TYPES.AMBIGUOUS,            // short re-check
@@ -136,6 +138,14 @@ function classifyFailure(botResult) {
   if (message && _SERVER_ERROR_MSG_RE.test(message)) {
     return FAILURE_TYPES.SERVER_SLOW;
   }
+
+  // ── Playwright renderer crash ─────────────────────────────────────────────────
+  // "page.goto: Page crashed" / "Page crashed" — the Chrome renderer process was
+  // killed by the OS (OOM, segfault, etc.).  A fresh browser launch will succeed.
+  if (
+    reason  === 'page_crashed'            ||
+    (message && /Page crashed/i.test(message))
+  ) return FAILURE_TYPES.PAGE_CRASHED;
 
   // ── Navigation timeout (Stage 4) ─────────────────────────────────────────────
   // phase 'navigate' with schedule_not_rendered means the page loaded but was
@@ -287,6 +297,13 @@ const RETRY_DELAY_MS = {
     executing:    20_000,
     confirming:   20_000,
   },
+  [FAILURE_TYPES.PAGE_CRASHED]: {
+    waiting:      60_000,
+    warmup:       30_000,
+    armed:        20_000,  // 20 s  — give the OS a moment before fresh browser launch
+    executing:    20_000,
+    confirming:   20_000,
+  },
 };
 
 // Max attempts before the retry strategy marks shouldRetry=false.
@@ -302,6 +319,7 @@ const MAX_ATTEMPTS = {
   [FAILURE_TYPES.CLICK_TIMEOUT]:       8,
   [FAILURE_TYPES.BUTTON_NOT_VISIBLE]: 12,
   [FAILURE_TYPES.SERVER_SLOW]:         6,
+  [FAILURE_TYPES.PAGE_CRASHED]:        4,  // rare; stop after 4 — persistent crash = different problem
 };
 
 // Human-readable notes for logging.
@@ -316,6 +334,7 @@ const RETRY_NOTES = {
   [FAILURE_TYPES.CLICK_TIMEOUT]:       'transient DOM race — retry in 10 s near open',
   [FAILURE_TYPES.BUTTON_NOT_VISIBLE]:  'transient button load race — retry in 10 s near open',
   [FAILURE_TYPES.SERVER_SLOW]:         'transient server slowness — retry in 20 s near open',
+  [FAILURE_TYPES.PAGE_CRASHED]:        'Playwright renderer crash — fresh browser launch in 20 s',
 };
 
 // ── Retry decision ────────────────────────────────────────────────────────────

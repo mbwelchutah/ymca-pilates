@@ -83,15 +83,27 @@ function openDb() {
       try {
         const seeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
         const insert = db.prepare(`
-          INSERT INTO jobs (class_title, instructor, day_of_week, class_time, target_date, is_active, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO jobs
+            (class_title, instructor, day_of_week, class_time, target_date, is_active,
+             last_result, last_success_at, last_run_at, last_error_message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const now = new Date().toISOString();
         const seedAll = db.transaction((rows) => {
           for (const r of rows) {
-            insert.run(r.class_title, r.instructor ?? null, r.day_of_week ?? null,
-                       r.class_time ?? null, r.target_date ?? null,
-                       r.is_active !== undefined ? (r.is_active ? 1 : 0) : 1, now);
+            insert.run(
+              r.class_title,
+              r.instructor         ?? null,
+              r.day_of_week        ?? null,
+              r.class_time         ?? null,
+              r.target_date        ?? null,
+              r.is_active !== undefined ? (r.is_active ? 1 : 0) : 1,
+              r.last_result        ?? null,
+              r.last_success_at    ?? null,
+              r.last_run_at        ?? null,
+              r.last_error_message ?? null,
+              now
+            );
           }
         });
         seedAll(seeds);

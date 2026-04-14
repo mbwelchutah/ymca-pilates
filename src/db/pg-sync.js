@@ -61,7 +61,9 @@ async function initFromPg() {
     await ensurePgSchema();
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs ORDER BY id'
+      `SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
+              last_result, last_success_at, last_run_at, last_error_message
+       FROM jobs ORDER BY id`
     );
     if (rows.length > 0) {
       fs.writeFileSync(SEED_PATH, JSON.stringify(rows, null, 2), 'utf8');
@@ -110,7 +112,8 @@ async function _doSyncJobsToPgCore() {
   try {
     const { openDb } = require('./init');
     const db = openDb();
-    jobs = db.prepare('SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs').all();
+    jobs = db.prepare(`SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
+                              last_result, last_success_at, last_run_at, last_error_message FROM jobs`).all();
   } catch (_) {
     if (!fs.existsSync(SEED_PATH)) return;
     jobs = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
@@ -124,15 +127,21 @@ async function _doSyncJobsToPgCore() {
     await client.query('DELETE FROM jobs');
     for (const j of jobs) {
       await client.query(
-        `INSERT INTO jobs (class_title, instructor, day_of_week, class_time, target_date, is_active, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO jobs
+           (class_title, instructor, day_of_week, class_time, target_date, is_active,
+            last_result, last_success_at, last_run_at, last_error_message, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           j.class_title,
-          j.instructor   ?? null,
-          j.day_of_week  ?? null,
-          j.class_time   ?? null,
-          j.target_date  ?? null,
+          j.instructor        ?? null,
+          j.day_of_week       ?? null,
+          j.class_time        ?? null,
+          j.target_date       ?? null,
           j.is_active !== undefined ? (j.is_active ? 1 : 0) : 1,
+          j.last_result       ?? null,
+          j.last_success_at   ?? null,
+          j.last_run_at       ?? null,
+          j.last_error_message ?? null,
           new Date().toISOString(),
         ]
       );
