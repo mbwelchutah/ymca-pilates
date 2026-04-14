@@ -2502,6 +2502,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                 </div>
               )}
 
+              {/* Stage 9 — last-checked trust line ─────────────────────────────────
+                   Shows when the background readiness check last ran so the user can
+                   see whether the system has recently verified the class state.
+                   Only visible in idle mode and only when readiness data is for the
+                   currently selected job.  Disappears when bgReadiness is absent. */}
+              {execMode === 'idle' && isReadinessForSelectedJob && lastCheckedText && (
+                <div className="mt-2 pl-7 animate-fade-in-up">
+                  <span className="text-[11px] text-text-muted">{lastCheckedText}</span>
+                </div>
+              )}
+
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
                 const { label, actionType, helperText, disabled, emphasis } = smartButton

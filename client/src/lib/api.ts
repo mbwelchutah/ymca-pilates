@@ -379,8 +379,10 @@ export const api = {
     modal:           'reachable' | 'blocked' | 'unknown'
     action:          'ready' | 'not_open' | 'blocked' | 'waitlist' | 'unknown'
     source:          string | null
-    confidenceScore: number | null
-    confidenceLabel: 'Ready' | 'Almost ready' | 'Needs attention' | 'At risk' | null
+    confidenceScore:     number | null
+    confidenceLabel:     'Ready' | 'Almost ready' | 'Needs attention' | 'At risk' | null
+    // Stage 8 — schedule-cache freshness piggybacked on the readiness record
+    classTruthFreshness: CacheFreshness | null
     armed: {
       armed:          boolean
       state:          'waiting' | 'almost_ready' | 'armed' | 'booking' | 'needs_attention'

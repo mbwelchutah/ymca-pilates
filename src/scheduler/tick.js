@@ -4,12 +4,14 @@
 //
 // Does NOT check isSchedulerPaused() — callers decide whether to gate on it.
 
-const { getAllJobs, setLastRun } = require('../db/jobs');
-const { getPhase }               = require('./booking-window');
-const { runBookingJob }          = require('../bot/register-pilates');
-const { getDryRun }              = require('../bot/dry-run-state');
-const { loadState, emitTickSkip } = require('../bot/sniper-readiness');
-const { loadStatus }             = require('../bot/session-check');
+const { getAllJobs, setLastRun }    = require('../db/jobs');
+const { getPhase }                  = require('./booking-window');
+const { runBookingJob }             = require('../bot/register-pilates');
+const { getDryRun }                 = require('../bot/dry-run-state');
+const { loadState, emitTickSkip }   = require('../bot/sniper-readiness');
+const { loadStatus }                = require('../bot/session-check');
+// Stage 7 — update canonical confirmed-ready state after each booking run.
+const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
 
 // Fresh auth-block skip threshold: if the last run or session check recorded
 // an auth failure within this window, skip warmup-phase attempts (they will
@@ -250,6 +252,19 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     } finally {
       setLastRun(dbJob.id, lastResult, lastErrMsg);
       runningJobs.delete(dbJob.id);
+      // Stage 7 — refresh confirmed-ready state so the UI and /api/confirmed-ready
+      // reflect the outcome of this booking attempt without waiting for the next
+      // scheduled preflight run.
+      try {
+        refreshConfirmedReadyState({
+          classTitle: job.classTitle,
+          dayOfWeek:  job.dayOfWeek,
+          classTime:  job.classTime,
+          instructor: job.instructor ?? null,
+        });
+      } catch (crErr) {
+        console.warn(`  [confirmed-ready] post-tick refresh failed: ${crErr.message}`);
+      }
     }
   }
 

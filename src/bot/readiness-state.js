@@ -28,9 +28,13 @@
 const fs   = require('fs');
 const path = require('path');
 
-const { loadState }       = require('./sniper-readiness');
-const { loadStatus }      = require('./session-check');
+const { loadState }         = require('./sniper-readiness');
+const { loadStatus }        = require('./session-check');
 const { computeConfidence } = require('./confidence');
+// NOTE: confirmed-ready.js is NOT top-level required here because it also
+// requires readiness-state.js (circular).  loadConfirmedReadyState is instead
+// required lazily inside computeReadiness() to avoid Node's circular-dependency
+// initialisation race (Stage 8).
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'readiness-state.json');
@@ -139,6 +143,19 @@ function computeReadiness({ jobId, classTitle, source }) {
   const { score, label } = computeConfidence(record);
   record.confidenceScore = score;
   record.confidenceLabel = label;
+
+  // Stage 8 — attach schedule-cache freshness so GET /api/readiness consumers
+  // (NowScreen trust line) can show when class schedule data is stale without
+  // a separate API call.  Falls back to 'unknown' if confirmed-ready state
+  // isn't available yet (e.g. server just started).
+  // Lazy require breaks the confirmed-ready ↔ readiness-state circular dependency.
+  let classTruthFreshness = 'unknown';
+  try {
+    const { loadConfirmedReadyState } = require('./confirmed-ready');
+    const cr = loadConfirmedReadyState();
+    if (cr?.classTruth?.freshness) classTruthFreshness = cr.classTruth.freshness;
+  } catch { /* non-fatal — readiness-state must not crash */ }
+  record.classTruthFreshness = classTruthFreshness;
 
   return record;
 }
