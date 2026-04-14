@@ -149,11 +149,24 @@ function computeReadiness({ jobId, classTitle, source }) {
   // a separate API call.  Falls back to 'unknown' if confirmed-ready state
   // isn't available yet (e.g. server just started).
   // Lazy require breaks the confirmed-ready ↔ readiness-state circular dependency.
+  // Stage 4 (write-order verification) — log the confirmed-ready file age so
+  // it is verifiable that readiness is reading same-cycle truth after the
+  // Stage 3 write-order fix.  A "same-cycle" read shows age < a few seconds;
+  // a "lagged" read would show age equal to the previous run interval.
   let classTruthFreshness = 'unknown';
   try {
     const { loadConfirmedReadyState } = require('./confirmed-ready');
     const cr = loadConfirmedReadyState();
     if (cr?.classTruth?.freshness) classTruthFreshness = cr.classTruth.freshness;
+    const crAgeMs = (cr?.overall?.checkedAt != null)
+      ? Date.now() - cr.overall.checkedAt
+      : null;
+    const cycleLabel = (crAgeMs != null && crAgeMs < 5000) ? 'same-cycle' : 'prior-cycle';
+    console.log(
+      `[readiness-state] write-order check — confirmed-ready age: ` +
+      `${crAgeMs != null ? crAgeMs + 'ms' : 'unknown'} (${cycleLabel}), ` +
+      `classTruthFreshness: ${classTruthFreshness}`
+    );
   } catch { /* non-fatal — readiness-state must not crash */ }
   record.classTruthFreshness = classTruthFreshness;
 
