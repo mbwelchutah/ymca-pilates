@@ -5342,6 +5342,27 @@ const server = http.createServer((req, res) => {
       serveStatic(res, DIST_INDEX);
     }
 
+  // ── Recovery: force SQLite → PostgreSQL resync ────────────────────────────
+  // Manually triggers a full durable sync of the current SQLite jobs to PG.
+  // Uses the canonical serialiser-backed syncJobsToPgAsync() path — the same
+  // path used after every add/edit/delete.  Safe to call at any time.
+  // Does NOT alter job content; only copies what is already in SQLite to PG.
+  } else if (req.method === 'POST' && path === '/api/recovery/resync-pg') {
+    (async () => {
+      try {
+        const jobs = getAllJobs();
+        await syncJobsToPgAsync();
+        const msg = `Resynced ${jobs.length} job(s) from SQLite → PostgreSQL`;
+        console.log('[recovery] resync-pg:', msg);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, jobCount: jobs.length, message: msg }));
+      } catch (err) {
+        console.error('[recovery] resync-pg failed:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: err.message }));
+      }
+    })();
+
   // ── Recovery: clear transient runtime/cache state ─────────────────────────
   // Clears only files that the app rebuilds automatically on the next run.
   // Never touches: SQLite jobs, PostgreSQL, seed-jobs.json, session cookies,
