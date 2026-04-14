@@ -9,8 +9,9 @@ const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 const { recordFailure }  = require('../db/failures');
 const {
-  createRunState, advance, recordTiming, emitEvent, emitSuccess, saveState,
+  createRunState, advance, recordTiming, recordTimingMetrics, emitEvent, emitSuccess, saveState,
 } = require('./sniper-readiness');
+const { deriveTimingMetrics } = require('../scheduler/timing-metrics');
 const { saveStatus: saveSessionStatus } = require('./session-check');
 const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
 const { updateAuthState } = require('./auth-state');
@@ -2598,6 +2599,17 @@ async function runBookingJob(job, opts = {}) {
         ? new Date(_tc.actionClickAt).getTime() - _openMs : null,
       pollAttemptsPostOpen: _tc.pollAttemptsPostOpen,
     });
+    // Stage 3: derive human-readable first-attempt metrics and attach to state.
+    // deriveTimingMetrics() is a pure function — it never throws.
+    try {
+      const _metrics = deriveTimingMetrics(_state.timing);
+      if (_metrics) {
+        recordTimingMetrics(_state, _metrics);
+        console.log('[timing-metrics]', JSON.stringify(_metrics));
+      }
+    } catch (metricsErr) {
+      console.warn('[timing-metrics] derive failed:', metricsErr.message);
+    }
     // ─────────────────────────────────────────────────────────────────────────
     saveState(_state);
     if (browser) await browser.close();

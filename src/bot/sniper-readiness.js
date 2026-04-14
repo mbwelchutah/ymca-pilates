@@ -132,6 +132,9 @@ function createRunState(jobId) {
     // Timing data recorded by the bot during sniper / booking runs.
     // null when no timing was captured (e.g. preflight-only or early-exit runs).
     timing:         null,
+    // Stage 3: derived first-attempt metrics (human-readable durations).
+    // Computed by deriveTimingMetrics() from the raw timing snapshot.
+    timingMetrics:  null,
     events:         [],
     updatedAt:      new Date().toISOString(),
     // Most recent failure/uncertain screenshot from the run (set by logRunSummary).
@@ -160,6 +163,13 @@ function createRunState(jobId) {
 function recordTiming(state, data) {
   state.timing    = data;
   state.updatedAt = new Date().toISOString();
+}
+
+// Stage 3: Stores derived first-attempt metrics alongside the raw timing data.
+// metrics shape: return value of deriveTimingMetrics() from timing-metrics.js.
+function recordTimingMetrics(state, metrics) {
+  state.timingMetrics = metrics;
+  state.updatedAt     = new Date().toISOString();
 }
 
 // Advances the current phase label (informational only — does not change bundle).
@@ -342,6 +352,7 @@ module.exports = {
   createRunState,
   advance,
   recordTiming,
+  recordTimingMetrics,
   emitEvent,
   emitSuccess,
   emitTickSkip,
