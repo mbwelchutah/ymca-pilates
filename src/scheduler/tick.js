@@ -171,20 +171,32 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
           targetDate: dbJob.target_date || null,
         });
         if (cr.state === 'full' && cr.freshness === 'fresh') {
+          // [gate:skip_full_fresh] — fresh "full" truth is authoritative; suppress warmup.
           const reason = 'CLASSIFIER_FULL';
           const msg    = `Skipped warmup: schedule cache shows class is full — fresh (${cr.reason})`;
-          console.log(`  => SKIPPING Job #${dbJob.id} (classifier gate) — ${msg}`);
+          console.log(
+            `  => SKIPPING Job #${dbJob.id} [gate:skip_full_fresh] — ` +
+            `state: full, freshness: fresh, conf: ${cr.confidence} — ${cr.reason}`
+          );
           emitTickSkip(dbJob.id, reason, msg);
           results.push({ jobId: dbJob.id, phase, status: 'skipped', message: msg });
           continue;
         }
-        if (cr.state === 'full' && cr.freshness !== 'fresh') {
+        if (cr.state === 'full') {
+          // [gate:allow_full_<freshness>] — non-fresh "full" is not authoritative; run proceeds.
+          const outcome = `gate:allow_full_${cr.freshness}`;
           console.log(
-            `  Job #${dbJob.id}: classifier → full (freshness: ${cr.freshness}) — ` +
-            `NOT suppressing warmup (non-fresh full result is not authoritative)`
+            `  Job #${dbJob.id} [${outcome}] — ` +
+            `state: full, freshness: ${cr.freshness}, conf: ${cr.confidence} — ` +
+            `warmup NOT suppressed (non-fresh full result is not authoritative)`
           );
         } else if (cr.state !== 'unknown') {
-          console.log(`  Job #${dbJob.id}: classifier → ${cr.state} (${cr.matchType}, conf: ${cr.confidence})`);
+          // [gate:allow_<state>] — class is available or in a non-blocking state; run proceeds.
+          const outcome = `gate:allow_${cr.state}`;
+          console.log(
+            `  Job #${dbJob.id} [${outcome}] — ` +
+            `state: ${cr.state}, freshness: ${cr.freshness}, conf: ${cr.confidence}`
+          );
         }
       } catch (classifyErr) {
         console.warn(`  Job #${dbJob.id}: classifier gate error — ${classifyErr.message}. Proceeding anyway.`);
