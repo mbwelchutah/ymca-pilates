@@ -190,12 +190,13 @@ function _buildAuth() {
 function _buildClassTruth(job) {
   if (!job?.classTitle) {
     return {
-      state:       'unknown',
-      checkedAt:   null,
-      freshness:   'unknown',
-      source:      'unknown',
-      isFuzzyMatch: false,
-      confidence:  0,
+      state:              'unknown',
+      checkedAt:          null,
+      freshness:          'unknown',
+      cacheFileFreshness: 'unknown',
+      source:             'unknown',
+      isFuzzyMatch:       false,
+      confidence:         0,
     };
   }
 
@@ -206,28 +207,32 @@ function _buildClassTruth(job) {
   } catch (e) {
     console.warn('[confirmed-ready] classifyClass failed:', e.message);
     return {
-      state:       'unknown',
-      checkedAt:   null,
-      freshness:   'unknown',
-      source:      'unknown',
-      isFuzzyMatch: false,
-      confidence:  0,
+      state:              'unknown',
+      checkedAt:          null,
+      freshness:          'unknown',
+      cacheFileFreshness: 'unknown',
+      source:             'unknown',
+      isFuzzyMatch:       false,
+      confidence:         0,
     };
   }
 
-  // Stage 2: classifier now always provides `freshness` and `source` directly.
+  // Stage 2: classifier always provides `freshness` and `source` directly.
   // fetchedAt is kept for the checkedAt epoch ms conversion.
+  // Stage 5: `cacheFileFreshness` (file-level savedAt) is now also propagated
+  // so callers can distinguish entry-level freshness from whole-file freshness.
   const fetchedAtMs = result.fetchedAt
     ? new Date(result.fetchedAt).getTime()
     : null;
 
   return {
-    state:        result.state,
-    checkedAt:    Number.isFinite(fetchedAtMs) ? fetchedAtMs : null,
-    freshness:    result.freshness ?? 'unknown',
-    source:       result.source    ?? 'unknown',
-    isFuzzyMatch: result.isFuzzyMatch ?? false,
-    confidence:   result.confidence   ?? 0,
+    state:              result.state,
+    checkedAt:          Number.isFinite(fetchedAtMs) ? fetchedAtMs : null,
+    freshness:          result.freshness          ?? 'unknown',  // per-entry (capturedAt)
+    cacheFileFreshness: result.cacheFileFreshness ?? 'unknown',  // file-level (savedAt)
+    source:             result.source             ?? 'unknown',
+    isFuzzyMatch:       result.isFuzzyMatch       ?? false,
+    confidence:         result.confidence         ?? 0,
   };
 }
 
@@ -307,6 +312,10 @@ function _deriveStatus(auth, classTruth, preflight) {
   }
 
   // confirmed_ready: everything fresh and positive
+  // Note (Stage 5): classTruth.freshness is per-entry (capturedAt) — it reflects
+  // when this specific class row was last observed, not when the cache file was
+  // last written.  classTruth.cacheFileFreshness (file-level savedAt) is available
+  // here for future diagnostic use but is not used in gating decisions.
   const authOk       = auth.daxkoValid && auth.familyworksValid && auth.bookingAccessConfirmed;
   const classTruthOk = classTruth.state === 'bookable' || classTruth.state === 'waitlist_available';
   const freshEnough  = auth.freshness === 'fresh' || auth.freshness === 'aging';

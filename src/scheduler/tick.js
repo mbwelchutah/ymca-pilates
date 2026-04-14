@@ -164,6 +164,12 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     // An aging or stale "full" result is NOT authoritative enough to suppress
     // a warmup run.  The class may have opened since the cache was populated.
     // Only a fresh (< 30 min) "full" result may gate the warmup.
+    //
+    // Per-entry semantics (Stage 2 — Per-Entry Schedule-Cache Freshness pass):
+    // cr.freshness is derived from entry.capturedAt (when that specific class row
+    // was observed from the API), NOT from raw.savedAt (when the cache file was
+    // last written).  A merge that refreshes savedAt without re-observing this
+    // entry does NOT make it appear fresh here.
     if (phase === 'warmup') {
       try {
         const { classifyClass } = require('../classifier/classTruth');

@@ -30,8 +30,10 @@ export interface ClassTruthResult {
   reason:            string | null;
   fetchedAt:         string | null;
   // Stage 2 additions — always present in API responses
-  freshness:         CacheFreshness;
-  source:            ClassTruthSource;
+  freshness:          CacheFreshness;   // per-entry (capturedAt) when matched; file-level otherwise
+  // Stage 4/5 addition — always present; always file-level (savedAt)
+  cacheFileFreshness: CacheFreshness;
+  source:             ClassTruthSource;
 }
 
 // Convenience type-guard
