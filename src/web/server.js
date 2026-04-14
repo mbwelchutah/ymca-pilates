@@ -5070,8 +5070,8 @@ const server = http.createServer((req, res) => {
     const { computeArmedState }      = require('../bot/armed-state');
     const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('../scheduler/execution-timing');
     const { loadEscalations }        = require('../scheduler/escalation');
-    // Stage 10F — Learned timing adjustments.
-    const { getLearnedOffsets, loadLearnerSummary } = require('../scheduler/timing-learner');
+    // Stage 10F — Learned timing adjustments. Stage 6 — run-speed learner.
+    const { getLearnedOffsets, loadLearnerSummary, getLearnedRunSpeed } = require('../scheduler/timing-learner');
 
     const readiness = loadReadiness();
 
@@ -5120,6 +5120,14 @@ const server = http.createServer((req, res) => {
       } catch (_) { /* non-fatal — job shape may be incomplete */ }
     }
 
+    // Stage 6 — run-speed learned data for the focused job.
+    // neededLeadTimeMs drives the adaptive armed-offset in preflight-loop.js.
+    // null when fewer than MIN_OBS (3) speed observations have been recorded.
+    let learnedRunSpeed = null;
+    if (job) {
+      try { learnedRunSpeed = getLearnedRunSpeed(job.id); } catch (_) { /* non-fatal */ }
+    }
+
     // Stage 10D: include any active escalation for the current job (null when clear).
     let escalation = null;
     try {
@@ -5128,7 +5136,7 @@ const server = http.createServer((req, res) => {
       if (jobId != null) escalation = allEscalations[String(jobId)] ?? null;
     } catch (_) { /* non-fatal */ }
 
-    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, escalation });
+    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, learnedRunSpeed, escalation });
 
   } else if (req.method === 'GET' && path === '/api/confirmed-ready') {
     // Stage 5 (freshness) — canonical confirmed-ready state for a job.

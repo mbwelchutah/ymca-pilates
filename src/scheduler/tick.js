@@ -9,6 +9,8 @@ const { getPhase }                  = require('./booking-window');
 const { runBookingJob }             = require('../bot/register-pilates');
 const { getDryRun }                 = require('../bot/dry-run-state');
 const { loadState, emitTickSkip }   = require('../bot/sniper-readiness');
+// Stage 6 — feed booking-run timing into the run-speed learner.
+const { recordRunSpeed }            = require('./timing-learner');
 // Stage 10 (auth-truth-unification): session-failed gate now reads from the
 // canonical source (auth-state.json via getCanonicalAuthTruth) instead of
 // session-status.json (loadStatus).  lastFailureType (written by session-check.js)
@@ -307,6 +309,25 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
         }, { source: 'tick' });
       } catch (crErr) {
         console.warn(`  [confirmed-ready] post-tick refresh failed: ${crErr.message}`);
+      }
+      // Stage 6 — record run-speed observation from timing metrics written by
+      // Stage 3.  loadState() reads the sniper-state.json updated moments ago
+      // by runBookingJob() → recordTimingMetrics().  Booking runs are the most
+      // time-critical path so their speed data is the most valuable for the
+      // armed-offset learner.
+      try {
+        const freshState = loadState();
+        const tm = freshState?.timingMetrics;
+        if (tm) {
+          recordRunSpeed(dbJob.id, {
+            authMs:      tm.auth_phase_ms,
+            pageLoadMs:  tm.run_start_to_page_ready,
+            discoveryMs: tm.page_ready_to_class_found,
+            classTitle:  job.classTitle,
+          });
+        }
+      } catch (speedErr) {
+        console.warn(`  [timing-learner] run-speed:error (tick) —`, speedErr.message);
       }
     }
   }
