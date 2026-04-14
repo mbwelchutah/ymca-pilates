@@ -45,6 +45,8 @@ const CACHE_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → "aging"  (= 
 
 /**
  * Return the freshness bucket of a raw cache object (or null).
+ * Based on file-level savedAt — used for early bail-out checks (no cache, whole
+ * file stale) and as a fallback when no specific entry is matched.
  *
  * @param {object|null} raw  Return value of loadAll(), or null.
  * @returns {'fresh'|'aging'|'stale'|'unknown'}
@@ -52,6 +54,27 @@ const CACHE_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → "aging"  (= 
 function computeCacheFreshness(raw) {
   if (!raw?.savedAt) return 'unknown';
   const ageMs = Date.now() - new Date(raw.savedAt).getTime();
+  if (ageMs < CACHE_FRESH_MS) return 'fresh';
+  if (ageMs < CACHE_AGING_MS) return 'aging';
+  return 'stale';
+}
+
+/**
+ * Return the freshness bucket of a single cache entry based on its own
+ * capturedAt timestamp — NOT the file-level savedAt.
+ *
+ * Stage 2 (per-entry freshness): a merge that updates savedAt does not make
+ * older kept entries look fresh.  Each entry's capturedAt reflects when that
+ * specific class row was actually observed from the API.
+ *
+ * Backward-compatible: entries without capturedAt return 'unknown'.
+ *
+ * @param {object|null} entry  A single schedule-cache entry.
+ * @returns {'fresh'|'aging'|'stale'|'unknown'}
+ */
+function computeEntryFreshness(entry) {
+  if (!entry?.capturedAt) return 'unknown';
+  const ageMs = Date.now() - new Date(entry.capturedAt).getTime();
   if (ageMs < CACHE_FRESH_MS) return 'fresh';
   if (ageMs < CACHE_AGING_MS) return 'aging';
   return 'stale';
@@ -228,4 +251,4 @@ function isCacheAdequate() {
   return f === 'fresh' || f === 'aging';
 }
 
-module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness, isCacheAdequate };
+module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness, computeEntryFreshness, isCacheAdequate };

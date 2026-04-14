@@ -89,16 +89,16 @@ function makeResult(state, partial = {}) {
 //   source    — 'cache' (all data today comes from Playwright-intercepted API
 //                responses stored in fw-schedule-cache.json)
 function classifyClass(job) {
-  const { findEntry, isCacheStale, loadAll, computeCacheFreshness } = require('./scheduleCache');
+  const { findEntry, isCacheStale, loadAll, computeCacheFreshness, computeEntryFreshness } = require('./scheduleCache');
 
-  const raw      = loadAll();
-  const freshness = computeCacheFreshness(raw);  // always set — even when raw is null
-  const source    = raw ? 'cache' : 'unknown';
+  const raw           = loadAll();
+  const fileFreshness = computeCacheFreshness(raw);  // file-level — for early bail-out checks
+  const source        = raw ? 'cache' : 'unknown';
 
   if (!raw) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache does not exist — run a preflight to populate it',
-      freshness,
+      freshness: fileFreshness,
       source,
     });
   }
@@ -107,7 +107,7 @@ function classifyClass(job) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache is stale — run a preflight to refresh',
       fetchedAt: raw.savedAt,
-      freshness,
+      freshness: fileFreshness,
       source,
     });
   }
@@ -116,12 +116,13 @@ function classifyClass(job) {
   const match = findEntry(job);
 
   if (!match) {
+    // No specific entry to measure — fall back to file-level freshness.
     return makeResult(CLASS_STATES.NOT_FOUND, {
       reason: `No schedule entry matched "${job.classTitle}" on ${job.targetDate ?? job.dayOfWeek}`,
       fetchedAt: raw.savedAt,
       matchType:  'none',
       confidence: 0,
-      freshness,
+      freshness:  fileFreshness,
       source,
     });
   }
@@ -131,7 +132,11 @@ function classifyClass(job) {
   // ── Stage 3+5: map entry booleans → normalized ClassState ─────────────────
   // Stage 5: `matchType`, `isFuzzyMatch`, `confidence` are now populated from
   // the scored fuzzy match so the UI can surface exact-vs-fuzzy distinction.
-  // Stage 2: `freshness` and `source` are now always populated.
+  // Stage 2 (per-entry freshness): freshness is now derived from entry.capturedAt
+  // (when this specific class row was observed from the API), NOT from raw.savedAt
+  // (when the cache file was last written).  A merge that refreshes savedAt no
+  // longer makes older kept entries appear fresh.
+  const entryFreshness = computeEntryFreshness(entry);  // per-entry, based on capturedAt
 
   const shared = {
     matchedClassName: entry.title,
@@ -144,7 +149,7 @@ function classifyClass(job) {
     matchType,
     isFuzzyMatch:     matchType === 'fuzzy',
     confidence,
-    freshness,
+    freshness:        entryFreshness,   // ← per-entry, not file-level
     source,
   };
 
