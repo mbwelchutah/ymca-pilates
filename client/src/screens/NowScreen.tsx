@@ -67,21 +67,29 @@ function parseClassTime(classTime: string): { hours: number; minutes: number } |
   return { hours: h, minutes: min }
 }
 
-/**
- * Compute booking-open epoch ms for a job.
- *
- * Priority:
- *  1. Use the server-computed bookingOpenMs when available — it correctly
- *     accounts for target_date via the backend booking-window calculator.
- *  2. Fall back to local computation:
- *     a. If target_date is set, compute from that specific YYYY-MM-DD date.
- *     b. Otherwise find the next natural weekday occurrence (legacy path).
- */
+// Returns the Pacific UTC offset in hours for the given Date.
+// e.g. -7 during PDT (summer), -8 during PST (winter).
+// Mirrors the same helper in server-side booking-window.js.
+function _pacificOffsetHours(d: Date): number {
+  const tz = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    timeZoneName: 'shortOffset',
+  }).formatToParts(d).find(p => p.type === 'timeZoneName')?.value ?? 'GMT-7'
+  const m = tz.match(/GMT([+-])(\d+)/)
+  return m ? parseInt(m[1] + m[2], 10) : -7
+}
+
 function computeBookingOpenMs(job: Job): number | null {
   // ── 1. Prefer the server-enriched value ──────────────────────────────────
+  // The server always computes bookingOpenMs in Pacific time via booking-window.js.
+  // This path is the normal case; the fallback below should rarely fire.
   if (job.bookingOpenMs != null) return job.bookingOpenMs
 
-  // ── 2. Local fallback ────────────────────────────────────────────────────
+  // ── 2. Pacific-time fallback ─────────────────────────────────────────────
+  // If the server value is missing (race condition, error), compute the booking
+  // window ourselves — but always in Pacific time (America/Los_Angeles), NOT in
+  // the browser's local timezone.  A Mountain-time browser using setHours() would
+  // place the class 1 hour early (MDT = UTC-6 vs PDT = UTC-7).
   if (!job?.class_time) return null
   const time = parseClassTime(job.class_time)
   if (!time) return null
@@ -89,35 +97,46 @@ function computeBookingOpenMs(job: Job): number | null {
   let nextClassMs: number
 
   if (job.target_date) {
-    // Parse YYYY-MM-DD as local midnight, place class at hours:minutes.
+    // target_date is YYYY-MM-DD (calendar date in Pacific, matching the YMCA).
+    // Build the class timestamp as hours:minutes Pacific using Date.UTC + Pacific offset.
     const [y, m, d] = job.target_date.split('-').map(Number)
-    const classDate = new Date(y, m - 1, d)
-    classDate.setHours(time.hours, time.minutes, 0, 0)
-    nextClassMs = classDate.getTime()
+    const approxDate = new Date(Date.UTC(y, m - 1, d, 12, 0)) // noon UTC, same day
+    const offset     = _pacificOffsetHours(approxDate)         // e.g. -7 for PDT
+    nextClassMs      = Date.UTC(y, m - 1, d, time.hours - offset, time.minutes)
   } else {
+    // No target_date: find next occurrence of day_of_week in Pacific calendar.
     if (!job.day_of_week) return null
     const targetDay = DAY_IDX[job.day_of_week as string]
     if (targetDay === undefined) return null
 
     const now = new Date()
-    let daysUntil = (targetDay - now.getDay() + 7) % 7
-    if (daysUntil === 0) {
-      const classToday = new Date(now)
-      classToday.setHours(time.hours, time.minutes, 0, 0)
-      if (now >= classToday) daysUntil = 7
+    // Read current date components in Pacific time via Intl (never setHours).
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: false,
+    })
+    const get = (type: string) => fmt.formatToParts(now).find(p => p.type === type)?.value ?? '0'
+    const LONG_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+    const pacYear   = parseInt(get('year'),   10)
+    const pacMonth  = parseInt(get('month'),  10) - 1 // 0-indexed
+    const pacDay    = parseInt(get('day'),    10)
+    const pacHour   = parseInt(get('hour'),   10) % 24
+    const pacMinute = parseInt(get('minute'), 10)
+    const todayDow  = LONG_DAYS.indexOf(get('weekday'))
+
+    let daysUntil = (targetDay - todayDow + 7) % 7
+    if (daysUntil === 0 && (pacHour > time.hours || (pacHour === time.hours && pacMinute >= time.minutes))) {
+      daysUntil = 7
     }
-    const nextClass = new Date(now)
-    nextClass.setDate(nextClass.getDate() + daysUntil)
-    nextClass.setHours(time.hours, time.minutes, 0, 0)
-    nextClass.setSeconds(0, 0)
-    nextClass.setMilliseconds(0)
-    nextClassMs = nextClass.getTime()
+
+    const targetDayUTC = new Date(Date.UTC(pacYear, pacMonth, pacDay + daysUntil, 12, 0))
+    const offset       = _pacificOffsetHours(targetDayUTC)
+    nextClassMs        = Date.UTC(pacYear, pacMonth, pacDay + daysUntil, time.hours - offset, time.minutes)
   }
 
-  const bookingOpen = new Date(nextClassMs)
-  bookingOpen.setDate(bookingOpen.getDate() - 3)
-  bookingOpen.setHours(bookingOpen.getHours() - 1)
-  return bookingOpen.getTime()
+  // Booking opens 3 days before, 60 minutes before class start — same as booking-window.js.
+  return nextClassMs - (3 * 24 * 60 * 60 * 1000) - (60 * 60 * 1000)
 }
 
 /** Derive phase from booking-open epoch ms vs browser now. */

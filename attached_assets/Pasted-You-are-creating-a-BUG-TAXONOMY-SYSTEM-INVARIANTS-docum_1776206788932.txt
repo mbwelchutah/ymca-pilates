@@ -1,0 +1,333 @@
+You are creating a BUG TAXONOMY + SYSTEM INVARIANTS document for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Stop future debugging from becoming whack-a-mole.
+
+We want one short, durable internal reference that explains:
+
+1. the main bug families in this system
+2. the invariants that should always hold
+3. how to classify new bugs quickly
+4. which subsystem each new bug most likely belongs to
+5. what kind of fix is preferred (category fix vs one-off patch)
+
+This is NOT a product feature.
+This is NOT a UI pass.
+This is a system-level engineering document + lightweight code-facing reference.
+
+IMPORTANT RULES
+
+- Do NOT redesign the architecture in this pass
+- Do NOT add unrelated features
+- Keep the document concise, practical, and specific to this codebase
+- Favor clarity over exhaustiveness
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what was added
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT
+==================================================
+
+This app has gone through many fixes across:
+- auth/session truth
+- schedule/classifier freshness
+- SQLite / PostgreSQL durability
+- retry strategy
+- warmup/sniper timing
+- Playwright reliability
+- Tools observability
+
+The next improvement is not another isolated fix.
+The next improvement is a stable mental model for the system.
+
+We want future debugging to answer:
+- what family does this bug belong to?
+- which invariant was violated?
+- is this a one-off issue or a repeated family leak?
+- what is the right class of fix?
+
+==================================================
+STAGE 1 — DEFINE THE MAIN BUG FAMILIES
+==================================================
+
+Goal:
+Create a small set of recurring bug categories that match this codebase.
+
+Tasks:
+
+1. Create a section listing the major bug families, such as:
+- Auth / session truth mismatch
+- Class truth / freshness mismatch
+- Persistence / durability gap
+- Timing / sequencing / retry behavior
+- Playwright transient failure / browser instability
+- UI state mismatch / presentation drift
+- Observability / missing evidence gap
+
+2. For each family, write:
+- plain-English definition
+- common symptoms
+- typical root causes in this app
+- example past bugs from this project if helpful
+
+3. Keep the number of families small and practical
+
+Success criteria:
+- the main recurring failure families are clearly named
+- future bugs can be categorized quickly
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — DEFINE SYSTEM INVARIANTS
+==================================================
+
+Goal:
+Write the core rules that should always be true.
+
+Tasks:
+
+1. Create a section called “System Invariants”
+2. Define invariants for the critical areas, such as:
+
+- Auth invariant
+  Example: all higher-level auth decisions must read canonical auth truth only
+
+- Class truth invariant
+  Example: stale class truth must not act as authoritative booking truth
+
+- Persistence invariant
+  Example: any mutation affecting future scheduling must persist durably through the approved SQLite → seed → PG path
+
+- Timing invariant
+  Example: if the bot is inside the needed lead-time window, it should already be moving toward modal readiness
+
+- Retry invariant
+  Example: transient failures during the early booking window must not incur overly long cooldowns
+
+- UI invariant
+  Example: user-facing readiness/confidence should not be stronger than the evidence freshness supports
+
+3. Make each invariant short and specific
+
+Success criteria:
+- the main “must always be true” rules are written down
+- future bugs can be described as invariant violations
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — ADD “HOW TO CLASSIFY A NEW BUG” WORKFLOW
+==================================================
+
+Goal:
+Make it fast to triage a new issue.
+
+Tasks:
+
+1. Add a short workflow for new bugs, such as:
+
+When a new bug appears, ask:
+- What is the user-visible symptom?
+- Which subsystem did it pass through?
+- Which bug family best fits?
+- Which invariant was violated?
+- Is this a one-off bug or repeated family leak?
+- Is the problem missing evidence, wrong truth, bad persistence, or bad timing?
+
+2. Keep this as a short checklist or decision tree
+3. Make it practical for use with Replit / code audits
+
+Success criteria:
+- future bug triage becomes faster and more structured
+- the document is useful, not theoretical
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — MAP BUG FAMILIES TO SUBSYSTEMS / FILE AREAS
+==================================================
+
+Goal:
+Help future debugging start in the right place.
+
+Tasks:
+
+1. Add a mapping from bug family → likely subsystem/files
+
+Examples:
+- Auth/session truth → auth-state.js, confirmed-ready.js, readiness-state.js, session-check.js, session-keepalive.js
+- Class truth/freshness → scheduleCache.js, classTruth.js, confirmed-ready.js, Tools
+- Persistence/durability → jobs.js, pg-sync.js, pg-init.js, server.js mutation handlers
+- Timing/retries → retry-strategy.js, preflight-loop.js, tick.js, register-pilates.js, timing-learner.js, timing-metrics.js
+
+2. Do not try to be exhaustive — make it useful
+
+Success criteria:
+- future investigations can start in the right subsystem quickly
+- the document helps reduce search time
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — DEFINE WHAT KIND OF FIX TO PREFER
+==================================================
+
+Goal:
+Encourage category fixes over symptom patches.
+
+Tasks:
+
+1. Add a section called “Preferred Fix Types”
+2. Explain the preferred order of fixes:
+- First: make the wrong path impossible
+- Second: centralize truth
+- Third: add freshness/ordering guards
+- Fourth: add diagnostics/observability
+- Last: patch only the single symptom
+
+3. Add examples from this codebase:
+- removing fire-and-forget sync export
+- canonical auth truth
+- per-entry freshness
+- serializer for PG sync
+- adaptive arming with learned timing
+
+Success criteria:
+- future work is biased toward durable fixes, not symptom patches
+- the document helps avoid reintroducing bug families
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — ADD “WHEN TO AUDIT VS WHEN TO PATCH” GUIDE
+==================================================
+
+Goal:
+Reduce unnecessary churn and random bug-fixing.
+
+Tasks:
+
+1. Add guidance like:
+- patch immediately if it is a narrow one-off safety bug
+- audit the subsystem if the same family appears again
+- do a focused audit after a major subsystem pass
+- do not broad-audit everything after every tiny change
+
+2. Include examples relevant to this app:
+- auth/session pass
+- persistence/durability pass
+- classifier freshness pass
+- warmup/sniper timing pass
+
+Success criteria:
+- future work becomes more deliberate
+- audits are used at the right times
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — ADD A SHORT “KNOWN CURRENT HIGH-RISK AREAS” SECTION
+==================================================
+
+Goal:
+Capture the most likely remaining bug family at this point in the project.
+
+Tasks:
+
+1. Add a short section listing the current highest-risk areas, based on the present state of the system
+2. Keep it brief and practical
+3. Examples may include:
+- window-open timing / first-click latency
+- transient Playwright/browser instability under load
+- residual UI confidence/readiness wording drift
+- any still-deferred low-risk persistence quirks
+
+Success criteria:
+- document stays useful for the current project phase
+- future debugging starts from the most likely active family
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — FINALIZE AS A MAINTAINABLE INTERNAL REFERENCE
+==================================================
+
+Goal:
+Make the document easy to keep current.
+
+Tasks:
+
+1. Place the document in an appropriate internal location (for example replit.md or an engineering-notes file)
+2. Keep it concise enough that future developers will actually use it
+3. Add a short top note:
+- this is a living debugging reference
+- update it after major subsystem passes, not every tiny patch
+
+4. Ensure the final document is readable and organized
+
+Success criteria:
+- the document is production-usable as a team reference
+- future debugging is more systematic and less whack-a-mole
+
+After Stage 8:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- the system has a clear bug taxonomy
+- the main invariants are written down
+- new bugs can be classified quickly
+- investigations can start in the right subsystem
+- future fixes can aim for category elimination, not just symptom repair
+- audits are used more intentionally
+- the team has a lightweight but durable debugging reference
+
+The result should feel:
+- calmer
+- more systematic
+- less reactive
+- easier to reason about
+
+It should NOT feel like:
+- random bug hunting
+- repeated rediscovery of the same problem family
+- patching symptoms without understanding the subsystem
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.

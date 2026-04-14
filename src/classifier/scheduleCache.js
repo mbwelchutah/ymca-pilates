@@ -126,21 +126,25 @@ function computeEntryFreshness(entry) {
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 // Stage 9 (past-date eviction): returns true when dateISO is a valid
-// YYYY-MM-DD string that falls strictly before today's UTC date.
+// YYYY-MM-DD string that falls strictly before today's Pacific date.
 //
 // Entries without a parseable dateISO (null / empty / unexpected format) are
 // NOT considered past — we can't tell, so we keep them.
 //
-// UTC date is intentional: the YMCA is in Pacific time (UTC-7/8), so any class
-// slot from a date that is "yesterday" in UTC is definitely in the past
-// regardless of the viewer's local clock.  We never prune today's entries even
-// if the class time has already passed — that is conservative on purpose.
+// Pacific time (America/Los_Angeles) is used because classes are at the Eugene
+// YMCA.  UTC was previously used here but is wrong: Pacific is UTC-7/8, so UTC
+// rolls to "tomorrow" at 5 PM PDT — 7 hours before Pacific midnight.  Using UTC
+// would evict today's schedule entries after 5 PM Pacific, which is exactly when
+// the evening-class booking windows are active.
 function _isPastDate(dateISO) {
   if (!dateISO || typeof dateISO !== 'string') return false;
   // Reject anything that doesn't look like YYYY-MM-DD to avoid stray matches.
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return false;
-  const todayUTC = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
-  return dateISO < todayUTC; // lexicographic comparison is correct for ISO dates
+  // en-CA locale gives "YYYY-MM-DD" format directly.
+  const todayPacific = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+  }).format(new Date());
+  return dateISO < todayPacific; // lexicographic comparison is correct for ISO dates
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
