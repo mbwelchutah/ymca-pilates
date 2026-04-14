@@ -21,7 +21,17 @@ let _pool = null;
 function getPool() {
   if (!_pool) {
     const { Pool } = require('pg');
-    _pool = new Pool();
+    // Replit's cloud PostgreSQL requires SSL; the dev/local PG does not.
+    // Cloud PG hostnames are FQDNs (contain dots); bare hostnames like
+    // "helium" or "localhost" are dev/local.  rejectUnauthorized:false is
+    // correct for cloud-managed DBs where the server cert isn't in the
+    // system trust store.
+    let _sslOpt = false;
+    try {
+      const _h = new URL(process.env.DATABASE_URL || '').hostname;
+      if (_h.includes('.')) _sslOpt = { rejectUnauthorized: false };
+    } catch (_) { /* DATABASE_URL not set or unparseable — no SSL */ }
+    _pool = new Pool({ ssl: _sslOpt });
     _pool.on('error', (err) => {
       console.error('[pg-sync] Idle client error (non-fatal):', err.message);
     });
