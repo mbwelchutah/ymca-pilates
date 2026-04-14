@@ -5352,8 +5352,13 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', async () => {
-      let id;
-      try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      let id, confirm;
+      try { const p = JSON.parse(body); id = parseInt(p.id, 10); confirm = p.confirm; } catch { id = NaN; }
+      if (confirm !== true) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Confirmation required — pass confirm: true' }));
+        return;
+      }
       if (!id || isNaN(id)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'Invalid or missing job ID' }));
@@ -5392,7 +5397,16 @@ const server = http.createServer((req, res) => {
   // path used after every add/edit/delete.  Safe to call at any time.
   // Does NOT alter job content; only copies what is already in SQLite to PG.
   } else if (req.method === 'POST' && path === '/api/recovery/resync-pg') {
-    (async () => {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      let confirm;
+      try { confirm = JSON.parse(body).confirm; } catch { confirm = undefined; }
+      if (confirm !== true) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Confirmation required — pass confirm: true' }));
+        return;
+      }
       try {
         const jobs = getAllJobs();
         await syncJobsToPgAsync();
@@ -5405,7 +5419,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: err.message }));
       }
-    })();
+    });
 
   // ── Recovery: clear transient runtime/cache state ─────────────────────────
   // Clears only files that the app rebuilds automatically on the next run.
@@ -5413,7 +5427,17 @@ const server = http.createServer((req, res) => {
   // auth credentials, timing-learner.json (valuable learned data), or user
   // preference/settings files.
   } else if (req.method === 'POST' && path === '/api/recovery/clear-transient') {
-    (() => {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      let confirm;
+      try { confirm = JSON.parse(body).confirm; } catch { confirm = undefined; }
+      if (confirm !== true) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Confirmation required — pass confirm: true' }));
+        return;
+      }
+
       const fsR  = require('fs');
       const pathR = require('path');
 
@@ -5498,7 +5522,7 @@ const server = http.createServer((req, res) => {
         errors,
         summary,
       }));
-    })();
+    });
 
   } else {
     res.writeHead(404);
