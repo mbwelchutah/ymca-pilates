@@ -323,8 +323,52 @@ async function runBurstCheck(dbJob) {
         attemptNumber:  runNum,
       });
 
+      // Stage 9 — Preemptive booking launch.
+      //
+      // Problem: the burst fires preflight-only checks (HTTP + browser navigate)
+      // every ~20 s.  Each check takes ~30 s to complete.  When the last burst
+      // returns "not open yet" at T-37 s and schedules the next check in 15 s,
+      // that check fires at T-22 s but ACTION_READY is only detectable at T=0.
+      // By then there are only 22 s left — but the bot needs ~47 s to reach the
+      // modal.  The booking run inevitably arrives late.
+      //
+      // Fix: when a preflight confirms the class is found and the modal is
+      // reachable (found_not_open_yet), and the remaining time is ≤ the bot's
+      // measured lead time + a small buffer, fire the booking run NOW.  The
+      // booking run's own poll loop waits for the Register button — far better
+      // than a burst that would arrive after window-open.
+      //
+      // Guard: only fires when learnedSpeed has enough observations (≥ MIN_OBS).
+      // Falls through to normal burst scheduling when the learner has no data.
+      const _preemptLeadMs = getLearnedRunSpeed(dbJob.id)?.neededLeadTimeMs ?? null;
+      const PREEMPT_BUFFER_MS = 5_000;  // 5 s safety buffer on top of lead time
+
+      if (
+        failureType === 'action_not_open'   &&
+        result.status === 'found_not_open_yet' &&
+        _preemptLeadMs !== null             &&
+        execTiming.msUntilOpen > 0          &&
+        execTiming.msUntilOpen <= _preemptLeadMs + PREEMPT_BUFFER_MS
+      ) {
+        const _preemptOpensAtMs = execTiming?.opensAt
+          ? new Date(execTiming.opensAt).getTime()
+          : null;
+        console.log(
+          `[preflight-loop] burst:preempt — Job #${dbJob.id} ` +
+          `${Math.round(execTiming.msUntilOpen / 1000)}s until open, ` +
+          `neededLead=${Math.round(_preemptLeadMs / 1000)}s; ` +
+          `launching booking run now so bot arrives at modal before window opens.`
+        );
+        resetBurst(dbJob.id);
+        retryCount[dbJob.id]  = 0;
+        nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+        triggerBookingFromBurst(dbJob.id, {
+          onRetry: (status) => scheduleHotRetry(dbJob, _preemptOpensAtMs, 1, status),
+        }).catch(e =>
+          console.error(`[preflight-loop] burst:preempt-error — Job #${dbJob.id}:`, e.message)
+        );
       // Stage 10D — escalate on click_failed; do not burst-retry.
-      if (failureType === 'click_failed') {
+      } else if (failureType === 'click_failed') {
         setEscalation(dbJob.id, {
           classTitle:     dbJob.class_title,
           classTime:      dbJob.class_time  ?? null,
