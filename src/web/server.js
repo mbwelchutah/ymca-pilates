@@ -4046,6 +4046,15 @@ const server = http.createServer((req, res) => {
           // Stage 9B — update the normalized persisted readiness state.
           const { refreshReadiness } = require('../bot/readiness-state');
           refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'manual' });
+          // Stage 5 (freshness) — persist canonical confirmed-ready state after manual preflight.
+          const { refreshConfirmedReadyState: refreshCR } = require('../bot/confirmed-ready');
+          refreshCR({
+            classTitle: dbJob.class_title,
+            classTime:  dbJob.class_time,
+            instructor: dbJob.instructor  || null,
+            dayOfWeek:  dbJob.day_of_week,
+            targetDate: dbJob.target_date || null,
+          });
 
           json({
             success:         result.status === 'success',
@@ -5131,6 +5140,49 @@ const server = http.createServer((req, res) => {
     } catch (_) { /* non-fatal */ }
 
     json({ ...(readiness || {}), armed, executionTiming, learnedTiming, escalation });
+
+  } else if (req.method === 'GET' && path === '/api/confirmed-ready') {
+    // Stage 5 (freshness) — canonical confirmed-ready state for a job.
+    // Returns the live-computed ConfirmedReadyState composed from auth-state,
+    // schedule cache (classifier), and readiness-state.  Never launches Playwright.
+    //
+    // Query params:
+    //   ?jobId=N   — use job N for class-truth classification (optional)
+    //                When omitted the first active job is used as context.
+    //
+    // Response shape:
+    //   { status, auth, classTruth, preflight, overall, persistedAt }
+    //   status: "confirmed_ready" | "needs_refresh" | "needs_attention" | "unknown"
+    const { computeConfirmedReadyState, loadConfirmedReadyState } = require('../bot/confirmed-ready');
+
+    const qJobId = parseInt(new URL(req.url, 'http://x').searchParams.get('jobId') || '', 10);
+
+    let jobForClassify = null;
+    try {
+      if (!isNaN(qJobId)) {
+        jobForClassify = getJobById(qJobId);
+      }
+      if (!jobForClassify) {
+        jobForClassify = getAllJobs().find(j => j.is_active === 1) || null;
+      }
+    } catch (_) { /* non-fatal */ }
+
+    const jobDesc = jobForClassify ? {
+      classTitle: jobForClassify.class_title,
+      classTime:  jobForClassify.class_time,
+      instructor: jobForClassify.instructor  || null,
+      dayOfWeek:  jobForClassify.day_of_week,
+      targetDate: jobForClassify.target_date || null,
+    } : null;
+
+    const live = computeConfirmedReadyState(jobDesc);
+
+    // Also surface the persisted state's timestamp so callers can see how
+    // recently the background scheduler last wrote it.
+    const persisted    = loadConfirmedReadyState();
+    const persistedAt  = persisted?.overall?.checkedAt ?? null;
+
+    json({ ...live, persistedAt, jobId: jobForClassify?.id ?? null });
 
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
