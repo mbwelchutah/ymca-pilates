@@ -1,0 +1,322 @@
+Do NOT change any code.
+
+I want a MUTATION DURABILITY + RESTART PERSISTENCE VERIFICATION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Verify that job mutations are now durably persisted and survive restart correctly.
+
+This is a QA / verification pass only.
+
+Do NOT redesign anything.
+Do NOT refactor anything.
+Do NOT add features.
+Only verify that the recent durability fix actually works end to end.
+
+CONTEXT
+
+Recent fix changed the mutation durability model:
+
+- PostgreSQL sync now reads from SQLite (authoritative runtime source)
+- mutation handlers now await syncJobsToPgAsync() before returning success
+- startup on production pushes current SQLite state to PostgreSQL to recover interrupted syncs
+- dev startup skips that production sync
+
+We need to verify that:
+- deletes stay deleted
+- adds stay added
+- toggles stay toggled
+- edits stay edited
+- restart does not resurrect stale jobs from PG
+- mutation success is only returned after durable persistence
+
+IMPORTANT RULES
+
+- Keep app runnable
+- Make NO code changes unless you discover a critical verification blocker and explicitly stop to report it
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what you verified
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+STAGE 1 — TRACE THE DURABLE WRITE PATH
+==================================================
+
+Goal:
+Verify the intended persistence path in code.
+
+Tasks:
+
+1. Trace each mutation handler:
+- /delete-job
+- /toggle-active
+- /update-job
+- /add-job
+
+2. For each one, confirm:
+- SQLite mutation happens first
+- syncJobsToPgAsync() is awaited
+- HTTP success response is returned only after PG sync resolves
+
+3. Confirm syncJobsToPgAsync() reads from SQLite, not seed-jobs.json
+4. Confirm jobs.js no longer fire-and-forgets PG sync from syncSeed()
+
+Success criteria:
+- intended durability path is confirmed in code
+- no remaining fire-and-forget mutation sync path exists
+
+After Stage 1:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — VERIFY DELETE DURABILITY
+==================================================
+
+Goal:
+Ensure deletes survive restart.
+
+Tasks:
+
+1. Identify a test job/class suitable for deletion
+2. Delete it through the normal mutation path
+3. Confirm:
+- SQLite no longer contains it
+- PG sync completed successfully
+- HTTP response only returned after sync
+4. Simulate or perform restart in the appropriate environment
+5. Confirm deleted job does NOT reappear after restart
+
+Success criteria:
+- deleted job stays deleted across restart
+- no stale resurrection from PG
+
+After Stage 2:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — VERIFY ADD DURABILITY
+==================================================
+
+Goal:
+Ensure newly added jobs survive restart.
+
+Tasks:
+
+1. Add a new test job through the normal add flow
+2. Confirm:
+- SQLite contains it
+- PG sync completed successfully
+- HTTP response only returned after sync
+3. Restart appropriately
+4. Confirm the added job still exists after restart
+
+Success criteria:
+- added job persists across restart
+- startup restore does not lose it
+
+After Stage 3:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — VERIFY TOGGLE DURABILITY
+==================================================
+
+Goal:
+Ensure active/inactive state survives restart.
+
+Tasks:
+
+1. Select a test job
+2. Toggle active state through the normal toggle flow
+3. Confirm:
+- SQLite updated
+- PG sync completed successfully
+- HTTP response only returned after sync
+4. Restart appropriately
+5. Confirm toggled state is preserved after restart
+
+Success criteria:
+- toggle state persists across restart
+- no stale rollback from PG
+
+After Stage 4:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — VERIFY EDIT DURABILITY
+==================================================
+
+Goal:
+Ensure edited job fields survive restart.
+
+Tasks:
+
+1. Select a test job
+2. Edit one or more fields through the normal update flow
+3. Confirm:
+- SQLite updated with new values
+- PG sync completed successfully
+- HTTP response only returned after sync
+4. Restart appropriately
+5. Confirm edited values are preserved after restart
+
+Success criteria:
+- edits persist across restart
+- no stale pre-edit snapshot is restored
+
+After Stage 5:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — VERIFY STARTUP RECOVERY SYNC ON PRODUCTION PATH
+==================================================
+
+Goal:
+Confirm startup sync behavior is correct.
+
+Tasks:
+
+1. Inspect the startup path for production (port 5000)
+2. Confirm it pushes current SQLite state to PG on container start
+3. Confirm dev path (port 5001) skips this
+4. Verify the startup sync uses SQLite as the source
+5. Verify this startup sync would correct a previously interrupted PG sync
+
+Success criteria:
+- production startup recovery sync is confirmed
+- dev path remains isolated
+
+After Stage 6:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — VERIFY FAILURE BEHAVIOR WHEN PG SYNC FAILS
+==================================================
+
+Goal:
+Ensure durability failure does not masquerade as success.
+
+Tasks:
+
+1. Trace what happens if syncJobsToPgAsync() fails in a mutation handler
+2. Confirm:
+- HTTP success is NOT returned
+- mutation failure is surfaced clearly
+- frontend would not falsely assume success
+
+3. If practical, verify via controlled simulation or code-path tracing
+4. Confirm no hidden partial-success behavior remains
+
+Success criteria:
+- failed PG sync cannot produce a false successful mutation outcome
+- durability semantics are honest
+
+After Stage 7:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — VERIFY NO STALE seed-jobs.json FEEDBACK LOOP REMAINS
+==================================================
+
+Goal:
+Ensure stale seed-jobs.json cannot be written back into PG after restart.
+
+Tasks:
+
+1. Confirm PG sync reads authoritative job state from SQLite only
+2. Confirm mutation path does not use seed-jobs.json as sync input
+3. Confirm startup restore cannot create a loop where stale seed data is re-synced into PG
+4. Check any remaining code paths involving seed-jobs.json for mutation durability relevance
+
+Success criteria:
+- stale seed file cannot overwrite newer runtime truth in PG
+- old feedback loop is broken
+
+After Stage 8:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — VERIFY PLAN/UI REFLECTS DURABLE TRUTH AFTER RESTART
+==================================================
+
+Goal:
+Ensure the user-facing result matches durable state.
+
+Tasks:
+
+1. After each mutation/restart verification above, confirm Plan/UI reflects the persisted truth
+2. Specifically verify:
+- deleted jobs do not reappear
+- added jobs appear
+- toggled jobs keep the right active state
+- edited jobs keep new values
+
+3. Confirm no temporary stale UI is masking persistence problems
+
+Success criteria:
+- user-visible Plan state matches durable persisted state after restart
+- no reappearance / rollback issues remain
+
+After Stage 9:
+Summarize verification and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA SUMMARY
+==================================================
+
+Goal:
+Produce a final end-to-end durability verdict.
+
+Tasks:
+
+1. Summarize verification for:
+- delete
+- add
+- toggle
+- edit
+- restart recovery
+- PG failure behavior
+- startup sync behavior
+
+2. Answer clearly:
+- Is mutation durability now correct?
+- Can stale PG state still resurrect deleted jobs?
+- Is startup recovery behaving as intended?
+- Are there any remaining risks?
+
+3. Rank any remaining durability risks by severity:
+- high
+- medium
+- low
+
+Success criteria:
+- clear final durability verdict
+- restart persistence confidence established
+
+After Stage 10:
+Summarize final results and STOP.
+
+Stage complete. Say "continue" to proceed.
