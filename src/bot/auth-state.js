@@ -1,6 +1,36 @@
-// Single source of truth for authentication state.
-// Persists to src/data/auth-state.json and is the canonical record
-// for all downstream consumers (API, UI, preflight, booking).
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║  CANONICAL AUTH TRUTH SOURCE                                              ║
+// ║                                                                           ║
+// ║  auth-state.json / this module is the single canonical source of auth     ║
+// ║  and session truth for ALL higher-level consumers in this app.            ║
+// ║                                                                           ║
+// ║  DO NOT read session-status.json or familyworks-session.json for auth     ║
+// ║  truth in higher-level logic.  Those are low-level write targets for      ║
+// ║  Playwright runs only.  All meaningful truth flows upward through          ║
+// ║  updateAuthState() and is read back via getAuthState() or the             ║
+// ║  getCanonicalAuthTruth() normalized view.                                 ║
+// ║                                                                           ║
+// ║  Authoritative writers (all call updateAuthState):                        ║
+// ║    session-check.js   — Playwright Daxko login                            ║
+// ║    session-ping.js    — HTTP ping to Daxko + FamilyWorks                  ║
+// ║    register-pilates.js — booking/preflight browser runs                   ║
+// ║    settings-auth.js   — manual Settings > Log in now                      ║
+// ║    session-keepalive.js — keepalive Tier-1/2/3 success paths              ║
+// ║    server.js          — startup ping                                       ║
+// ║                                                                           ║
+// ║  Canonical consumers (read via getAuthState / getCanonicalAuthTruth):     ║
+// ║    confirmed-ready.js — auth sub-component                                ║
+// ║    auto-preflight.js  — recovery + ping fast-path decisions               ║
+// ║    preflight-loop.js  — session validity gate                              ║
+// ║                                                                           ║
+// ║  Non-canonical reads being migrated (see Stage 5/6):                      ║
+// ║    readiness-state.js  — still reads session-status.json + fw-session     ║
+// ║    session-keepalive.js checkFreshness() — still reads both legacy files  ║
+// ║    tick.js             — still reads session-status.json                  ║
+// ║    /api/session-status — still mixes all four sources                     ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+//
+// Persists to src/data/auth-state.json.
 //
 // AuthState shape:
 //   status                  'connected' | 'needs_refresh' | 'recovering' | 'signed_out'
@@ -173,4 +203,56 @@ function clearAuthState() {
   return cleared;
 }
 
-module.exports = { getAuthState, updateAuthState, clearAuthState, DEFAULT_STATE };
+/**
+ * Canonical normalized auth truth for higher-level consumers.
+ *
+ * Returns a single object that covers all auth/session fields needed by
+ * readiness-state.js, confirmed-ready.js, tick.js, and /api/session-status
+ * without reading session-status.json or familyworks-session.json directly.
+ *
+ * Normalized values (for consumers migrating away from legacy string codes):
+ *   sessionValid   — boolean|null — replaces session-status.json valid field
+ *   fwStatusCode   — string       — replaces familyworks-session.json status field
+ *
+ * fwStatusCode derivation:
+ *   familyworksValid === true   → 'FAMILYWORKS_READY'
+ *   familyworksValid === false, lastCheckedAt set → 'FAMILYWORKS_SESSION_MISSING'
+ *   lastCheckedAt not set yet   → 'FAMILYWORKS_UNKNOWN'  (never checked)
+ *
+ * Both 'FAMILYWORKS_SESSION_MISSING' and 'FAMILYWORKS_SESSION_EXPIRED' map to
+ * normalizeSchedule → 'error', so the distinction is not needed here.
+ */
+function getCanonicalAuthTruth() {
+  const a = getAuthState();
+
+  // sessionValid: mirrors session-status.json valid boolean for callers that
+  // currently read that file.  null = never checked (same semantics as before).
+  const sessionValid = a.lastCheckedAt != null ? a.daxkoValid : null;
+
+  // fwStatusCode: mirrors familyworks-session.json status string.
+  let fwStatusCode;
+  if (a.familyworksValid) {
+    fwStatusCode = 'FAMILYWORKS_READY';
+  } else if (a.lastCheckedAt != null) {
+    fwStatusCode = 'FAMILYWORKS_SESSION_MISSING';
+  } else {
+    fwStatusCode = 'FAMILYWORKS_UNKNOWN';
+  }
+
+  return {
+    // Raw fields from auth-state.json
+    status:                 a.status,
+    daxkoValid:             a.daxkoValid             ?? false,
+    familyworksValid:       a.familyworksValid       ?? false,
+    bookingAccessConfirmed: a.bookingAccessConfirmed ?? false,
+    bookingAccessConfirmedAt: a.bookingAccessConfirmedAt ?? null,
+    lastCheckedAt:          a.lastCheckedAt  ?? null,
+    lastRecoveredAt:        a.lastRecoveredAt ?? null,
+    isAuthInProgress:       a.isAuthInProgress ?? false,
+    // Normalized derived values — these replace direct reads from legacy files
+    sessionValid,    // replaces loadStatus()?.valid  (session-status.json)
+    fwStatusCode,    // replaces readFwStatus()        (familyworks-session.json)
+  };
+}
+
+module.exports = { getAuthState, updateAuthState, clearAuthState, getCanonicalAuthTruth, DEFAULT_STATE };

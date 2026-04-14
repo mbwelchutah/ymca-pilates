@@ -29,15 +29,22 @@ const fs   = require('fs');
 const path = require('path');
 
 const { loadState }         = require('./sniper-readiness');
+// Stage 4 (auth-truth-unification): loadStatus reads session-status.json,
+// which is a non-canonical auth source.  Stage 6 will replace this with
+// getCanonicalAuthTruth().sessionValid from auth-state.js.
 const { loadStatus }        = require('./session-check');
 const { computeConfidence } = require('./confidence');
 // NOTE: confirmed-ready.js is NOT top-level required here because it also
 // requires readiness-state.js (circular).  loadConfirmedReadyState is instead
-// required lazily inside computeReadiness() to avoid Node's circular-dependency
+// require lazily inside computeReadiness() to avoid Node's circular-dependency
 // initialisation race (Stage 8).
 
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'readiness-state.json');
+// Stage 4 (auth-truth-unification): FW_FILE / readFwStatus() reads
+// familyworks-session.json directly, which is a non-canonical auth source.
+// Stage 6 will replace readFwStatus() with getCanonicalAuthTruth().fwStatusCode
+// from auth-state.js so session and schedule both derive from one file.
 const FW_FILE    = path.join(DATA_DIR, 'familyworks-session.json');
 
 // ── File helpers ──────────────────────────────────────────────────────────────
@@ -138,7 +145,11 @@ function computeReadiness({ jobId, classTitle, source }) {
     sniperUpdatedAt: sniperState?.updatedAt ?? null,
     jobId:         jobId  ?? sniperState?.jobId  ?? null,
     classTitle:    classTitle ?? sniperState?.classTitle ?? null,
+    // Stage 6 migration target: replace sessionStatus?.valid with
+    // getCanonicalAuthTruth().sessionValid (reads auth-state.json, not session-status.json)
     session:       normalizeSession(bundle.session,   sessionStatus?.valid ?? null),
+    // Stage 6 migration target: replace fwStatus with
+    // getCanonicalAuthTruth().fwStatusCode (reads auth-state.json, not familyworks-session.json)
     schedule:      normalizeSchedule(fwStatus),
     discovery:     normalizeDiscovery(bundle.discovery),
     modal:         normalizeModal(bundle.modal),
