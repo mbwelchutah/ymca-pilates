@@ -21,6 +21,8 @@ const { isLocked }         = require('../bot/auth-lock');
 const { getAuthState, updateAuthState } = require('../bot/auth-state');
 const { pingSessionHttp }  = require('../bot/session-ping');
 const { isCacheAdequate }  = require('../classifier/scheduleCache');
+// Stage 4 (freshness) — persist canonical readiness state after every preflight.
+const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
 // Stage 2: Use tiered validation (Tier 1→2→3) for recovery so session reuse
 // is the default path.  runSessionCheck() skips Tier 1; validateSessionFastThenFallback()
 // tries file freshness first and only escalates to HTTP ping or Playwright when needed.
@@ -401,6 +403,18 @@ async function checkAutoPreflights({ isActive = false } = {}) {
             });
           }
         }
+
+        // ── Stage 4 — persist canonical confirmed-ready state ─────────────
+        // Called unconditionally: fires after the ping fast-path AND after a
+        // full browser run so the state file always reflects the latest evidence.
+        refreshConfirmedReadyState({
+          classTitle: dbJob.class_title,
+          classTime:  dbJob.class_time,
+          instructor: dbJob.instructor  || null,
+          dayOfWeek:  dbJob.day_of_week,
+          targetDate: dbJob.target_date || null,
+        });
+
       } catch (err) {
         console.error(`[auto-preflight] ${trigger.name} error:`, err.message);
         appendLog({

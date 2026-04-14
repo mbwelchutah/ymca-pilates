@@ -44,6 +44,8 @@ const { setEscalation, clearEscalation } = require('./escalation');
 const { recordObservation, getLearnedOffsets } = require('./timing-learner');
 // Stage 10G — Direct burst-to-booking handoff (bypasses up-to-60s tick delay).
 const { triggerBookingFromBurst } = require('./booking-bridge');
+// Stage 4 (freshness) — persist canonical readiness state after every preflight.
+const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -238,6 +240,14 @@ async function runBurstCheck(dbJob) {
     );
 
     refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+    // Stage 4 — persist canonical confirmed-ready state after every burst check.
+    refreshConfirmedReadyState({
+      classTitle: dbJob.class_title,
+      classTime:  dbJob.class_time,
+      instructor: dbJob.instructor  || null,
+      dayOfWeek:  dbJob.day_of_week,
+      targetDate: dbJob.target_date || null,
+    });
 
     const failureType = classifyFailure(result);
 
@@ -549,6 +559,14 @@ async function runPreflightLoop({ isActive = false } = {}) {
       console.log(`[preflight-loop] run:result — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+      // Stage 4 — persist canonical confirmed-ready state after every preflight run.
+      refreshConfirmedReadyState({
+        classTitle: dbJob.class_title,
+        classTime:  dbJob.class_time,
+        instructor: dbJob.instructor  || null,
+        dayOfWeek:  dbJob.day_of_week,
+        targetDate: dbJob.target_date || null,
+      });
 
       // Stage 10B — compute phase-aware retry context from outcome.
       const failureType = classifyFailure(result);
@@ -611,6 +629,15 @@ async function runPreflightLoop({ isActive = false } = {}) {
     } catch (err) {
       console.error(`[preflight-loop] run:error — Job #${dbJob.id}:`, err.message);
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
+      // Stage 4 — persist canonical confirmed-ready state even on error so the
+      // UI reflects the freshest auth/cache evidence available.
+      refreshConfirmedReadyState({
+        classTitle: dbJob.class_title,
+        classTime:  dbJob.class_time,
+        instructor: dbJob.instructor  || null,
+        dayOfWeek:  dbJob.day_of_week,
+        targetDate: dbJob.target_date || null,
+      });
 
       // Timeout / unexpected error — treat as ambiguous, plan a retry.
       retryCount[dbJob.id] = (retryCount[dbJob.id] ?? 0) + 1;
