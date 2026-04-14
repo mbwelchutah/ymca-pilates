@@ -6,7 +6,7 @@ import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ScreenshotLightbox } from '../components/ui/ScreenshotLightbox'
 import type { AppState, SessionStatus, AuthStatusEnum } from '../types'
-import type { SniperRunState, SniperTiming } from '../lib/api'
+import type { SniperRunState, SniperTiming, ConfirmedReadyState } from '../lib/api'
 import { api } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
@@ -434,6 +434,13 @@ function KVRow({ label, value, mono = false }: { label: string; value: string; m
   )
 }
 
+function freshnessColor(f: string | null | undefined): string {
+  if (f === 'fresh')  return 'text-accent-green'
+  if (f === 'aging')  return 'text-accent-amber'
+  if (f === 'stale')  return 'text-accent-red'
+  return 'text-text-muted'
+}
+
 // Stage 7: verdict badge colours
 //   green  — ready / found / reachable
 //   amber  — informational (full, closed, waitlist, not_open_yet, not_available)
@@ -797,6 +804,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
   // ── Schedule cache / classifier result ────────────────────────────────────
   const [classifierResult, setClassifierResult] = useState<ClassTruthResult | null>(null)
+  const [confirmedReady,   setConfirmedReady]   = useState<ConfirmedReadyState | null>(null)
 
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
@@ -810,6 +818,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   useEffect(() => {
     if (!selectedJobId) return
     api.classifyJob(selectedJobId).then(setClassifierResult).catch(() => setClassifierResult(null))
+    api.getConfirmedReady(selectedJobId).then(setConfirmedReady).catch(() => setConfirmedReady(null))
   }, [selectedJobId])
 
   // ── Auto-scroll to linked section when arriving from Now ─────────────────
@@ -1439,10 +1448,52 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                             <KVRow label="Instructor"  value={cr.matchedInstructor} />
                           )}
                           <KVRow label="Fetched"       value={fmtStr(cr.fetchedAt!)} />
+                          {cr.freshness && (
+                            <KVRow label="Freshness" value={cr.freshness} />
+                          )}
                         </Card>
                       </>
                     )
                   })()}
+
+                  {/* Confirmed Ready (freshness diagnostics) */}
+                  {confirmedReady && confirmedReady.overall.checkedAt && (
+                    <>
+                      <SectionHeader title="Confirmed Ready" id="tools-confirmed-ready" />
+                      <Card padding="none">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Status</span>
+                          <span className={`text-[14px] font-medium ${
+                            confirmedReady.status === 'confirmed_ready'  ? 'text-accent-green' :
+                            confirmedReady.status === 'needs_refresh'    ? 'text-accent-amber' :
+                            confirmedReady.status === 'needs_attention'  ? 'text-accent-red'   : 'text-text-muted'
+                          }`}>{confirmedReady.status.replace(/_/g, ' ')}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Written</span>
+                          <span className="text-[13px] text-text-muted">{fmtStr(confirmedReady.overall.checkedAt)}</span>
+                        </div>
+                        {confirmedReady.overall.refreshSource && (
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                            <span className="text-[14px] text-text-secondary">Source</span>
+                            <span className="text-[13px] text-text-secondary">{confirmedReady.overall.refreshSource}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+                          <span className="text-[14px] text-text-secondary">Auth</span>
+                          <span className={`text-[13px] font-medium ${freshnessColor(confirmedReady.auth.freshness)}`}>
+                            {confirmedReady.auth.freshness}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-[14px] text-text-secondary">Class truth</span>
+                          <span className={`text-[13px] font-medium ${freshnessColor(confirmedReady.classTruth.freshness)}`}>
+                            {confirmedReady.classTruth.freshness}
+                          </span>
+                        </div>
+                      </Card>
+                    </>
+                  )}
                 </div>
               )}
             </>

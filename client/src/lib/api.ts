@@ -27,9 +27,10 @@ export interface ConfirmedReadyState {
     freshness:      CacheFreshness;
   };
   overall: {
-    checkedAt: number | null;
-    freshness: CacheFreshness;
-    reason:    string;
+    checkedAt:      number | null;
+    freshness:      CacheFreshness;
+    reason:         string;
+    refreshSource?: string;
   };
   /** Epoch ms when the background scheduler last wrote the state file. */
   persistedAt: number | null;
