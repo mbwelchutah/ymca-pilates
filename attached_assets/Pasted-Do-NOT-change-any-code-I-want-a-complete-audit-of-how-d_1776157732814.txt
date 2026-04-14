@@ -1,0 +1,169 @@
+Do NOT change any code.
+
+I want a complete audit of how data is stored, used, and synchronized across the system.
+
+This includes:
+- PostgreSQL
+- SQLite
+- JSON files in /data
+- in-memory state (if any)
+
+Your goal is to explain:
+
+👉 Where is the source of truth for each type of data?
+👉 How does data move between systems?
+👉 Where can data become stale or inconsistent?
+
+--------------------------------------------------
+
+SECTION A — DATA STORAGE LAYERS
+
+List all data storage layers and their roles:
+
+1. PostgreSQL
+2. SQLite
+3. JSON files (list each file individually)
+4. In-memory state (if used)
+
+For each:
+- purpose
+- what data it holds
+- whether it is authoritative or derived
+- how often it is written
+- how often it is read
+
+--------------------------------------------------
+
+SECTION B — JSON FILE INVENTORY
+
+List every JSON file under /data and explain:
+
+- filename
+- what it stores
+- who writes it (file + function)
+- who reads it (file + function)
+- whether it is:
+  - source of truth
+  - cache
+  - derived state
+  - diagnostic/log
+
+Examples to include:
+- schedule-cache.json
+- readiness-state.json
+- confirmed-ready-state.json
+- session-status.json
+- sniper-state.json
+- session-cookies.json
+- any others
+
+--------------------------------------------------
+
+SECTION C — DATA FLOW (END-TO-END)
+
+Trace how data flows through the system:
+
+1. Job creation / persistence
+2. Scheduler tick
+3. Preflight
+4. Classifier
+5. Booking run
+6. Post-run updates
+
+For each step:
+- what data is read
+- what data is written
+- which files / DB are involved
+
+--------------------------------------------------
+
+SECTION D — SYNC & CONSISTENCY RISKS
+
+Identify all places where data can become:
+
+- stale
+- out of sync
+- inconsistent across layers
+
+Specifically look for:
+
+- JSON files that are written in one place but read elsewhere
+- duplicated representations of the same truth
+- ordering issues (like confirmed-ready vs readiness)
+- cache without TTL
+- DB vs JSON mismatches
+- in-memory vs persisted mismatches
+- restart-related inconsistencies
+
+For each risk:
+- explain what can go wrong
+- how it would show up in the UI or behavior
+
+--------------------------------------------------
+
+SECTION E — SOURCE OF TRUTH MAPPING
+
+Create a table like:
+
+DATA TYPE → SOURCE OF TRUTH
+
+Examples:
+
+- jobs → PostgreSQL
+- runtime jobs → SQLite
+- schedule truth → API + schedule-cache.json
+- auth state → session-status.json
+- readiness → ??? (identify clearly)
+
+Highlight:
+- any data type with MORE THAN ONE source of truth
+
+--------------------------------------------------
+
+SECTION F — WRITE PATHS & TIMING
+
+Explain:
+
+- when each major file is written
+- which are updated:
+  - on every tick
+  - on preflight
+  - on booking
+  - on startup
+  - on error
+
+Highlight:
+- any files that are not updated frequently enough
+- any that can silently age (like confirmed-ready before fix)
+
+--------------------------------------------------
+
+SECTION G — RESTART / DEPLOYMENT BEHAVIOR
+
+Explain what happens on restart:
+
+- which data is restored from PostgreSQL
+- which data is lost (in-memory)
+- which JSON files persist
+- which can be stale after restart
+
+--------------------------------------------------
+
+SECTION H — SUMMARY
+
+Give a concise summary:
+
+1. What is the true system of record?
+2. What is cached?
+3. Where are the biggest sync risks?
+4. Which layers are most fragile?
+
+--------------------------------------------------
+
+RULES
+
+- Do NOT propose changes yet
+- Do NOT redesign anything
+- Be precise and code-aware
+- Prefer exact file/function references over general statements
+- Call out uncertainty explicitly
