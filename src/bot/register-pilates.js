@@ -1872,25 +1872,22 @@ async function runBookingJob(job, opts = {}) {
     //     (something unexpected happened that warrants investigation)
     const isTimeMismatch = r => r.reasonTag === 'time' || r.reasonTag === 'time-instructor';
 
-    // Row-capacity bail: if the schedule row already showed "full" or "waitlist"
-    // in its text content, clicking the card will either time out (full cards
-    // have no interactive register button) or open a modal we cannot act on.
-    // Return the correct status immediately rather than hanging for 30 s.
-    if (_rowCapacityFromSchedule === 'full') {
-      console.log('[row-capacity] Bailing out before click — schedule row shows class is full');
-      await captureFailure('action', 'class_full');
-      return logRunSummary({
-        status: 'full',
-        message: 'Class is full (schedule row indicator — no register button present)',
-        screenshotPath,
-        phase:    'action',
-        reason:   'class_full',
-        category: 'availability',
-        label:    'Class full',
-      });
-    }
-    if (_rowCapacityFromSchedule === 'waitlist') {
-      console.log('[row-capacity] Bailing out before click — schedule row shows waitlist only');
+    // Row-capacity signal from schedule row — guides behavior but does not
+    // necessarily prevent clicking:
+    //
+    //   'full'    — class is at capacity in the row text.  In PREFLIGHT mode we
+    //               fall through so the modal can be opened and the actual button
+    //               state inspected (the modal may still show a Register button
+    //               that joins the waitlist).  In BOOKING mode we also fall
+    //               through — the booking loop at the bottom handles the
+    //               "full → Register → waitlist" path already.
+    //               Only bail if NO booking action is found after opening.
+    //
+    //   'waitlist' — row shows "Waitlist" label.  In PREFLIGHT we can shortcut
+    //                (waitlist status is confirmed); in BOOKING we fall through
+    //                so the bot actually clicks through and joins the waitlist.
+    if (_rowCapacityFromSchedule === 'waitlist' && PREFLIGHT_ONLY) {
+      console.log('[row-capacity] Preflight: schedule row shows waitlist — class full, waitlist available');
       return logRunSummary({
         status:   'waitlist_only',
         message:  'Class is full — waitlist shown on schedule row',
@@ -1899,6 +1896,9 @@ async function runBookingJob(job, opts = {}) {
         reason:   'class_full',
         category: 'availability',
       });
+    }
+    if (_rowCapacityFromSchedule) {
+      console.log(`[row-capacity] Row shows "${_rowCapacityFromSchedule}" — proceeding to click modal for full action detection`);
     }
 
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
@@ -2080,6 +2080,17 @@ async function runBookingJob(job, opts = {}) {
       // full/closed signals always win — even in the (unlikely) edge case where
       // both a "Register" button and a "Closed - Full" indicator are present.
       } else if (_actionStateClassified === 'full') {
+        // Class is full — but check if a booking action is still available.
+        // On FamilyWorks web, clicking "Register" on a full class joins the waitlist
+        // (same button, different outcome).  If the DOM shows any booking button,
+        // hand off to a booking run so it can join the waitlist.
+        if (hasRegister || hasWaitlist) {
+          _state.bundle.action = 'ACTION_READY';
+          emitEvent(_state, 'ACTION', 'WAITLIST_ONLY', 'Preflight: class full — Register/Waitlist button visible (will join waitlist on booking run)');
+          _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'FamilyWorks: class full — booking button visible (booking run will join waitlist)' });
+          await snap('preflight-full-waitlist');
+          return logRunSummary({ status: 'waitlist_only', message: 'Preflight: class full — Register/Waitlist button visible (booking run will join waitlist)', screenshotPath });
+        }
         _state.bundle.action = 'ACTION_BLOCKED';
         _saveFwStatus({ ready: false, status: 'CLASS_FULL', checkedAt: new Date().toISOString(), source: 'preflight', detail: 'Class is full — 0 spots available' });
         await snap('preflight-full');

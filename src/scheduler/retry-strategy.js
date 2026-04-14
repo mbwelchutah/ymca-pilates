@@ -90,8 +90,10 @@ function classifyFailure(botResult) {
     status === 'not_open'            ||
     status === 'found_not_open_yet'  ||  // modal reachable, session valid, window not open yet
     status === 'session_uncertain'   ||  // both HTTP pings timed out — network blip, not auth failure
+    status === 'full'                ||  // class is full (no waitlist button) — poll for cancellations
     reason === 'not_open'            ||
     reason === 'action_not_open'     ||
+    reason === 'class_full'          ||  // same — keep checking at 3-min cadence
     reason === 'ping_timeout'            // network blip — do not escalate to auth failure
   ) return FAILURE_TYPES.ACTION_NOT_OPEN;
 

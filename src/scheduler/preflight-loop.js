@@ -545,7 +545,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
         `Job #${dbJob.id} preflight`
       );
 
-      const outcome = (result.status === 'success' || result.status === 'booked' || result.status === 'found_not_open_yet') ? 'pass' : 'fail';
+      const outcome = (result.status === 'success' || result.status === 'booked' || result.status === 'found_not_open_yet' || result.status === 'waitlist_only') ? 'pass' : 'fail';
       console.log(`[preflight-loop] run:result — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
       refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
