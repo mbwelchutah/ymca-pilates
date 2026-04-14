@@ -16,8 +16,8 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 | `src/bot/session-check.js` | Verifies Daxko + FamilyWorks sessions via HTTP ping (no browser). |
 | `src/bot/sniper-readiness.js` | Persists sniper-state bundle for UI display. |
 | `src/bot/auth-state.js` | Auth-in-progress lock + startup session validation. |
-| `src/classifier/classTruth.js` | Synchronous schedule-cache classifier. Returns `{state, openSpots, freshness, source, confidence}` without launching Playwright. |
-| `src/classifier/scheduleCache.js` | In-memory + on-disk schedule cache. `computeCacheFreshness()` returns 'fresh'/'aging'/'stale'/'unknown'. `isCacheAdequate()` guards the HTTP-ping fast path. |
+| `src/classifier/classTruth.js` | Synchronous schedule-cache classifier. Returns `{state, openSpots, freshness, cacheFileFreshness, source, confidence, matchType, …}` without launching Playwright. `freshness` is per-entry (`capturedAt`); `cacheFileFreshness` is file-level (`savedAt`) — always present, diagnostic only. |
+| `src/classifier/scheduleCache.js` | In-memory + on-disk schedule cache. Two freshness helpers: `computeCacheFreshness(raw)` (file-level, `savedAt`) and `computeEntryFreshness(entry)` (per-entry, `capturedAt`). `FRESHNESS_THRESHOLDS` exports the bucket ms values for both levels. `isCacheAdequate()` guards the HTTP-ping fast path. |
 | `src/scheduler/tick.js` | One scheduler tick: load active jobs → phase/cooldown/classifier/auth gates → `runBookingJob` → `refreshConfirmedReadyState`. |
 | `src/scheduler/preflight-loop.js` | Background preflight runner. Periodic lightweight session + schedule checks. Calls `refreshConfirmedReadyState` on every outcome. |
 | `src/scheduler/auto-preflight.js` | HTTP-ping fast path for auto-preflight (no browser). Falls back to Playwright when `isCacheAdequate()` returns false. |
@@ -36,7 +36,7 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 | `screens/PlanScreen.tsx` | Job list with availability badges and sniper status. |
 | `screens/ToolsScreen.tsx` | Manual controls: run scheduler, preflight, session check. |
 | `screens/SettingsScreen.tsx` | App settings, auth management. |
-| `lib/classTruth.ts` | TypeScript types for `ClassTruthResult` including `freshness` and `source` fields. |
+| `lib/classTruth.ts` | TypeScript types for `ClassTruthResult` including `freshness` (per-entry), `cacheFileFreshness` (file-level), and `source` fields. |
 | `lib/api.ts` | All API methods. Includes `getReadiness`, `getConfirmedReady`, `classifyJob`. `getReadiness` returns `classTruthFreshness` for trust-line display. |
 | `lib/confidence.ts` | Client-side confidence score mirror (0–100 fallback when server hasn't computed yet). |
 | `lib/readinessResolver.ts` | Derives `CompositeReadiness` from session + schedule + discovery + modal signals. |
@@ -61,19 +61,32 @@ NowScreen (polling /api/readiness every 1–30s)
   → bgReadiness.lastCheckedAt → "checked N min ago" trust line
 
 classifyJob (/api/jobs/:id/classify)
-  → ClassTruthResult: state, openSpots, freshness, source
-  → Classifier availability row with inline freshness note
+  → ClassTruthResult: state, openSpots, freshness (per-entry), cacheFileFreshness (file-level), source
+  → Classifier availability row with inline freshness note (NowScreen, PlanScreen)
 ```
 
-## Freshness + Confirmed-Ready Unification (Stages 1–10)
+## Freshness Architecture (Two-Pass, Fully Complete)
 
-The "Freshness + Confirmed-Ready Unification" feature (fully complete) ensures the UI always reflects whether cached data is trustworthy:
-
+### Pass 1 — Freshness + Confirmed-Ready Unification
+Ensures the UI always reflects whether cached data is trustworthy:
 - **Freshness buckets**: `fresh` (<30 min), `aging` (<4 h), `stale` (≥4 h), `unknown`
 - **`isCacheAdequate()`**: stale cache forces full Playwright run instead of HTTP-ping fast path
 - **`confirmed-ready-state.json`**: aggregates auth + classTruth + preflight freshness into one canonical state
 - **`classTruthFreshness`** in `/api/readiness`: piggybacked onto readiness bundle so NowScreen can show stale warnings without a separate API call
-- **UI**: classifier row inline freshness note (Stage 6) + trust line "checked N min ago" (Stage 9) + stale-cache fallback warning when classifier has no match (Stage 10)
+- **UI**: classifier row inline freshness note + trust line "checked N min ago" + stale-cache fallback warning when classifier has no match
+
+### Pass 2 — Per-Entry Schedule-Cache Freshness (Stages 1–8, fully complete)
+Fixes the gap where `mergeAndSaveEntries` refreshed `savedAt` (file-level) while keeping old entries, making aged entries appear fresh. Key decisions:
+
+- **Two independent freshness measures** — always present on every `ClassTruthResult`:
+  - `freshness` — per-entry, based on `entry.capturedAt` (when that specific class row was observed). Used for all gating decisions.
+  - `cacheFileFreshness` — file-level, based on `raw.savedAt` (when the cache file was last written). Diagnostic only — **never used in gating**.
+- **Separate threshold constants** in `scheduleCache.js`: `ENTRY_FRESH_MS`/`ENTRY_AGING_MS` (entry-level) and `CACHE_FRESH_MS`/`CACHE_AGING_MS` (file-level). Both currently 30 min / 4 h — independently tunable. Exported as `FRESHNESS_THRESHOLDS`.
+- **`computeEntryFreshness(entry)`** — uses `entry.capturedAt`. Backward-compatible: entries without `capturedAt` return `'unknown'`.
+- **`classTruthFreshness` recomputed live** in `readiness-state.js` from `cr.classTruth.checkedAt` (epoch ms of `capturedAt`) via `computeFreshness()` — not read from the frozen bucket in the persisted confirmed-ready snapshot.
+- **`ConfirmedReadyState.classTruth`** in `api.ts` includes both `freshness` and `cacheFileFreshness`.
+- **ToolsScreen** Confirmed Ready card shows a "Cache file" row only when `cacheFileFreshness` diverges from `freshness` — the exact case the pass is designed to surface.
+- **Gating invariant**: all four gating decisions (warmup suppression, `needs_attention` full/not-found, `confirmed_ready` gate) use `classTruth.freshness` (per-entry). `cacheFileFreshness` must never be used in a gate.
 
 ## Key Design Decisions
 
