@@ -2475,12 +2475,27 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
 
                     if (!label) return null
                     const fuzzyNote = classifierResult.isFuzzyMatch ? ' (fuzzy)' : ''
+                    // Stage 6: freshness — surface cache age when schedule data is old
+                    const fr = classifierResult.freshness
+                    const freshnessNote =
+                      fr === 'stale'  ? ' · cache outdated' :
+                      fr === 'aging'  ? ' · may be aging'   :
+                      null
+                    const freshnessColor =
+                      fr === 'stale'  ? 'text-accent-amber/70' :
+                      fr === 'aging'  ? 'text-text-muted'      :
+                      null
                     return (
                       <div className="flex items-center gap-3 mt-3 pt-3 border-t border-divider/20 animate-fade-in-up">
                         <span className={`text-[14px] w-4 text-center shrink-0 leading-none select-none ${textColor}`}>
                           {icon}
                         </span>
-                        <span className={`text-[13px] ${textColor}`}>{label}{fuzzyNote}</span>
+                        <span className={`text-[13px] ${textColor}`}>
+                          {label}{fuzzyNote}
+                          {freshnessNote && (
+                            <span className={`text-[11px] ${freshnessColor}`}>{freshnessNote}</span>
+                          )}
+                        </span>
                       </div>
                     )
                   })()}

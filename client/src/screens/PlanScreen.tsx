@@ -302,10 +302,18 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             st === 'bookable'           ? ['bg-accent-green', cacheInfo.openSpots != null ? `${cacheInfo.openSpots} spot${cacheInfo.openSpots === 1 ? '' : 's'} open` : 'Available'] :
             [null, null]
           if (!label) return null
+          // Stage 6: freshness suffix — only surface when schedule data is noticeably old
+          const fr = cacheInfo.freshness
+          const staleSuffix = fr === 'stale' ? ' (outdated)' : fr === 'aging' ? ' (aging)' : ''
           return (
             <div className="flex items-center gap-1.5 mt-1">
               <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-              <span className="text-[12px] text-text-muted">{label}</span>
+              <span className="text-[12px] text-text-muted">
+                {label}
+                {staleSuffix && (
+                  <span className={`text-[11px] ${fr === 'stale' ? 'text-accent-amber/60' : 'text-text-muted/70'}`}>{staleSuffix}</span>
+                )}
+              </span>
             </div>
           )
         })()}

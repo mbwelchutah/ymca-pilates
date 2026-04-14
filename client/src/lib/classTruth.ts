@@ -12,6 +12,10 @@ export type ClassState =
 
 export type MatchType = 'exact' | 'fuzzy' | 'none';
 
+// Stage 2 — freshness buckets and data source for the schedule cache.
+export type CacheFreshness  = 'fresh' | 'aging' | 'stale' | 'unknown';
+export type ClassTruthSource = 'cache' | 'playwright' | 'live_api' | 'unknown';
+
 export interface ClassTruthResult {
   state:             ClassState;
   matchedClassName:  string | null;
@@ -25,6 +29,9 @@ export interface ClassTruthResult {
   totalCapacity:     number | null;
   reason:            string | null;
   fetchedAt:         string | null;
+  // Stage 2 additions — always present in API responses
+  freshness:         CacheFreshness;
+  source:            ClassTruthSource;
 }
 
 // Convenience type-guard

@@ -1,7 +1,41 @@
 import type { Job, AppState, ScrapedClass, SessionStatus } from '../types'
-import type { ClassTruthResult } from './classTruth'
+import type { ClassTruthResult, CacheFreshness } from './classTruth'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
+
+// Stage 5/6 — canonical confirmed-ready state shape (mirrors src/bot/confirmed-ready.js).
+export interface ConfirmedReadyState {
+  status:     'confirmed_ready' | 'needs_refresh' | 'needs_attention' | 'unknown';
+  auth: {
+    daxkoValid:             boolean;
+    familyworksValid:       boolean;
+    bookingAccessConfirmed: boolean;
+    checkedAt:              number | null;
+    freshness:              CacheFreshness;
+  };
+  classTruth: {
+    state:        string;         // ClassState value
+    checkedAt:    number | null;
+    freshness:    CacheFreshness;
+    source:       string;
+    isFuzzyMatch: boolean;
+    confidence:   number;
+  };
+  preflight: {
+    modalConfirmed: boolean;
+    checkedAt:      number | null;
+    freshness:      CacheFreshness;
+  };
+  overall: {
+    checkedAt: number | null;
+    freshness: CacheFreshness;
+    reason:    string;
+  };
+  /** Epoch ms when the background scheduler last wrote the state file. */
+  persistedAt: number | null;
+  /** Job ID that was used for class-truth classification. */
+  jobId:       number | null;
+}
 
 export interface SniperTiming {
   bookingOpenAt:        string           // ISO — when the booking window was scheduled to open
@@ -391,4 +425,7 @@ export const api = {
 
   classifyJob: (id: number): Promise<ClassTruthResult> =>
     apiFetch(`/api/jobs/${id}/classify`),
+
+  getConfirmedReady: (jobId?: number): Promise<ConfirmedReadyState> =>
+    apiFetch(`/api/confirmed-ready${jobId != null ? `?jobId=${jobId}` : ''}`),
 }
