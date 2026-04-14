@@ -14,12 +14,13 @@ export interface ConfirmedReadyState {
     freshness:              CacheFreshness;
   };
   classTruth: {
-    state:        string;         // ClassState value
-    checkedAt:    number | null;
-    freshness:    CacheFreshness;
-    source:       string;
-    isFuzzyMatch: boolean;
-    confidence:   number;
+    state:              string;         // ClassState value
+    checkedAt:          number | null;
+    freshness:          CacheFreshness; // per-entry (capturedAt)
+    cacheFileFreshness: CacheFreshness; // file-level (savedAt) — Stage 5/7
+    source:             string;
+    isFuzzyMatch:       boolean;
+    confidence:         number;
   };
   preflight: {
     modalConfirmed: boolean;

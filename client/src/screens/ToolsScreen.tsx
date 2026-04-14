@@ -1485,12 +1485,25 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                             {confirmedReady.auth.freshness}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between px-4 py-3">
+                        <div className={`flex items-center justify-between px-4 py-3 ${
+                          confirmedReady.classTruth.cacheFileFreshness &&
+                          confirmedReady.classTruth.cacheFileFreshness !== confirmedReady.classTruth.freshness
+                            ? 'border-b border-divider' : ''
+                        }`}>
                           <span className="text-[14px] text-text-secondary">Class truth</span>
                           <span className={`text-[13px] font-medium ${freshnessColor(confirmedReady.classTruth.freshness)}`}>
                             {confirmedReady.classTruth.freshness}
                           </span>
                         </div>
+                        {confirmedReady.classTruth.cacheFileFreshness &&
+                         confirmedReady.classTruth.cacheFileFreshness !== confirmedReady.classTruth.freshness && (
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <span className="text-[14px] text-text-secondary">Cache file</span>
+                            <span className={`text-[13px] font-medium ${freshnessColor(confirmedReady.classTruth.cacheFileFreshness)}`}>
+                              {confirmedReady.classTruth.cacheFileFreshness}
+                            </span>
+                          </div>
+                        )}
                       </Card>
                     </>
                   )}
