@@ -7,8 +7,8 @@
 //
 // Callers that use SQLite (jobs.js, init.js, etc.) are unchanged — they keep
 // using the synchronous better-sqlite3 API.  PG operations here are all
-// async and are either awaited at startup (initFromPg) or fire-and-forget
-// after mutations (syncJobsToPg).
+// async and are either awaited at startup (initFromPg) or awaited explicitly
+// by mutation handlers via syncJobsToPgAsync.
 
 const fs   = require('fs');
 const path = require('path');
@@ -55,7 +55,7 @@ async function ensurePgSchema() {
 // If PostgreSQL has jobs, writes them to seed-jobs.json so that init.js
 // seeds the fresh SQLite DB from PG data instead of the stale git snapshot.
 // If PG is empty (very first ever deployment), the existing seed-jobs.json
-// from git is used and then pushed to PG via syncJobsToPg().
+// from git is used and then pushed to PG via the startup syncJobsToPgAsync call.
 async function initFromPg() {
   try {
     await ensurePgSchema();
@@ -74,8 +74,9 @@ async function initFromPg() {
   }
 }
 
-// ── syncJobsToPg ─────────────────────────────────────────────────────────────
-// Called after every job mutation (create / delete / toggle / update).
+// ── syncJobsToPgAsync ────────────────────────────────────────────────────────
+// The only public PG sync API.  Called after every job mutation (create /
+// delete / toggle / update / reset / cancel) and by CLI scripts.
 // Replaces the entire PG jobs table with the current SQLite state.
 // Uses a transaction so PG is never left in a partial state.
 //
@@ -84,6 +85,9 @@ async function initFromPg() {
 // fresh SQLite snapshot that captures both mutations.  This prevents the
 // interleaved-DELETE bug where two concurrent BEGIN/DELETE/INSERT/COMMIT cycles
 // each omit the other's rows and both COMMITs, resulting in duplicate rows.
+//
+// Always await this function — it returns a promise that resolves when PG is
+// durable, or rejects if the sync failed.  Never call it fire-and-forget.
 
 let _syncChain = Promise.resolve();
 
@@ -94,12 +98,6 @@ function _doSyncJobsToPg() {
   // Advance the chain; swallow errors so a failed sync never blocks later ones.
   _syncChain = slot.catch(() => {});
   return slot;
-}
-
-function syncJobsToPg() {
-  _doSyncJobsToPg().catch(err =>
-    console.error('[pg-sync] syncJobsToPg failed (non-fatal):', err.message)
-  );
 }
 
 // Core work — reads SQLite at execution time (not enqueue time) so it always
@@ -149,4 +147,4 @@ async function _doSyncJobsToPgCore() {
   }
 }
 
-module.exports = { initFromPg, syncJobsToPg, syncJobsToPgAsync: _doSyncJobsToPg };
+module.exports = { initFromPg, syncJobsToPgAsync: _doSyncJobsToPg };
