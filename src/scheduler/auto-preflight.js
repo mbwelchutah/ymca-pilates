@@ -329,7 +329,16 @@ async function checkAutoPreflights({ isActive = false } = {}) {
 
           if (pingResult.trusted && currentAuthState.bookingAccessConfirmed && cacheOk) {
             // Sessions confirmed + booking access confirmed + cache is fresh — skip browser.
-            console.log(`[auto-preflight] ${trigger.name} confirmed by HTTP ping (booking access confirmed, cache fresh) — skipping browser.`);
+            // Stage 5 (ping fast-path freshness): confirmed-ready-state.json is refreshed
+            // unconditionally below (line 410) regardless of this branch.  Auth freshness
+            // is updated here so confirmed-ready sees a fresh auth.checkedAt when it runs.
+            // readiness-state.json is intentionally NOT refreshed here — no browser run
+            // means no new sniper/modal data, so the readiness record should not be touched.
+            console.log(
+              `[auto-preflight] ${trigger.name} confirmed by HTTP ping ` +
+              `(booking access confirmed, cache fresh) — skipping browser. ` +
+              `confirmed-ready will refresh via ping.`
+            );
             updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
             appendLog({
               timestamp:   firedAt,
