@@ -120,6 +120,15 @@ function computeReadiness({ jobId, classTitle, source }) {
   try { canonicalAuth = getCanonicalAuthTruth(); } catch (e) {
     console.warn('[readiness-state] getCanonicalAuthTruth failed (partial result):', e.message);
   }
+  // Stage 8 (diagnostic visibility): log canonical auth inputs so every
+  // readiness computation cycle is observable in server output without
+  // needing to curl the API.  sessionValid/fwStatusCode are the two values
+  // that feed session: and schedule: respectively.
+  console.log(
+    `[readiness-state] canonical auth — sessionValid:${canonicalAuth?.sessionValid ?? 'null'}` +
+    ` fwStatusCode:${canonicalAuth?.fwStatusCode ?? 'null'}` +
+    ` (source:${source ?? 'unknown'})`
+  );
 
   const bundle = sniperState?.bundle ?? {};
 
@@ -183,6 +192,13 @@ function computeReadiness({ jobId, classTitle, source }) {
 function refreshReadiness({ jobId = null, classTitle = null, source = 'unknown' } = {}) {
   const record = computeReadiness({ jobId, classTitle, source });
   saveReadiness(record);
+  // Stage 8 (diagnostic visibility): emit computed output alongside the canonical
+  // auth input log so a single log scan shows the full pipeline per cycle.
+  console.log(
+    `[readiness-state] computed — session:${record.session} schedule:${record.schedule}` +
+    ` discovery:${record.discovery} modal:${record.modal} action:${record.action}` +
+    ` confidence:${record.confidenceScore} (${record.confidenceLabel})`
+  );
   return record;
 }
 
