@@ -35,7 +35,7 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 |------|---------|
 | `screens/NowScreen.tsx` | Main view (~3000 lines). Class card, readiness confidence, armed checklist, exec steps, trust line, classifier availability row. |
 | `screens/PlanScreen.tsx` | Job list with availability badges and sniper status. |
-| `screens/ToolsScreen.tsx` | Manual controls: run scheduler, preflight, session check. |
+| `screens/ToolsScreen.tsx` | Manual controls: run scheduler, preflight, session check. "Repair Tools" panel at bottom: Clear Transient, Resync PG, Reset Job State — each with inline confirmation. |
 | `screens/SettingsScreen.tsx` | App settings, auth management. |
 | `lib/classTruth.ts` | TypeScript types for `ClassTruthResult` including `freshness` (per-entry), `cacheFileFreshness` (file-level), and `source` fields. |
 | `lib/api.ts` | All API methods. Includes `getReadiness`, `getConfirmedReady`, `classifyJob`. `getReadiness` returns `classTruthFreshness` for trust-line display. |
@@ -89,6 +89,18 @@ Fixes the gap where `mergeAndSaveEntries` refreshed `savedAt` (file-level) while
 - **ToolsScreen** Confirmed Ready card shows a "Cache file" row only when `cacheFileFreshness` diverges from `freshness` — the exact case the pass is designed to surface.
 - **Gating invariant**: all four gating decisions (warmup suppression, `needs_attention` full/not-found, `confirmed_ready` gate) use `classTruth.freshness` (per-entry). `cacheFileFreshness` must never be used in a gate.
 - **Past-date eviction** (Stage 9): `_isPastDate(dateISO)` helper returns true for any `YYYY-MM-DD` string strictly before today UTC. Applied in two places: (1) `mergeAndSaveEntries` drops past-date entries from `kept` before writing, preventing indefinite accumulation; (2) `findEntry` skips past-date entries in the scoring map so a week-old "full" result can never be returned as the best match for an upcoming booking.
+
+## Repair / Recovery Routes
+
+Three POST endpoints under `/api/recovery/` — all require `{ confirm: true }` in the request body or they return HTTP 400.
+
+| Route | What it does | What it never touches |
+|-------|-------------|----------------------|
+| `POST /api/recovery/clear-transient` | Deletes files in `TRANSIENT_FILES` + `src/data/replays/`. App regenerates them on next cycle. | SQLite, PostgreSQL, seed-jobs.json, cookies, credentials, timing-learner.json, settings |
+| `POST /api/recovery/resync-pg` | Calls `syncJobsToPgAsync()` — copies current SQLite jobs to PostgreSQL. Does not modify job content. | Job data (read-only copy) |
+| `POST /api/recovery/reset-job-state` | Calls `clearLastRun(id)` — nulls `last_run_at`, `last_result`, `last_error_message`, `last_success_at` for one job, then syncs to PG. | All other jobs, credentials, settings |
+
+UI: **Repair Tools** section at the bottom of the Tools screen (`ToolsScreen.tsx` → `RecoveryPanel`). Each action has a two-click inline confirmation flow (Request → Confirm/Cancel), loading state, and ✓/✗ result feedback.
 
 ## Key Design Decisions
 

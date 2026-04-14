@@ -5,11 +5,7 @@
     "day_of_week": "Tuesday",
     "class_time": "4:20 PM",
     "target_date": "2026-04-21",
-    "is_active": 1,
-    "last_result": null,
-    "last_success_at": null,
-    "last_run_at": null,
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Gentle Yoga",
@@ -17,11 +13,7 @@
     "day_of_week": "Monday",
     "class_time": "4:15 PM",
     "target_date": "2026-04-20",
-    "is_active": 1,
-    "last_result": "waitlist",
-    "last_success_at": "2026-04-11T01:17:56.173Z",
-    "last_run_at": "2026-04-11T01:17:56.173Z",
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Gentle Yoga",
@@ -29,11 +21,7 @@
     "day_of_week": "Tuesday",
     "class_time": "10:45 AM",
     "target_date": "2026-04-21",
-    "is_active": 1,
-    "last_result": null,
-    "last_success_at": null,
-    "last_run_at": null,
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Core Pilates",
@@ -41,11 +29,7 @@
     "day_of_week": "Wednesday",
     "class_time": "7:45 AM",
     "target_date": "2026-04-15",
-    "is_active": 1,
-    "last_result": "waitlist",
-    "last_success_at": "2026-04-13T15:33:04.236Z",
-    "last_run_at": "2026-04-13T15:33:04.236Z",
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Core Pilates",
@@ -53,11 +37,7 @@
     "day_of_week": "Friday",
     "class_time": "7:30 AM",
     "target_date": "2026-04-21",
-    "is_active": 1,
-    "last_result": null,
-    "last_success_at": null,
-    "last_run_at": null,
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Core Pilates",
@@ -65,11 +45,7 @@
     "day_of_week": "Friday",
     "class_time": "12:00 PM",
     "target_date": "2026-04-17",
-    "is_active": 1,
-    "last_result": "success",
-    "last_success_at": "2026-04-08T06:57:08.657Z",
-    "last_run_at": "2026-04-08T06:57:08.657Z",
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Gentle Yoga",
@@ -77,11 +53,7 @@
     "day_of_week": "Wednesday",
     "class_time": "11:35 AM",
     "target_date": "2026-04-15",
-    "is_active": 1,
-    "last_result": "waitlist",
-    "last_success_at": "2026-04-13T17:38:41.749Z",
-    "last_run_at": "2026-04-13T17:38:41.749Z",
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Hatha Yoga",
@@ -89,11 +61,7 @@
     "day_of_week": "Sunday",
     "class_time": "9:00 AM",
     "target_date": "2026-04-19",
-    "is_active": 1,
-    "last_result": "success",
-    "last_success_at": "2026-04-10T04:21:28.417Z",
-    "last_run_at": "2026-04-10T04:21:28.417Z",
-    "last_error_message": null
+    "is_active": 1
   },
   {
     "class_title": "Core Pilates Level 2",
@@ -101,10 +69,6 @@
     "day_of_week": "Monday",
     "class_time": "7:45 AM",
     "target_date": "2026-04-20",
-    "is_active": 1,
-    "last_result": null,
-    "last_success_at": null,
-    "last_run_at": null,
-    "last_error_message": null
+    "is_active": 1
   }
 ]
