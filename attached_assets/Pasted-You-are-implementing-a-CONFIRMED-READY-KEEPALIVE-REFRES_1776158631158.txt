@@ -1,0 +1,355 @@
+You are implementing a CONFIRMED-READY KEEPALIVE REFRESH + AUTH TRUTH UNIFICATION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix two high-impact readiness/auth consistency issues without expanding scope:
+
+1. confirmed-ready-state.json silently ages when only keepalive / HTTP-ping validation is running
+2. auth truth is still split across multiple files/readers, so different parts of the app can disagree
+
+This pass is NOT a broad redesign.
+It is a focused reliability + consistency pass.
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole architecture
+- Do NOT add unrelated features
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / PROBLEMS TO FIX
+==================================================
+
+Known issues:
+
+A. confirmed-ready-state.json not refreshed by keepalive ping path
+- when auto-preflight succeeds through the HTTP ping / keepalive fast path
+- confirmed-ready-state.json may not be rewritten
+- the file silently ages even though useful truth was just validated
+
+B. Tripartite auth state
+- different parts of the app still read different auth truth files
+- readiness-state.js reads session-status.json directly for some auth/session fields
+- confirmed-ready.js reads auth-state.json
+- this can lead to disagreement between:
+  - Account / readiness
+  - confirmed-ready
+  - UI surfaces consuming both
+
+We want:
+- keepalive validation to refresh confirmed-ready truth appropriately
+- one canonical auth truth source for higher layers
+- less disagreement between readiness, confirmed-ready, and UI
+
+==================================================
+STAGE 1 — AUDIT ALL AUTH TRUTH READERS AND WRITERS
+==================================================
+
+Goal:
+Map exactly where auth/session truth is currently written and read.
+
+Tasks:
+
+1. Audit all places that write auth/session truth, including files like:
+   - auth-state.json
+   - session-status.json
+   - any related runtime auth/session files
+
+2. Audit all places that read auth/session truth, especially:
+   - confirmed-ready.js
+   - readiness-state.js
+   - Account/API endpoints
+   - Now / Plan / Tools data endpoints
+
+3. Produce a precise mapping of:
+   - file
+   - function
+   - what truth it reads/writes
+   - whether it is authoritative or derived
+
+4. Do not change behavior yet except where absolutely needed for safe instrumentation
+
+Success criteria:
+- exact auth truth map is known
+- the remaining split sources are clearly identified in code
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — REFRESH CONFIRMED-READY ON KEEPALIVE / PING FAST PATH
+==================================================
+
+Goal:
+Do not let confirmed-ready silently age when keepalive validation has just succeeded.
+
+Tasks:
+
+1. Find the keepalive / HTTP-ping fast path in auto-preflight or related validation flow
+2. When ping confirms useful truth successfully, ensure confirmed-ready-state.json is refreshed in that same cycle
+3. Keep this lightweight:
+   - do not require a full browser run
+   - do not overstate what was actually confirmed
+4. Preserve accurate timestamps and freshness
+
+Success criteria:
+- confirmed-ready is refreshed when keepalive/ping validation succeeds
+- file no longer silently ages during successful ping-only cycles
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — MAKE KEEPALIVE REFRESH HONEST ABOUT SOURCE + CONFIDENCE
+==================================================
+
+Goal:
+Avoid falsely inflating certainty just because keepalive refreshed confirmed-ready.
+
+Tasks:
+
+1. When confirmed-ready is refreshed from keepalive/ping path, preserve accurate metadata such as:
+   - source
+   - checkedAt
+   - what was actually re-validated
+2. Do NOT pretend that:
+   - modal truth
+   - browser truth
+   - booking-surface truth
+was freshly reconfirmed if only ping succeeded
+
+3. Keep the model honest so freshness improves without overstating certainty
+
+Success criteria:
+- keepalive refresh improves freshness correctly
+- confirmed-ready remains truthful about what source confirmed what
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — CHOOSE ONE CANONICAL AUTH TRUTH SOURCE FOR HIGHER LAYERS
+==================================================
+
+Goal:
+Stop higher-level logic from mixing multiple auth truth sources.
+
+Tasks:
+
+1. Decide which auth/session file or model is canonical for higher-level consumers
+   - likely auth-state.json or its equivalent normalized model
+2. Document that choice clearly in code/comments
+3. Ensure higher-level derived logic uses that canonical source rather than mixing direct reads from multiple files
+
+Important:
+- this stage is about selecting and standardizing the canonical source
+- not a full rewrite yet
+
+Success criteria:
+- one auth truth source is designated canonical
+- higher-level code has a clear target to read from
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — UPDATE CONFIRMED-READY TO READ ONLY CANONICAL AUTH TRUTH
+==================================================
+
+Goal:
+Make confirmed-ready depend on one auth truth path.
+
+Tasks:
+
+1. Refactor confirmed-ready.js so it reads auth/session truth only from the canonical auth source selected in Stage 4
+2. Remove any remaining mixed direct reads if they still exist there
+3. Keep output shape unchanged unless a small compatibility adjustment is necessary
+
+Success criteria:
+- confirmed-ready no longer blends multiple auth truth paths
+- its auth view is consistent and centralized
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — UPDATE READINESS-STATE TO STOP READING NON-CANONICAL AUTH TRUTH
+==================================================
+
+Goal:
+Make readiness-state stop disagreeing with confirmed-ready on basic auth/session truth.
+
+Tasks:
+
+1. Refactor readiness-state.js so auth/session fields come from the same canonical auth truth source
+2. Remove direct reads from old/non-canonical session files where that causes disagreement
+3. Preserve any readiness-specific derived logic, but make the auth inputs consistent
+
+Success criteria:
+- readiness and confirmed-ready now derive auth/session truth from the same source
+- fewer disagreements are possible
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — ALIGN API ENDPOINTS / UI FEEDS WITH THE SAME AUTH TRUTH
+==================================================
+
+Goal:
+Reduce UI disagreement caused by different backend endpoints exposing different auth assumptions.
+
+Tasks:
+
+1. Audit relevant API endpoints used by:
+   - Account
+   - Now
+   - Plan
+   - Tools
+2. Ensure these endpoints no longer mix incompatible auth/session truths
+3. Prefer exposing one normalized auth/session interpretation to the frontend
+4. Keep frontend contract changes minimal if possible
+
+Success criteria:
+- frontend-facing auth truth is more consistent across surfaces
+- fewer contradictory UI states can appear
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — ADD LIGHT DIAGNOSTIC VISIBILITY FOR AUTH SOURCE CONSISTENCY
+==================================================
+
+Goal:
+Make it possible to verify the new unified behavior.
+
+Tasks:
+
+1. In diagnostics / Tools / debug summaries, expose enough to inspect:
+   - current canonical auth truth source
+   - last checked time
+   - whether keepalive refreshed confirmed-ready
+   - whether readiness and confirmed-ready agree
+
+2. Keep this secondary and non-noisy
+3. Do not clutter Now or Plan
+
+Success criteria:
+- operators can verify auth truth consistency
+- debugging future mismatches becomes easier
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — QA THE KEY CONSISTENCY SCENARIOS
+==================================================
+
+Goal:
+Verify the two targeted issues are actually fixed.
+
+Test scenarios:
+
+1. Keepalive/ping-only successful cycle
+- confirmed-ready freshness should refresh
+
+2. Browser preflight cycle
+- confirmed-ready and readiness should agree on auth/session truth
+
+3. Auth invalid / needs attention
+- both readiness and confirmed-ready should report consistently
+
+4. Mixed older files still present on disk
+- canonical auth truth should win
+
+5. UI endpoints / Account / Now / Tools
+- should no longer disagree due to reading different auth files
+
+Success criteria:
+- keepalive refresh bug is fixed
+- auth truth disagreement is materially reduced or eliminated
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL CONSISTENCY + TRUST PASS
+==================================================
+
+Goal:
+Make auth/session truth feel more stable, invisible, and trustworthy.
+
+Tasks:
+
+1. Verify:
+   - confirmed-ready refreshes on keepalive success
+   - readiness and confirmed-ready use the same auth truth basis
+   - API endpoints are aligned
+   - UI has fewer contradictory auth signals
+2. Remove any leftover comments/code paths that still imply multiple competing auth truths if safe to do so
+3. Keep wording/logging calm and precise
+
+Success criteria:
+- auth/session truth is more unified
+- keepalive freshness is honest and current
+- user-facing trust improves because backend state is less contradictory
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- confirmed-ready-state.json refreshes on keepalive / ping success
+- keepalive refresh does not overstate what was actually confirmed
+- one canonical auth truth source is used by higher layers
+- confirmed-ready and readiness derive auth/session truth from the same source
+- frontend/API surfaces disagree less often
+- Tools/diagnostics can verify the new behavior
+
+The result should feel:
+- quieter
+- more consistent
+- more trustworthy
+- less fragile
+
+It should NOT feel like:
+- multiple auth truths competing
+- silently aging readiness despite recent validation
+- UI disagreement caused by different files being read
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
