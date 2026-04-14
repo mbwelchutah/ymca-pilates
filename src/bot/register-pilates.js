@@ -11,7 +11,8 @@ const { recordFailure }  = require('../db/failures');
 const {
   createRunState, advance, recordTiming, recordTimingMetrics, emitEvent, emitSuccess, saveState,
 } = require('./sniper-readiness');
-const { deriveTimingMetrics } = require('../scheduler/timing-metrics');
+const { deriveTimingMetrics, detectTimingDegradation } = require('../scheduler/timing-metrics');
+const { getLearnedRunSpeed } = require('../scheduler/timing-learner');
 const { saveStatus: saveSessionStatus } = require('./session-check');
 const { acquireLock, releaseLock, isLocked } = require('./auth-lock');
 const { updateAuthState } = require('./auth-state');
@@ -2609,6 +2610,31 @@ async function runBookingJob(job, opts = {}) {
       }
     } catch (metricsErr) {
       console.warn('[timing-metrics] derive failed:', metricsErr.message);
+    }
+    // Stage 7: Detect timing degradation vs the per-job learned baseline.
+    // Compares auth_phase_ms, run_start_to_page_ready, page_ready_to_class_found
+    // against the medians that timing-learner has accumulated over past runs.
+    // No-ops gracefully when < MIN_OBS (3) speed observations exist.
+    try {
+      if (_state.timingMetrics) {
+        const _jobNumId    = job.id || job.jobId || null;
+        const _learnedSpeed = _jobNumId != null ? getLearnedRunSpeed(_jobNumId) : null;
+        const _degradation  = detectTimingDegradation(_state.timingMetrics, _learnedSpeed);
+        if (_degradation) {
+          _state.timingMetrics.degradation = _degradation;
+          if (_degradation.detected) {
+            const _slowList = _degradation.slowPhases
+              .map(p =>
+                `${p.phase}=${Math.round(p.currentMs / 1000)}s ` +
+                `(median:${Math.round(p.medianMs / 1000)}s, ${p.ratioX}×)`
+              )
+              .join(', ');
+            console.warn(`[timing-degradation] Job #${_jobNumId} — SLOW: ${_slowList}`);
+          }
+        }
+      }
+    } catch (degErr) {
+      console.warn('[timing-degradation] detect failed:', degErr.message);
     }
     // ─────────────────────────────────────────────────────────────────────────
     saveState(_state);

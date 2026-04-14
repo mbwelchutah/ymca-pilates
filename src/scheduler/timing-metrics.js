@@ -168,6 +168,61 @@ function deriveTimingMetrics(t) {
   };
 }
 
+// ── Stage 7: Timing degradation detection ────────────────────────────────────
+//
+// Compares the three measurable phases (auth, page-load, class-discovery)
+// from the current run against the per-job learned medians from
+// timing-learner.js.  Returns a structured result — never throws.
+//
+// A phase is "slow" when:
+//   currentMs  >  medianMs × SLOW_THRESHOLD_X   (default: 1.5 — 50% above median)
+//
+// The return value is attached to _state.timingMetrics.degradation in
+// register-pilates.js so it flows into sniper-state.json and the API.
+//
+// Returns null when either argument is absent (gracefully no-ops before the
+// learner has enough data — getLearnedRunSpeed returns null < MIN_OBS runs).
+
+const SLOW_THRESHOLD_X = 1.5;  // flag when ≥50% above the learned median
+
+/**
+ * Detect whether any timed phase of this run is significantly slower than
+ * the per-job learned median.
+ *
+ * @param {object} metrics      Return value of deriveTimingMetrics()
+ * @param {object|null} learned Return value of getLearnedRunSpeed()
+ *   Expected shape: { medianAuthMs, medianPageLoadMs, medianDiscoveryMs }
+ * @returns {{
+ *   detected:   boolean,
+ *   slowPhases: Array<{ phase, currentMs, medianMs, ratioX }>,
+ *   thresholdX: number,
+ * } | null}
+ */
+function detectTimingDegradation(metrics, learned) {
+  if (!metrics || !learned) return null;
+
+  const checks = [
+    { phase: 'auth',      currentMs: metrics.auth_phase_ms,            medianMs: learned.medianAuthMs      },
+    { phase: 'page_load', currentMs: metrics.run_start_to_page_ready,  medianMs: learned.medianPageLoadMs  },
+    { phase: 'discovery', currentMs: metrics.page_ready_to_class_found, medianMs: learned.medianDiscoveryMs },
+  ];
+
+  const slowPhases = checks
+    .filter(c => c.currentMs != null && c.medianMs > 0 && c.currentMs > c.medianMs * SLOW_THRESHOLD_X)
+    .map(c => ({
+      phase:     c.phase,
+      currentMs: c.currentMs,
+      medianMs:  c.medianMs,
+      ratioX:    Math.round((c.currentMs / c.medianMs) * 100) / 100,
+    }));
+
+  return {
+    detected:   slowPhases.length > 0,
+    slowPhases,
+    thresholdX: SLOW_THRESHOLD_X,
+  };
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-module.exports = { deriveTimingMetrics };
+module.exports = { deriveTimingMetrics, detectTimingDegradation };
