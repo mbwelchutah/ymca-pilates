@@ -4,7 +4,7 @@
     "instructor": "Gretl",
     "day_of_week": "Tuesday",
     "class_time": "4:20 PM",
-    "target_date": null,
+    "target_date": "2026-04-14",
     "is_active": 1
   },
   {
@@ -12,7 +12,7 @@
     "instructor": "Cloud",
     "day_of_week": "Monday",
     "class_time": "4:15 PM",
-    "target_date": null,
+    "target_date": "2026-04-20",
     "is_active": 1
   },
   {
@@ -20,7 +20,7 @@
     "instructor": "Brynne",
     "day_of_week": "Tuesday",
     "class_time": "10:45 AM",
-    "target_date": null,
+    "target_date": "2026-04-14",
     "is_active": 1
   },
   {
@@ -28,7 +28,7 @@
     "instructor": "Stephanie",
     "day_of_week": "Wednesday",
     "class_time": "7:45 AM",
-    "target_date": null,
+    "target_date": "2026-04-15",
     "is_active": 1
   },
   {
@@ -36,7 +36,7 @@
     "instructor": "Stephanie",
     "day_of_week": "Friday",
     "class_time": "7:30 AM",
-    "target_date": null,
+    "target_date": "2026-04-17",
     "is_active": 1
   },
   {
@@ -44,15 +44,15 @@
     "instructor": "Stephanie",
     "day_of_week": "Friday",
     "class_time": "12:00 PM",
-    "target_date": null,
+    "target_date": "2026-04-17",
     "is_active": 1
   },
   {
     "class_title": "Gentle Yoga",
     "instructor": "Stephanie",
     "day_of_week": "Wednesday",
-    "class_time": "10:35 AM",
-    "target_date": null,
+    "class_time": "11:35 AM",
+    "target_date": "2026-04-15",
     "is_active": 1
   },
   {
@@ -60,7 +60,15 @@
     "instructor": "Anders",
     "day_of_week": "Sunday",
     "class_time": "9:00 AM",
-    "target_date": null,
+    "target_date": "2026-04-19",
+    "is_active": 1
+  },
+  {
+    "class_title": "Core Pilates Level 2",
+    "instructor": "Paige",
+    "day_of_week": "Monday",
+    "class_time": "7:45 AM",
+    "target_date": "2026-04-20",
     "is_active": 1
   }
 ]

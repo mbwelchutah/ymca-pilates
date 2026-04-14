@@ -131,11 +131,18 @@ export default function App() {
   }, [state.jobs, selectedJobId, tab])
 
   const handleSelectJob = (id: number) => {
-    stickySelectionRef.current = { id, until: Date.now() + 15_000 }
+    stickySelectionRef.current = { id, until: Date.now() + 300_000 }  // 5 min — covers run check duration
     setSelectedJobId(id)
     localStorage.setItem('selectedJobId', String(id))
     setTab('now')
     localStorage.setItem('mobileTab', 'now')
+  }
+
+  // Called by NowScreen when a user-initiated run check or booking starts.
+  // Extends the sticky window so the selected job stays pinned for the full
+  // duration of the operation instead of reverting mid-run.
+  const handlePinSelection = (id: number) => {
+    stickySelectionRef.current = { id, until: Date.now() + 300_000 }
   }
 
   const [scrolled, setScrolled] = useState(false)
@@ -189,6 +196,7 @@ export default function App() {
             tab={tab}
             onTabChange={handleTabChange}
             scrolled={scrolled}
+            onPinSelection={handlePinSelection}
           />
         </div>
         <div style={{ display: tab === 'plan' ? undefined : 'none' }}>

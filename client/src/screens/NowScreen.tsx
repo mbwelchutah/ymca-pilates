@@ -45,6 +45,7 @@ interface NowScreenProps {
   tab?: import('../components/nav/TabBar').Tab
   onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
   scrolled?: boolean
+  onPinSelection?: (id: number) => void
 }
 
 // ── Booking-window helpers (all browser local time, no server time) ────────────
@@ -978,7 +979,7 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal, tab = 'now', onTabChange = () => {}, scrolled = false }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal, tab = 'now', onTabChange = () => {}, scrolled = false, onPinSelection }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
@@ -1528,6 +1529,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const handleNowPreflight = async () => {
     if (!job || (execMode !== 'idle' && execMode !== 'done')) return
     haptic('medium')            // "Get Spot" tap — medium impact
+    // Pin this job for 5 min so a concurrent jobs-list refresh during the
+    // run check can't auto-switch to a different class mid-operation.
+    if (job.id != null) onPinSelection?.(job.id)
     // Cancel any pending auto-reset timer so it doesn't interrupt the retry run
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setLastFailedAction(null)   // clear stale failure before starting
@@ -1592,6 +1596,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Call this only after the guard has passed (or when guard is not needed).
   const performBooking = async () => {
     if (!job) return
+    if (job.id != null) onPinSelection?.(job.id)
     if (doneTimerRef.current) { clearTimeout(doneTimerRef.current); doneTimerRef.current = null }
     setGuardState(null)
     setGuardMessage(null)

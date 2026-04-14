@@ -1,6 +1,23 @@
 // Simple CRUD helpers for the jobs table.
 // All functions open their own connection — fine for this low-traffic app.
+const fs   = require('fs');
+const path = require('path');
 const { openDb } = require('./init');
+
+const SEED_PATH = path.join(__dirname, '../../data/seed-jobs.json');
+
+// Writes the current jobs table to seed-jobs.json so that the next fresh
+// deployment starts with the exact same job list (not an old snapshot).
+// Called after every write operation (create, delete, toggle, update).
+function syncSeed() {
+  try {
+    const db   = openDb();
+    const jobs = db.prepare('SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs').all();
+    fs.writeFileSync(SEED_PATH, JSON.stringify(jobs, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[db] syncSeed failed (non-fatal):', e.message);
+  }
+}
 
 function createJob(job) {
   const db = openDb();
@@ -17,6 +34,7 @@ function createJob(job) {
     job.isActive !== undefined ? (job.isActive ? 1 : 0) : 1,
     new Date().toISOString()
   );
+  syncSeed();
   return result.lastInsertRowid;
 }
 
@@ -71,16 +89,19 @@ function updateJob(id, fields) {
     fields.targetDate  || null,
     id
   );
+  syncSeed();
 }
 
 function deleteJob(id) {
   const db = openDb();
   db.prepare('DELETE FROM jobs WHERE id = ?').run(id);
+  syncSeed();
 }
 
 function setJobActive(id, isActive) {
   const db = openDb();
   db.prepare('UPDATE jobs SET is_active = ? WHERE id = ?').run(isActive ? 1 : 0, id);
+  syncSeed();
 }
 
 // Clears the booking run state so the scheduler will attempt to book again.
