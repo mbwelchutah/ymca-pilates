@@ -123,6 +123,26 @@ function computeEntryFreshness(entry) {
   return 'stale';
 }
 
+// ── Date helpers ──────────────────────────────────────────────────────────────
+
+// Stage 9 (past-date eviction): returns true when dateISO is a valid
+// YYYY-MM-DD string that falls strictly before today's UTC date.
+//
+// Entries without a parseable dateISO (null / empty / unexpected format) are
+// NOT considered past — we can't tell, so we keep them.
+//
+// UTC date is intentional: the YMCA is in Pacific time (UTC-7/8), so any class
+// slot from a date that is "yesterday" in UTC is definitely in the past
+// regardless of the viewer's local clock.  We never prune today's entries even
+// if the class time has already passed — that is conservative on purpose.
+function _isPastDate(dateISO) {
+  if (!dateISO || typeof dateISO !== 'string') return false;
+  // Reject anything that doesn't look like YYYY-MM-DD to avoid stray matches.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return false;
+  const todayUTC = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
+  return dateISO < todayUTC; // lexicographic comparison is correct for ISO dates
+}
+
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
 function saveEntries(entries) {
@@ -136,12 +156,15 @@ function saveEntries(entries) {
 }
 
 // Merge new entries with any existing ones (replace matching date+title pairs).
+// Stage 9: also evicts past-date entries from the kept set so the cache
+// does not accumulate indefinitely.  Entries in newEntries are written as-is
+// (the caller is responsible for their dateISO correctness).
 function mergeAndSaveEntries(newEntries) {
   if (!Array.isArray(newEntries) || newEntries.length === 0) return;
   const existing = loadAll()?.entries ?? [];
   const key = e => `${e.dateISO}|${(e.title || '').toLowerCase().trim()}`;
   const newKeys = new Set(newEntries.map(key));
-  const kept    = existing.filter(e => !newKeys.has(key(e)));
+  const kept    = existing.filter(e => !newKeys.has(key(e)) && !_isPastDate(e.dateISO));
   saveEntries([...kept, ...newEntries]);
 }
 
@@ -242,6 +265,12 @@ function findEntry(job) {
 
   const scored = raw.entries
     .map(entry => {
+      // Stage 9: skip entries for class dates that are strictly in the past.
+      // A past date can never be the target of an upcoming booking; keeping
+      // such entries in the scored set risks returning a stale result that
+      // misrepresents the current schedule (e.g. last week's "full" status).
+      if (_isPastDate(entry.dateISO)) return null;
+
       const ts = _titleScore(job.classTitle, entry.title);
       if (ts === 0) return null;  // Hard title mismatch — skip entirely
 

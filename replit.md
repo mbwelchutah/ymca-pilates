@@ -75,7 +75,7 @@ Ensures the UI always reflects whether cached data is trustworthy:
 - **`classTruthFreshness`** in `/api/readiness`: piggybacked onto readiness bundle so NowScreen can show stale warnings without a separate API call
 - **UI**: classifier row inline freshness note + trust line "checked N min ago" + stale-cache fallback warning when classifier has no match
 
-### Pass 2 — Per-Entry Schedule-Cache Freshness (Stages 1–8, fully complete)
+### Pass 2 — Per-Entry Schedule-Cache Freshness (Stages 1–9, fully complete)
 Fixes the gap where `mergeAndSaveEntries` refreshed `savedAt` (file-level) while keeping old entries, making aged entries appear fresh. Key decisions:
 
 - **Two independent freshness measures** — always present on every `ClassTruthResult`:
@@ -87,6 +87,7 @@ Fixes the gap where `mergeAndSaveEntries` refreshed `savedAt` (file-level) while
 - **`ConfirmedReadyState.classTruth`** in `api.ts` includes both `freshness` and `cacheFileFreshness`.
 - **ToolsScreen** Confirmed Ready card shows a "Cache file" row only when `cacheFileFreshness` diverges from `freshness` — the exact case the pass is designed to surface.
 - **Gating invariant**: all four gating decisions (warmup suppression, `needs_attention` full/not-found, `confirmed_ready` gate) use `classTruth.freshness` (per-entry). `cacheFileFreshness` must never be used in a gate.
+- **Past-date eviction** (Stage 9): `_isPastDate(dateISO)` helper returns true for any `YYYY-MM-DD` string strictly before today UTC. Applied in two places: (1) `mergeAndSaveEntries` drops past-date entries from `kept` before writing, preventing indefinite accumulation; (2) `findEntry` skips past-date entries in the scoring map so a week-old "full" result can never be returned as the best match for an upcoming booking.
 
 ## Key Design Decisions
 
