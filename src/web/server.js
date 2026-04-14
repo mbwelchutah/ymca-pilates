@@ -5342,6 +5342,99 @@ const server = http.createServer((req, res) => {
       serveStatic(res, DIST_INDEX);
     }
 
+  // ── Recovery: clear transient runtime/cache state ─────────────────────────
+  // Clears only files that the app rebuilds automatically on the next run.
+  // Never touches: SQLite jobs, PostgreSQL, seed-jobs.json, session cookies,
+  // auth credentials, timing-learner.json (valuable learned data), or user
+  // preference/settings files.
+  } else if (req.method === 'POST' && path === '/api/recovery/clear-transient') {
+    (() => {
+      const fsR  = require('fs');
+      const pathR = require('path');
+
+      // Files that are safe to delete — the app regenerates each one on its
+      // next cycle.  Missing files are silently skipped (already clean).
+      const TRANSIENT_FILES = [
+        'src/data/readiness-state.json',
+        'src/data/confirmed-ready-state.json',
+        'src/data/preflight-loop-state.json',
+        'src/data/sniper-state.json',
+        'src/data/session-status.json',
+        'src/data/auth-state.json',
+        'src/data/auto-preflight-log.json',
+        'src/data/session-keepalive-log.json',
+        'src/data/escalation.json',
+      ];
+
+      const cleared  = [];
+      const skipped  = [];
+      const errors   = [];
+
+      // Delete individual transient state files.
+      for (const rel of TRANSIENT_FILES) {
+        const abs = pathR.join(__dirname, '..', '..', rel);
+        try {
+          if (fsR.existsSync(abs)) {
+            fsR.unlinkSync(abs);
+            cleared.push(rel);
+          } else {
+            skipped.push(rel);
+          }
+        } catch (e) {
+          errors.push({ file: rel, error: e.message });
+          console.error('[recovery] Failed to delete', rel, '—', e.message);
+        }
+      }
+
+      // Delete all replay/schedule-cache files under src/data/replays/.
+      // These are Playwright snapshot files rebuilt on the next preflight.
+      const replaysDir = pathR.join(__dirname, '..', 'data', 'replays');
+      let replayCount = 0;
+      try {
+        if (fsR.existsSync(replaysDir)) {
+          const entries = fsR.readdirSync(replaysDir);
+          for (const entry of entries) {
+            const abs = pathR.join(replaysDir, entry);
+            try {
+              const stat = fsR.statSync(abs);
+              if (stat.isFile()) {
+                fsR.unlinkSync(abs);
+                replayCount++;
+              }
+            } catch (e) {
+              errors.push({ file: 'replays/' + entry, error: e.message });
+              console.error('[recovery] Failed to delete replay', entry, '—', e.message);
+            }
+          }
+          cleared.push(`src/data/replays/ (${replayCount} file${replayCount !== 1 ? 's' : ''})`);
+        } else {
+          skipped.push('src/data/replays/ (directory absent)');
+        }
+      } catch (e) {
+        errors.push({ file: 'src/data/replays/', error: e.message });
+        console.error('[recovery] Failed to read replays dir —', e.message);
+      }
+
+      const summary = [
+        `Cleared ${cleared.length} item(s)`,
+        errors.length ? `${errors.length} error(s)` : null,
+      ].filter(Boolean).join(', ');
+
+      console.log('[recovery] clear-transient:', summary);
+      if (cleared.length)  console.log('[recovery]   cleared:', cleared.join(', '));
+      if (skipped.length)  console.log('[recovery]   already absent:', skipped.join(', '));
+      if (errors.length)   console.log('[recovery]   errors:', JSON.stringify(errors));
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: errors.length === 0,
+        cleared,
+        skipped,
+        errors,
+        summary,
+      }));
+    })();
+
   } else {
     res.writeHead(404);
     res.end();
