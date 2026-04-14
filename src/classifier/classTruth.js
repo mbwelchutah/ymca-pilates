@@ -46,6 +46,8 @@ const CLASS_STATES = Object.freeze({
 // totalCapacity    {number|null}  — class capacity  (null = not provided by API)
 // reason           {string|null}  — human-readable explanation for the state
 // fetchedAt        {string|null}  — ISO timestamp when the API data was fetched
+// freshness        {string}       — 'fresh'|'aging'|'stale'|'unknown' (Stage 2)
+// source           {string}       — 'cache'|'playwright'|'live_api'|'unknown' (Stage 2)
 function makeResult(state, partial = {}) {
   return {
     state,
@@ -60,6 +62,8 @@ function makeResult(state, partial = {}) {
     totalCapacity:      partial.totalCapacity      ?? null,
     reason:             partial.reason             ?? null,
     fetchedAt:          partial.fetchedAt          ?? null,
+    freshness:          partial.freshness          ?? 'unknown',
+    source:             partial.source             ?? 'unknown',
   };
 }
 
@@ -79,14 +83,23 @@ function makeResult(state, partial = {}) {
 // response interception and maps entry booleans to normalized ClassStates.
 // Returns UNKNOWN when cache is missing/stale; NOT_FOUND when no entry matches.
 // Synchronous — all cache I/O uses fs.readFileSync.
+//
+// Stage 2: every returned result now includes `freshness` and `source`.
+//   freshness — 'fresh'|'aging'|'stale'|'unknown' derived from the cache age
+//   source    — 'cache' (all data today comes from Playwright-intercepted API
+//                responses stored in fw-schedule-cache.json)
 function classifyClass(job) {
-  const { findEntry, isCacheStale, loadAll } = require('./scheduleCache');
+  const { findEntry, isCacheStale, loadAll, computeCacheFreshness } = require('./scheduleCache');
 
-  const raw   = loadAll();
+  const raw      = loadAll();
+  const freshness = computeCacheFreshness(raw);  // always set — even when raw is null
+  const source    = raw ? 'cache' : 'unknown';
 
   if (!raw) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache does not exist — run a preflight to populate it',
+      freshness,
+      source,
     });
   }
 
@@ -94,6 +107,8 @@ function classifyClass(job) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache is stale — run a preflight to refresh',
       fetchedAt: raw.savedAt,
+      freshness,
+      source,
     });
   }
 
@@ -106,6 +121,8 @@ function classifyClass(job) {
       fetchedAt: raw.savedAt,
       matchType:  'none',
       confidence: 0,
+      freshness,
+      source,
     });
   }
 
@@ -114,6 +131,7 @@ function classifyClass(job) {
   // ── Stage 3+5: map entry booleans → normalized ClassState ─────────────────
   // Stage 5: `matchType`, `isFuzzyMatch`, `confidence` are now populated from
   // the scored fuzzy match so the UI can surface exact-vs-fuzzy distinction.
+  // Stage 2: `freshness` and `source` are now always populated.
 
   const shared = {
     matchedClassName: entry.title,
@@ -126,6 +144,8 @@ function classifyClass(job) {
     matchType,
     isFuzzyMatch:     matchType === 'fuzzy',
     confidence,
+    freshness,
+    source,
   };
 
   if (entry.isCancelled) {

@@ -180,23 +180,17 @@ function _buildClassTruth(job) {
     };
   }
 
-  // fetchedAt comes from the individual cache entry's capturedAt field.
-  // For the stale/unknown case the classifier still populates fetchedAt from
-  // raw.savedAt (the file-level timestamp).
+  // Stage 2: classifier now always provides `freshness` and `source` directly.
+  // fetchedAt is kept for the checkedAt epoch ms conversion.
   const fetchedAtMs = result.fetchedAt
     ? new Date(result.fetchedAt).getTime()
     : null;
 
-  // Source is always "cache" today — the cache is populated exclusively by
-  // Playwright API response interception.  "playwright" will be used in a
-  // future stage when the bot explicitly tags DOM-confirmed results.
-  const source = fetchedAtMs != null ? 'cache' : 'unknown';
-
   return {
     state:        result.state,
     checkedAt:    Number.isFinite(fetchedAtMs) ? fetchedAtMs : null,
-    freshness:    computeFreshness(Number.isFinite(fetchedAtMs) ? fetchedAtMs : null, 'classTruth'),
-    source,
+    freshness:    result.freshness ?? 'unknown',
+    source:       result.source    ?? 'unknown',
     isFuzzyMatch: result.isFuzzyMatch ?? false,
     confidence:   result.confidence   ?? 0,
   };

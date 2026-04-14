@@ -33,7 +33,29 @@ const fs   = require('fs');
 const path = require('path');
 
 const CACHE_FILE  = path.resolve(__dirname, '../data/fw-schedule-cache.json');
-const MAX_AGE_MS  = 4 * 60 * 60 * 1000;  // 4 hours — fresh enough for same-day use
+const MAX_AGE_MS  = 4 * 60 * 60 * 1000;  // 4 hours — stale threshold (unchanged)
+
+// ── Freshness buckets ─────────────────────────────────────────────────────────
+// Three-tier freshness model for class/API/cache truth.
+// Thresholds mirror FRESHNESS.classTruth in src/bot/confirmed-ready.js.
+// (Defined here independently to avoid a circular dependency.)
+const CACHE_FRESH_MS = 30 * 60 * 1000;          // < 30 min  → "fresh"
+const CACHE_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → "aging"  (= MAX_AGE_MS)
+// > 4 h → "stale"
+
+/**
+ * Return the freshness bucket of a raw cache object (or null).
+ *
+ * @param {object|null} raw  Return value of loadAll(), or null.
+ * @returns {'fresh'|'aging'|'stale'|'unknown'}
+ */
+function computeCacheFreshness(raw) {
+  if (!raw?.savedAt) return 'unknown';
+  const ageMs = Date.now() - new Date(raw.savedAt).getTime();
+  if (ageMs < CACHE_FRESH_MS) return 'fresh';
+  if (ageMs < CACHE_AGING_MS) return 'aging';
+  return 'stale';
+}
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
@@ -190,4 +212,4 @@ function findEntry(job) {
   return { entry: best.entry, matchType: best.matchType, confidence };
 }
 
-module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry };
+module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness };
