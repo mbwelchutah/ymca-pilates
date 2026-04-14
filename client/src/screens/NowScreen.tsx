@@ -2459,6 +2459,25 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                        a non-trivial result that hasn't already been surfaced by the
                        Playwright preflight (avoids duplicate messaging).
                        Only shown in idle mode so it doesn't clutter running states. */}
+                  {/* Stage 10 — stale-cache fallback row ────────────────────────────
+                       When the schedule cache is globally stale AND the classifier
+                       cannot match this job (state='unknown' / no result), Stage 6's
+                       per-result freshness note is never shown.  Surface an explicit
+                       prompt here so the user still knows to run a check. */}
+                  {execMode === 'idle' && isReadinessForSelectedJob &&
+                    bgReadiness?.classTruthFreshness === 'stale' &&
+                    (!classifierResult || classifierResult.state === 'unknown') && (
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-divider/20 animate-fade-in-up">
+                      <span className="text-[14px] w-4 text-center shrink-0 leading-none select-none text-accent-amber/80">!</span>
+                      <span className="text-[12px] text-accent-amber/80">Schedule data outdated — run a check to refresh</span>
+                    </div>
+                  )}
+
+                  {/* ── Classifier availability row ───────────────────────────────
+                       Shows schedule-API availability state when the classifier has
+                       a non-trivial result that hasn't already been surfaced by the
+                       Playwright preflight (avoids duplicate messaging).
+                       Only shown in idle mode so it doesn't clutter running states. */}
                   {execMode === 'idle' && classifierResult && classifierResult.state !== 'unknown' && (() => {
                     // Don't show when Playwright has already confirmed the same signal.
                     const st = classifierResult.state
