@@ -1154,6 +1154,19 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const isReadinessForSelectedJob =
     bgReadiness?.jobId == null || bgReadiness?.jobId === selectedJobId
 
+  // Stage 7 — canonical schedule-stale signal.
+  // Prefer classifierResult.freshness (computed live from cache at call time) over
+  // bgReadiness.classTruthFreshness (written to the readiness file on disk, which
+  // may lag behind the actual cache age between confirmed-ready write cycles).
+  // classifyJob always populates freshness even when state === 'unknown', so this
+  // source is reliable whenever a classify call has returned for the selected job.
+  // Fall back to bgReadiness.classTruthFreshness only when classifierResult is null
+  // (job not yet classified after selection, or classify call failed).
+  const isScheduleCacheStale =
+    classifierResult != null
+      ? classifierResult.freshness === 'stale'
+      : bgReadiness?.classTruthFreshness === 'stale'
+
   // ── Clear stale readiness data when the selected job changes OR is edited ─────
   // Sniper state is global (last-run-wins on the server).  Two triggers require
   // a wipe + fresh fetch:
@@ -2465,7 +2478,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                        per-result freshness note is never shown.  Surface an explicit
                        prompt here so the user still knows to run a check. */}
                   {execMode === 'idle' && isReadinessForSelectedJob &&
-                    bgReadiness?.classTruthFreshness === 'stale' &&
+                    isScheduleCacheStale &&
                     (!classifierResult || classifierResult.state === 'unknown') && (
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t border-divider/20 animate-fade-in-up">
                       <span className="text-[14px] w-4 text-center shrink-0 leading-none select-none text-accent-amber/80">!</span>
