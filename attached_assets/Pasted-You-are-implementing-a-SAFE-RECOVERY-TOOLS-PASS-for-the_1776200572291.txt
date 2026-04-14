@@ -1,0 +1,402 @@
+You are implementing a SAFE RECOVERY TOOLS PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Add a small, safe set of recovery tools that help repair stale or inconsistent state without introducing a dangerous “wipe everything” button.
+
+This pass should create targeted recovery actions for:
+
+1. clearing transient runtime/cache state
+2. forcing a durable SQLite → PostgreSQL resync
+3. resetting one job’s runtime booking state only
+
+This is NOT a factory reset feature.
+This is NOT a “clear all databases” feature.
+This is a carefully limited recovery/admin repair pass.
+
+IMPORTANT RULES
+
+- Do NOT add a one-click “wipe everything” action
+- Do NOT add any destructive global reset without confirmations and scope limits
+- Do NOT redesign persistence architecture
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / WHAT WE WANT
+==================================================
+
+The app has multiple layers of state:
+- SQLite (runtime source of truth)
+- PostgreSQL (restart durability / recovery copy)
+- seed-jobs.json (bootstrap bridge)
+- runtime JSON files (auth, readiness, confirmed-ready, schedule cache, sniper state, timing learner, etc.)
+- in-memory scheduler state
+
+Sometimes recovery actions are useful, but a broad “clear all data” button would be too risky.
+
+We want a safe repair surface that helps with:
+- stale runtime state
+- stale caches
+- stale auth/readiness/timing state
+- manual durability resync
+- resetting one class/job without wiping everything
+
+==================================================
+STAGE 1 — AUDIT RECOVERY TARGETS AND DEFINE SAFE SCOPE
+==================================================
+
+Goal:
+Define exactly what can be safely reset and what must never be wiped casually.
+
+Tasks:
+
+1. Inventory the main state categories:
+- persisted jobs (SQLite / PG)
+- runtime booking history fields
+- auth/session state files
+- readiness/confirmed-ready files
+- schedule cache
+- sniper/timing learner state
+- in-memory scheduler state
+
+2. Classify each as one of:
+- safe to clear
+- safe to resync
+- safe to reset per-job only
+- unsafe / should not be exposed as a casual tool
+
+3. Explicitly define the scope of the first recovery tools set
+
+Expected safe scope:
+- clear transient runtime/cache state
+- resync SQLite → PostgreSQL
+- reset one job’s runtime state
+
+Expected out of scope:
+- wipe all jobs
+- wipe PostgreSQL entirely
+- destructive full database reset
+
+Success criteria:
+- safe recovery scope is clearly defined
+- dangerous wipe actions are explicitly excluded
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — ADD “CLEAR TRANSIENT STATE” BACKEND ACTION
+==================================================
+
+Goal:
+Create one bounded action that clears only transient/runtime-derived state.
+
+Tasks:
+
+1. Implement a backend recovery action to clear transient state only, such as:
+- readiness-state.json
+- confirmed-ready-state.json
+- schedule cache
+- sniper-state.json
+- timing learner data
+- other clearly transient JSON state if appropriate
+
+2. Do NOT clear:
+- SQLite jobs
+- PostgreSQL jobs
+- seed-jobs.json jobs
+- durable configuration
+
+3. Ensure the action:
+- recreates missing files safely if needed on next run
+- does not leave the app in a broken state
+- can be run while the app is idle
+
+4. Add careful logging of what was cleared
+
+Success criteria:
+- transient state can be safely reset
+- jobs and durable config remain untouched
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — ADD “RESYNC JOBS TO POSTGRESQL” BACKEND ACTION
+==================================================
+
+Goal:
+Create a manual repair tool for persistence durability.
+
+Tasks:
+
+1. Add a backend action that forces:
+- SQLite → PostgreSQL full sync now
+
+2. Ensure this uses the safe serializer-backed awaitable sync path
+3. Do NOT add a reverse PG → SQLite action in this stage
+4. Return a clear success/failure result
+
+Use case:
+- user suspects PG is stale
+- wants to repair restart durability without making a dummy edit
+
+Success criteria:
+- operator can manually force durable PG sync safely
+- the action uses the canonical sync path
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — ADD “RESET THIS JOB’S RUNTIME STATE” BACKEND ACTION
+==================================================
+
+Goal:
+Allow targeted repair of one class/job without touching the whole system.
+
+Tasks:
+
+1. Add a bounded action for one specific job that resets runtime booking state only, such as:
+- last_run_at
+- last_result
+- last_success_at
+- last_error_message
+- any other clearly runtime/ephemeral job fields
+
+2. If your existing clearLastRun()/reset flow already does this safely, reuse it rather than inventing a new mechanism
+
+3. Ensure:
+- this is per-job only
+- it does not delete the job
+- it does not wipe all jobs
+- if target_date can be advanced in this path, persistence guarantees are preserved
+
+Success criteria:
+- one job can be repaired/reset safely
+- durable fields are preserved appropriately
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — ADD CONFIRMATION + SAFETY GUARDS
+==================================================
+
+Goal:
+Prevent accidental misuse.
+
+Tasks:
+
+1. Add explicit confirmation requirements for recovery actions, especially:
+- clear transient state
+- resync to PG
+- reset one job
+
+2. Make labels extremely clear:
+- “Clear transient state”
+- “Resync jobs to PostgreSQL”
+- “Reset this job’s runtime state”
+
+3. Avoid vague or scary wording like:
+- “Reset database”
+- “Wipe all data”
+- “Factory reset”
+
+4. Ensure dangerous actions cannot be triggered casually
+
+Success criteria:
+- recovery actions are understandable and hard to misuse
+- no ambiguous “clear everything” button exists
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — ADD TOOLS / ADMIN UI FOR RECOVERY ACTIONS
+==================================================
+
+Goal:
+Expose the recovery actions in a safe, clearly-labeled UI.
+
+Tasks:
+
+1. Add a Recovery / Repair section in Tools or the appropriate admin area
+2. Include only the safe tools from this pass:
+- Clear transient state
+- Resync jobs to PostgreSQL
+- Reset this job’s runtime state
+
+3. Keep the section visually secondary
+4. Make it clear these are repair tools, not normal daily actions
+
+Success criteria:
+- recovery tools are accessible when needed
+- UI does not feel destructive or cluttered
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — ADD RESULT / STATUS FEEDBACK
+==================================================
+
+Goal:
+Make recovery actions transparent and trustworthy.
+
+Tasks:
+
+1. After each recovery action, show clear feedback such as:
+- “Transient state cleared”
+- “Jobs resynced to PostgreSQL”
+- “Runtime state reset for Core Pilates”
+
+2. If a repair action fails, show a specific failure message
+3. Log enough detail for diagnostics, but keep UI feedback calm and human-readable
+
+Success criteria:
+- user knows exactly what happened
+- repair actions do not feel mysterious
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — VERIFY SAFETY BOUNDARIES
+==================================================
+
+Goal:
+Ensure the new tools do not cross their intended boundaries.
+
+Tasks:
+
+1. Verify:
+- clear transient state does not wipe jobs
+- resync to PG does not alter job content unexpectedly
+- reset-this-job does not affect other jobs
+- no action wipes PostgreSQL broadly
+- no action wipes SQLite broadly
+
+2. Confirm that all tools stay within the safe scope defined in Stage 1
+
+Success criteria:
+- recovery tools are bounded and safe
+- no accidental broad reset path exists
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — VERIFY REAL RECOVERY USE CASES
+==================================================
+
+Goal:
+Prove the tools help with realistic issues.
+
+Test examples:
+
+1. Stale readiness / schedule cache
+- run “Clear transient state”
+- verify app rebuilds runtime state cleanly
+
+2. Suspected PG drift
+- run “Resync jobs to PostgreSQL”
+- verify PG reflects SQLite truth
+
+3. One job stuck in bad runtime state
+- run “Reset this job’s runtime state”
+- verify only that job is cleared
+
+Success criteria:
+- each tool solves a real problem
+- no collateral damage occurs
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA + DOCUMENTATION PASS
+==================================================
+
+Goal:
+Make the recovery tools safe, understandable, and maintainable.
+
+Tasks:
+
+1. Verify:
+- tools are properly scoped
+- labels are clear
+- confirmations exist
+- results are visible
+- dangerous wipe-all behavior does not exist
+
+2. Add/update documentation comments so future developers understand:
+- why there is no “clear all databases” button
+- which recovery actions are safe
+- which state layers are intentionally excluded
+
+3. Summarize any remaining out-of-scope recovery ideas separately, without implementing them
+
+Success criteria:
+- recovery tools are safe and production-appropriate
+- future developers are less likely to add dangerous reset behavior casually
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- there is NO dangerous “clear all databases” button
+- transient runtime/cache state can be safely cleared
+- SQLite → PostgreSQL resync can be triggered manually
+- one job’s runtime state can be safely reset
+- recovery tools are clearly labeled and confirmed
+- repair actions are transparent and bounded
+- the system is easier to recover without risking data loss
+
+The result should feel:
+- safe
+- practical
+- repair-oriented
+- controlled
+
+It should NOT feel like:
+- a destructive admin panel
+- a hidden wipe-all trap
+- a risky factory-reset feature
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
