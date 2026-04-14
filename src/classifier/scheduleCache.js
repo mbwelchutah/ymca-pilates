@@ -36,17 +36,58 @@ const CACHE_FILE  = path.resolve(__dirname, '../data/fw-schedule-cache.json');
 const MAX_AGE_MS  = 4 * 60 * 60 * 1000;  // 4 hours — stale threshold (unchanged)
 
 // ── Freshness buckets ─────────────────────────────────────────────────────────
-// Three-tier freshness model for class/API/cache truth.
+//
+// Two independent sets of thresholds:
+//   FILE-LEVEL  — measures how recently the cache file was written (savedAt).
+//                 Used for whole-file bail-out checks (is the file too old to
+//                 search at all?) and as a fallback when no entry was matched.
+//   ENTRY-LEVEL — measures how recently a specific class entry was observed
+//                 from the API (capturedAt).  Used for classifier freshness
+//                 so a merge that refreshes savedAt does not make old entries
+//                 appear fresh.
+//
+// Bucket semantics for booking decisions:
+//   'fresh'   (< 30 min)  — observed very recently; strong evidence; can act
+//                           authoritatively on the result (e.g. suppress warmup
+//                           when class is confirmed full).
+//   'aging'   (30 min–4 h)— observed a few hours ago; moderate evidence; enough
+//                           to inform predictions but should not block execution
+//                           or state strong certainty.
+//   'stale'   (> 4 h)     — observed long ago; low evidence; must not be used
+//                           as a strong blocker or authoritative claim; treat
+//                           as a weak hint only.
+//   'unknown' (no timestamp) — no observation time available; treat
+//                           conservatively as if stale.
+//
 // Thresholds mirror FRESHNESS.classTruth in src/bot/confirmed-ready.js.
-// (Defined here independently to avoid a circular dependency.)
-const CACHE_FRESH_MS = 30 * 60 * 1000;          // < 30 min  → "fresh"
-const CACHE_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → "aging"  (= MAX_AGE_MS)
-// > 4 h → "stale"
+// Defined here independently to avoid a circular dependency.
+// If the booking window semantics require different per-entry sensitivity,
+// ENTRY_FRESH_MS / ENTRY_AGING_MS can be adjusted independently of the
+// file-level constants without touching confirmed-ready.js.
+
+// File-level thresholds (whole cache file)
+const CACHE_FRESH_MS = 30 * 60 * 1000;          // < 30 min  → 'fresh'
+const CACHE_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → 'aging'  (= MAX_AGE_MS)
+// > 4 h → 'stale'
+
+// Entry-level thresholds (individual class entry, based on capturedAt)
+const ENTRY_FRESH_MS = 30 * 60 * 1000;          // < 30 min  → 'fresh'
+const ENTRY_AGING_MS = 4  * 60 * 60 * 1000;     // 30 min–4 h → 'aging'
+// > 4 h → 'stale'
+
+/**
+ * Bucket definitions exported for diagnostic consumers.
+ * Exposes both file-level and entry-level thresholds.
+ */
+const FRESHNESS_THRESHOLDS = Object.freeze({
+  file:  { freshMs: CACHE_FRESH_MS, agingMs: CACHE_AGING_MS },
+  entry: { freshMs: ENTRY_FRESH_MS, agingMs: ENTRY_AGING_MS },
+});
 
 /**
  * Return the freshness bucket of a raw cache object (or null).
- * Based on file-level savedAt — used for early bail-out checks (no cache, whole
- * file stale) and as a fallback when no specific entry is matched.
+ * Based on file-level savedAt — used for whole-file bail-out checks and as
+ * a fallback when no specific entry is matched.
  *
  * @param {object|null} raw  Return value of loadAll(), or null.
  * @returns {'fresh'|'aging'|'stale'|'unknown'}
@@ -63,10 +104,12 @@ function computeCacheFreshness(raw) {
  * Return the freshness bucket of a single cache entry based on its own
  * capturedAt timestamp — NOT the file-level savedAt.
  *
- * Stage 2 (per-entry freshness): a merge that updates savedAt does not make
+ * Stage 2 (per-entry freshness): a merge that refreshes savedAt does not make
  * older kept entries look fresh.  Each entry's capturedAt reflects when that
  * specific class row was actually observed from the API.
  *
+ * Stage 3 (formalized buckets): uses ENTRY_FRESH_MS / ENTRY_AGING_MS, which
+ * are independent of the file-level constants and can be tuned separately.
  * Backward-compatible: entries without capturedAt return 'unknown'.
  *
  * @param {object|null} entry  A single schedule-cache entry.
@@ -75,8 +118,8 @@ function computeCacheFreshness(raw) {
 function computeEntryFreshness(entry) {
   if (!entry?.capturedAt) return 'unknown';
   const ageMs = Date.now() - new Date(entry.capturedAt).getTime();
-  if (ageMs < CACHE_FRESH_MS) return 'fresh';
-  if (ageMs < CACHE_AGING_MS) return 'aging';
+  if (ageMs < ENTRY_FRESH_MS) return 'fresh';
+  if (ageMs < ENTRY_AGING_MS) return 'aging';
   return 'stale';
 }
 
@@ -251,4 +294,4 @@ function isCacheAdequate() {
   return f === 'fresh' || f === 'aging';
 }
 
-module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness, computeEntryFreshness, isCacheAdequate };
+module.exports = { saveEntries, mergeAndSaveEntries, loadAll, isCacheStale, findEntry, computeCacheFreshness, computeEntryFreshness, isCacheAdequate, FRESHNESS_THRESHOLDS };
