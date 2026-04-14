@@ -129,7 +129,13 @@ function computeReadiness({ jobId, classTitle, source }) {
   const fwStatus = readFwStatus();
 
   const record = {
-    lastCheckedAt: new Date().toISOString(),
+    lastCheckedAt:  new Date().toISOString(),
+    // sniperUpdatedAt: when the underlying Playwright browser run last wrote
+    // sniper-state.json.  This is distinct from lastCheckedAt (which is the
+    // record-computation time, freshened on every keepalive/tick).
+    // _buildPreflight() in confirmed-ready.js uses this for preflight.freshness
+    // so modal truth age is honest rather than inflated by non-browser refreshes.
+    sniperUpdatedAt: sniperState?.updatedAt ?? null,
     jobId:         jobId  ?? sniperState?.jobId  ?? null,
     classTitle:    classTitle ?? sniperState?.classTitle ?? null,
     session:       normalizeSession(bundle.session,   sessionStatus?.valid ?? null),

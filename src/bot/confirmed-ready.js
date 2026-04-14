@@ -226,16 +226,24 @@ function _buildPreflight() {
     return { modalConfirmed: false, checkedAt: null, freshness: 'unknown' };
   }
 
-  const checkedAtMs = r.lastCheckedAt
-    ? new Date(r.lastCheckedAt).getTime()
+  // Stage 3 (keepalive-refresh honesty): use sniperUpdatedAt — the timestamp
+  // of when Playwright last wrote sniper-state.json — for preflight freshness.
+  // r.lastCheckedAt is the readiness-record computation time, which is bumped
+  // by every keepalive/tick refresh even when no browser ran.  Using it would
+  // falsely show modal truth as 'fresh' after a ping-only keepalive.
+  // sniperUpdatedAt is absent on records written before this stage; fall back
+  // to null (freshness: 'unknown') so old records degrade safely.
+  const sniperUpdatedAtMs = r.sniperUpdatedAt
+    ? new Date(r.sniperUpdatedAt).getTime()
     : null;
+  const checkedAtMs = Number.isFinite(sniperUpdatedAtMs) ? sniperUpdatedAtMs : null;
 
   const modalConfirmed = r.modal === 'reachable';
 
   return {
     modalConfirmed,
-    checkedAt: Number.isFinite(checkedAtMs) ? checkedAtMs : null,
-    freshness: computeFreshness(Number.isFinite(checkedAtMs) ? checkedAtMs : null, 'preflight'),
+    checkedAt: checkedAtMs,
+    freshness: computeFreshness(checkedAtMs, 'preflight'),
   };
 }
 
