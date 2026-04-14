@@ -4778,7 +4778,7 @@ const server = http.createServer((req, res) => {
   } else if (req.method === 'POST' && path === '/reset-booking') {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let id;
       try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
       if (!id) {
@@ -4788,6 +4788,7 @@ const server = http.createServer((req, res) => {
       }
       clearLastRun(id);
       console.log(`Reset booking state for job #${id}`);
+      await syncJobsToPgAsync().catch(e => console.error('[pg-sync] reset-booking await failed:', e.message));
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     });

@@ -106,6 +106,9 @@ function setJobActive(id, isActive) {
 // Clears the booking run state so the scheduler will attempt to book again.
 // If target_date is set and is already in the past, advances it by exactly
 // 7 days so the bot targets the next upcoming class occurrence.
+// syncSeed() is called so seed-jobs.json reflects the potentially-advanced
+// target_date; the caller (server.js /reset-booking) awaits syncJobsToPgAsync
+// so PG is also durable before the response is sent.
 function clearLastRun(id) {
   const db  = openDb();
   const job = db.prepare('SELECT target_date FROM jobs WHERE id = ?').get(id);
@@ -128,6 +131,7 @@ function clearLastRun(id) {
         last_error_message = NULL, last_success_at = NULL
     WHERE id = ?
   `).run(id);
+  syncSeed();
 }
 
 module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun };
