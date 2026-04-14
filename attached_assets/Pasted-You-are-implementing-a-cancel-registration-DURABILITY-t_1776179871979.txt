@@ -1,0 +1,298 @@
+You are implementing a /cancel-registration DURABILITY + target_date PERSISTENCE PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the remaining high-priority persistence bug identified in the database mutation + persistence audit:
+
+POST /cancel-registration can call clearLastRun(), which may advance target_date by 7 days, but the handler does NOT currently sync that mutation to PostgreSQL.
+
+This means:
+- SQLite is correct
+- seed-jobs.json is correct
+- PostgreSQL stays stale
+- a fresh container restart can restore the old target_date from PG
+- scheduler can target the wrong week
+
+This pass should make /cancel-registration as durable as /reset-booking.
+
+IMPORTANT RULES
+
+- Do NOT redesign the mutation architecture
+- Do NOT change unrelated handlers
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / BUG TO FIX
+==================================================
+
+Current known problem:
+
+- clearLastRun() now correctly updates SQLite and seed-jobs.json
+- /reset-booking was already fixed to await syncJobsToPgAsync()
+- /cancel-registration was NOT given the same durability treatment
+- so target_date advances triggered by cancel-registration can be lost on fresh container restart
+
+We want /cancel-registration to match the durability guarantees of:
+- /reset-booking
+- /add-job
+- /update-job
+- /toggle-active
+- /delete-job
+
+==================================================
+STAGE 1 — TRACE THE cancel-registration MUTATION PATH
+==================================================
+
+Goal:
+Confirm exactly where the current durability gap exists.
+
+Tasks:
+
+1. Trace POST /cancel-registration end to end
+2. Confirm:
+- where clearLastRun() is called
+- whether target_date can be advanced there
+- whether syncSeed() is already happening via clearLastRun()
+- whether syncJobsToPgAsync() is currently missing
+- whether the handler is currently synchronous or async
+
+3. Do NOT change behavior yet unless needed for safe instrumentation
+
+Success criteria:
+- exact durability gap is confirmed in code
+- the handler’s current mutation sequence is documented
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — MAKE /cancel-registration HANDLER ASYNC
+==================================================
+
+Goal:
+Allow the handler to await PG durability before responding.
+
+Tasks:
+
+1. Convert the POST /cancel-registration req.on('end', ...) callback to async if it is not already
+2. Preserve all existing control flow and result handling
+3. Do not change user-facing behavior yet except enabling awaited PG sync
+
+Success criteria:
+- /cancel-registration handler can now await syncJobsToPgAsync()
+- no unrelated behavior changes introduced
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — AWAIT syncJobsToPgAsync() AFTER clearLastRun() IN /cancel-registration
+==================================================
+
+Goal:
+Ensure target_date advances caused by cancel-registration are durably persisted to PG before success is returned.
+
+Tasks:
+
+1. After the code path where clearLastRun() is invoked in /cancel-registration, add:
+   - await syncJobsToPgAsync()
+   - with the same logging/catch pattern already used in the other mutation handlers if that is the established pattern
+
+2. Ensure:
+- SQLite mutation happens first
+- seed-jobs.json has already been updated by clearLastRun()
+- PG sync is attempted before res.end()
+
+3. Keep the handler consistent with /reset-booking durability behavior
+
+Success criteria:
+- /cancel-registration now durably syncs to PG
+- success response is not sent until the awaited sync path resolves
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — VERIFY call-order MATCHES OTHER DURABLE MUTATION HANDLERS
+==================================================
+
+Goal:
+Ensure /cancel-registration now follows the same mutation ordering pattern as the other durable handlers.
+
+Tasks:
+
+1. Verify the exact order is now:
+- SQLite mutation
+- syncSeed() (inside clearLastRun())
+- await syncJobsToPgAsync()
+- success response
+
+2. Compare structurally to:
+- /reset-booking
+- /add-job
+- /update-job
+- /toggle-active
+- /delete-job
+
+3. Confirm there is no remaining early success response path after clearLastRun() but before PG sync
+
+Success criteria:
+- /cancel-registration now matches the durability pattern of the other handlers
+- no alternate non-durable success path remains
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — VERIFY target_date ADVANCE PERSISTS TO SQLITE, SEED, AND PG
+==================================================
+
+Goal:
+Prove the fix works across all persistence layers.
+
+Tasks:
+
+1. Use a test case where cancel-registration triggers clearLastRun() and advances target_date by 7 days
+2. Verify after the request:
+- SQLite target_date is advanced
+- seed-jobs.json target_date is advanced
+- PG target_date is advanced
+
+3. Confirm all three layers agree
+
+Success criteria:
+- target_date advance is now durable across all stores
+- no layer remains stale after cancel-registration
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — VERIFY RESTART PERSISTENCE
+==================================================
+
+Goal:
+Ensure the advanced target_date survives a fresh restart.
+
+Tasks:
+
+1. After the cancel-registration durability test above, restart appropriately
+2. Verify after restart:
+- SQLite still shows the advanced target_date
+- PG still shows the advanced target_date
+- scheduler targets the correct future week, not the old one
+
+3. Confirm the old stale-target restore behavior is gone
+
+Success criteria:
+- cancel-registration target_date advance survives restart
+- scheduler no longer reverts to the wrong week after restart
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — CHECK FOR ANY OTHER clearLastRun() CALLERS
+==================================================
+
+Goal:
+Ensure there are no remaining durability gaps from the same helper.
+
+Tasks:
+
+1. Find every callsite of clearLastRun()
+2. For each callsite, verify:
+- whether it can advance target_date
+- whether it updates SQLite
+- whether it triggers PG sync
+- whether restart durability is guaranteed
+
+3. Identify whether any additional callsite has the same class of bug
+
+Do not fix additional callsites in this stage unless they are trivial and directly analogous; otherwise report them clearly.
+
+Success criteria:
+- all clearLastRun() callers are accounted for
+- no hidden duplicate durability gap remains unnoticed
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — FINAL QA + REGRESSION PASS
+==================================================
+
+Goal:
+Confirm the cancel-registration durability bug is fixed and no regression was introduced.
+
+Tasks:
+
+1. Verify:
+- /cancel-registration now persists target_date to PG
+- restart preserves the updated target_date
+- scheduler targets the correct week
+- other handlers still behave unchanged
+- no new race or ordering issue was introduced
+
+2. Produce a short final verdict:
+- bug fixed?
+- durability now equivalent to /reset-booking?
+- any remaining related risks?
+
+Success criteria:
+- the persistence bug is closed
+- /cancel-registration now has the same durability guarantees as the other durable mutation handlers
+
+After Stage 8:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- /cancel-registration is async and durable
+- clearLastRun()-driven target_date advances are persisted to PostgreSQL
+- a fresh container restart no longer restores the old target_date after cancel-registration
+- scheduler targets the correct future week
+- /cancel-registration matches the durability guarantees of /reset-booking and the other durable mutation handlers
+
+The result should feel:
+- correct
+- durable
+- restart-safe
+- architecturally consistent
+
+It should NOT remain possible that:
+- cancel-registration advances target_date locally
+- PG stays stale
+- restart silently reverts the week
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
