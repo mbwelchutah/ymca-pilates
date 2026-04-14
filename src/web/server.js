@@ -5342,6 +5342,50 @@ const server = http.createServer((req, res) => {
       serveStatic(res, DIST_INDEX);
     }
 
+  // ── Recovery: reset one job's runtime booking state ──────────────────────
+  // Reuses the existing clearLastRun(id) mechanism — the same function called
+  // by /reset-booking.  Nulls out last_run_at, last_result, last_error_message,
+  // last_success_at for that job only, advances a stale target_date by 1 week
+  // if needed (so the card doesn't stay stuck on "Window Closed"), then syncs
+  // to PG for durability.  Does NOT delete the job, does NOT touch other jobs.
+  } else if (req.method === 'POST' && path === '/api/recovery/reset-job-state') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      let id;
+      try { id = parseInt(JSON.parse(body).id, 10); } catch { id = NaN; }
+      if (!id || isNaN(id)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Invalid or missing job ID' }));
+        return;
+      }
+      const job = getJobById(id);
+      if (!job) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: `No job found with id ${id}` }));
+        return;
+      }
+      try {
+        clearLastRun(id);
+        await syncJobsToPgAsync().catch(e =>
+          console.error('[recovery] reset-job-state PG sync failed (non-fatal):', e.message)
+        );
+        const msg = `Runtime state reset for job #${id} (${job.class_title})`;
+        console.log('[recovery] reset-job-state:', msg);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          job:     { id, classTitle: job.class_title },
+          clearedFields: ['last_run_at', 'last_result', 'last_error_message', 'last_success_at'],
+          message: msg,
+        }));
+      } catch (err) {
+        console.error('[recovery] reset-job-state failed:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: err.message }));
+      }
+    });
+
   // ── Recovery: force SQLite → PostgreSQL resync ────────────────────────────
   // Manually triggers a full durable sync of the current SQLite jobs to PG.
   // Uses the canonical serialiser-backed syncJobsToPgAsync() path — the same
