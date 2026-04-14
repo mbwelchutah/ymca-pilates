@@ -79,6 +79,23 @@ const fs   = require('fs');
 const path = require('path');
 
 // ── Dependencies (loaded lazily where circular-risk exists) ───────────────────
+//
+// Stage 5 (auth-truth-unification) — canonical compliance confirmed:
+//
+//   _buildAuth()        reads auth-state.json ONLY via getAuthState()
+//                       → canonical ✅  (no session-status.json or fw-session reads)
+//
+//   _buildPreflight()   reads readiness-state.json via loadReadiness()
+//                       → correct — readiness-state is the normalized sniper model,
+//                         NOT a legacy auth file.  Auth freshness for the preflight
+//                         component comes from readiness.sniperUpdatedAt (Stage 3),
+//                         which tracks when Playwright last ran, not record-write time.
+//
+//   _buildClassTruth()  reads fw-schedule-cache via classifyClass()
+//                       → correct — schedule cache is class truth, not auth truth
+//
+//   fs calls            only on confirmed-ready-state.json (own state file)
+//                       → no reads of session-status.json or familyworks-session.json
 
 const { getAuthState }    = require('./auth-state');
 const { loadReadiness }   = require('./readiness-state');
