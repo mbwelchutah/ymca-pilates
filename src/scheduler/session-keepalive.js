@@ -16,6 +16,7 @@ const { runSessionCheck, loadStatus } = require('../bot/session-check');
 const { recordFailure }               = require('../db/failures');
 const { getAllJobs }                   = require('../db/jobs');
 const { refreshReadiness }            = require('../bot/readiness-state');
+const { refreshConfirmedReadyState }  = require('../bot/confirmed-ready');
 const { pingSessionHttp }             = require('../bot/session-ping');
 const { isLocked }                    = require('../bot/auth-lock');
 const { updateAuthState }             = require('../bot/auth-state');
@@ -209,6 +210,14 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
     try {
       const jobs   = getAllJobs().filter(j => j.is_active === 1);
       const topJob = jobs[0] ?? null;
+      // Refresh confirmed-ready before readiness (write-order invariant).
+      // source:'ping' is honest — only file freshness was checked, no network request made.
+      refreshConfirmedReadyState(
+        topJob ? { classTitle: topJob.class_title, dayOfWeek: topJob.day_of_week ?? null,
+                   classTime: topJob.class_time ?? null, instructor: topJob.instructor ?? null,
+                   targetDate: topJob.target_date ?? null } : null,
+        { source: 'ping' }
+      );
       refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
     } catch (_) { /* non-fatal */ }
     running = false;
@@ -251,6 +260,14 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
     try {
       const jobs   = getAllJobs().filter(j => j.is_active === 1);
       const topJob = jobs[0] ?? null;
+      // Refresh confirmed-ready before readiness (write-order invariant).
+      // source:'ping' — an actual HTTP ping to Daxko + FamilyWorks succeeded.
+      refreshConfirmedReadyState(
+        topJob ? { classTitle: topJob.class_title, dayOfWeek: topJob.day_of_week ?? null,
+                   classTime: topJob.class_time ?? null, instructor: topJob.instructor ?? null,
+                   targetDate: topJob.target_date ?? null } : null,
+        { source: 'ping' }
+      );
       refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
     } catch (_) { /* non-fatal */ }
     running = false;
@@ -273,9 +290,17 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
     appendLog(entry);
 
     // Stage 9B — refresh normalized readiness after every keepalive check.
+    // Also refresh confirmed-ready (write-order invariant: confirmed-ready first).
+    // source:'browser' — Playwright ran and session-check result is now on disk.
     try {
       const jobs    = getAllJobs().filter(j => j.is_active === 1);
       const topJob  = jobs[0] ?? null;
+      refreshConfirmedReadyState(
+        topJob ? { classTitle: topJob.class_title, dayOfWeek: topJob.day_of_week ?? null,
+                   classTime: topJob.class_time ?? null, instructor: topJob.instructor ?? null,
+                   targetDate: topJob.target_date ?? null } : null,
+        { source: 'browser' }
+      );
       refreshReadiness({ jobId: topJob?.id ?? null, classTitle: topJob?.class_title ?? null, source: 'keepalive' });
     } catch (_) { /* non-fatal */ }
 
