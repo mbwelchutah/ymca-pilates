@@ -34,20 +34,26 @@ const CLASS_STATES = Object.freeze({
 // All fields are always present so consumers never need null-guard optional
 // chaining on the result shape.
 //
-// state            {string}       — one of CLASS_STATES
-// matchedClassName {string|null}  — class title from the schedule as matched
-// matchedInstructor{string|null}  — instructor name from the schedule
-// matchedTime      {string|null}  — time string from the schedule (e.g. "7:30 AM")
-// matchedDate      {string|null}  — ISO date string of the matched occurrence
-// confidence       {number}       — 0–100 match confidence score
-// isFuzzyMatch     {boolean}      — true if match required fuzzy tolerance
-// matchType        {string}       — 'exact' | 'fuzzy' | 'none'
-// openSpots        {number|null}  — available spots (null = not provided by API)
-// totalCapacity    {number|null}  — class capacity  (null = not provided by API)
-// reason           {string|null}  — human-readable explanation for the state
-// fetchedAt        {string|null}  — ISO timestamp when the API data was fetched
-// freshness        {string}       — 'fresh'|'aging'|'stale'|'unknown' (Stage 2)
-// source           {string}       — 'cache'|'playwright'|'live_api'|'unknown' (Stage 2)
+// state              {string}       — one of CLASS_STATES
+// matchedClassName   {string|null}  — class title from the schedule as matched
+// matchedInstructor  {string|null}  — instructor name from the schedule
+// matchedTime        {string|null}  — time string from the schedule (e.g. "7:30 AM")
+// matchedDate        {string|null}  — ISO date string of the matched occurrence
+// confidence         {number}       — 0–100 match confidence score
+// isFuzzyMatch       {boolean}      — true if match required fuzzy tolerance
+// matchType          {string}       — 'exact' | 'fuzzy' | 'none'
+// openSpots          {number|null}  — available spots (null = not provided by API)
+// totalCapacity      {number|null}  — class capacity  (null = not provided by API)
+// reason             {string|null}  — human-readable explanation for the state
+// fetchedAt          {string|null}  — ISO timestamp when the API data was fetched
+// freshness          {string}       — 'fresh'|'aging'|'stale'|'unknown'
+//                                    Per-entry (capturedAt) when an entry is matched;
+//                                    file-level (savedAt) otherwise. (Stage 2)
+// cacheFileFreshness {string}       — 'fresh'|'aging'|'stale'|'unknown'
+//                                    Always file-level (savedAt). Lets consumers
+//                                    distinguish "this specific entry is fresh" from
+//                                    "the whole cache file is fresh". (Stage 4)
+// source             {string}       — 'cache'|'playwright'|'live_api'|'unknown' (Stage 2)
 function makeResult(state, partial = {}) {
   return {
     state,
@@ -63,6 +69,7 @@ function makeResult(state, partial = {}) {
     reason:             partial.reason             ?? null,
     fetchedAt:          partial.fetchedAt          ?? null,
     freshness:          partial.freshness          ?? 'unknown',
+    cacheFileFreshness: partial.cacheFileFreshness ?? 'unknown',
     source:             partial.source             ?? 'unknown',
   };
 }
@@ -98,7 +105,8 @@ function classifyClass(job) {
   if (!raw) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache does not exist — run a preflight to populate it',
-      freshness: fileFreshness,
+      freshness:          fileFreshness,   // file-level (only measure available)
+      cacheFileFreshness: fileFreshness,
       source,
     });
   }
@@ -106,23 +114,25 @@ function classifyClass(job) {
   if (isCacheStale(raw)) {
     return makeResult(CLASS_STATES.UNKNOWN, {
       reason: 'Schedule cache is stale — run a preflight to refresh',
-      fetchedAt: raw.savedAt,
-      freshness: fileFreshness,
+      fetchedAt:          raw.savedAt,
+      freshness:          fileFreshness,   // file-level (only measure available)
+      cacheFileFreshness: fileFreshness,
       source,
     });
   }
 
-  // Stage 4: use scored fuzzy findEntry (returns { entry, matchType, confidence } | null)
+  // Stage 4 (scored fuzzy match): returns { entry, matchType, confidence } | null
   const match = findEntry(job);
 
   if (!match) {
-    // No specific entry to measure — fall back to file-level freshness.
+    // No specific entry to measure — fall back to file-level freshness for both fields.
     return makeResult(CLASS_STATES.NOT_FOUND, {
       reason: `No schedule entry matched "${job.classTitle}" on ${job.targetDate ?? job.dayOfWeek}`,
-      fetchedAt: raw.savedAt,
-      matchType:  'none',
-      confidence: 0,
-      freshness:  fileFreshness,
+      fetchedAt:          raw.savedAt,
+      matchType:          'none',
+      confidence:         0,
+      freshness:          fileFreshness,   // no entry → file-level is best available
+      cacheFileFreshness: fileFreshness,
       source,
     });
   }
@@ -130,26 +140,26 @@ function classifyClass(job) {
   const { entry, matchType, confidence } = match;
 
   // ── Stage 3+5: map entry booleans → normalized ClassState ─────────────────
-  // Stage 5: `matchType`, `isFuzzyMatch`, `confidence` are now populated from
-  // the scored fuzzy match so the UI can surface exact-vs-fuzzy distinction.
-  // Stage 2 (per-entry freshness): freshness is now derived from entry.capturedAt
-  // (when this specific class row was observed from the API), NOT from raw.savedAt
-  // (when the cache file was last written).  A merge that refreshes savedAt no
-  // longer makes older kept entries appear fresh.
+  // Stage 5: `matchType`, `isFuzzyMatch`, `confidence` populated from scored fuzzy match.
+  // Stage 2 (per-entry freshness): `freshness` uses entry.capturedAt so a merge that
+  // refreshes savedAt does not make older kept entries appear fresh.
+  // Stage 4 (expose file freshness): `cacheFileFreshness` carries the file-level bucket
+  // so consumers can distinguish "whole file is aging" from "this entry is fresh".
   const entryFreshness = computeEntryFreshness(entry);  // per-entry, based on capturedAt
 
   const shared = {
-    matchedClassName: entry.title,
-    matchedInstructor:entry.instructor,
-    matchedTime:      entry.timeLocal,
-    matchedDate:      entry.dateISO,
-    openSpots:        entry.openSpots,
-    totalCapacity:    entry.totalCapacity,
-    fetchedAt:        entry.capturedAt,
+    matchedClassName:   entry.title,
+    matchedInstructor:  entry.instructor,
+    matchedTime:        entry.timeLocal,
+    matchedDate:        entry.dateISO,
+    openSpots:          entry.openSpots,
+    totalCapacity:      entry.totalCapacity,
+    fetchedAt:          entry.capturedAt,
     matchType,
-    isFuzzyMatch:     matchType === 'fuzzy',
+    isFuzzyMatch:       matchType === 'fuzzy',
     confidence,
-    freshness:        entryFreshness,   // ← per-entry, not file-level
+    freshness:          entryFreshness,   // ← per-entry (capturedAt)
+    cacheFileFreshness: fileFreshness,    // ← file-level (savedAt) — for diagnostic consumers
     source,
   };
 
