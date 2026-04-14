@@ -239,8 +239,9 @@ async function runBurstCheck(dbJob) {
       `Job #${dbJob.id} burst`
     );
 
-    refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
-    // Stage 4 — persist canonical confirmed-ready state after every burst check.
+    // Stage 3 (write-order fix) — confirmed-ready must be written before readiness
+    // so that computeReadiness()'s lazy-loaded loadConfirmedReadyState() reads the
+    // current run's classTruth freshness, not the previous run's file.
     refreshConfirmedReadyState({
       classTitle: dbJob.class_title,
       classTime:  dbJob.class_time,
@@ -248,6 +249,7 @@ async function runBurstCheck(dbJob) {
       dayOfWeek:  dbJob.day_of_week,
       targetDate: dbJob.target_date || null,
     });
+    refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
     const failureType = classifyFailure(result);
 
@@ -558,8 +560,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
       const outcome = (result.status === 'success' || result.status === 'booked' || result.status === 'found_not_open_yet' || result.status === 'waitlist_only') ? 'pass' : 'fail';
       console.log(`[preflight-loop] run:result — Job #${dbJob.id} ${outcome}: ${result.message}`);
 
-      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
-      // Stage 4 — persist canonical confirmed-ready state after every preflight run.
+      // Stage 3 (write-order fix) — confirmed-ready before readiness (same cycle truth).
       refreshConfirmedReadyState({
         classTitle: dbJob.class_title,
         classTime:  dbJob.class_time,
@@ -567,6 +568,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
         dayOfWeek:  dbJob.day_of_week,
         targetDate: dbJob.target_date || null,
       });
+      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
       // Stage 10B — compute phase-aware retry context from outcome.
       const failureType = classifyFailure(result);
@@ -628,9 +630,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
 
     } catch (err) {
       console.error(`[preflight-loop] run:error — Job #${dbJob.id}:`, err.message);
-      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
-      // Stage 4 — persist canonical confirmed-ready state even on error so the
-      // UI reflects the freshest auth/cache evidence available.
+      // Stage 3 (write-order fix) — confirmed-ready before readiness (same cycle truth).
       refreshConfirmedReadyState({
         classTitle: dbJob.class_title,
         classTime:  dbJob.class_time,
@@ -638,6 +638,7 @@ async function runPreflightLoop({ isActive = false } = {}) {
         dayOfWeek:  dbJob.day_of_week,
         targetDate: dbJob.target_date || null,
       });
+      refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
       // Timeout / unexpected error — treat as ambiguous, plan a retry.
       retryCount[dbJob.id] = (retryCount[dbJob.id] ?? 0) + 1;
