@@ -4850,6 +4850,9 @@ const server = http.createServer((req, res) => {
         } else {
           console.log(`[cancel-registration] Job #${id} cancel failed: ${result.message}`);
         }
+        if (result.success || result.staleState) {
+          await syncJobsToPgAsync().catch(e => console.error('[pg-sync] cancel-registration await failed:', e.message));
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (err) {
