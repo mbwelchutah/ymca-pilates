@@ -9,7 +9,11 @@ const { getPhase }                  = require('./booking-window');
 const { runBookingJob }             = require('../bot/register-pilates');
 const { getDryRun }                 = require('../bot/dry-run-state');
 const { loadState, emitTickSkip }   = require('../bot/sniper-readiness');
-const { loadStatus }                = require('../bot/session-check');
+// Stage 10 (auth-truth-unification): session-failed gate now reads from the
+// canonical source (auth-state.json via getCanonicalAuthTruth) instead of
+// session-status.json (loadStatus).  lastFailureType (written by session-check.js)
+// provides the timeout/auth_failed distinction previously only in session-status.json.
+const { getCanonicalAuthTruth }      = require('../bot/auth-state');
 // Stage 7 — update canonical confirmed-ready state after each booking run.
 const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
 
@@ -212,8 +216,8 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     // Sniper and late phases ALWAYS run: the booking window is open and a
     // missed retry may mean a lost booking.
     if (phase === 'warmup') {
-      const sniperState    = loadState();
-      const sessionStatus  = loadStatus();
+      const sniperState   = loadState();
+      const canonicalAuth = getCanonicalAuthTruth();
 
       let skipReason  = null;
       let skipMessage = null;
@@ -234,15 +238,20 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
         }
       }
 
-      if (!skipReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
-        const age       = Date.now() - new Date(sessionStatus.checkedAt).getTime();
-        const isTimeout = sessionStatus.failureType === 'timeout';
+      // Stage 10: reads from canonical auth-state.json instead of session-status.json.
+      // lastFailureType distinguishes transient timeouts (5-min gate) from real
+      // credential failures (20-min gate), same logic as before.
+      if (!skipReason && canonicalAuth.sessionValid === false) {
+        const ageMs     = canonicalAuth.lastCheckedAt != null
+          ? Date.now() - canonicalAuth.lastCheckedAt
+          : null;
+        const isTimeout = canonicalAuth.lastFailureType === 'timeout';
         const staleMs   = isTimeout ? AUTH_BLOCK_STALE_TIMEOUT_MS : AUTH_BLOCK_STALE_MS;
-        if (age < staleMs) {
-          const minAgo = Math.round(age / 60000);
+        if (ageMs != null && ageMs < staleMs) {
+          const minAgo = Math.round(ageMs / 60000);
           skipReason  = 'SESSION_CHECK_FAILED';
           skipMessage = isTimeout
-            ? `Skipped warmup: page-load timeout ${minAgo} min ago — will retry when stale (${Math.round((staleMs - age) / 60000)} min)`
+            ? `Skipped warmup: page-load timeout ${minAgo} min ago — will retry when stale (${Math.round((staleMs - ageMs) / 60000)} min)`
             : `Skipped warmup: session check failed ${minAgo} min ago — credentials likely invalid`;
         }
       }

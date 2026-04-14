@@ -57,6 +57,10 @@ const DEFAULT_STATE = {
   bookingAccessConfirmedAt: null,   // ms epoch — null until first modal confirmation
   lastCheckedAt:            null,
   lastRecoveredAt:          null,
+  // Stage 10 (auth-truth-unification): mirrors session-status.json failureType so
+  // tick.js / preflight-loop.js session-failed gates can read from one canonical source.
+  // null = never failed or last check succeeded; 'timeout' | 'auth_failed' on failure.
+  lastFailureType:          null,
   isAuthInProgress:         false,
   authOperation:            null,   // 'signing_in'|'refreshing'|'verifying'|'recovery'|null
 };
@@ -246,8 +250,11 @@ function getCanonicalAuthTruth() {
     familyworksValid:       a.familyworksValid       ?? false,
     bookingAccessConfirmed: a.bookingAccessConfirmed ?? false,
     bookingAccessConfirmedAt: a.bookingAccessConfirmedAt ?? null,
-    lastCheckedAt:          a.lastCheckedAt  ?? null,
+    lastCheckedAt:          a.lastCheckedAt   ?? null,
     lastRecoveredAt:        a.lastRecoveredAt ?? null,
+    // Stage 10: mirrors session-status.json failureType for skip-gate consumers
+    // (tick.js, preflight-loop.js) so they no longer read session-status.json.
+    lastFailureType:        a.lastFailureType ?? null,
     isAuthInProgress:       a.isAuthInProgress ?? false,
     // Normalized derived values — these replace direct reads from legacy files
     sessionValid,    // replaces loadStatus()?.valid  (session-status.json)

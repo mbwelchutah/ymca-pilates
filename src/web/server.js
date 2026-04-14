@@ -4205,16 +4205,11 @@ const server = http.createServer((req, res) => {
       try {
         const checkedAt = new Date().toISOString();
 
-        // ── Helper: read FW status from persisted file (≤ 6 h) ───────────────
-        function readFwStatusFile() {
-          try {
-            const fwPath = pathStatic.join(__dirname, '../data/familyworks-session.json');
-            if (!fsStatic.existsSync(fwPath)) return 'AUTH_UNKNOWN';
-            const fwData = JSON.parse(fsStatic.readFileSync(fwPath, 'utf8'));
-            const ageMs  = Date.now() - new Date(fwData.checkedAt || 0).getTime();
-            return (ageMs < 6 * 3600 * 1000) ? (fwData.status || 'AUTH_UNKNOWN') : 'AUTH_UNKNOWN';
-          } catch (_) { return 'AUTH_UNKNOWN'; }
-        }
+        // Stage 10 (auth-truth-unification): FW status is now read from the
+        // canonical auth-state.json via getCanonicalAuthTruth().fwStatusCode
+        // instead of directly parsing familyworks-session.json here.
+        // The fwStatusCode field is kept fresh by session-check.js + session-ping.js.
+        const { getCanonicalAuthTruth: _getCanAuth } = require('../bot/auth-state');
 
         // ── Helper: emit + respond ────────────────────────────────────────────
         function finish({ valid, tier, detail, daxko, familyworks, screenshot = null }) {
@@ -4235,7 +4230,9 @@ const server = http.createServer((req, res) => {
 
         if (pingResult.trusted) {
           console.log('[session-check] Tier-2 trusted —', pingResult.detail);
-          const familyworks = readFwStatusFile();
+          // session-ping.js already updated auth-state.json via refreshStatusTimestamps;
+          // read fwStatusCode from the now-fresh canonical source.
+          const familyworks = _getCanAuth().fwStatusCode;
           return finish({
             valid: true, tier: 2,
             detail: `Tier 2: ${pingResult.detail}`,
@@ -4247,11 +4244,12 @@ const server = http.createServer((req, res) => {
         console.log('[session-check] Tier-2 miss:', pingResult.detail, '— escalating to Tier 3');
         const { runSessionCheck } = require('../bot/session-check');
         const result = await runSessionCheck();
-
+        // runSessionCheck() updates auth-state.json before returning; read fwStatusCode
+        // from the canonical source rather than parsing familyworks-session.json directly.
         const daxko      = result.valid === true  ? 'DAXKO_READY'
                          : result.valid === false ? 'AUTH_NEEDS_LOGIN'
                          :                         'AUTH_UNKNOWN';
-        const familyworks = daxko === 'DAXKO_READY' ? readFwStatusFile() : 'AUTH_UNKNOWN';
+        const familyworks = _getCanAuth().fwStatusCode;
 
         return finish({
           valid: result.valid === true, tier: 3,

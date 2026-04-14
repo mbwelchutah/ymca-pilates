@@ -33,9 +33,11 @@ const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState }        = require('../bot/sniper-readiness');
-const { loadStatus }       = require('../bot/session-check');
-const { isLocked }         = require('../bot/auth-lock');
-const { getAuthState }     = require('../bot/auth-state');
+// Stage 10 (auth-truth-unification): loadStatus (session-status.json) replaced by
+// getCanonicalAuthTruth for session-failed gate. lastFailureType from auth-state.json
+// now provides the timeout/auth_failed distinction.
+const { isLocked }                          = require('../bot/auth-lock');
+const { getAuthState, getCanonicalAuthTruth } = require('../bot/auth-state');
 const { refreshReadiness }     = require('../bot/readiness-state');
 const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('./execution-timing');
 const { classifyFailure, computeRetry } = require('./retry-strategy');
@@ -456,8 +458,9 @@ async function runPreflightLoop({ isActive = false } = {}) {
   }
 
   // Load auth state once — shared across all jobs this tick.
+  // Stage 10: canonical source replaces loadStatus() (session-status.json).
   const sniperState   = loadState();
-  const sessionStatus = loadStatus();
+  const canonicalAuth = getCanonicalAuthTruth();
 
   for (const dbJob of jobs) {
     // ── Phase gate ──────────────────────────────────────────────────────────
@@ -510,16 +513,20 @@ async function runPreflightLoop({ isActive = false } = {}) {
       }
     }
 
-    if (sessionStatus?.valid === false && sessionStatus.checkedAt) {
-      const age     = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+    // Stage 10: gate now reads from canonical auth-state.json instead of
+    // session-status.json.  lastCheckedAt (ms epoch) replaces the ISO string parse.
+    if (canonicalAuth.sessionValid === false) {
+      const ageMs   = canonicalAuth.lastCheckedAt != null
+        ? Date.now() - canonicalAuth.lastCheckedAt
+        : null;
       // Timeouts (YMCA site slow) use a shorter 5-min window; real auth failures
       // (wrong credentials, account locked) block for the full 20 min.
-      const isTimeout = sessionStatus.failureType === 'timeout';
+      const isTimeout = canonicalAuth.lastFailureType === 'timeout';
       const staleMs   = isTimeout ? AUTH_BLOCK_STALE_TIMEOUT_MS : AUTH_BLOCK_STALE_MS;
-      if (age < staleMs) {
-        const minAgo  = Math.round(age / 60000);
+      if (ageMs != null && ageMs < staleMs) {
+        const minAgo  = Math.round(ageMs / 60000);
         const reason  = isTimeout ? 'page-load timeout' : 'auth failure';
-        console.log(`[preflight-loop] skip:session-failed — Job #${dbJob.id} (${reason} ${minAgo} min ago, resumes in ${Math.round((staleMs - age) / 60000)} min).`);
+        console.log(`[preflight-loop] skip:session-failed — Job #${dbJob.id} (${reason} ${minAgo} min ago, resumes in ${Math.round((staleMs - ageMs) / 60000)} min).`);
         continue;
       }
     }
