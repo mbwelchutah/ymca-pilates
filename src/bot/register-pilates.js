@@ -2207,7 +2207,7 @@ async function runBookingJob(job, opts = {}) {
           _state.bundle.action = 'ACTION_BLOCKED';
           _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'preflight', detail: `FamilyWorks session active — modal accessible, registration not open yet${_countdownHint}` });
           await snap('preflight-not-open-yet');
-          return logRunSummary({ status: 'found_not_open_yet', message: _notOpenMsg, screenshotPath });
+          return logRunSummary({ status: 'found_not_open_yet', reason: 'button_not_visible', message: _notOpenMsg, screenshotPath });
         }
       }
     }
