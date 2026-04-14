@@ -167,11 +167,23 @@ function computeReadiness({ jobId, classTitle, source }) {
   // it is verifiable that readiness is reading same-cycle truth after the
   // Stage 3 write-order fix.  A "same-cycle" read shows age < a few seconds;
   // a "lagged" read would show age equal to the previous run interval.
+  // Stage 6 (per-entry freshness — frozen-snapshot fix): recompute freshness
+  // from cr.classTruth.checkedAt (epoch ms of entry.capturedAt, an absolute
+  // timestamp that ages honestly) instead of reading the frozen freshness bucket
+  // that was correct at confirmed-ready write time but stays stale thereafter.
+  // Backward-compatible: falls back to the frozen bucket on pre-Stage-6 records
+  // that have no checkedAt.
   let classTruthFreshness = 'unknown';
   try {
-    const { loadConfirmedReadyState } = require('./confirmed-ready');
+    const { loadConfirmedReadyState, computeFreshness } = require('./confirmed-ready');
     const cr = loadConfirmedReadyState();
-    if (cr?.classTruth?.freshness) classTruthFreshness = cr.classTruth.freshness;
+    if (cr?.classTruth?.checkedAt != null) {
+      // Recompute from absolute timestamp — always reflects current age.
+      classTruthFreshness = computeFreshness(cr.classTruth.checkedAt, 'classTruth');
+    } else if (cr?.classTruth?.freshness) {
+      // Fallback: pre-Stage-6 records without checkedAt use the frozen bucket.
+      classTruthFreshness = cr.classTruth.freshness;
+    }
     const crAgeMs = (cr?.overall?.checkedAt != null)
       ? Date.now() - cr.overall.checkedAt
       : null;
@@ -179,7 +191,7 @@ function computeReadiness({ jobId, classTitle, source }) {
     console.log(
       `[readiness-state] write-order check — confirmed-ready age: ` +
       `${crAgeMs != null ? crAgeMs + 'ms' : 'unknown'} (${cycleLabel}), ` +
-      `classTruthFreshness: ${classTruthFreshness}`
+      `classTruthFreshness: ${classTruthFreshness} (recomputed from checkedAt)`
     );
   } catch { /* non-fatal — readiness-state must not crash */ }
   record.classTruthFreshness = classTruthFreshness;
