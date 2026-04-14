@@ -43,7 +43,8 @@ const { computeExecutionTiming, WARMUP_OFFSET_MS, ARMED_OFFSET_MS } = require('.
 const { classifyFailure, computeRetry } = require('./retry-strategy');
 const { setEscalation, clearEscalation } = require('./escalation');
 // Stage 10F — Learned timing adjustments.
-const { recordObservation, getLearnedOffsets } = require('./timing-learner');
+// Stage 5: run-speed observations extend this with recordRunSpeed / getLearnedRunSpeed.
+const { recordObservation, getLearnedOffsets, recordRunSpeed, getLearnedRunSpeed } = require('./timing-learner');
 // Stage 10G — Direct burst-to-booking handoff (bypasses up-to-60s tick delay).
 const { triggerBookingFromBurst } = require('./booking-bridge');
 // Stage 4 (freshness) — persist canonical readiness state after every preflight.
@@ -254,6 +255,24 @@ async function runBurstCheck(dbJob) {
     }, { source: 'browser' });
     refreshReadiness({ jobId: dbJob.id, classTitle: dbJob.class_title, source: 'background' });
 
+    // Stage 5: Record run-speed observation from the timing metrics written by
+    // Stage 3.  loadState() re-reads sniper-state.json, which was just updated
+    // by runBookingJob() → recordTimingMetrics().
+    try {
+      const freshState = loadState();
+      const tm = freshState?.timingMetrics;
+      if (tm) {
+        recordRunSpeed(dbJob.id, {
+          authMs:      tm.auth_phase_ms,
+          pageLoadMs:  tm.run_start_to_page_ready,
+          discoveryMs: tm.page_ready_to_class_found,
+          classTitle:  dbJob.class_title,
+        });
+      }
+    } catch (speedErr) {
+      console.warn('[timing-learner] run-speed:error —', speedErr.message);
+    }
+
     const failureType = classifyFailure(result);
 
     if (!failureType) {
@@ -436,11 +455,31 @@ async function runPreflightLoop({ isActive = false } = {}) {
       if (burstTimers[dbJob.id]) continue; // burst already active
       // Stage 10F — apply learned offsets so burst activates at the adjusted phase boundary.
       const scanLearned = getLearnedOffsets(dbJob.id, { WARMUP_OFFSET_MS, ARMED_OFFSET_MS });
+      // Stage 5 — factor in measured run-speed so the armed offset is wide enough
+      // for the bot to finish page load before the booking window opens.
+      // neededLeadTimeMs = median(auth + page-load + discovery) + 15 s buffer.
+      // If the bot consistently takes 32 s to be ready and ARMED_OFFSET is 45 s,
+      // margin is fine.  But if the site is slow at window open (e.g. 40 s page
+      // load), the bot would arrive late.  This extension prevents that.
+      const learnedSpeed    = getLearnedRunSpeed(dbJob.id);
+      const baseArmedMs     = scanLearned?.adjustedArmedOffsetMs ?? ARMED_OFFSET_MS;
+      const effectiveArmedMs = learnedSpeed
+        ? Math.max(baseArmedMs, learnedSpeed.neededLeadTimeMs)
+        : baseArmedMs;
+      if (learnedSpeed && effectiveArmedMs > baseArmedMs) {
+        console.log(
+          `[timing-learner] run-speed:extend — Job #${dbJob.id} ` +
+          `armedOffset ${Math.round(baseArmedMs / 1000)}s → ` +
+          `${Math.round(effectiveArmedMs / 1000)}s ` +
+          `(median lead ${Math.round(learnedSpeed.medianTotalMs / 1000)}s + 15s buffer; ` +
+          `n=${learnedSpeed.observationCount}).`
+        );
+      }
       let et;
       try {
         et = computeExecutionTiming(dbJob, {
           warmupOffsetOverrideMs: scanLearned?.adjustedWarmupOffsetMs ?? null,
-          armedOffsetOverrideMs:  scanLearned?.adjustedArmedOffsetMs  ?? null,
+          armedOffsetOverrideMs:  effectiveArmedMs,
         });
       } catch (_) { continue; }
       if (et.phase === 'warmup' || et.phase === 'armed') {
