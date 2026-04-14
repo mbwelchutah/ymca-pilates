@@ -719,6 +719,11 @@ async function runBookingJob(job, opts = {}) {
         detail:      loginErr.message || 'Login failed',
         screenshot:  loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
       });
+      // Close the write gap: session-status.json was just updated above but
+      // auth-state.json was not, leaving canonical auth truth stale.
+      // familyworksValid is intentionally not set here — Daxko failed before
+      // the FW check ran, so we have no new information about FW state.
+      updateAuthState({ daxkoValid: false, lastCheckedAt: Date.now(), lastFailureType: isTimeout ? 'timeout' : 'auth_failed' });
       emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message, {
         screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
         evidence: {
