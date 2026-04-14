@@ -39,6 +39,7 @@ const path = require('path');
 const { checkFreshness }                  = require('../scheduler/session-keepalive');
 const { pingSessionHttp }                 = require('./session-ping');
 const { runSessionCheck, loadStatus }     = require('./session-check');
+const { getCanonicalAuthTruth }           = require('./auth-state');
 const { getPhase }                        = require('../scheduler/booking-window');
 const { getAllJobs }                       = require('../db/jobs');
 
@@ -131,18 +132,6 @@ function getSuspicionReason() {
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function readFwStatus() {
-  try {
-    if (!fs.existsSync(FW_FILE)) return 'AUTH_UNKNOWN';
-    const fw = JSON.parse(fs.readFileSync(FW_FILE, 'utf8'));
-    return fw?.status || 'AUTH_UNKNOWN';
-  } catch {
-    return 'AUTH_UNKNOWN';
-  }
-}
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -232,7 +221,10 @@ async function validateSessionFastThenFallback({ forceMinTier } = {}) {
   try {
     const checkResult = await runSessionCheck({ source: 'validator' });
     const daxko       = checkResult.valid ? 'DAXKO_READY' : 'AUTH_NEEDS_LOGIN';
-    const familyworks = checkResult.valid ? readFwStatus() : 'AUTH_UNKNOWN';
+    // Stage 4 (auth-truth-unification): runSessionCheck() has already updated
+    // auth-state.json before returning, so canonical truth is the correct and
+    // fresher source here.  readFwStatus() (familyworks-session.json) is removed.
+    const familyworks = checkResult.valid ? getCanonicalAuthTruth().fwStatusCode : 'AUTH_UNKNOWN';
     const valid       = checkResult.valid === true;
 
     console.log(
