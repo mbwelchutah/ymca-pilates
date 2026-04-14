@@ -1,0 +1,404 @@
+You are implementing a FRESHNESS + CONFIRMED-READY UNIFICATION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Unify scattered readiness truth into one canonical “confirmed ready” model, and make all classifier/schedule-cache decisions freshness-aware.
+
+This pass is NOT a broad redesign.
+It is a reliability pass focused on two specific problems:
+
+1. readiness truth is fragmented across multiple files / gates / states
+2. stale schedule/API cache can incorrectly suppress or distort booking decisions
+
+We want one reliable answer to:
+
+👉 “Is this class actually confirmed ready for booking preparation right now?”
+
+And we want all cache-based class truth to respect freshness.
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole app
+- Do NOT remove Playwright execution
+- Do NOT remove preflight or scheduler architecture unless replaced safely
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+PROBLEM STATEMENT
+==================================================
+
+Current prep truth is fragmented across things like:
+- session-status.json
+- sniper-state.json
+- schedule-cache.json
+- auth lock state
+- checkpoint preflight results
+- classifier results
+- burst / warmup logic
+
+This causes:
+- stale “good” states
+- stale “full” states
+- skipped useful warmup runs
+- Now / Plan / scheduler using different readiness assumptions
+- confidence that is stronger than the freshness of the data supports
+
+We need to fix this by:
+
+1. creating one canonical confirmed-ready model
+2. tracking freshness for classifier/schedule truth
+3. preventing stale cache from blocking necessary work
+4. making UI + scheduler + preflight read from the same readiness truth
+
+==================================================
+STAGE 1 — DEFINE A CANONICAL CONFIRMED-READY MODEL
+==================================================
+
+Goal:
+Create one normalized readiness object that all layers can use.
+
+Tasks:
+
+1. Create a canonical readiness model, for example:
+
+type ConfirmedReadyState = {
+  status: "confirmed_ready" | "needs_refresh" | "needs_attention" | "unknown"
+
+  auth: {
+    daxkoValid: boolean
+    familyworksValid: boolean
+    bookingAccessConfirmed: boolean
+    checkedAt: number | null
+  }
+
+  classTruth: {
+    state: "bookable" | "waitlist_available" | "full" | "not_found" | "unknown"
+    checkedAt: number | null
+    freshness: "fresh" | "aging" | "stale"
+    source: "api" | "cache" | "playwright" | "unknown"
+    isFuzzyMatch: boolean
+  }
+
+  preflight: {
+    modalConfirmed: boolean
+    checkedAt: number | null
+    freshness: "fresh" | "aging" | "stale"
+  }
+
+  overall: {
+    checkedAt: number | null
+    freshness: "fresh" | "aging" | "stale"
+    reason: string
+  }
+}
+
+2. Make this a shared model usable by:
+- scheduler
+- preflight
+- Now
+- Plan (lightly)
+- confidence
+- Tools
+
+3. Do not wire everything yet — define and centralize the model first
+
+Success criteria:
+- one canonical readiness structure exists
+- readiness can now be discussed in one place instead of scattered truths
+
+After Stage 1:
+Summarize changes and STOP.
+
+==================================================
+STAGE 2 — ADD FRESHNESS RULES FOR CLASSIFIER / SCHEDULE TRUTH
+==================================================
+
+Goal:
+Make class truth freshness explicit.
+
+Tasks:
+
+1. Add freshness buckets for class/API/cache truth:
+- fresh
+- aging
+- stale
+
+2. Define practical thresholds for each bucket
+3. Track:
+- when schedule/API truth was last updated
+- whether it came from:
+  - live API
+  - cached API response
+  - Playwright confirmation
+  - unknown
+
+4. Ensure classifier result always includes freshness and source metadata
+
+Success criteria:
+- classifier truth is no longer treated as timeless
+- freshness is explicit and machine-readable
+
+After Stage 2:
+Summarize changes and STOP.
+
+==================================================
+STAGE 3 — PREVENT STALE CACHE FROM BLOCKING EXECUTION
+==================================================
+
+Goal:
+Do not let stale schedule cache suppress useful work.
+
+Tasks:
+
+1. Audit every place where cached class truth can block, skip, or downgrade a run
+2. Change the logic so:
+- stale cache must NOT suppress a browser launch
+- stale “full” must not be treated as strong truth
+- stale “not_found” must not be treated as strong truth
+
+3. When cached class truth is stale:
+- downgrade to unknown
+- require refresh / live re-check
+- or allow safe execution/preflight to continue
+
+4. Keep fresh cache useful, but make stale cache non-authoritative
+
+Success criteria:
+- stale cache can no longer incorrectly prevent useful warmup/preflight/booking behavior
+- “full” and “not_found” are only authoritative when fresh enough
+
+After Stage 3:
+Summarize changes and STOP.
+
+==================================================
+STAGE 4 — UNIFY CONFIRMED-READY DECISION LOGIC
+==================================================
+
+Goal:
+Create one place where “confirmed ready” is decided.
+
+Tasks:
+
+1. Add a function such as:
+   computeConfirmedReadyState()
+
+2. This function should combine:
+- auth truth
+- booking access truth
+- class truth + freshness
+- preflight/modal truth + freshness
+
+3. Define practical rules, for example:
+
+confirmed_ready only if:
+- FamilyWorks session valid
+- booking access confirmed
+- classTruth is fresh enough and favorable enough
+- preflight/modal truth is fresh enough when required
+
+needs_refresh if:
+- truths are aging/stale but not yet clearly broken
+
+needs_attention if:
+- auth invalid
+- booking access denied
+- class unavailable
+- contradictory truth signals
+
+unknown if:
+- not enough fresh evidence exists
+
+4. Ensure this is the single decision function used by higher layers
+
+Success criteria:
+- confirmed-ready is decided once, not in multiple places with different logic
+- reasoning is explicit
+
+After Stage 4:
+Summarize changes and STOP.
+
+==================================================
+STAGE 5 — FEED SCHEDULER / PREFLIGHT FROM CANONICAL READINESS
+==================================================
+
+Goal:
+Reduce scattered gating logic.
+
+Tasks:
+
+1. Update scheduler/preflight gating to read from canonical confirmed-ready state where possible
+2. Do not let multiple disconnected files independently decide “good / bad / blocked” if the unified state already knows
+3. Keep existing safety, but reduce contradictory gates
+4. Especially review:
+- warmup classifier gate
+- auth readiness gate
+- burst pre-checks
+
+5. Preserve architecture, but make the canonical readiness result the main source of truth
+
+Success criteria:
+- scheduler/preflight rely more on unified readiness
+- fewer contradictory skips happen
+
+After Stage 5:
+Summarize changes and STOP.
+
+==================================================
+STAGE 6 — FEED NOW SCREEN FROM CONFIRMED-READY TRUTH
+==================================================
+
+Goal:
+Make Now truthful and freshness-aware.
+
+Tasks:
+
+1. Use canonical readiness to drive:
+- high-level state copy
+- readiness line
+- confidence support
+- action availability
+
+2. If truth is stale:
+- avoid overconfident language
+- use calmer wording such as:
+  - Needs refresh
+  - Checking current availability
+  - Availability not recently confirmed
+
+3. If confirmed_ready is true:
+- allow stronger wording such as:
+  - Ready
+  - Will register at open
+  - High confidence
+
+4. Make sure Now no longer inherits stale positivity from old cache
+
+Success criteria:
+- Now reflects readiness freshness honestly
+- stale data no longer looks “fully confirmed”
+
+After Stage 6:
+Summarize changes and STOP.
+
+==================================================
+STAGE 7 — FEED PLAN LIGHTLY FROM THE SAME TRUTH
+==================================================
+
+Goal:
+Let Plan benefit from shared truth without becoming heavy or diagnostic.
+
+Tasks:
+
+1. Use the same canonical readiness lightly in Plan for preview only
+2. If class truth is stale, keep Plan calm and neutral
+3. Do not show strong “full / unavailable / likely” messaging in Plan unless freshness supports it
+4. Keep Plan lighter than Now
+
+Success criteria:
+- Plan and Now no longer disagree because they derive from different readiness assumptions
+- Plan remains lightweight
+
+After Stage 7:
+Summarize changes and STOP.
+
+==================================================
+STAGE 8 — ALIGN CONFIDENCE WITH FRESHNESS
+==================================================
+
+Goal:
+Confidence must depend on freshness, not just positive signals.
+
+Tasks:
+
+1. Update confidence logic so freshness affects confidence
+2. Example rules:
+- fresh + favorable truth → higher confidence
+- aging truth → confidence softens
+- stale truth → confidence cannot stay high
+- conflicting truth → confidence drops
+
+3. Prevent:
+- “Likely to succeed”
+- “Ready”
+when the supporting truth is stale or incomplete
+
+Success criteria:
+- confidence is now freshness-aware
+- UI stops sounding more certain than evidence supports
+
+After Stage 8:
+Summarize changes and STOP.
+
+==================================================
+STAGE 9 — EXPOSE READINESS + FRESHNESS IN TOOLS
+==================================================
+
+Goal:
+Make the unified truth diagnosable without cluttering Now.
+
+Tasks:
+
+1. In Tools / diagnostics, show:
+- current confirmed-ready status
+- auth freshness
+- class truth freshness
+- preflight freshness
+- source of truth (API / cache / Playwright)
+
+2. Keep this readable and secondary
+3. Make it easy to understand why the system is:
+- confirmed ready
+- needs refresh
+- needs attention
+- unknown
+
+Success criteria:
+- unified readiness is inspectable
+- debugging becomes easier
+- Now stays calm
+
+After Stage 9:
+Summarize changes and STOP.
+
+==================================================
+STAGE 10 — FINAL QA + CONSISTENCY PASS
+==================================================
+
+Goal:
+Verify the whole readiness/freshness system works end to end.
+
+Test and verify:
+1. Fresh bookable class
+2. Fresh full class
+3. Stale full cache that should NOT suppress launch
+4. Fresh waitlist-only class
+5. Stale unknown result
+6. Auth valid but class truth stale
+7. Preflight fresh but class truth stale
+8. Contradictory truth inputs
+
+Ensure:
+- stale cache does not block useful work
+- confirmed-ready is computed consistently
+- Now / Plan / scheduler / confidence all agree
+- UI reflects freshness honestly
+
+Success criteria:
+- one canonical confirmed-ready truth exists
+- freshness is respected everywhere
+- stale truth no longer causes false certainty or false suppression
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
