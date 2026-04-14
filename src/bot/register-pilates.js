@@ -808,7 +808,14 @@ async function runBookingJob(job, opts = {}) {
     page.on('response', _captureResponse);
 
     await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 });
-    await page.waitForLoadState('networkidle');
+    // Use domcontentloaded (best-effort) instead of networkidle — the Bubble.io
+    // SPA keeps background XHR alive for 15-20 extra seconds after the page is
+    // usable, so networkidle with its default 30s timeout fires late or not at
+    // all under load (e.g. at booking-window open time).  The real readiness
+    // gate is the waitForFunction for dropdown options below (line ~877).
+    await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {
+      console.log('[schedule] domcontentloaded timeout — proceeding anyway');
+    });
     await page.waitForTimeout(1000); // waitForFunction below is the real gate
 
     // Save captured API entries to cache (best-effort — never throws).
@@ -2420,16 +2427,16 @@ async function runBookingJob(job, opts = {}) {
           }
           try {
             if (hasClickableRetry) {
-              await clickableRetry.click();
+              await clickableRetry.click({ timeout: 5000 });
             } else {
-              await targetCard.click();
+              await targetCard.click({ timeout: 5000 });
             }
           } catch (retryErr) {
-            console.log('⚠️ Retry click fallback:', retryErr.message);
+            console.log('⚠️ Retry click fallback:', retryErr.message.split('\n')[0]);
             if (hasClickableRetry) {
-              await clickableRetry.click({ force: true });
+              await clickableRetry.click({ force: true, timeout: 5000 });
             } else {
-              await targetCard.click({ force: true });
+              await targetCard.click({ force: true, timeout: 5000 });
             }
           }
         }

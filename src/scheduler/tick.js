@@ -24,7 +24,8 @@ const AUTH_BLOCK_STALE_MS         = 20 * 60 * 1000; // stale window for real aut
 const AUTH_BLOCK_STALE_TIMEOUT_MS =  5 * 60 * 1000; // shorter window for transient timeouts
 
 const COOLDOWN_MS        = 30 * 60 * 1000;  // cooldown for warmup phase
-const COOLDOWN_HOT_MS    =  5 * 60 * 1000;  // shorter cooldown for sniper/late — must retry fast
+const COOLDOWN_SNIPER_MS =  90 * 1000;      // sniper: 90 s — window about to open, retry fast
+const COOLDOWN_LATE_MS   =  60 * 1000;      // late: 60 s  — window already open, retry every minute
 const ELIGIBLE_PHASES    = ['warmup', 'sniper', 'late'];
 
 // Returns true if the ISO timestamp falls within the current UTC calendar week
@@ -138,13 +139,17 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     }
 
     // Cooldown guard.
-    // Sniper and late phases get a short 5-min cooldown so the bot can retry quickly
-    // after a warmup miss (warmup runs 10 min before the window opens; if it fails because
-    // the class isn't listed yet, sniper/late must retry within minutes of opening).
+    // Each phase gets a tailored cooldown so the bot can retry quickly when time
+    // is critical without hammering the server in the non-urgent phases.
+    //   warmup  — 30 min: window is distant; no need to hammer if session/class fails
+    //   sniper  — 90 s:   window about to open; retry in < 2 min so the attempt fires
+    //   late    — 60 s:   window already open; retry every minute during the booking window
     // Stage 10I: skipCooldown bypasses this check for burst hot-retry attempts.
     if (!skipCooldown && dbJob.last_run_at) {
       const msSinceRun  = Date.now() - new Date(dbJob.last_run_at).getTime();
-      const cooldownFor = (phase === 'sniper' || phase === 'late') ? COOLDOWN_HOT_MS : COOLDOWN_MS;
+      const cooldownFor = phase === 'late'   ? COOLDOWN_LATE_MS
+                        : phase === 'sniper' ? COOLDOWN_SNIPER_MS
+                        : COOLDOWN_MS;
       if (msSinceRun < cooldownFor) {
         const minAgo = Math.round(msSinceRun / 60000);
         const prevResult = dbJob.last_result || 'unknown';
