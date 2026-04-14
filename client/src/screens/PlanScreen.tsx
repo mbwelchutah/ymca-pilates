@@ -566,12 +566,8 @@ function AddJobForm({ onSaved, onCancelled, prefill, editJob }: AddJobFormProps)
             type="date"
             className={inputClass}
             value={targetDate}
-            onChange={e => {
-              setTargetDate(e.target.value)
-              // iOS: blur immediately after selection so the Save button
-              // doesn't need a first "dismiss focus" tap before it fires.
-              e.target.blur()
-            }}
+            min={new Date().toISOString().split('T')[0]}
+            onChange={e => setTargetDate(e.target.value)}
           />
           <p className="text-[11px] text-text-muted mt-1">Leave blank to book weekly on the day above</p>
         </div>
