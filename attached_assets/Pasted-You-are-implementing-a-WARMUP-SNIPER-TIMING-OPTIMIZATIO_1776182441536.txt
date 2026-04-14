@@ -1,0 +1,416 @@
+You are implementing a WARMUP + SNIPER TIMING OPTIMIZATION & FIRST-ATTEMPT RELIABILITY PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Improve booking performance at the moment the registration window opens.
+
+This pass should make the bot:
+
+- better prepared before T-0
+- faster on the first attempt
+- smarter about retries in the first 60–120 seconds
+- more resilient to transient page / click / modal slowness
+- measurable, so we can see exactly where time is being lost
+
+This is NOT a broad redesign.
+This is a focused performance + reliability pass for the booking-window execution path.
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole booking architecture
+- Do NOT change unrelated UI
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / WHY THIS PASS MATTERS
+==================================================
+
+Recent real-world run issues showed:
+- slow page readiness at the moment the window opens
+- slow click attempts burning too much time
+- too few meaningful retries during short booking windows
+
+Many foundational issues are now already fixed:
+- auth/session truth is cleaner
+- class truth freshness is cleaner
+- persistence is durable
+- PG sync is hardened
+
+The next bottleneck is not data integrity.
+It is execution quality at window open.
+
+We now want to optimize:
+- what happens before the window opens
+- how quickly the bot gets to its first meaningful click
+- how fast it recovers from transient failures
+- how many real attempts it can make during the opening window
+
+==================================================
+STAGE 1 — AUDIT CURRENT WARMUP / SNIPER EXECUTION TIMELINE
+==================================================
+
+Goal:
+Document the actual current booking-window sequence before changing behavior.
+
+Tasks:
+
+1. Trace the current timing path from:
+- warmup phase
+- sniper phase
+- open-window execution
+2. Identify the sequence of:
+- preflight checks
+- auth validation
+- page navigation
+- class discovery
+- click path
+- modal open
+- confirmation path
+3. Explicitly identify what still happens:
+- before T-0
+- at T-0
+- after T-0
+4. Call out the current retry timing and cooldown behavior by phase
+
+Do NOT change behavior yet except minimal instrumentation if needed.
+
+Success criteria:
+- current window-open timing path is clearly understood
+- remaining late work is identified
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — ADD TIMING MARKERS FOR BOOKING-WINDOW RUNS
+==================================================
+
+Goal:
+Measure the exact sequence during real booking attempts.
+
+Tasks:
+
+1. Add timing markers for the key milestones:
+- window_open_expected
+- run_start
+- browser_launch_start
+- browser_launch_done
+- page_nav_start
+- page_nav_done
+- class_discovery_start
+- class_discovery_done
+- first_click_attempt_start
+- first_click_attempt_done
+- modal_open_start
+- modal_open_done
+- action_attempt_start
+- action_attempt_done
+- confirmation_check_start
+- confirmation_check_done
+- final_outcome
+
+2. Attach them to the run context / diagnostics
+3. Keep them lightweight and safe
+
+Success criteria:
+- booking-window attempts now produce a precise timing trail
+- each major phase can be measured later
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — DERIVE FIRST-ATTEMPT METRICS
+==================================================
+
+Goal:
+Turn timing markers into useful first-attempt measurements.
+
+Tasks:
+
+1. Derive metrics such as:
+- open_to_run_start
+- run_start_to_page_ready
+- page_ready_to_class_found
+- class_found_to_first_click
+- first_click_to_modal
+- first_click_to_confirmation
+- open_to_confirmation
+- total_first_attempt_duration
+
+2. Keep metrics readable and comparable
+3. Store them with the run / diagnostics
+
+Success criteria:
+- the first attempt is now measurable
+- slow phases can be identified clearly
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — IDENTIFY FAILURE TYPES FOR WINDOW-OPEN RETRIES
+==================================================
+
+Goal:
+Stop treating all failures the same during the most important part of the booking window.
+
+Tasks:
+
+1. Define the main open-window failure types, such as:
+- navigation_timeout
+- click_timeout
+- modal_not_reachable
+- button_not_yet_visible
+- not_open_yet
+- server_slow
+- auth_failed
+- class_full
+- waitlist_only
+- unknown
+
+2. Ensure runs classify transient vs hard-stop outcomes distinctly
+3. Keep this classification simple and useful for retry policy
+
+Success criteria:
+- open-window retry logic can branch on failure type
+- transient failures are distinguishable from final outcomes
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — ADD AGGRESSIVE EARLY-WINDOW RETRY MODE
+==================================================
+
+Goal:
+Use the first 60–120 seconds of the booking window much more effectively.
+
+Tasks:
+
+1. Add an early-window retry mode for the first part of the booking window
+2. During this period:
+- retry transient failures much sooner
+- do NOT wait a full long cooldown after:
+  - navigation timeout
+  - click timeout
+  - modal delay
+  - button not yet visible
+3. Keep this retry mode bounded and safe
+4. After the early-window period, allow retries to back off more normally
+
+Success criteria:
+- a single transient failure no longer costs the whole opening window
+- the bot gets more real chances early
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — ADD IN-ATTEMPT FAST RETRIES FOR SMALL TRANSIENT FAILURES
+==================================================
+
+Goal:
+Recover from tiny UI failures inside the same attempt instead of burning a whole outer retry.
+
+Tasks:
+
+1. For failures such as:
+- element detached
+- click timeout
+- modal not yet visible
+- button not actionable yet
+
+add small, bounded in-attempt retries where appropriate
+
+2. Keep them short and fast
+3. Do NOT create long hidden waits
+4. Preserve outer retry logic for larger failures
+
+Success criteria:
+- first attempt becomes more resilient
+- tiny transient issues do not waste a full attempt
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — TUNE COOLDOWNS BY PHASE
+==================================================
+
+Goal:
+Make cooldown behavior smarter across warmup, sniper, and late phases.
+
+Tasks:
+
+1. Separate retry/cooldown policy by phase:
+- warmup
+- sniper
+- open-window / late
+2. Ensure:
+- early-window retries are shorter
+- cooldowns only lengthen later if needed
+- warmup failures do not overly poison early live attempts
+3. Avoid one-size-fits-all retry penalties
+
+Success criteria:
+- retry cadence is phase-aware
+- the booking window is used more efficiently
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — EXPOSE BOOKING-WINDOW TIMING IN TOOLS
+==================================================
+
+Goal:
+Make the latest auto-registration run easy to understand.
+
+Tasks:
+
+1. In Tools, add or extend a timing section for the latest auto-registration attempt
+2. Show:
+- open → run start
+- page load time
+- class discovery time
+- first click timing
+- modal timing
+- confirmation timing
+- retry count
+- slowest phase
+
+3. Keep it compact and readable
+4. Do not dump raw logs into the main Tools surface
+
+Success criteria:
+- user can see where time was spent in the latest run
+- bottlenecks are visible without digging through logs
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — ADD BOTTLENECK / RETRY INSIGHT SUMMARY
+==================================================
+
+Goal:
+Turn timing numbers into understandable booking-performance insight.
+
+Tasks:
+
+1. Add a short summary for the latest run, such as:
+- Slowest phase: page navigation
+- Lost most time in: modal open
+- First retry happened after: 8s
+- Total attempts during window: 6
+
+2. Optionally add one short evidence-based insight like:
+- "Page load consumed most of the first attempt"
+- "Click retries are still the main bottleneck"
+- "Early-window retry mode increased attempt count"
+
+3. Keep the summary concise and useful
+
+Success criteria:
+- Tools explains what happened, not just raw timings
+- optimization targets become obvious
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA + SAFETY PASS
+==================================================
+
+Goal:
+Verify the new timing and retry behavior is faster, safer, and measurable.
+
+Tasks:
+
+1. Verify:
+- timing markers are recorded correctly
+- first-attempt metrics are computed correctly
+- retry policy branches by failure type
+- early-window retries are more aggressive
+- in-attempt retries are bounded
+- cooldowns are phase-aware
+- Tools shows useful timing/bottleneck information
+
+2. Ensure no bad new behavior exists:
+- infinite loops
+- retry storms
+- hidden long waits
+- contradictory metrics
+
+3. Summarize the expected real-world improvement in:
+- first-attempt reliability
+- attempt count in the opening window
+- ability to diagnose future timing issues
+
+Success criteria:
+- the bot is more competitive when the booking window opens
+- transient failures are less costly
+- timing is now measurable and optimizable
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- booking-window timing is measurable
+- the first attempt is broken down into real timing phases
+- retries are smarter by failure type
+- the first 60–120 seconds of the booking window are used more aggressively
+- small transient UI issues recover faster
+- cooldowns are phase-aware
+- Tools can show where time was actually lost
+- the bot gets more meaningful attempts during short booking windows
+
+The result should feel:
+- faster
+- more competitive
+- more deliberate
+- easier to optimize
+
+It should NOT feel like:
+- one timeout ruins the whole window
+- retries are too slow and generic
+- timing is guesswork
+- failures are opaque
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
