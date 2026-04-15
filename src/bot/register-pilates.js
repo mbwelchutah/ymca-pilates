@@ -2240,10 +2240,10 @@ async function runBookingJob(job, opts = {}) {
         if (!secondResult.ok) {
           // Both candidates had the wrong time → target class is not on the schedule
           if (isTimeMismatch(secondResult)) {
-            const msg = _wcPrefix + `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+            const msg = _wcPrefix + `Class rows were found but the booking modal showed a different class in all cases — both candidates had the wrong time. "${classTitle}" at ${classTimeNorm} does not appear to be on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await captureFailure('scan', 'class_not_found');
-            return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'All candidates showed wrong time', url: page.url() });
+            return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Class rows found but modal showed wrong class (all candidates)', url: page.url() });
           }
           // Verify failure already recorded inline in attemptClickAndVerify
           return logRunSummary({ status: 'error', message: secondResult.failMsg, screenshotPath, phase: 'verify', reason: REASONTAG_TO_REASON[secondResult.reasonTag] || 'unexpected_error', recorded: secondResult.recorded });
@@ -2257,10 +2257,10 @@ async function runBookingJob(job, opts = {}) {
         }
         // Time mismatch with no fallback → target class absent from schedule
         if (isTimeMismatch(firstResult)) {
-          const msg = _wcPrefix + `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+          const msg = _wcPrefix + `A class row was found but the booking modal showed a different class — the best matching row had the wrong time. "${classTitle}" at ${classTimeNorm} does not appear to be on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await captureFailure('scan', 'class_not_found');
-          return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Best candidate showed wrong time', url: page.url() });
+          return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Class row found but modal showed wrong class (best candidate)', url: page.url() });
         }
         // Verify failure already recorded inline in attemptClickAndVerify
         return logRunSummary({ status: 'error', message: firstResult.failMsg, screenshotPath, phase: 'verify', reason: REASONTAG_TO_REASON[firstResult.reasonTag] || 'unexpected_error', recorded: firstResult.recorded });
@@ -2701,14 +2701,15 @@ async function runBookingJob(job, opts = {}) {
               classTimeNorm || classTime,
               instructor || 'Stephanie',
             ].join(' · ');
-            const msg = `Class found on schedule (${classDesc}). Registration is not open yet. Bot will retry during booking window.`;
+            const _minUntilOpen = Math.round(msUntilBwOpen / 60000);
+            const msg = `Modal opened and verified for ${classDesc} — no registration button visible yet. Booking window opens in ${_minUntilOpen} min. Bot will retry during the booking window.`;
             console.log('ℹ️  ' + msg);
             await captureFailure('gate', 'uncertain_state');
             // ── POINT 4: gate — early exit (booking window far off) ────────
             recordFailure({
               jobId:    job.id || job.jobId || null,
               phase:    'gate', reason: 'booking_not_open',
-              category: 'gate', label: 'Registration not open — exiting early for scheduler retry',
+              category: 'gate', label: 'Modal verified — registration not open yet (exiting early)',
               message:  msg, classTitle,
               screenshot: _screenshotRef(screenshotPath),
               url:      page.url(),
@@ -2888,14 +2889,14 @@ async function runBookingJob(job, opts = {}) {
         classTimeNorm || classTime,
         instructor || 'Stephanie',
       ].join(' · ');
-      const msg = `Class found on schedule (${classDesc}). Registration did not open within the retry window.`;
+      const msg = `Modal opened and verified for ${classDesc} — registration button did not appear within the retry window. Bot will retry at the next scheduler cycle.`;
       console.log('ℹ️  ' + msg);
       await captureFailure('gate', 'uncertain_state');
       // ── POINT 4: gate — exhausted retry window ─────────────────────────
       recordFailure({
         jobId:    job.id || job.jobId || null,
         phase:    'gate', reason: 'booking_not_open',
-        category: 'gate', label: 'Registration did not open within retry window',
+        category: 'gate', label: 'Modal verified — registration button did not appear within retry window',
         message:  msg, classTitle,
         screenshot: _screenshotRef(screenshotPath),
         url:      page.url(),
