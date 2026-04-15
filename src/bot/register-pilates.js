@@ -189,6 +189,25 @@ function classifyActionState(allBtnTexts, pageText = '') {
   return 'unknown';
 }
 
+// ── Signal-driven post-click settle ───────────────────────────────────────────
+// Replaces flat waitForTimeout() calls inside checkBookingConfirmed.
+// Exits as soon as the DOM transitions away from the "bookable" posture:
+//   • Cancel button appears  → booking processed (success or waitlist)
+//   • Register+Waitlist both disappear → modal state changed
+// If neither fires within maxMs the cap expires and the caller proceeds to
+// its normal readSignals() check unchanged.
+async function _waitForConfirmSignal(page, maxMs) {
+  try {
+    await page.waitForFunction(() => {
+      const btns  = [...document.querySelectorAll('button, [role="button"]')];
+      const texts = btns.map(b => (b.textContent || '').toLowerCase());
+      if (texts.some(t => /\bcancel\b/.test(t))) return true;           // Cancel appeared
+      const hasAction = texts.some(t => /\bregister\b|\breserve\b|\baitlist\b/.test(t));
+      return !hasAction;                                                  // action buttons gone
+    }, null, { timeout: maxMs });
+  } catch { /* timeout cap reached — fall through to readSignals() */ }
+}
+
 // ── Post-click booking confirmation ───────────────────────────────────────────
 // After clicking Register / Waitlist (and optionally a "Reserve" popup), this
 // checks whether the booking actually completed on the YMCA server.
@@ -203,11 +222,13 @@ function classifyActionState(allBtnTexts, pageText = '') {
 // If none of these fire, the function tries to click a "Reserve" popup once,
 // then re-checks. Returns { confirmed, viaPopup, cancelFound }.
 async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayStore) {
-  await page.waitForTimeout(2000);
+  await _waitForConfirmSignal(page, 2000);
 
   async function readSignals() {
     const btns = await detectActionButtons(page);
-    const body = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+    // Use textContent (no layout reflow) instead of innerText — confirmation
+    // text patterns are insensitive to CSS visibility so this is safe here.
+    const body = (await page.evaluate(() => document.body.textContent ?? '').catch(() => '')).toLowerCase();
     // Match explicit server-side confirmations. Includes FamilyWorks waitlist phrases.
     const textConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to|on the waitlist|waitlisted|waitlist confirmed|you.?re on/i.test(body);
     return { btns, body, textConfirm };
@@ -232,7 +253,7 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
     console.log(`[confirm-check] confirmation popup still open — clicking Reserve to finalize...`);
     replayStore.addEvent(_jobId, 'action_attempt', `Clicked Reserve (popup confirmation after ${actionLabel})`, `Attempt ${attempt}`);
     await step1.btns.registerBtn.first().click();
-    await page.waitForTimeout(2000);
+    await _waitForConfirmSignal(page, 2000);
 
     const step2 = await readSignals();
     console.log(`[confirm-check] after popup click: cancel=${step2.btns.hasCancel} register=${step2.btns.hasRegister} waitlist=${step2.btns.hasWaitlist} textOK=${step2.textConfirm}`);
@@ -257,10 +278,10 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
 
   // No popup appeared and no Cancel/text signal yet.
   // FamilyWorks sometimes takes 2–4 s to show "Cancel" after processing —
-  // wait an extra 3 s and re-check before falling back to the weak buttons-gone signal.
+  // wait up to 3 s but exit early if Cancel/Register state changes.
   if (!step1.btns.hasRegister && !step1.btns.hasWaitlist) {
-    console.log(`[confirm-check] buttons gone — waiting 3 s for delayed Cancel/text confirmation...`);
-    await page.waitForTimeout(3000);
+    console.log(`[confirm-check] buttons gone — waiting up to 3 s for delayed Cancel/text confirmation...`);
+    await _waitForConfirmSignal(page, 3000);
     const step1b = await readSignals();
     console.log(`[confirm-check] delayed re-check: cancel=${step1b.btns.hasCancel} textOK=${step1b.textConfirm}`);
 
