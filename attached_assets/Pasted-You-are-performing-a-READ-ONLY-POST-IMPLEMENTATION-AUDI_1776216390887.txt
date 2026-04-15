@@ -1,0 +1,182 @@
+You are performing a READ-ONLY POST-IMPLEMENTATION AUDIT for the YMCA Booker app.
+
+DO NOT CHANGE ANY CODE.
+
+Your goal is to verify that the “Timing Visibility Pass” (Stages 2–6) is correctly implemented, fully wired, and does not introduce regressions.
+
+Be precise, code-aware, and evidence-based.
+
+--------------------------------------------------
+SECTION A — API CONTRACT VERIFICATION
+--------------------------------------------------
+
+Verify the /api/readiness response shape matches what the frontend expects.
+
+Check:
+
+1. learnedRunSpeed
+2. lastTimingMetrics
+3. degradation (nested inside lastTimingMetrics)
+4. learnedTiming (already existing)
+
+For each:
+- confirm it is always present OR correctly nullable
+- confirm field names match frontend usage exactly
+- confirm units (ms vs seconds) are consistent
+
+Call out:
+- missing fields
+- naming mismatches
+- optional vs required inconsistencies
+
+--------------------------------------------------
+SECTION B — FRONTEND TYPE ALIGNMENT
+--------------------------------------------------
+
+Inspect client/src/lib/api.ts (or equivalent).
+
+Verify:
+- learnedRunSpeed is typed correctly
+- lastTimingMetrics is typed correctly
+- degradation structure is typed correctly
+
+Check:
+- no “any” types masking issues
+- no missing fields from backend contract
+- no extra fields assumed by frontend
+
+--------------------------------------------------
+SECTION C — TOOLS UI DATA FLOW
+--------------------------------------------------
+
+Trace the full flow:
+
+/api/readiness
+→ fetchReadiness()
+→ useReadiness()
+→ ToolsScreen (or TimingPanel)
+
+Verify:
+
+1. learnedRunSpeed is:
+   - received
+   - passed into component
+   - rendered
+
+2. lastTimingMetrics is:
+   - received
+   - passed
+   - rendered
+
+3. degradation is:
+   - conditionally rendered only when detected === true
+
+Confirm:
+- no silent drops of fields
+- no incorrect destructuring
+- no undefined access risks
+
+--------------------------------------------------
+SECTION D — NOW SCREEN SAFETY CHECK
+--------------------------------------------------
+
+Verify Now screen behavior:
+
+1. executionTiming still works as before
+2. new timing hints:
+   - do NOT override primary booking state
+   - are conditional (not always visible)
+   - do NOT introduce flicker or rapid state changes
+
+Check:
+- no heavy computations in render loop
+- no repeated re-renders from timing fields
+- no blocking UI logic tied to timing data
+
+--------------------------------------------------
+SECTION E — DISPLAY LOGIC CORRECTNESS
+--------------------------------------------------
+
+Verify correctness of displayed values:
+
+1. Lead time:
+   - uses neededLeadTimeMs (not medianTotalMs directly)
+   - clearly distinguishes learned vs default
+
+2. Timing breakdown:
+   - uses correct fields (auth_phase_ms, etc.)
+   - no swapped or mislabeled metrics
+
+3. Slowest phase:
+   - matches backend slowest_phase
+
+4. Degradation:
+   - ratioX correctly interpreted (e.g., 1.87×)
+   - current vs median values not reversed
+
+--------------------------------------------------
+SECTION F — NULL / COLD-START HANDLING
+--------------------------------------------------
+
+Test mentally and via code paths:
+
+Case 1: < 3 observations
+- learnedRunSpeed should be null
+- UI should not break
+- default messaging should appear
+
+Case 2: no lastTimingMetrics
+- Tools should not crash
+- sections should hide or show fallback
+
+Case 3: no degradation
+- no warning UI should appear
+
+Confirm:
+- all guards are in place
+- no undefined property access
+
+--------------------------------------------------
+SECTION G — REGRESSION CHECKS
+--------------------------------------------------
+
+Verify nothing else broke:
+
+- confirmed-ready logic unchanged
+- readiness-state logic unchanged
+- scheduler/timing logic untouched
+- no mutation handlers affected
+- no API endpoints modified incorrectly
+
+--------------------------------------------------
+SECTION H — PERFORMANCE CHECK
+--------------------------------------------------
+
+Check:
+
+- no large objects repeatedly cloned in render
+- no unnecessary JSON parsing in UI
+- no polling amplification
+- no heavy formatting loops
+
+--------------------------------------------------
+SECTION I — SUMMARY
+--------------------------------------------------
+
+Provide:
+
+1. What is working correctly
+2. Any mismatches or risks
+3. Any UI inconsistencies
+4. Any data contract issues
+5. Confidence level (high / medium / low)
+
+--------------------------------------------------
+
+RULES
+
+- Do NOT suggest redesigns
+- Do NOT change architecture
+- Focus only on verification
+- Be specific and actionable
+- Call out uncertainty explicitly
