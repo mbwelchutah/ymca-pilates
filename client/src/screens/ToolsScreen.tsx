@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { ScreenContainer } from '../components/layout/ScreenContainer'
 import { SectionHeader } from '../components/layout/SectionHeader'
@@ -479,6 +479,17 @@ const PHASE_ORDER = [
   'first_click_to_confirmation',
 ] as const
 
+// Stage 2 sub-markers: finer-grained slices within each parent phase.
+// Only rendered when non-null (i.e. runs after Stage 2 was deployed).
+const PHASE_SUB_MARKERS: Partial<Record<string, Array<{ field: string; label: string }>>> = {
+  page_ready_to_class_found:  [{ field: 'filter_apply_ms', label: 'Filter' }],
+  class_found_to_first_click: [{ field: 'card_click_ms',   label: 'Click'  }],
+  first_click_to_confirmation:[
+    { field: 'modal_wait_ms',   label: 'Modal render' },
+    { field: 'modal_verify_ms', label: 'Verify text'  },
+  ],
+}
+
 function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) {
   const ltm = readiness?.lastTimingMetrics ?? null
   if (!ltm) return null
@@ -509,30 +520,45 @@ function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) 
         )}
       </div>
 
-      {/* Phase rows */}
+      {/* Phase rows — each optionally followed by indented Stage 2 sub-marker rows */}
       {PHASE_ORDER.map(key => {
         const ms = ltm[key]
         if (ms == null) return null
         const isSlowest = key === slowest
+        const subs = (PHASE_SUB_MARKERS[key] ?? []).filter(
+          s => (ltm as Record<string, number | null>)[s.field] != null
+        )
         return (
-          <div
-            key={key}
-            className={`flex items-center justify-between px-4 py-2.5 border-b border-divider last:border-0 ${
-              isSlowest ? 'bg-yellow-500/5' : ''
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className={`text-[13px] ${isSlowest ? 'text-yellow-400' : 'text-text-secondary'}`}>
-                {TIMING_PHASE_LABELS[key] ?? key}
+          <Fragment key={key}>
+            <div
+              className={`flex items-center justify-between px-4 py-2.5 border-b border-divider ${
+                isSlowest ? 'bg-yellow-500/5' : ''
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[13px] ${isSlowest ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                  {TIMING_PHASE_LABELS[key] ?? key}
+                </span>
+                {isSlowest && (
+                  <span className="text-[10px] text-yellow-500 font-medium">slowest</span>
+                )}
+              </div>
+              <span className={`text-[13px] font-semibold ${isSlowest ? 'text-yellow-400' : 'text-text-primary'}`}>
+                {fmtSec(ms)}
               </span>
-              {isSlowest && (
-                <span className="text-[10px] text-yellow-500 font-medium">slowest</span>
-              )}
             </div>
-            <span className={`text-[13px] font-semibold ${isSlowest ? 'text-yellow-400' : 'text-text-primary'}`}>
-              {fmtSec(ms)}
-            </span>
-          </div>
+            {subs.map(({ field, label }) => (
+              <div
+                key={field}
+                className="flex items-center justify-between pl-8 pr-4 py-1 border-b border-divider"
+              >
+                <span className="text-[11px] text-text-muted">↳ {label}</span>
+                <span className="text-[11px] font-medium text-text-muted">
+                  {fmtSec((ltm as Record<string, number | null>)[field]!)}
+                </span>
+              </div>
+            ))}
+          </Fragment>
         )
       })}
 
