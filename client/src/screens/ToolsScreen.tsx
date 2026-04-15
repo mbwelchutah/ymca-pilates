@@ -282,7 +282,7 @@ function DegradationWarningBanner({ readiness }: { readiness: ReadinessData | nu
           <div className="mt-1.5 space-y-0.5">
             {deg.slowPhases.map(sp => (
               <p key={sp.phase} className="text-[12px] text-yellow-400/80">
-                {TIMING_PHASE_LABELS[sp.phase] ?? sp.phase}
+                {DEGRADATION_PHASE_LABELS[sp.phase] ?? sp.phase}
                 {' — '}
                 {fmtSec(sp.currentMs)} vs median {fmtSec(sp.medianMs)}
                 {' '}
@@ -462,6 +462,14 @@ const TIMING_PHASE_LABELS: Record<string, string> = {
   page_ready_to_class_found:  'Page → class',
   class_found_to_first_click: 'Class → click',
   first_click_to_confirmation:'Click → confirm',
+}
+
+// Labels for the short aliases used by degradation.slowPhases[].phase.
+// Distinct from TIMING_PHASE_LABELS which is keyed on full metric field names.
+const DEGRADATION_PHASE_LABELS: Record<string, string> = {
+  auth:      'Auth',
+  page_load: 'Page load',
+  discovery: 'Discovery',
 }
 
 const PHASE_ORDER = [
