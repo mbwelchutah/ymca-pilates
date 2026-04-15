@@ -2521,6 +2521,38 @@ async function runBookingJob(job, opts = {}) {
         }
       }
 
+      // ── Post-recovery modal-action-missing diagnostic ──────────────────────
+      // Fires only when: the dialog is confirmed open (_attemptModalScope set)
+      // AND the initial detectActionButtons found no buttons AND the 3-retry
+      // recovery loop also found no buttons.  Records what the modal actually
+      // contains so failures can be distinguished:
+      //   countdown_visible   — registration opens at a specific time (countdown shown)
+      //   modal_nearly_empty  — dialog barely rendered (Bubble.io half-render)
+      //   action_not_visible  — modal has content but no booking buttons yet
+      if (_attemptModalScope && !hasRegister && !hasWaitlist && !hasCancelNow && !hasLoginButton) {
+        const _dialogPreview = await _attemptModalScope.evaluate(el =>
+          (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+        ).catch(() => '');
+        const _diagLabel = /\d+\s*(?:hr|hour|min|minute|sec)/i.test(_dialogPreview)
+          ? 'countdown_visible'
+          : _dialogPreview.length < 20
+            ? 'modal_nearly_empty'
+            : 'action_not_visible';
+        console.log(`[modal-action-missing] attempt ${attempt}: modal open (${_diagLabel}) — no action buttons after recovery. Preview: "${_dialogPreview.slice(0, 100)}"`);
+        emitEvent(_state, 'ACTION', 'ACTION_BLOCKED',
+          `Modal open but no action buttons after recovery (${_diagLabel})`,
+          {
+            evidence: {
+              attempt,
+              diagLabel:    _diagLabel,
+              modalPreview: _dialogPreview.slice(0, 200),
+              buttonsVisible: allBtns,
+            }
+          }
+        );
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       // Stage 2 marker: record the first time buttons become truly available.
       // Placed after Stage 4 recovery so that recovery time is included in the
       // measured gap (modal_to_action_ready_ms = modal_ready_at → action_ready_at).
