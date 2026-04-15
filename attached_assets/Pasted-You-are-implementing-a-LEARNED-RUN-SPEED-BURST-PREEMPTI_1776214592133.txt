@@ -1,0 +1,396 @@
+You are implementing a LEARNED RUN SPEED + BURST PREEMPTION + TIMING DEGRADATION UI VISIBILITY PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Surface the timing intelligence that already exists in the backend so the user can understand:
+
+- how early the bot is arming
+- whether that lead time is learned or default
+- what the latest run’s timing looked like
+- whether the site is slower than normal today
+- whether burst preemption fired
+
+This is NOT a new backend timing pass.
+The timing system already exists.
+This pass is about making that intelligence visible, useful, and calm.
+
+IMPORTANT RULES
+
+- Do NOT redesign the timing architecture
+- Do NOT add unrelated new features
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / WHAT ALREADY EXISTS
+==================================================
+
+The backend already provides timing intelligence through /api/readiness, including:
+- executionTiming
+- learnedTiming
+- learnedRunSpeed
+- lastTimingMetrics
+- degradation
+
+The system now also supports:
+- adaptive arming based on learned run speed
+- default cold-start preemption
+- degradation detection vs learned medians
+- burst preemption inside the needed lead window
+
+What is missing is UI visibility.
+
+We want:
+- Tools = detailed timing visibility
+- Now = light, calm timing/status visibility only when useful
+
+==================================================
+STAGE 1 — AUDIT CURRENT UI SURFACES AND TIMING DATA AVAILABILITY
+==================================================
+
+Goal:
+Confirm exactly where the timing data can be surfaced and what is already available to the frontend.
+
+Tasks:
+
+1. Audit the current frontend consumers of /api/readiness
+2. Confirm which screens/components currently have access to:
+- learnedTiming
+- learnedRunSpeed
+- lastTimingMetrics
+- degradation
+- executionTiming
+
+3. Identify the best existing places to surface:
+- detailed timing info in Tools
+- light timing/status hints in Now
+
+4. Do NOT change behavior yet except minimal instrumentation if needed
+
+Success criteria:
+- best UI insertion points are clearly identified
+- available timing data contract is confirmed
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — ADD LEARNED RUN SPEED SECTION TO TOOLS
+==================================================
+
+Goal:
+Show the learned baseline timing in a clear way.
+
+Tasks:
+
+1. In Tools, add a section for learned run speed
+2. Show fields such as:
+- Armed lead time
+- Source: learned or default
+- Observation count
+- Median auth time
+- Median page-load time
+- Median discovery time
+- Median total lead time
+
+3. Keep labels calm and human-readable
+4. Hide or soften this section when data is not yet available
+
+Example:
+- Armed lead time: 47s
+- Source: learned
+- Based on: 5 runs
+- Auth: 14s
+- Page load: 15s
+- Discovery: 3s
+
+Success criteria:
+- Tools clearly explains the learned timing baseline
+- users can see what the bot is optimizing around
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — ADD LAST RUN TIMING BREAKDOWN TO TOOLS
+==================================================
+
+Goal:
+Show what happened on the most recent timing-observed run.
+
+Tasks:
+
+1. In Tools, add a section for the last timing metrics
+2. Show fields such as:
+- Open → run start
+- Auth phase
+- Run start → page ready
+- Page ready → class found
+- Class found → first click
+- Modal open
+- First click → confirmation
+- Slowest phase
+
+3. Keep it compact and readable
+4. Avoid raw log-style presentation
+
+Success criteria:
+- latest run timing is visible in a useful breakdown
+- the slowest phase is obvious
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — ADD DEGRADATION WARNING TO TOOLS
+==================================================
+
+Goal:
+Show when today’s run was meaningfully slower than the learned baseline.
+
+Tasks:
+
+1. In Tools, surface the degradation object from lastTimingMetrics when detected
+2. Show concise information like:
+- Slower than usual today
+- Slow phase: page load
+- Current: 28s
+- Normal: 15s
+- 1.87× slower
+
+3. If no degradation is detected, keep the UI quiet
+4. Keep this evidence-based and simple
+
+Success criteria:
+- timing degradation is visible when it matters
+- Tools can explain unusually slow mornings
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — ADD BURST PREEMPTION / ARMING CONTEXT TO TOOLS
+==================================================
+
+Goal:
+Explain whether the bot is using default or learned early arming and whether burst preemption fired.
+
+Tasks:
+
+1. In Tools, surface:
+- current effective armed lead time
+- whether source is:
+  - default
+  - learned
+- whether burst preemption fired on the latest run if that signal is available
+
+2. Example:
+- Armed early: 60s (default)
+or
+- Armed early: 47s (learned)
+- Burst preempted early: yes
+
+3. Keep the wording understandable, not overly technical
+
+Success criteria:
+- user can tell why the bot armed when it did
+- preemptive behavior is visible, not hidden
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — ADD LIGHT TIMING STATUS TO NOW
+==================================================
+
+Goal:
+Give Now a light, calm timing-awareness layer without turning it into a diagnostics panel.
+
+Tasks:
+
+1. Add a lightweight timing/status hint to Now when useful, such as:
+- Armed early based on recent speed
+- Using default early arm timing
+- Site slower than usual today
+
+2. Show timing-related messaging only when it adds value
+3. Keep it secondary to the main booking state
+4. Do NOT dump detailed timing numbers into Now by default
+
+Success criteria:
+- Now feels smarter and more transparent
+- timing intelligence is visible without clutter
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — ADD LIGHT EXPANDED DETAIL / TOOLTIP FOR TIMING CONTEXT
+==================================================
+
+Goal:
+Allow the user to understand timing behavior without crowding the main UI.
+
+Tasks:
+
+1. Add an expandable detail, sublabel, or tooltip path where appropriate
+2. This can explain things like:
+- this job currently arms early by 47s
+- based on 5 recent runs
+- page load is usually the slowest phase
+
+3. Keep it optional and tucked away
+4. Do not make this the primary Now UI
+
+Success criteria:
+- deeper timing context is available when wanted
+- UI stays clean by default
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — POLISH LANGUAGE + VISUAL HIERARCHY
+==================================================
+
+Goal:
+Make the timing UI feel product-quality, not engineering-only.
+
+Tasks:
+
+1. Refine wording to be:
+- calm
+- human
+- specific
+2. Use hierarchy so:
+- Tools is detailed
+- Now is light
+3. Avoid overly raw labels like:
+- medianTotalMs
+- degradation thresholdX
+unless hidden in a deeper diagnostic view
+
+4. Make sure labels like:
+- Armed lead time
+- Slower than usual
+- Based on 5 runs
+feel natural
+
+Success criteria:
+- timing information feels understandable and polished
+- UI adds confidence instead of noise
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — VERIFY NO CONTRADICTIONS BETWEEN TIMING SURFACES
+==================================================
+
+Goal:
+Ensure Tools and Now tell the same timing story.
+
+Tasks:
+
+1. Verify:
+- learned/default arm source is consistent across Tools and Now
+- degradation state is consistent across surfaces
+- latest timing metrics shown in Tools match API values
+- no stale timing values are displayed after refresh
+
+2. Confirm behavior when:
+- there are fewer than 3 observations
+- lastTimingMetrics is null
+- degradation is absent
+- learnedRunSpeed is absent
+
+Success criteria:
+- timing UI is consistent and resilient across data states
+- there are no contradictory timing messages
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA + PRODUCT-FEEL PASS
+==================================================
+
+Goal:
+Make the timing visibility feel useful, reassuring, and ready for real runs.
+
+Tasks:
+
+1. Verify:
+- Tools gives enough detail to debug timing issues
+- Now gives enough context to reassure without clutter
+- learned/default arm timing is clear
+- degradation is visible only when meaningful
+- burst preemption / early-arm behavior is understandable
+
+2. Summarize the final user value:
+- what the user can now understand that was invisible before
+- how this helps interpret rough booking mornings
+- how this helps trust adaptive arming
+
+Success criteria:
+- timing intelligence is now visible and useful
+- the system feels smart, transparent, and easier to trust
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- Tools shows learned run speed clearly
+- Tools shows the latest timing breakdown
+- Tools shows degradation when runs are slower than normal
+- Tools shows whether arming is default or learned
+- Tools shows burst preemption context if available
+- Now shows light timing-awareness without becoming cluttered
+- timing intelligence is understandable without reading logs
+
+The result should feel:
+- smart
+- transparent
+- calm
+- confidence-building
+
+It should NOT feel like:
+- hidden backend magic
+- a wall of engineering numbers
+- duplicate noise across Tools and Now
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
