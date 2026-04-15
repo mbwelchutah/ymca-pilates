@@ -429,6 +429,7 @@ export const api = {
     lastTimingMetrics: {
       open_to_run_start:          number | null
       auth_phase_ms:              number | null
+      run_start_to_page_ready:    number | null
       page_ready_to_class_found:  number | null
       class_found_to_first_click: number | null
       modal_open_ms:              number | null
