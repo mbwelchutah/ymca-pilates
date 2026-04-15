@@ -2409,8 +2409,36 @@ async function runBookingJob(job, opts = {}) {
       let { hasRegister, hasWaitlist, hasCancel: hasCancelNow, hasLoginRequired: hasLoginButton,
             registerBtn, waitlistBtn, cancelBtn, allBtnTexts: allBtns,
             registerStrategy, waitlistStrategy } = await detectActionButtons(page, _attemptModalScope);
-      // Stage 2 marker: record the first time detectActionButtons() returns a usable button.
-      // Paired with modal_ready_at to derive modal_to_action_ready_ms.
+
+      // Stage 4: Local recovery for half-rendered modal states.
+      // If the modal dialog is confirmed open (scope found) but no action buttons
+      // rendered yet, do a short bounded retry before escalating to the full
+      // 5s wait + page reload cycle.  Cap: 3 × 150ms = 450ms max.
+      // Fires at any attempt — Bubble.io can briefly detach buttons after re-open.
+      if (_attemptModalScope && !hasRegister && !hasWaitlist && !hasCancelNow && !hasLoginButton) {
+        console.log(`[half-render] attempt ${attempt}: dialog open but no buttons yet — local recovery (3 × 150ms)`);
+        for (let _r = 0; _r < 3; _r++) {
+          await page.waitForTimeout(150);
+          const _retry = await detectActionButtons(page, _attemptModalScope);
+          if (_retry.hasRegister || _retry.hasWaitlist || _retry.hasCancel || _retry.hasLoginRequired) {
+            console.log(`[half-render] Recovered after ${_r + 1} retry — buttons now visible`);
+            hasRegister    = _retry.hasRegister;
+            hasWaitlist    = _retry.hasWaitlist;
+            hasCancelNow   = _retry.hasCancel;
+            hasLoginButton = _retry.hasLoginRequired;
+            if (_retry.registerBtn)      registerBtn      = _retry.registerBtn;
+            if (_retry.waitlistBtn)      waitlistBtn      = _retry.waitlistBtn;
+            if (_retry.allBtnTexts)      allBtns          = _retry.allBtnTexts;
+            if (_retry.registerStrategy) registerStrategy = _retry.registerStrategy;
+            if (_retry.waitlistStrategy) waitlistStrategy = _retry.waitlistStrategy;
+            break;
+          }
+        }
+      }
+
+      // Stage 2 marker: record the first time buttons become truly available.
+      // Placed after Stage 4 recovery so that recovery time is included in the
+      // measured gap (modal_to_action_ready_ms = modal_ready_at → action_ready_at).
       if (attempt === 1 && !_tc.action_ready_at &&
           (hasRegister || hasWaitlist || hasCancelNow || hasLoginButton)) {
         _tc.action_ready_at = new Date().toISOString();
