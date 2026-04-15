@@ -9,6 +9,7 @@ const { runBookingJob, cancelRegistration } = require('../bot/register-pilates')
 const { scrapeSchedule } = require('../bot/scrape-schedule');
 const { getDryRun, setDryRun } = require('../bot/dry-run-state');
 const { getPhase }           = require('../scheduler/booking-window');
+const { checkJobConsistency } = require('../scheduler/job-consistency');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
 // Stage 10G — Booking bridge: lets burst-to-booking handoff update jobState.
@@ -5025,14 +5026,24 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'GET' && path === '/api/state') {
     const rawJobs = getAllJobs();
-    // Enrich every job with its own phase + bookingOpenMs (one getPhase call each).
+    // Enrich every job with phase, bookingOpenMs, and weekday-consistency check.
     const jobs = rawJobs.map(j => {
+      let phase = 'unknown';
+      let bookingOpenMs = null;
       try {
         const r = getPhase(j);
-        return { ...j, phase: r.phase, bookingOpenMs: r.bookingOpen ? r.bookingOpen.getTime() : null };
-      } catch (_) {
-        return { ...j, phase: 'unknown', bookingOpenMs: null };
+        phase        = r.phase;
+        bookingOpenMs = r.bookingOpen ? r.bookingOpen.getTime() : null;
+      } catch (_) { /* phase stays 'unknown' */ }
+
+      const weekdayConsistency = checkJobConsistency(j);
+      if (!weekdayConsistency.isConsistent) {
+        console.warn(
+          `[job-consistency] Job #${j.id} (${j.class_title}): ${weekdayConsistency.mismatchReason}`
+        );
       }
+
+      return { ...j, phase, bookingOpenMs, weekdayConsistency };
     });
     // Top-level phase + bookingOpenMs reuse the enriched first-active job's values.
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
