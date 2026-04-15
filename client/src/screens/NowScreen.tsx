@@ -949,7 +949,13 @@ function formatDayTime(job: Job) {
     0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',
     4:'Thursday',5:'Friday',6:'Saturday',
   }
-  const dayName = days[job.day_of_week as unknown as number] ?? job.day_of_week
+  // When target_date and day_of_week disagree, prefer the weekday that the
+  // calendar date actually falls on — never show impossible combos like
+  // "Tuesday, Apr 23" when Apr 23 is Thursday.
+  const wc = job.weekdayConsistency
+  const dayName = (wc && !wc.isConsistent && wc.computedWeekday)
+    ? wc.computedWeekday
+    : (days[job.day_of_week as unknown as number] ?? job.day_of_week)
   // When a specific date is set, show it so the user knows exactly which class they're targeting.
   const dateStr = job.target_date
     ? `, ${new Date(job.target_date + 'T00:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}`
@@ -2068,9 +2074,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <h2 className="text-[28px] font-bold tracking-tighter text-text-primary leading-tight">
                 {job.class_title}
               </h2>
-              <p className="text-[14px] text-text-secondary mt-1 mb-3">
+              <p className={`text-[14px] text-text-secondary mt-1 ${job.weekdayConsistency?.isConsistent === false ? 'mb-1' : 'mb-3'}`}>
                 {formatDayTime(job)}
               </p>
+              {job.weekdayConsistency?.isConsistent === false && (
+                <p className="text-[12px] text-amber-600 mb-3 flex items-center gap-1">
+                  <span>⚠</span>
+                  <span>Day/date mismatch — check job settings</span>
+                </p>
+              )}
             </>
           ) : (
             <div className="mb-3">

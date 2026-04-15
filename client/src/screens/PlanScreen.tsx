@@ -148,7 +148,13 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
       .catch(() => {})
   }, [job.id])
 
-  const dayName  = DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week
+  // When target_date and day_of_week disagree, use the true weekday derived
+  // from the calendar date — prevents showing impossible combos like "Tue, Apr 23"
+  // when Apr 23 is actually Thursday.
+  const wc = job.weekdayConsistency
+  const dayName = (wc && !wc.isConsistent && wc.computedWeekday)
+    ? wc.computedWeekday
+    : (DAY_NAMES[job.day_of_week as unknown as number] ?? job.day_of_week)
   const phase    = (job.phase ?? 'unknown') as Phase
   const countdown = useCountdown(job.bookingOpenMs ?? null)
 
@@ -285,6 +291,16 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
             </div>
           )
         })()}
+
+        {/* Weekday/date consistency warning — shown when stored day_of_week
+             disagrees with the actual calendar weekday of target_date */}
+        {wc && !wc.isConsistent && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full leading-none bg-amber-500/10 text-amber-600">
+              Date mismatch
+            </span>
+          </div>
+        )}
 
         {/* Row 4: Timing — absolute date + live countdown */}
         {timingLine && (

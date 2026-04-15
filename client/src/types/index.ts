@@ -76,6 +76,12 @@ export interface Job {
   // Enriched by /api/state
   phase?: Phase
   bookingOpenMs?: number | null
+  weekdayConsistency?: {
+    isConsistent: boolean
+    storedWeekday: string | null
+    computedWeekday: string | null
+    mismatchReason: string | null
+  }
 }
 
 export interface ScrapedClass {
