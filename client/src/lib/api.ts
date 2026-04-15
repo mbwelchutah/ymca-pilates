@@ -2,6 +2,7 @@ import type { Job, AppState, ScrapedClass, SessionStatus } from '../types'
 import type { ClassTruthResult, CacheFreshness } from './classTruth'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
+import type { DurationMs } from './timeUtils'
 
 // Stage 5/6 — canonical confirmed-ready state shape (mirrors src/bot/confirmed-ready.js).
 export interface ConfirmedReadyState {
@@ -408,9 +409,9 @@ export const api = {
       warmupAt:      string        // ISO — when warmup phase begins (3 min before)
       armedAt:       string        // ISO — when armed phase begins (45 s before)
       phase:         'waiting' | 'warmup' | 'armed' | 'executing' | 'confirming'
-      msUntilOpen:   number        // negative when window is already open
-      msUntilWarmup: number
-      msUntilArmed:  number
+      msUntilOpen:   DurationMs    // negative when window is already open
+      msUntilWarmup: DurationMs
+      msUntilArmed:  DurationMs
     } | null
     learnedTiming: {
       learnedOffsetMs:  number

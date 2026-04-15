@@ -11,11 +11,17 @@
  * the class of bug where an EpochMs is accidentally added to Date.now().
  */
 
+/** Absolute epoch timestamp (ms since Unix epoch). Never add Date.now() to this. */
+export type EpochMs = number
+
+/** Relative duration in milliseconds from "now". May be negative (past). */
+export type DurationMs = number
+
 /**
  * Convert an absolute epoch timestamp to a Date object.
  * Use for: bookingOpenEpochMs, any server-side .getTime() value.
  */
-export function epochMsToDate(epochMs: number | null | undefined): Date | null {
+export function epochMsToDate(epochMs: EpochMs | null | undefined): Date | null {
   return epochMs != null ? new Date(epochMs) : null
 }
 
@@ -23,7 +29,7 @@ export function epochMsToDate(epochMs: number | null | undefined): Date | null {
  * Convert a relative duration (ms from now) to a Date object.
  * Use for: msUntilOpen, countdown offsets.
  */
-export function durationMsToDate(msFromNow: number | null | undefined): Date | null {
+export function durationMsToDate(msFromNow: DurationMs | null | undefined): Date | null {
   return msFromNow != null ? new Date(Date.now() + msFromNow) : null
 }
 
