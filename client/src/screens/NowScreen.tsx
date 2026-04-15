@@ -601,6 +601,8 @@ export function resolveSmartButton(opts: {
   isNotYetChecked?:       boolean   // Stage 10: COMPOSITE_NOT_TESTED — nothing verified yet
 }): SmartButtonConfig {
   const { cardState, countdown, bookingOpenMs, nextWindow, isWaitlistScenario = false, isClassFull = false, isRegistrationClosed = false, isAlreadyRegistered = false, isNotYetChecked = false } = opts
+  // Absolute epoch timestamp (ms since Unix epoch) — never a relative duration.
+  const bookingOpenEpochMs = bookingOpenMs
 
   switch (cardState) {
     case 'registered':
@@ -652,7 +654,7 @@ export function resolveSmartButton(opts: {
       // a raw countdown that requires mental math.  Fall back to countdown when
       // we have it but can't compute the absolute time, and to null when neither
       // is available (e.g. job has no class_time configured).
-      const openAt = bookingOpenMs != null ? new Date(Date.now() + bookingOpenMs) : null
+      const openAt = bookingOpenEpochMs != null ? new Date(Date.now() + bookingOpenEpochMs) : null
       const timeStr = openAt
         ? openAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
         : null
@@ -1007,10 +1009,12 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const job = appState.jobs.find(j => j.id === selectedJobId) ?? null
 
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
-  const phase: Phase  = computePhase(bookingOpenMs)
+  // Absolute epoch timestamp (ms since Unix epoch) — never a relative duration.
+  const bookingOpenEpochMs = bookingOpenMs
+  const phase: Phase  = computePhase(bookingOpenEpochMs)
 
   const cfg      = PHASE_CONFIG[phase]
-  const countdown = useCountdown(bookingOpenMs)
+  const countdown = useCountdown(bookingOpenEpochMs)
   const isBooked = isBookingCurrentCycle(job)
   const isStaleBooking =
     (job?.last_result === 'booked' || job?.last_result === 'dry_run') && !isBooked
@@ -1937,7 +1941,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   const smartButton: SmartButtonConfig = resolveSmartButton({
     cardState:    nowCardState,
     countdown,
-    bookingOpenMs,
+    bookingOpenMs: bookingOpenEpochMs,
     nextWindow:   bgReadiness?.armed?.nextWindow ?? null,
     isWaitlistScenario,
     isClassFull,
@@ -2201,11 +2205,11 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     ))
                   : '—'}
               </span>
-              {bookingOpenMs != null && (
+              {bookingOpenEpochMs != null && (
                 <p className="text-[12px] text-text-muted mt-2">
                   {execPhase === 'warmup'
-                    ? `Opening soon · ${formatOpensRelative(bookingOpenMs)}`
-                    : formatOpens(bookingOpenMs)}
+                    ? `Opening soon · ${formatOpensRelative(bookingOpenEpochMs)}`
+                    : formatOpens(bookingOpenEpochMs)}
                 </p>
               )}
 
