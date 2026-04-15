@@ -1960,12 +1960,26 @@ async function runBookingJob(job, opts = {}) {
           document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
         ).catch(() => {});
 
-        // Signal-driven modal wait: resolve as soon as action buttons appear
-        // (capped at 3 s). Falls back gracefully — we proceed regardless.
-        // Replaces the blunt waitForTimeout(2000) to catch fast modal renders early.
+        // Signal-driven modal wait: wait for [role="dialog"] to appear first
+        // (capped at 3 s), which avoids being fooled by the FamilyWorks page-
+        // header "Login" button that is always present regardless of modal state.
+        // Falls back gracefully — we proceed even if no dialog appears.
         _tc.modal_wait_start = new Date().toISOString();
-        await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
-        _tc.modal_ready_at   = new Date().toISOString(); // action button in DOM — BEFORE settle
+        const _dialogHandle = await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => null);
+        _tc.modal_ready_at  = new Date().toISOString(); // dialog in DOM — BEFORE settle
+
+        if (_dialogHandle) {
+          // Dialog appeared — additionally wait up to 500 ms for action buttons
+          // to render inside it, so the text-ready check below has a real button
+          // to walk from rather than the header Login button.
+          await page.waitForSelector(
+            ACTION_SELECTORS.modalReady.split(', ').map(s => `[role="dialog"] ${s}`).join(', '),
+            { timeout: 500 }
+          ).catch(() => null);
+        } else {
+          // No [role="dialog"] found — fall back to any page-level match (legacy path)
+          await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 500 }).catch(() => null);
+        }
 
         // Stage 5: Replace the flat 300ms settle with a signal-driven text-ready wait.
         // The action button appeared, but Bubble.io may populate modal text (class
@@ -1974,9 +1988,11 @@ async function runBookingJob(job, opts = {}) {
         // threshold used by modal verification below.  Resolves as soon as text is
         // ready; caps at 400ms so the worst case is only slightly above the old
         // fixed 300ms, while the common case resolves in <100ms.
+        // Scoped to [role="dialog"] first to avoid matching the page-header Login button.
         try {
           await page.waitForFunction((sel) => {
-            const btn = document.querySelector(sel);
+            const dialog = document.querySelector('[role="dialog"]');
+            const btn = dialog ? dialog.querySelector(sel) : document.querySelector(sel);
             if (!btn) return true; // button gone — proceed; verification will handle it
             let node = btn.parentElement;
             for (let i = 0; i < 12 && node && node !== document.body; i++) {
@@ -1994,14 +2010,16 @@ async function runBookingJob(job, opts = {}) {
         // Verify the modal matches expected time + instructor.
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
         _tc.modal_verify_start = new Date().toISOString();
-        // Scope to the modal container rather than body.innerText.  body.innerText
-        // triggers a full-page layout reflow; textContent does not.  We walk up
-        // from the action button (proven inside the modal by waitForSelector above)
-        // until we find an ancestor with enough text to contain time + instructor.
-        // Falls back to document.body.textContent if no suitable ancestor is found.
+        // Scope to the modal [role="dialog"] container first — this prevents the
+        // FamilyWorks page-header "Login" button from being used as the anchor,
+        // which would cause the ancestor walk to read page-header/nav text and
+        // then fall back to document.body, potentially matching the time of a
+        // DIFFERENT class (e.g. Chair Yoga 10:45a-11:45a end time matching "11:45 a").
+        // Only if no [role="dialog"] is present does it fall back to page-wide search.
         const modalText = await page.evaluate((modalSel) => {
           const norm = t => (t || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
-          const btn = document.querySelector(modalSel);
+          const dialog = document.querySelector('[role="dialog"]');
+          const btn = dialog ? dialog.querySelector(modalSel) : document.querySelector(modalSel);
           if (btn) {
             let node = btn.parentElement;
             for (let i = 0; i < 12 && node && node !== document.body; i++) {
@@ -2009,8 +2027,12 @@ async function runBookingJob(job, opts = {}) {
               if (txt.length > 80) return txt;
               node = node.parentElement;
             }
+            // Walked out of modal without finding >80 chars — return dialog text
+            // directly rather than falling back to full body (avoids false positives
+            // from other classes in the schedule list).
+            if (dialog) return norm(dialog.textContent || '');
           }
-          return norm(document.body.textContent || ''); // safe fallback (no layout)
+          return norm(document.body.textContent || ''); // safe fallback (no dialog, no layout)
         }, ACTION_SELECTORS.modalReady).catch(() => '');
         // Capture a short window around the time match for the consolidated run summary.
         // Use the actual time digits from classTimeNorm (e.g. "7:45" or "4:20").
@@ -2660,7 +2682,11 @@ async function runBookingJob(job, opts = {}) {
         if (DRY_RUN) { await page.waitForTimeout(10000); break; }
         await page.waitForTimeout(5000);
         await page.reload();
-        await page.waitForLoadState('networkidle');
+        // 8-second cap: FamilyWorks SPA keeps background XHRs open and may
+        // never reach "networkidle", hanging the bot for Playwright's 30-second
+        // default.  8 s is well above the observed 2-4 s for the initial page
+        // render + data fetch on a fast connection.
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => null);
         await page.waitForTimeout(3000);
 
         // Re-find the correct day tab after reload, using exact-date if available.
