@@ -2806,8 +2806,74 @@ async function runBookingJob(job, opts = {}) {
               await targetCard.click({ force: true, timeout: 5000 });
             }
           }
+
+          // ── Retry modal verification ───────────────────────────────────────
+          // The simplified re-click above bypasses attemptClickAndVerify, so we
+          // do a lightweight time-check here to catch wrong-modal openings.
+          // Signal-driven: wait up to 3 s for [role="dialog"] to appear (same
+          // cap as the primary click path), then verify the class time is present.
+          const _retryDialog = await page.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => null);
+          if (_retryDialog && classTimeNorm) {
+            // Give action buttons a moment to populate modal text.
+            await page.waitForSelector(
+              ACTION_SELECTORS.modalReady.split(', ').map(s => `[role="dialog"] ${s}`).join(', '),
+              { timeout: 500 }
+            ).catch(() => null);
+
+            // Read modal text using the same scoped evaluate as the primary path.
+            const _retryModalText = await page.evaluate((modalSel) => {
+              const norm = t => (t || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
+              const dialog = document.querySelector('[role="dialog"]');
+              const btn = dialog ? dialog.querySelector(modalSel) : document.querySelector(modalSel);
+              if (btn) {
+                let node = btn.parentElement;
+                for (let i = 0; i < 12 && node && node !== document.body; i++) {
+                  const txt = norm(node.textContent || '').trim();
+                  if (txt.length > 80) return txt;
+                  node = node.parentElement;
+                }
+                if (dialog) return norm(dialog.textContent || '');
+              }
+              return norm((dialog || document.body).textContent || '');
+            }, ACTION_SELECTORS.modalReady).catch(() => '');
+
+            if (_retryModalText.includes(classTimeNorm)) {
+              console.log(`[retry-modal] attempt ${attempt}: modal identity confirmed (time "${classTimeNorm}" present).`);
+              await page.waitForTimeout(300); // brief settle after verified dialog
+            } else {
+              // Wrong modal — the re-click opened a different class row's detail.
+              // Return an error (not not_found) because the class WAS found on the
+              // schedule and modal reached was already recorded (_state.bundle.modal).
+              const _retryPreview = _retryModalText.slice(0, 150);
+              console.warn(`⚠️ [retry-modal] attempt ${attempt}: reopened modal shows wrong class — expected time "${classTimeNorm}" absent.`);
+              console.warn(`   Modal preview: ${_retryPreview}`);
+              await captureFailure('verify', 'time_mismatch');
+              emitFailure('VERIFY', 'VERIFY_TIME_MISMATCH',
+                `Retry attempt ${attempt}: reopened modal showed wrong class (expected time "${classTimeNorm}" absent)`,
+                { evidence: { attempt, classTimeNorm, modalPreview: _retryPreview } }
+              );
+              return logRunSummary({
+                status:   'error',
+                message:  `Class found on schedule but retry modal showed wrong class — expected time "${classTimeNorm}" not found in reopened modal (attempt ${attempt}).`,
+                screenshotPath,
+                phase:    'verify',
+                reason:   'modal_wrong_class',
+                category: 'verify',
+                label:    'Retry: modal identity mismatch',
+                url:      page.url(),
+              });
+            }
+          } else if (!_retryDialog) {
+            // Modal did not open — log and fall through.  The next iteration's
+            // detectActionButtons will return empty and the loop continues normally.
+            console.log(`[retry-modal] attempt ${attempt}: no dialog appeared after re-click — continuing to next poll.`);
+            await page.waitForTimeout(2000); // preserve original settle when no dialog
+          }
+          // ─────────────────────────────────────────────────────────────────
+        } else {
+          // No card to click — preserve original 2 s settle so the loop doesn't spin.
+          await page.waitForTimeout(2000);
         }
-        await page.waitForTimeout(2000);
       }
     }
 
