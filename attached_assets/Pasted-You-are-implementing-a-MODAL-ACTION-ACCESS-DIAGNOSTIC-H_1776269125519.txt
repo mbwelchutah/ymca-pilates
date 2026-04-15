@@ -1,0 +1,163 @@
+You are implementing a MODAL / ACTION ACCESS DIAGNOSTIC + HARDENING PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the situation where the bot clearly finds the class row and often reaches the modal, but still fails with misleading errors like:
+- "Could not access registration link"
+- "Class not found on schedule"
+
+The screenshots show:
+- the class is present on the correct day
+- the bot reaches "Class found"
+- the bot often reaches "Modal reached"
+- failure likely occurs in the modal/action-access path, not row discovery
+
+This pass should:
+1. distinguish class discovery success from modal/action failure
+2. improve modal-local action detection
+3. stop collapsing modal/action failures into generic not_found messages
+4. add clearer diagnostics for what failed after the class was found
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole bot
+- Keep changes focused on the modal/action path
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT THE FAILURE BOUNDARY
+--------------------------------------------------
+
+Trace the exact path from:
+- class found
+- row click
+- modal reached
+- action detection
+- registration link access
+
+Answer clearly:
+- where "Class found" is declared
+- where "Modal reached" is declared
+- where "Could not access registration link" is emitted
+- where "Class not found on schedule" / not_found is emitted
+- whether a post-modal failure can still end up classified as not_found
+
+NO CODE CHANGES YET.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — SPLIT FAILURE TAXONOMY
+--------------------------------------------------
+
+Create clearer failure categories so these are separate:
+- class_not_found
+- row_click_failed
+- modal_not_reached
+- modal_reached_action_missing
+- modal_reached_action_not_accessible
+- confirmation_failed
+
+Do NOT allow a failure after "Class found" or "Modal reached" to fall back into generic class_not_found unless that is truly what happened.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — ADD MODAL-LOCAL ACTION DIAGNOSTICS
+--------------------------------------------------
+
+When the bot reaches the modal, record:
+- modal text preview
+- which action buttons were detected in the modal
+- whether Register/Reserve/Waitlist/Login was present
+- whether the button was visible, enabled, and attached
+- whether the bot had to fall back to broader page scanning
+
+Keep this lightweight but enough to explain failures.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — PREFER MODAL-LOCAL ACTION DETECTION
+--------------------------------------------------
+
+Audit detectActionButtons() and related logic.
+
+If safe, prefer action detection scoped to the verified modal container rather than broad page-wide scanning.
+
+Preserve support for:
+- Register / Reserve
+- Waitlist
+- Login
+- already registered / cancel state
+
+Do not weaken correctness.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — HARDEN THE "MODAL REACHED BUT ACTION MISSING" PATH
+--------------------------------------------------
+
+If the modal is reached but no actionable registration control is found:
+- do a short bounded local recovery before escalating
+- re-check modal-local buttons
+- distinguish between:
+  - half-rendered modal
+  - wrong modal
+  - no registration path available
+  - selector mismatch
+
+Do NOT let this silently collapse into not_found.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — FIX USER-FACING ERROR MESSAGES
+--------------------------------------------------
+
+Ensure user-visible messages say what actually happened.
+
+Examples:
+- "Class found, but registration button was not accessible"
+- "Modal opened, but no registration action was detected"
+- "Class row was found, but opening the modal failed"
+
+Avoid showing:
+- "Class not found on schedule"
+when the bot had already reached class_found or modal_reached.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — FINAL QA USING THE GENTLE YOGA CASE
+--------------------------------------------------
+
+Verify against the real failing shape:
+- Tuesday Apr 21
+- Gentle Yoga
+- 11:45 AM
+- Brynne
+- class visible in schedule
+- bot reaches class_found / modal_reached
+
+Confirm:
+- failures are now classified accurately
+- user-facing messages reflect the real failure point
+- modal/action failures no longer masquerade as class-not-found
+
+END WITH:
+Stage complete. Say "continue" to proceed.
