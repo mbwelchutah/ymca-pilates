@@ -81,19 +81,37 @@ const ACTION_SELECTORS = {
   loginRequired: /login to register|sign in to register/i,
 };
 
+// Returns a [role="dialog"] Locator if one is present in the page, null otherwise.
+// Used by detectActionButtons() call sites where the modal is known to be open,
+// so button queries can be scoped to the dialog rather than the full page.
+async function _getModalScope(page) {
+  try {
+    const dialogLoc = page.locator('[role="dialog"]');
+    return (await dialogLoc.count()) > 0 ? dialogLoc.first() : null;
+  } catch { return null; }
+}
+
 // Detects which action buttons are present in the current page state.
 // Tries each selector strategy in order; stops at first match.
+//
+// @param {import('playwright').Page}    page  Playwright Page object
+// @param {import('playwright').Locator|null} root  Optional modal-scoped locator.
+//   When provided (e.g. page.locator('[role="dialog"]').first()), all button
+//   queries are scoped to that subtree, avoiding full-page scans.
+//   Pass null (default) to retain the original page-wide behavior.
+//
 // Returns:
 //   { hasRegister, hasWaitlist, hasCancel, hasLoginRequired,
 //     registerBtn, waitlistBtn, cancelBtn, allBtnTexts,
 //     registerStrategy, waitlistStrategy }
-async function detectActionButtons(page) {
-  const allBtnTexts = await page.locator(ACTION_SELECTORS.allVisible).allTextContents().catch(() => []);
+async function detectActionButtons(page, root = null) {
+  const scope = root || page;
+  const allBtnTexts = await scope.locator(ACTION_SELECTORS.allVisible).allTextContents().catch(() => []);
 
   let registerBtn = null;
   let registerStrategy = 'not found';
   for (const [sel, label] of ACTION_SELECTORS.register) {
-    const loc = page.locator(sel);
+    const loc = scope.locator(sel);
     if ((await loc.count()) > 0) {
       registerBtn      = loc;
       registerStrategy = label;
@@ -104,7 +122,7 @@ async function detectActionButtons(page) {
   let waitlistBtn = null;
   let waitlistStrategy = 'not found';
   for (const [sel, label] of ACTION_SELECTORS.waitlist) {
-    const loc = page.locator(sel);
+    const loc = scope.locator(sel);
     if ((await loc.count()) > 0) {
       waitlistBtn      = loc;
       waitlistStrategy = label;
@@ -115,7 +133,7 @@ async function detectActionButtons(page) {
   // "Cancel" button appearing after a click means the booking completed successfully.
   let cancelBtn = null;
   for (const [sel] of ACTION_SELECTORS.cancel) {
-    const loc = page.locator(sel);
+    const loc = scope.locator(sel);
     if ((await loc.count()) > 0) {
       cancelBtn = loc;
       break;
@@ -127,7 +145,8 @@ async function detectActionButtons(page) {
   const hasWaitlist = waitlistBtn !== null;
   const hasCancel   = cancelBtn   !== null;
 
-  console.log(`[action-detect] register: ${registerStrategy} | waitlist: ${waitlistStrategy} | cancel: ${hasCancel ? 'found' : 'not found'}`);
+  const scopeLabel = root ? 'modal-scoped' : 'page-wide';
+  console.log(`[action-detect] (${scopeLabel}) register: ${registerStrategy} | waitlist: ${waitlistStrategy} | cancel: ${hasCancel ? 'found' : 'not found'}`);
 
   return { hasRegister, hasWaitlist, hasCancel, hasLoginRequired, registerBtn, waitlistBtn, cancelBtn, allBtnTexts, registerStrategy, waitlistStrategy };
 }
@@ -2188,7 +2207,7 @@ async function runBookingJob(job, opts = {}) {
     // actually clicking Register/Waitlist.  Returns immediately after sniffing
     // which buttons are present in the already-open modal.
     if (PREFLIGHT_ONLY) {
-      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy } = await detectActionButtons(page);
+      const { hasRegister, hasWaitlist, hasLoginRequired: hasLoginBtn, registerBtn, waitlistBtn, allBtnTexts, registerStrategy, waitlistStrategy } = await detectActionButtons(page, await _getModalScope(page));
       console.log('[preflight] Visible buttons:', JSON.stringify(allBtnTexts));
 
       // ── Stage 1: Action-state classification ────────────────────────────────
@@ -2383,9 +2402,13 @@ async function runBookingJob(job, opts = {}) {
       if (attempt === 1) _tc.first_click_attempt_start = new Date().toISOString();
       if (attempt === 2 && !_tc.first_click_attempt_done) _tc.first_click_attempt_done = new Date().toISOString();
       _tc.action_attempt_start = new Date().toISOString();
+      // Stage 3: scope button detection to the open modal ([role="dialog"]) where
+      // possible — avoids full-page scans across nav, schedule rows, etc.
+      // Falls back to page-wide automatically if no dialog element is found.
+      const _attemptModalScope = await _getModalScope(page);
       let { hasRegister, hasWaitlist, hasCancel: hasCancelNow, hasLoginRequired: hasLoginButton,
             registerBtn, waitlistBtn, cancelBtn, allBtnTexts: allBtns,
-            registerStrategy, waitlistStrategy } = await detectActionButtons(page);
+            registerStrategy, waitlistStrategy } = await detectActionButtons(page, _attemptModalScope);
       // Stage 2 marker: record the first time detectActionButtons() returns a usable button.
       // Paired with modal_ready_at to derive modal_to_action_ready_ms.
       if (attempt === 1 && !_tc.action_ready_at &&
@@ -2412,7 +2435,7 @@ async function runBookingJob(job, opts = {}) {
         console.log('[inline-auth] result:', inlineAuth.detail);
         if (inlineAuth.authenticated) {
           await page.waitForTimeout(1500);
-          const recheck = await detectActionButtons(page);
+          const recheck = await detectActionButtons(page, await _getModalScope(page));
           hasRegister      = recheck.hasRegister;
           hasWaitlist      = recheck.hasWaitlist;
           hasLoginButton   = recheck.hasLoginRequired;
