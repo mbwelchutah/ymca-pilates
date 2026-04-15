@@ -1,0 +1,158 @@
+You are implementing a BOOKING-PATH MODAL STATE + ERROR CLASSIFICATION HARDENING PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the diagnostic and state-tracking gaps identified in the modal/action audit.
+
+The audit proved:
+- true post-modal success does NOT collapse back into class_not_found
+- however, booking runs do NOT record modal-reached state
+- the retry-loop re-click bypasses full modal verification
+- user-facing errors still over-collapse distinct failures into "class not found"
+- half-rendered modal/action-missing states are under-recorded
+
+This pass should improve:
+1. booking-path state recording
+2. retry-path safety
+3. diagnostic precision
+4. user-facing failure accuracy
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole booking engine
+- Preserve correctness gates
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — RECORD MODAL-REACHED STATE IN BOOKING RUNS
+--------------------------------------------------
+
+Goal:
+Make booking runs explicitly record when the modal has been successfully reached and verified.
+
+Tasks:
+
+1. In the booking path, after attemptClickAndVerify() returns { ok: true }:
+- set the equivalent modal-ready state used by preflight
+- ensure booking-path state reflects that modal was reached and verified
+
+2. Keep this aligned with existing state bundle conventions
+3. Do not change booking decision logic yet
+
+Success criteria:
+- booking runs explicitly record modal-reached state
+- later failures no longer lose the fact that modal was reached
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — HARDEN RETRY-LOOP RE-CLICK WITH MODAL VERIFICATION
+--------------------------------------------------
+
+Goal:
+Stop the reload/re-click path from bypassing modal verification.
+
+Tasks:
+
+1. Audit the retry-loop re-click path after reload
+2. Replace or wrap the simplified re-click so it reuses full modal verification logic where safe
+3. Preserve performance as much as possible, but correctness wins over speed here
+
+Success criteria:
+- retry-loop re-click no longer bypasses modal verification
+- wrong-modal openings are caught consistently
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — SPLIT USER-FACING FAILURE MESSAGES MORE ACCURATELY
+--------------------------------------------------
+
+Goal:
+Stop surfacing all identity/access failures as generic "class not found" to the user.
+
+Tasks:
+
+1. Keep internal taxonomy as needed, but improve user-facing error wording for cases like:
+- row found but wrong modal time
+- modal opened but wrong class identity
+- modal reached but no action buttons
+- modal reached but registration path unavailable
+
+2. Add clearer messages such as:
+- "Class row was found, but the booking modal did not match the expected class"
+- "Booking modal opened, but no registration action was available"
+- "Registration modal opened, but access could not be confirmed"
+
+3. Do NOT mislabel these as total schedule absence
+
+Success criteria:
+- user-facing errors better match the actual failure point
+- "class not found" is reserved for true absence cases
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — ADD HALF-OPEN MODAL / ACTION-MISSING DIAGNOSTICS
+--------------------------------------------------
+
+Goal:
+Record when the bot reached the modal but could not find action buttons.
+
+Tasks:
+
+1. When the modal exists but detectActionButtons() still fails after local recovery:
+- record a specific diagnostic/state
+- capture enough evidence to distinguish:
+  - modal reached, no action buttons
+  - half-rendered modal
+  - action not open yet
+  - selector mismatch
+
+2. Keep this lightweight and useful
+
+Success criteria:
+- modal/action-missing cases are explicitly diagnosable
+- they no longer disappear into generic retry behavior
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — FINAL QA USING THE GENTLE YOGA FAILURE SHAPE
+--------------------------------------------------
+
+Goal:
+Verify the known failure shape is now represented accurately.
+
+Tasks:
+
+1. Verify a run that:
+- finds the class row
+- reaches or verifies the modal
+- then fails in modal/action access
+
+now records and surfaces that failure accurately
+
+2. Confirm:
+- modal-reached state is preserved
+- retry path still verifies modal identity
+- user-facing message is no longer misleading
+- true class_not_found still behaves as before
+
+Success criteria:
+- the known failure shape is now diagnosable and accurately represented
+- no regression to genuine not_found handling
+
+END WITH:
+Stage complete. Say "continue" to proceed.

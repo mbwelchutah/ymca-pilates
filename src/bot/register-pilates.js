@@ -2267,6 +2267,20 @@ async function runBookingJob(job, opts = {}) {
       }
     }
 
+    // ── Booking-path modal-reached record ─────────────────────────────────────
+    // Mirrors the preflight gate (line ~2297) so that later action failures do
+    // not lose the fact that the modal was successfully opened and identity-
+    // verified.  Runs whether the first OR second-best candidate produced ok:true
+    // — both paths fall through to this point.
+    _state.bundle.modal = 'MODAL_READY';
+    emitEvent(_state, 'MODAL', null, 'Modal opened and verified (booking)', {
+      evidence: {
+        modalPreview: _lastModalPreview || '(preview not captured)',
+        url:          page.url(),
+      }
+    });
+    // ──────────────────────────────────────────────────────────────────────────
+
     // Step 5: Try to register — retry every 30s for up to 10 minutes if not open yet.
     // maxAttemptsOpt can be passed in job object (e.g. 1 for web UI, 20 for cron).
     advance(_state, 'ACTION');
