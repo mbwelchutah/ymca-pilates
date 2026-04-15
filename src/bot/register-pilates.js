@@ -1766,8 +1766,32 @@ async function runBookingJob(job, opts = {}) {
         ]);
         console.log(`Card visible (${candidateLabel}):`, isVis, '| box:', JSON.stringify(box));
         if (!isVis && !box) {
-          // Element was detached — Bubble re-rendered between findTargetCard() and here.
-          return { ok: false, failMsg: 'Card element detached after Bubble.io DOM re-render (attribute lost)', reasonTag: 'error', recorded: false };
+          // Element was detached — Bubble.io re-rendered the DOM between findTargetCard()
+          // and here (common during class-list refresh near booking-open time).
+          // Attempt one local recovery: re-run the scan immediately to get a fresh
+          // element reference instead of propagating the error to the caller, which
+          // would fall back to the second-best candidate (potentially equally stale).
+          console.log(`⚠️ [${candidateLabel}] Card detached — attempting local re-scan for fresh element...`);
+          const recoveredCard = await findTargetCard();
+          if (!recoveredCard) {
+            console.log(`❌ [${candidateLabel}] Local recovery: re-scan returned no candidate`);
+            return { ok: false, failMsg: 'Card element detached; local re-scan found no candidate', reasonTag: 'error', recorded: false };
+          }
+          console.log(`  Re-scan found fresh element — scrolling into view for re-check`);
+          try {
+            await recoveredCard.scrollIntoViewIfNeeded({ timeout: 5000 });
+          } catch (_) {}
+          await page.waitForTimeout(300);
+          const [recVis, recBox] = await Promise.all([
+            recoveredCard.isVisible({ timeout: 3000 }).catch(() => false),
+            recoveredCard.boundingBox({ timeout: 3000 }).catch(() => null),
+          ]);
+          if (!recVis && !recBox) {
+            console.log(`❌ [${candidateLabel}] Recovered element also detached after re-scan`);
+            return { ok: false, failMsg: 'Card detached twice; recovered element also not visible', reasonTag: 'error', recorded: false };
+          }
+          console.log(`✅ [${candidateLabel}] Local recovery succeeded — proceeding with fresh element`);
+          card = recoveredCard; // reassign: all downstream code in this function uses `card`
         }
 
         // Step 1: prefer button / [role="button"] / <a> inside the card
