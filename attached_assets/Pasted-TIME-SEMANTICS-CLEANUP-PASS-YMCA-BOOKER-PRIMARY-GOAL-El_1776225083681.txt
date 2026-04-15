@@ -1,0 +1,196 @@
+TIME SEMANTICS CLEANUP PASS — YMCA BOOKER
+
+PRIMARY GOAL
+Eliminate bugs caused by mixing:
+- absolute timestamps (epoch ms)
+- relative durations (ms from now)
+
+Make time handling explicit, consistent, and hard to misuse.
+
+--------------------------------------------------
+
+RULES
+- Do NOT change booking logic or behavior
+- Do NOT refactor unrelated code
+- Keep changes small and safe
+- Maintain backward compatibility
+- ONE stage at a time
+
+AFTER EACH STAGE:
+1. Summarize what changed
+2. Explain what remains
+3. STOP
+4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT (NO CODE CHANGES)
+--------------------------------------------------
+
+Search for:
+- bookingOpenMs
+- opensAt
+- msUntilOpen
+- Date.now() +
+- new Date(
+- toLocaleTimeString
+- toLocaleString
+
+For each occurrence:
+- classify as:
+  • epoch timestamp
+  • duration
+  • Date object
+
+Identify dangerous patterns:
+- Date.now() + epoch ❌
+- new Date(duration) ❌
+- unclear variable naming
+
+OUTPUT:
+- list of ambiguous variables
+- list of risky usages
+- confirm if bug pattern exists elsewhere
+
+NO CODE CHANGES
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — STANDARDIZE NAMING
+--------------------------------------------------
+
+Goal: Make time semantics obvious
+
+Rename where safe:
+- bookingOpenMs → bookingOpenEpochMs
+- openMs → openEpochMs
+
+If renaming breaks contracts:
+- create local alias instead
+
+Example:
+const bookingOpenEpochMs = bookingOpenMs
+
+Add comments where needed:
+"Absolute epoch timestamp (ms since Unix epoch)"
+
+DO NOT change API contracts
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — ADD TIME HELPERS
+--------------------------------------------------
+
+Create file:
+client/src/lib/timeUtils.ts
+
+Add:
+
+export function epochMsToDate(epochMs) {
+  return epochMs != null ? new Date(epochMs) : null
+}
+
+export function durationMsToDate(msFromNow) {
+  return msFromNow != null ? new Date(Date.now() + msFromNow) : null
+}
+
+export function formatTime(date) {
+  return date
+    ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : ''
+}
+
+DO NOT replace usage yet
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — FIX DATE USAGE
+--------------------------------------------------
+
+Replace incorrect patterns:
+
+WRONG:
+new Date(Date.now() + bookingOpenEpochMs)
+
+CORRECT:
+epochMsToDate(bookingOpenEpochMs)
+
+Replace duration usage:
+
+WRONG:
+new Date(msUntilOpen)
+
+CORRECT:
+durationMsToDate(msUntilOpen)
+
+Apply only where needed.
+
+Ensure:
+- UI times remain correct
+- countdown logic unchanged
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — LIGHT TYPE SAFETY
+--------------------------------------------------
+
+Add types (safe version):
+
+type EpochMs = number
+type DurationMs = number
+
+Use where low-risk:
+- readiness types
+- timing fields
+
+DO NOT introduce breaking type changes
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — ADD GUARD TESTS
+--------------------------------------------------
+
+Create:
+timeUtils.test.ts
+
+Add tests:
+- epoch → correct time
+- duration → correct future time
+- ensure epoch is NOT added to Date.now()
+- ensure duration IS added
+
+Keep tests minimal (2–3 cases)
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — FINAL QA
+--------------------------------------------------
+
+Search again:
+- Date.now() +
+- new Date(
+
+Verify:
+- no incorrect patterns remain
+- UI times correct (Now + Plan screens)
+- countdown matches displayed time
+
+FINAL CHECK:
+- no mixing of epoch and duration
+- helpers used correctly
+
+END WITH:
+Stage complete. Say "continue" to proceed.
