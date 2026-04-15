@@ -1478,10 +1478,25 @@ async function runBookingJob(job, opts = {}) {
       const STEP_PX     = 80;
       const MAX_UP      = 80;   // 80 × 80px = 6400px backward — covers midnight→2:45 PM gap
       const MAX_DOWN    = 150;  // 150 × 80px = 12 000px forward — full week sweep
+
+      // Signal-driven inter-step wait.  After mouse.wheel() the browser fires
+      // Bubble.io's scroll listener synchronously, which schedules a virtual-list
+      // DOM update for the next animation frame.  Yielding two rAFs (≈32 ms at
+      // 60 fps) guarantees the re-render has been applied before we scan.  A
+      // 100 ms hard cap protects against rare slow renders without falling all
+      // the way back to the old 200 ms blanket wait.  Typical saving: ≈168 ms
+      // per step → up to 38 s across a full 230-step scan.
+      const awaitRender = () => page.evaluate(() => new Promise(resolve => {
+        let n = 0;
+        const tick = () => (++n >= 2 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+        setTimeout(resolve, 100); // hard cap
+      }));
+
       console.log(`  Phase 1: scrolling UP ${MAX_UP} steps to find AM class above current position...`);
       for (let step = 0; step < MAX_UP; step++) {
         await scrollSchedulePanel(-STEP_PX);
-        await page.waitForTimeout(200);
+        await awaitRender();
         card = await findTargetCard();
         if (card) {
           console.log(`  Found card after ${step + 1} upward scroll step(s).`);
@@ -1509,11 +1524,11 @@ async function runBookingJob(job, opts = {}) {
       // Phase 2: Reset to top and sweep downward.
       console.log(`  Phase 2: resetting to top and scrolling DOWN ${MAX_DOWN} steps...`);
       await scrollSchedulePanel(-999999);
-      await page.waitForTimeout(200);
+      await awaitRender(); // wait for top-reset re-render before starting downward scan
 
       for (let step = 0; step < MAX_DOWN; step++) {
         await scrollSchedulePanel(STEP_PX);
-        await page.waitForTimeout(200);
+        await awaitRender();
         card = await findTargetCard();
         if (card) {
           console.log(`  Found card after ${step + 1} downward scroll step(s).`);
