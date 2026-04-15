@@ -102,6 +102,12 @@ Three POST endpoints under `/api/recovery/` — all require `{ confirm: true }` 
 
 UI: **Repair Tools** section at the bottom of the Tools screen (`ToolsScreen.tsx` → `RecoveryPanel`). Each action has a two-click inline confirmation flow (Request → Confirm/Cancel), loading state, and ✓/✗ result feedback.
 
+## Engineering Reference
+
+See `ENGINEERING_NOTES.md` for the full bug taxonomy, system invariants,
+triage workflow, subsystem file map, preferred fix types, audit history,
+and current high-risk areas.  Update it after major subsystem passes.
+
 ## Key Design Decisions
 
 - **FW-first OAuth**: MUST NOT pre-login to Daxko before clicking "Login to Register" on the FW schedule embed. Pre-logging breaks the OAuth redirect and lands on `MyAccountV2.mvc` instead of `y_login?code=…`. All session creation goes through `createSession()` in `register-pilates.js`.
