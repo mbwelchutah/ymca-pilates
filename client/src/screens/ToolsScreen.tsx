@@ -282,7 +282,7 @@ function DegradationWarningBanner({ readiness }: { readiness: ReadinessData | nu
           <div className="mt-1.5 space-y-0.5">
             {deg.slowPhases.map(sp => (
               <p key={sp.phase} className="text-[12px] text-yellow-400/80">
-                {PHASE_LABELS[sp.phase] ?? sp.phase}
+                {TIMING_PHASE_LABELS[sp.phase] ?? sp.phase}
                 {' — '}
                 {fmtSec(sp.currentMs)} vs median {fmtSec(sp.medianMs)}
                 {' '}
@@ -457,7 +457,7 @@ function ArmingContextPanel({ readiness }: { readiness: ReadinessData | null }) 
 // ── Last Run Timing Panel ────────────────────────────────────────────────────
 // Per-phase breakdown from the most recent booking attempt.
 
-const PHASE_LABELS: Record<string, string> = {
+const TIMING_PHASE_LABELS: Record<string, string> = {
   auth_phase_ms:              'Auth',
   page_ready_to_class_found:  'Page → class',
   class_found_to_first_click: 'Class → click',
@@ -515,7 +515,7 @@ function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) 
           >
             <div className="flex items-center gap-1.5">
               <span className={`text-[13px] ${isSlowest ? 'text-yellow-400' : 'text-text-secondary'}`}>
-                {PHASE_LABELS[key] ?? key}
+                {TIMING_PHASE_LABELS[key] ?? key}
               </span>
               {isSlowest && (
                 <span className="text-[10px] text-yellow-500 font-medium">slowest</span>
