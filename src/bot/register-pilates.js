@@ -566,6 +566,9 @@ async function runBookingJob(job, opts = {}) {
     modal_wait_done:            null, // ISO: when waitForSelector resolves / times out
     modal_verify_start:         null, // ISO: just before body.innerText() extraction
     modal_verify_done:          null, // ISO: just after verification strings computed
+    // ── Modal → action-ready gap markers ──────────────────────────────────
+    modal_ready_at:             null, // ISO: waitForSelector(modalReady) resolved — BEFORE settle
+    action_ready_at:            null, // ISO: detectActionButtons() returned a usable btn (attempt 1)
     // ── Action attempt (first) ─────────────────────────────────────────────
     first_click_attempt_start:  null,
     first_click_attempt_done:   null,
@@ -1943,6 +1946,7 @@ async function runBookingJob(job, opts = {}) {
         // Replaces the blunt waitForTimeout(2000) to catch fast modal renders early.
         _tc.modal_wait_start = new Date().toISOString();
         await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
+        _tc.modal_ready_at   = new Date().toISOString(); // action button in DOM — BEFORE settle
         // Small settle buffer so the modal text is fully populated.
         await page.waitForTimeout(300);
         _tc.modal_wait_done  = new Date().toISOString();
@@ -2382,6 +2386,12 @@ async function runBookingJob(job, opts = {}) {
       let { hasRegister, hasWaitlist, hasCancel: hasCancelNow, hasLoginRequired: hasLoginButton,
             registerBtn, waitlistBtn, cancelBtn, allBtnTexts: allBtns,
             registerStrategy, waitlistStrategy } = await detectActionButtons(page);
+      // Stage 2 marker: record the first time detectActionButtons() returns a usable button.
+      // Paired with modal_ready_at to derive modal_to_action_ready_ms.
+      if (attempt === 1 && !_tc.action_ready_at &&
+          (hasRegister || hasWaitlist || hasCancelNow || hasLoginButton)) {
+        _tc.action_ready_at = new Date().toISOString();
+      }
 
       console.log('Attempt ' + attempt + ': visible buttons: ' + JSON.stringify(allBtns));
 
@@ -2743,6 +2753,8 @@ async function runBookingJob(job, opts = {}) {
       modal_wait_done:            _tc.modal_wait_done,
       modal_verify_start:         _tc.modal_verify_start,
       modal_verify_done:          _tc.modal_verify_done,
+      modal_ready_at:             _tc.modal_ready_at,
+      action_ready_at:            _tc.action_ready_at,
       first_click_attempt_start:  _tc.first_click_attempt_start,
       first_click_attempt_done:   _tc.first_click_attempt_done,
       action_attempt_start:       _tc.action_attempt_start,
@@ -2776,6 +2788,8 @@ async function runBookingJob(job, opts = {}) {
         ? new Date(_tc.modal_wait_done).getTime()    - new Date(_tc.modal_wait_start).getTime()      : null,
       modal_verify_ms:      (_tc.modal_verify_start && _tc.modal_verify_done)
         ? new Date(_tc.modal_verify_done).getTime()  - new Date(_tc.modal_verify_start).getTime()    : null,
+      modal_to_action_ready_ms: (_tc.modal_ready_at && _tc.action_ready_at)
+        ? new Date(_tc.action_ready_at).getTime()    - new Date(_tc.modal_ready_at).getTime()        : null,
       run_start_to_nav_ms:  (_tc.run_start && _tc.page_nav_start)
         ? new Date(_tc.page_nav_start).getTime()     - new Date(_tc.run_start).getTime()             : null,
       openToCardMs:         (_openMs && _tc.cardFoundAt)
