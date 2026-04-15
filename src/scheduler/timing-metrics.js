@@ -131,6 +131,14 @@ function deriveTimingMetrics(t) {
     t.first_click_attempt_done
   );
 
+  // ── Post-page-ready sub-markers ────────────────────────────────────────────
+  // These are finer-grained slices within the discovery/click/modal phases.
+  // Available when Stage 2 timing markers are present in the timing object.
+  const filter_apply_ms         = delta(t.filter_apply_start,  t.filter_apply_done);
+  const card_click_ms           = delta(t.card_click_start,    t.card_click_done);
+  const modal_wait_ms           = delta(t.modal_wait_start,    t.modal_wait_done);
+  const modal_verify_ms         = delta(t.modal_verify_start,  t.modal_verify_done);
+
   // ── Slowest named phase ─────────────────────────────────────────────────────
   // Exclude open_to_run_start (directional, may be negative) and
   // open_to_confirmation (composite, not a single phase).
@@ -165,6 +173,11 @@ function deriveTimingMetrics(t) {
     open_to_confirmation,
     total_first_attempt_ms,
     slowest_phase,
+    // ── Stage 2 sub-markers (null on runs before this stage was deployed) ────
+    filter_apply_ms,
+    card_click_ms,
+    modal_wait_ms,
+    modal_verify_ms,
   };
 }
 

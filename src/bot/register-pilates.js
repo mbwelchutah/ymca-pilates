@@ -529,12 +529,22 @@ async function runBookingJob(job, opts = {}) {
     // ── Navigation ─────────────────────────────────────────────────────────
     page_nav_start:             null,
     page_nav_done:              null,
+    // ── Filter application ─────────────────────────────────────────────────
+    filter_apply_start:         null, // ISO: just before first selectOption call
+    filter_apply_done:          null, // ISO: just after both filter calls complete
     // ── Class discovery ────────────────────────────────────────────────────
     class_discovery_start:      null,
     class_discovery_done:       null,
     // ── Modal open ─────────────────────────────────────────────────────────
     modal_open_start:           null,
     modal_open_done:            null,
+    // ── Card click / modal wait / verify sub-markers ────────────────────────
+    card_click_start:           null, // ISO: just before clickTarget.click()
+    card_click_done:            null, // ISO: just after click fires (before modal wait)
+    modal_wait_start:           null, // ISO: when waitForSelector(modalReady) starts
+    modal_wait_done:            null, // ISO: when waitForSelector resolves / times out
+    modal_verify_start:         null, // ISO: just before body.innerText() extraction
+    modal_verify_done:          null, // ISO: just after verification strings computed
     // ── Action attempt (first) ─────────────────────────────────────────────
     first_click_attempt_start:  null,
     first_click_attempt_done:   null,
@@ -1023,6 +1033,7 @@ async function runBookingJob(job, opts = {}) {
     // Event Name filter (index 3) is intentionally skipped: its native selectOption fails
     // ("did not find some options") and the pill-click fallback corrupts Bubble.io state
     // by partially opening the dropdown (observed: count went 79→14 from an aborted click).
+    _tc.filter_apply_start = new Date().toISOString();
     const categoryApplied = await applyFilterBySelectIndex(0, 'Yoga/Pilates', 'Category');
 
     // Resolve instructor filter value: the DB may store just a first name (e.g. "Gretl")
@@ -1049,6 +1060,7 @@ async function runBookingJob(job, opts = {}) {
       ? await applyFilterBySelectIndex(2, instructorForFilter, 'Instructor')
       : false;
 
+    _tc.filter_apply_done = new Date().toISOString();
     if (!categoryApplied)   console.log('⚠️ Category filter not applied — will scan all categories.');
     if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
 
@@ -1543,12 +1555,20 @@ async function runBookingJob(job, opts = {}) {
           if (nearOpen) {
             // Quick scan only — polling will handle the precise timing
             targetCard = await findTargetCard();
-            if (targetCard) console.log('Found class on exact date tab (quick scan): ' + tabText.trim());
-            else            console.log('Class not yet visible (within 15 min of open) — going to poll mode.');
+            if (targetCard) {
+              _tc.cardFoundAt = new Date().toISOString();
+              console.log('Found class on exact date tab (quick scan): ' + tabText.trim());
+            } else {
+              console.log('Class not yet visible (within 15 min of open) — going to poll mode.');
+            }
           } else {
             targetCard = await findCardOnTab(tabText.trim());
-            if (targetCard) console.log('Found class on exact date tab: ' + tabText.trim());
-            else            console.log('Class not on exact date tab — will try polling if within booking window.');
+            if (targetCard) {
+              _tc.cardFoundAt = new Date().toISOString();
+              console.log('Found class on exact date tab: ' + tabText.trim());
+            } else {
+              console.log('Class not on exact date tab — will try polling if within booking window.');
+            }
           }
           exactTabClicked = true;
           break;
@@ -1584,7 +1604,11 @@ async function runBookingJob(job, opts = {}) {
           console.log('Trying tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
           targetCard = await findCardOnTab(tabText.trim());
-          if (targetCard) { console.log('Found class on ' + tabText.trim()); break; }
+          if (targetCard) {
+            _tc.cardFoundAt = new Date().toISOString();
+            console.log('Found class on ' + tabText.trim());
+            break;
+          }
           console.log('Class not found on ' + tabText.trim() + ', trying next tab...');
         }
       }
@@ -1782,6 +1806,7 @@ async function runBookingJob(job, opts = {}) {
           console.log('👉 Hover elements, test selectors, then press Resume to continue.');
           await page.pause();
         }
+        _tc.card_click_start = new Date().toISOString();
         try {
           await clickTarget.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
           await clickTarget.click({ timeout: 5000 });
@@ -1806,6 +1831,7 @@ async function runBookingJob(job, opts = {}) {
           await card.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
           await card.click({ force: true });
         }
+        _tc.card_click_done = new Date().toISOString();
         // Clean up the data-click-target attribute now that the click is done.
         await page.evaluate(() =>
           document.querySelectorAll('[data-click-target]').forEach(e => e.removeAttribute('data-click-target'))
@@ -1814,14 +1840,17 @@ async function runBookingJob(job, opts = {}) {
         // Signal-driven modal wait: resolve as soon as action buttons appear
         // (capped at 3 s). Falls back gracefully — we proceed regardless.
         // Replaces the blunt waitForTimeout(2000) to catch fast modal renders early.
+        _tc.modal_wait_start = new Date().toISOString();
         await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
         // Small settle buffer so the modal text is fully populated.
         await page.waitForTimeout(300);
-        _tc.modal_open_done = new Date().toISOString();
+        _tc.modal_wait_done  = new Date().toISOString();
+        _tc.modal_open_done  = _tc.modal_wait_done; // keep existing field for backward compat
         await captureDebug('modal', 'modal_opened');
 
         // Verify the modal matches expected time + instructor.
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
+        _tc.modal_verify_start = new Date().toISOString();
         const rawModal  = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
         const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
         // Capture a short window around the time match for the consolidated run summary.
@@ -1835,6 +1864,7 @@ async function runBookingJob(job, opts = {}) {
         // Skip instructor check when no instructor was specified on the job (instructorFirstName === null).
         const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
         console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
+        _tc.modal_verify_done = new Date().toISOString();
 
         // Time mismatch = definitive fail (we clicked the wrong class / window not open yet).
         // Instructor mismatch only = soft warning — instructor may be a substitute this week;
@@ -2570,10 +2600,18 @@ async function runBookingJob(job, opts = {}) {
       browser_launch_done:        _tc.browser_launch_done,
       page_nav_start:             _tc.page_nav_start,
       page_nav_done:              _tc.page_nav_done,
+      filter_apply_start:         _tc.filter_apply_start,
+      filter_apply_done:          _tc.filter_apply_done,
       class_discovery_start:      _tc.class_discovery_start,
       class_discovery_done:       _tc.class_discovery_done,
       modal_open_start:           _tc.modal_open_start,
       modal_open_done:            _tc.modal_open_done,
+      card_click_start:           _tc.card_click_start,
+      card_click_done:            _tc.card_click_done,
+      modal_wait_start:           _tc.modal_wait_start,
+      modal_wait_done:            _tc.modal_wait_done,
+      modal_verify_start:         _tc.modal_verify_start,
+      modal_verify_done:          _tc.modal_verify_done,
       first_click_attempt_start:  _tc.first_click_attempt_start,
       first_click_attempt_done:   _tc.first_click_attempt_done,
       action_attempt_start:       _tc.action_attempt_start,
@@ -2599,6 +2637,14 @@ async function runBookingJob(job, opts = {}) {
         ? new Date(_tc.first_click_attempt_done).getTime() - new Date(_tc.first_click_attempt_start).getTime() : null,
       confirmation_ms:      (_tc.confirmation_check_start && _tc.confirmation_check_done)
         ? new Date(_tc.confirmation_check_done).getTime() - new Date(_tc.confirmation_check_start).getTime()   : null,
+      filter_apply_ms:      (_tc.filter_apply_start && _tc.filter_apply_done)
+        ? new Date(_tc.filter_apply_done).getTime()  - new Date(_tc.filter_apply_start).getTime()    : null,
+      card_click_ms:        (_tc.card_click_start && _tc.card_click_done)
+        ? new Date(_tc.card_click_done).getTime()    - new Date(_tc.card_click_start).getTime()      : null,
+      modal_wait_ms:        (_tc.modal_wait_start && _tc.modal_wait_done)
+        ? new Date(_tc.modal_wait_done).getTime()    - new Date(_tc.modal_wait_start).getTime()      : null,
+      modal_verify_ms:      (_tc.modal_verify_start && _tc.modal_verify_done)
+        ? new Date(_tc.modal_verify_done).getTime()  - new Date(_tc.modal_verify_start).getTime()    : null,
       run_start_to_nav_ms:  (_tc.run_start && _tc.page_nav_start)
         ? new Date(_tc.page_nav_start).getTime()     - new Date(_tc.run_start).getTime()             : null,
       openToCardMs:         (_openMs && _tc.cardFoundAt)

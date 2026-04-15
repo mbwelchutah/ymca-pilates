@@ -437,6 +437,10 @@ export const api = {
       open_to_confirmation:       number | null
       total_first_attempt_ms:     number | null
       slowest_phase:              string | null
+      filter_apply_ms:            number | null
+      card_click_ms:              number | null
+      modal_wait_ms:              number | null
+      modal_verify_ms:            number | null
       degradation: {
         detected:   boolean
         thresholdX: number
