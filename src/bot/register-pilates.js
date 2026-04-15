@@ -1882,8 +1882,24 @@ async function runBookingJob(job, opts = {}) {
         // Verify the modal matches expected time + instructor.
         // Normalize all whitespace variants (Bubble.io uses \u00A0 in time strings).
         _tc.modal_verify_start = new Date().toISOString();
-        const rawModal  = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-        const modalText = rawModal.replace(/[\u00A0\u2009\u202f]+/g, ' ');
+        // Scope to the modal container rather than body.innerText.  body.innerText
+        // triggers a full-page layout reflow; textContent does not.  We walk up
+        // from the action button (proven inside the modal by waitForSelector above)
+        // until we find an ancestor with enough text to contain time + instructor.
+        // Falls back to document.body.textContent if no suitable ancestor is found.
+        const modalText = await page.evaluate((modalSel) => {
+          const norm = t => (t || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
+          const btn = document.querySelector(modalSel);
+          if (btn) {
+            let node = btn.parentElement;
+            for (let i = 0; i < 12 && node && node !== document.body; i++) {
+              const txt = norm(node.textContent || '').trim();
+              if (txt.length > 80) return txt;
+              node = node.parentElement;
+            }
+          }
+          return norm(document.body.textContent || ''); // safe fallback (no layout)
+        }, ACTION_SELECTORS.modalReady).catch(() => '');
         // Capture a short window around the time match for the consolidated run summary.
         // Use the actual time digits from classTimeNorm (e.g. "7:45" or "4:20").
         const _timeDigits = classTimeNorm ? classTimeNorm.split(/\s/)[0] : '';
@@ -2038,9 +2054,23 @@ async function runBookingJob(job, opts = {}) {
         console.log(`   Best score: ${_lastBestScore} | Selected row: "${_lastBestText.slice(0, 100)}"`);
         console.log(`   Second-best score: ${_lastSecondScore} | Row: "${_lastSecondText.slice(0, 100)}"`);
 
-        // Dismiss the current modal before clicking a different card
+        // Dismiss the current modal before clicking a different card.
+        // Signal-driven: resolve as soon as modal action buttons disappear from
+        // the page (cap 1500 ms).  Saves up to ~900 ms vs the old flat 1200 ms
+        // when Bubble.io's CSS dismiss animation completes in 200-400 ms.
+        // FamilyWorks's schedule list does not show Register/Reserve/Waitlist
+        // buttons on the card rows themselves, so absence of these buttons is a
+        // reliable indicator that the modal is fully closed.
         await page.keyboard.press('Escape').catch(() => {});
-        await page.waitForTimeout(1200);
+        await page.waitForFunction(() => {
+          const btns = [...document.querySelectorAll('button, [role="button"]')];
+          return !btns.some(el => {
+            const t = (el.textContent || '').toLowerCase().trim();
+            return (t.includes('register') || t.includes('reserve') ||
+                    t.includes('waitlist') || t === 'login to register') &&
+                   el.getBoundingClientRect().width > 0;
+          });
+        }, { timeout: 1500 }).catch(() => {});
 
         const secondResult = await attemptClickAndVerify(_lastSecondCard, 'second-best candidate');
         if (!secondResult.ok) {
