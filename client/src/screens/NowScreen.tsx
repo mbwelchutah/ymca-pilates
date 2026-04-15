@@ -27,6 +27,7 @@ import type { SniperPhase } from '../lib/sniperPhase'
 import { isThisWeekUTC } from '../lib/bookingCycle'
 import { useCountdown } from '../lib/countdown'
 import { formatOpens, formatOpensRelative } from '../lib/timing'
+import { epochMsToDate, formatTime } from '../lib/timeUtils'
 import type { ClassTruthResult } from '../lib/classTruth'
 
 interface NowScreenProps {
@@ -654,10 +655,8 @@ export function resolveSmartButton(opts: {
       // a raw countdown that requires mental math.  Fall back to countdown when
       // we have it but can't compute the absolute time, and to null when neither
       // is available (e.g. job has no class_time configured).
-      const openAt = bookingOpenEpochMs != null ? new Date(Date.now() + bookingOpenEpochMs) : null
-      const timeStr = openAt
-        ? openAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-        : null
+      const openAt  = epochMsToDate(bookingOpenEpochMs)
+      const timeStr = formatTime(openAt)
       const helperText = timeStr
         ? `Registration opens at ${timeStr}`
         : (countdown ? `Registration opens in ${countdown}` : null)
