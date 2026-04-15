@@ -1,0 +1,227 @@
+You are implementing a MODAL / ACTION READINESS DELAY REDUCTION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Reduce the delay between:
+- modal becoming visible
+and
+- the Register / Waitlist action being truly ready and clickable
+
+This pass should improve:
+- modal-ready detection precision
+- action-button readiness detection
+- local recovery for half-rendered modal states
+- speed from modal open → actionable state
+
+This is NOT a broad redesign.
+This is a focused pass on the gap between “modal exists” and “action is actually ready.”
+
+IMPORTANT RULES
+
+- Do NOT weaken correctness
+- Do NOT remove modal verification
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT MODAL READY VS ACTION READY
+--------------------------------------------------
+
+Goal:
+Document the exact path from modal visible to action button actionable.
+
+Tasks:
+
+1. Trace:
+- modal-ready selector
+- modal verification
+- detectActionButtons()
+- action click eligibility
+
+2. Identify:
+- where the modal is considered “ready”
+- whether that is earlier than true action readiness
+- any fixed waits or broad scans in this path
+- any cases where the action exists visually but is not yet actionable
+
+3. Call out likely sources of delay between:
+- modal_open_done
+and
+- first actionable button state
+
+Do NOT change behavior yet.
+
+Success criteria:
+- the modal/action readiness gap is clearly documented
+- likely wasted time is identified
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — ADD SEPARATE ACTION-READINESS TIMING MARKER
+--------------------------------------------------
+
+Goal:
+Measure the time between modal visible and action truly ready.
+
+Tasks:
+
+1. Add timing markers for:
+- modal_ready_at
+- action_ready_at
+
+2. Derive:
+- modal_to_action_ready_ms
+
+3. Store this in the timing pipeline safely
+
+Success criteria:
+- the modal/action readiness gap is measurable
+- future runs can show whether this is the real bottleneck
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — NARROW ACTION BUTTON DETECTION TO MODAL-LOCAL SCOPE
+--------------------------------------------------
+
+Goal:
+Reduce wasted work when checking action readiness.
+
+Tasks:
+
+1. Audit detectActionButtons() scope
+2. Prefer modal-local scanning/selectors where safe
+3. Avoid broad page-level scans if the same truth can be read inside the active modal
+
+4. Preserve support for:
+- Register
+- Waitlist
+- Login to Register
+- full / closed / already registered
+
+Success criteria:
+- action detection becomes cheaper or more focused
+- correctness is preserved
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — ADD LOCAL RECOVERY FOR HALF-RENDERED MODAL STATES
+--------------------------------------------------
+
+Goal:
+Avoid escalating when the modal exists but action controls are still settling.
+
+Tasks:
+
+1. For cases like:
+- modal container visible
+- expected action buttons absent
+- content still settling
+- temporary detached button nodes
+
+add a short, bounded local recovery loop before escalating
+
+2. Keep retries short and safe
+3. Do NOT create long hidden waits
+
+Success criteria:
+- half-rendered modal states recover locally more often
+- fewer whole attempts are wasted
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — USE EARLIEST RELIABLE ACTIONABLE SIGNAL
+--------------------------------------------------
+
+Goal:
+Proceed as soon as the action is truly usable, not merely visible.
+
+Tasks:
+
+1. Identify the earliest reliable signal that Register / Waitlist is actionable
+2. Prefer:
+- visible + enabled + attached + stable
+over
+- merely present in DOM
+
+3. Keep this efficient and correct
+
+Success criteria:
+- the bot moves at the earliest safe moment
+- false-start clicks do not increase
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — EXPOSE modal_to_action_ready_ms IN TOOLS
+--------------------------------------------------
+
+Goal:
+Make this bottleneck visible in the timing UI.
+
+Tasks:
+
+1. Add modal → action-ready timing to Tools
+2. Keep it consistent with existing timing sub-rows
+3. Highlight it if it becomes the slowest local step
+
+Success criteria:
+- the new bottleneck is visible if present
+- future tuning gets easier
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — FINAL QA
+--------------------------------------------------
+
+Goal:
+Confirm modal/action readiness delay is reduced safely.
+
+Tasks:
+
+1. Verify:
+- modal_to_action_ready_ms is measurable
+- action detection is faster or more reliable
+- half-rendered modal states waste fewer attempts
+- correctness is preserved
+- no infinite local retry loops exist
+
+2. Summarize whether this was the real bottleneck
+
+Success criteria:
+- modal/action readiness path is improved
+- the next bottleneck is clearer
+
+After Stage 7:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
