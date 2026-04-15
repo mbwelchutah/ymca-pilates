@@ -1,0 +1,392 @@
+You are implementing a POST-PAGE-READY ACCELERATION + MODAL-ENTRY OPTIMIZATION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Now that timing visibility is complete, optimize the next most likely bottleneck after page readiness:
+
+- page ready → class found
+- class found → card click
+- card click → modal open
+- small transient failures in that path
+
+This pass should reduce the time between:
+- the schedule page becoming ready
+and
+- the bot reaching a stable, ready-to-act modal
+
+This is NOT a broad redesign.
+This is a focused execution-speed and reliability pass for the post-page-ready path.
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole booking architecture
+- Do NOT change unrelated persistence/auth logic
+- Keep app runnable after every stage
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+CONTEXT / WHY THIS PASS MATTERS
+==================================================
+
+The timing system now measures:
+- run start
+- page ready
+- class discovery
+- first click
+- modal open
+- confirmation
+- degradation vs baseline
+
+Recent measurements indicate that page load is often the slowest phase overall, but once the page is ready, the next gains are likely in:
+- class discovery latency
+- card-click reliability
+- modal-entry speed
+- reducing expensive restarts when only the local click/modal path is flaky
+
+We want to improve the "page ready → stable modal" path.
+
+==================================================
+STAGE 1 — AUDIT THE CURRENT POST-PAGE-READY PATH
+==================================================
+
+Goal:
+Document the exact current path after page readiness and identify the current expensive steps.
+
+Tasks:
+
+1. Trace the current sequence after page_nav_done / page ready:
+- filter application
+- class discovery
+- card scoring
+- card click
+- modal wait
+- modal verification
+
+2. Identify:
+- where retries happen
+- where timeouts are used
+- where the path restarts too aggressively
+- where transient failures escalate too early
+
+3. Call out the main code locations involved, especially in:
+- register-pilates.js
+- click / verify helpers
+- discovery helpers
+
+Do NOT change behavior yet except minimal instrumentation if needed.
+
+Success criteria:
+- current post-page-ready path is clearly documented
+- likely slow / brittle spots are identified
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — ADD FOCUSED TIMING MARKERS FOR POST-PAGE-READY SUBSTEPS
+==================================================
+
+Goal:
+Measure the sub-steps more precisely.
+
+Tasks:
+
+1. Add or refine timing markers for:
+- filter_apply_start / done
+- discovery_start / done
+- card_click_start / done
+- modal_wait_start / done
+- modal_verify_start / done
+
+2. If some of these are already partly measured, refine them so the metrics cleanly separate:
+- discovery time
+- click time
+- modal render time
+- modal verify time
+
+3. Store these without breaking the existing timing pipeline
+
+Success criteria:
+- post-page-ready time is broken into smaller measurable pieces
+- bottlenecks inside the discovery/click/modal path become visible
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — OPTIMIZE CLASS DISCOVERY PATH
+==================================================
+
+Goal:
+Reduce time spent finding the correct class card once the page is ready.
+
+Tasks:
+
+1. Audit the current discovery/scoring flow for unnecessary repeated work
+2. Improve the discovery path so it does less redundant scanning when possible
+3. Preserve correctness:
+- do not weaken identity matching irresponsibly
+- do not increase false positives
+
+4. Favor:
+- less repeated DOM traversal
+- faster narrowing to likely targets
+- cheaper early rejection of bad candidates
+
+Success criteria:
+- discovery becomes faster or less repetitive
+- identity confidence remains safe
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — ADD FASTER LOCAL RECOVERY FOR CARD CLICK FAILURES
+==================================================
+
+Goal:
+Avoid burning a whole run when the card click path is locally flaky.
+
+Tasks:
+
+1. For failures such as:
+- click timeout
+- detached element during click
+- row became stale
+- card target temporarily not actionable
+
+add a bounded local recovery path before escalating to a larger retry
+
+2. Prefer:
+- reacquire the same target
+- retry click locally a small number of times
+- re-scroll / re-focus if needed
+
+3. Keep these retries short and bounded
+4. Do NOT create long hidden waits
+
+Success criteria:
+- small click-path failures can recover without a full outer retry
+- page-ready work is not wasted unnecessarily
+
+After Stage 4:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 5 — OPTIMIZE MODAL ENTRY PATH
+==================================================
+
+Goal:
+Reduce delay between successful card click and modal availability.
+
+Tasks:
+
+1. Audit current modal-open waiting logic
+2. Improve modal entry handling so it:
+- detects modal readiness as early as safely possible
+- avoids overly conservative waits
+- handles slow-but-progressing modal renders better
+
+3. Preserve verification:
+- modal must still match the intended class/time/instructor
+- do not trade away correctness for speed
+
+4. If helpful, add a bounded local retry for modal-not-yet-ready immediately after click
+
+Success criteria:
+- modal entry becomes faster or more resilient
+- the bot reaches a usable modal more reliably
+
+After Stage 5:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 6 — TUNE ESCALATION RULES FOR DISCOVERY / CLICK / MODAL FAILURES
+==================================================
+
+Goal:
+Make sure transient local failures do not escalate too aggressively.
+
+Tasks:
+
+1. Review how the system currently classifies:
+- class_not_found
+- click_failed
+- modal_not_reachable
+- detached element
+- ambiguous local failures
+
+2. Adjust escalation rules so:
+- transient local issues get short local recovery first
+- only repeated or strong failures escalate to outer retry behavior
+
+3. Keep hard-stop outcomes hard:
+- true not found
+- true full / unavailable
+- definitive auth failures
+
+Success criteria:
+- local transient failures are cheaper
+- outer retries are preserved for genuinely larger failures
+
+After Stage 6:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 7 — EXPOSE POST-PAGE-READY BOTTLENECKS IN TOOLS
+==================================================
+
+Goal:
+Make the new sub-step timings visible.
+
+Tasks:
+
+1. In Tools timing UI, add or refine visibility for:
+- discovery time
+- card click time
+- modal wait/open time
+- modal verify time
+
+2. Keep it readable and consistent with the existing timing UI
+3. Highlight when one of these becomes the slowest or degraded local step
+
+Success criteria:
+- the user can see whether delay happened in discovery, click, or modal entry
+- future optimization becomes easier
+
+After Stage 7:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 8 — VERIFY ATTEMPT QUALITY IMPROVES
+==================================================
+
+Goal:
+Confirm that the bot is reaching the modal faster and wasting fewer attempts.
+
+Tasks:
+
+1. Compare before/after behavior conceptually or with real timing data:
+- page ready → class found
+- class found → click
+- click → modal open
+- number of full outer retries caused by local UI flakiness
+
+2. Confirm:
+- local recoveries are faster than outer retries
+- modal-entry reliability improves
+- first-attempt quality improves
+
+Success criteria:
+- the bot gets to a stable modal faster and more reliably
+- fewer runs are wasted on avoidable local failures
+
+After Stage 8:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 9 — SAFETY / CORRECTNESS CHECK
+==================================================
+
+Goal:
+Make sure the speed improvements did not weaken correctness.
+
+Tasks:
+
+1. Verify:
+- identity matching is still safe
+- modal verification still protects against wrong-class actions
+- local click/modal retries do not cause duplicate or incorrect clicks
+- no infinite local retry loops exist
+- no large new hidden waits were introduced
+
+2. Keep correctness ahead of raw speed
+
+Success criteria:
+- the bot is faster without becoming sloppier
+- safeguards still hold
+
+After Stage 9:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 10 — FINAL QA + NEXT-BOTTLENECK SUMMARY
+==================================================
+
+Goal:
+Close the pass cleanly and identify what the next likely bottleneck is.
+
+Tasks:
+
+1. Summarize:
+- what improved in the post-page-ready path
+- whether discovery/click/modal steps became faster
+- whether local retry quality improved
+
+2. Based on current evidence, identify the next likely bottleneck after this pass
+
+3. Keep the summary practical and evidence-based
+
+Success criteria:
+- post-page-ready acceleration pass is complete
+- the next optimization target is clearer than before
+
+After Stage 10:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+FINAL SUCCESS CRITERIA
+==================================================
+
+After this pass:
+
+- post-page-ready work is more measurable
+- class discovery is faster or less wasteful
+- card click failures recover locally more often
+- modal entry is faster or more resilient
+- transient local UI failures waste fewer whole attempts
+- Tools can show whether delay happened in discovery, click, or modal entry
+- the bot gets to a stable modal faster and more reliably
+
+The result should feel:
+- faster after page ready
+- less fragile in the local UI path
+- more efficient with each attempt
+- easier to optimize further
+
+It should NOT feel like:
+- page readiness is followed by another opaque delay
+- one local click failure burns a whole attempt
+- modal entry is still a black box
+- speed gains come at the cost of correctness
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
