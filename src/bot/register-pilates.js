@@ -1194,12 +1194,12 @@ async function runBookingJob(job, opts = {}) {
         for (const el of document.querySelectorAll('*')) {
           if (SKIP_TAGS.has(el.tagName)) continue;
 
-          const desc = el.querySelectorAll('*').length;
-          // 100-desc cap: excludes page wrappers, filter dropdowns (~200+ desc),
-          // and repeating-group containers, while keeping individual class cards (~20-50 desc).
-          if (desc > 100) continue;
-          if (desc < 2)   continue;   // skip bare text wrappers / leaf nodes
-
+          // ── Fast pre-filter: check text signals BEFORE the expensive desc count ──
+          // el.querySelectorAll('*').length is O(N) per element, making the original
+          // loop O(N²) overall.  Running it on every DOM node is the main bottleneck
+          // in discovery.  By checking textContent + regexes first we only run the
+          // expensive count on the ~50-100 elements that contain a relevant signal,
+          // instead of the full 2000+ node DOM.  The result set is identical.
           const raw  = el.textContent || '';
           const txt  = norm(raw);
           if (!txt) continue;
@@ -1207,21 +1207,28 @@ async function runBookingJob(job, opts = {}) {
           const hasTime  = timeAmRe.test(txt);
           const hasTitle = titleRe.test(txt);
           const hasInstr = instrRe.test(txt);
+          if (!hasTitle && !hasTime && !hasInstr) continue; // no signal — skip early
 
-          // Collect all card-sized nodes for diagnostic logging
-          const r = el.getBoundingClientRect();
+          // ── Desc count (now runs only for signal-bearing elements) ──────────────
+          const desc = el.querySelectorAll('*').length;
+          // 100-desc cap: excludes page wrappers, filter dropdowns (~200+ desc),
+          // and repeating-group containers, while keeping individual class cards (~20-50 desc).
+          if (desc > 100) continue;
+          if (desc < 2)   continue;   // skip bare text wrappers / leaf nodes
+
+          // ── Layout check (runs only for signal-bearing, card-sized candidates) ──
           // Skip truly hidden elements (display:none / collapsed to 0×0).
           // Bubble.io's virtual repeating-group recycles DOM nodes: when you switch
           // date tabs, old entries get hidden (width=0, height=0) but keep their
           // previous text content.  Scoring these stale nodes leads to clicking
           // invisible elements and crashing the booking attempt.
+          const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) continue;
           const looks_card = r.width >= 100 && r.height >= 30;
-          if (looks_card && (hasTitle || hasTime || hasInstr)) {
+          // All elements reaching here have ≥1 signal; no redundant signal guard needed.
+          if (looks_card) {
             allTexts.push({ desc, txt: txt.slice(0, 150), hasTime, hasTitle, hasInstr });
           }
-
-          if (!hasTitle && !hasTime && !hasInstr) continue;
 
           let score = 0;
           const reasons = [];
