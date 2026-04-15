@@ -7,6 +7,7 @@ const path = require('path');
 const { captureFailureScreenshot, screenshotRelPath } = require('./screenshot-capture');
 const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
+const { checkJobConsistency } = require('../scheduler/job-consistency');
 const { recordFailure }  = require('../db/failures');
 const {
   createRunState, advance, recordTiming, recordTimingMetrics, emitEvent, emitSuccess, saveState,
@@ -614,12 +615,28 @@ async function runBookingJob(job, opts = {}) {
   let dayShort = DAY_SHORT[dayOfWeek] || 'Wed';
 
   // If targetDate is provided (YYYY-MM-DD), derive the exact day number and
-  // override dayShort from the date itself (more reliable than the DB string).
+  // override dayShort from the date itself.  target_date is ALWAYS the single
+  // source of truth for tab selection — day_of_week is never used when
+  // target_date is present, even if the two fields disagree.
   let targetDayNum = null;
   if (targetDate) {
     const d = new Date(targetDate + 'T00:00:00Z'); // parse as UTC to avoid tz shift
     dayShort     = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
     targetDayNum = d.getUTCDate(); // numeric day-of-month, e.g. 9
+
+    // Consistency check: log a warning if stored day_of_week disagrees with the
+    // calendar weekday of target_date.  The tab-selection above already uses
+    // target_date — this makes the override explicit so mismatches are visible.
+    const wc = checkJobConsistency(job);
+    if (!wc.isConsistent) {
+      console.warn(
+        `[job-consistency] runBookingJob: stored day_of_week "${dayOfWeek}" ` +
+        `does not match target_date ${targetDate} (${wc.computedWeekday}). ` +
+        `Tab selection will use "${dayShort} ${targetDayNum}" from target_date — ` +
+        `ignoring stale day_of_week label.`
+      );
+    }
+
     console.log(`targetDate: ${targetDate} → looking for "${dayShort} ${targetDayNum}" tab`);
   }
   const classTitleLower = classTitle.toLowerCase();
@@ -2966,6 +2983,19 @@ async function cancelRegistration(job) {
     const d    = new Date(targetDate + 'T00:00:00Z');
     dayShort   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
     targetDayNum = d.getUTCDate();
+
+    // Consistency check: log a warning if stored day_of_week disagrees with the
+    // calendar weekday of target_date.  cancelRegistration already uses target_date
+    // as the source of truth — this makes any override explicit in logs.
+    const wc = checkJobConsistency(job);
+    if (!wc.isConsistent) {
+      console.warn(
+        `[job-consistency] cancelRegistration: stored day_of_week "${dayOfWeek}" ` +
+        `does not match target_date ${targetDate} (${wc.computedWeekday}). ` +
+        `Tab selection will use "${dayShort} ${targetDayNum}" from target_date — ` +
+        `ignoring stale day_of_week label.`
+      );
+    }
   }
 
   const CONFIDENCE_THRESHOLD = 8;
