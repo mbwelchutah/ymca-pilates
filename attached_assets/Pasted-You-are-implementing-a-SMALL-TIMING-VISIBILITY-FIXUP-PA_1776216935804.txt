@@ -1,0 +1,153 @@
+You are implementing a SMALL TIMING VISIBILITY FIXUP PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the two confirmed UI bugs and one minor type gap found in the post-implementation audit of the Timing Visibility Pass.
+
+Do NOT redesign anything.
+Do NOT expand scope.
+Do NOT change backend timing behavior.
+This is a targeted frontend/API contract cleanup only.
+
+IMPORTANT RULES
+
+- Implement ONLY ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for user to say continue
+
+DO NOT CONTINUE AUTOMATICALLY
+
+==================================================
+STAGE 1 — FIX slowest_phase KEY MAPPING
+==================================================
+
+Goal:
+Make the “slowest phase” highlight work in both Tools and Now.
+
+Problem:
+Backend slowest_phase uses short aliases:
+- auth
+- page_load
+- class_find
+- card_to_click
+- modal_open
+- confirmation
+- first_attempt
+
+Frontend comparisons currently use different metric keys:
+- auth_phase_ms
+- page_ready_to_class_found
+- class_found_to_first_click
+- first_click_to_confirmation
+
+This means highlighting never activates.
+
+Tasks:
+
+1. Add a clear mapping from backend slowest_phase aliases to the frontend display keys used by:
+- LastRunTimingPanel
+- NowScreen Stage 7 timing detail
+
+2. Update both screens to compare using the normalized alias mapping
+3. Do not change backend output
+4. Keep the fix simple and centralized if possible
+
+Success criteria:
+- slowest phase highlighting works
+- Tools and Now use the same mapping
+- no raw-key mismatch remains
+
+After Stage 1:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 2 — FIX DEGRADATION PHASE LABELS
+==================================================
+
+Goal:
+Show human-friendly labels in the degradation warning banner.
+
+Problem:
+degradation.slowPhases[].phase uses short aliases like:
+- auth
+- page_load
+- discovery
+
+But the label map is keyed on long metric names, so the UI falls back to raw alias strings.
+
+Tasks:
+
+1. Add a label mapping for degradation phase aliases
+2. Ensure the DegradationWarningBanner shows friendly labels such as:
+- Auth
+- Page load
+- Discovery
+
+3. Keep this separate from metric-key labels if that is cleaner
+4. Do not change degradation detection logic
+
+Success criteria:
+- warning banner no longer shows raw phase aliases
+- labels are clean and human-readable
+
+After Stage 2:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 3 — ADD run_start_to_page_ready TO FRONTEND TYPE
+==================================================
+
+Goal:
+Complete the TypeScript contract.
+
+Problem:
+Backend sends run_start_to_page_ready in lastTimingMetrics, but the frontend type is missing it.
+
+Tasks:
+
+1. Add run_start_to_page_ready to the lastTimingMetrics type in api.ts
+2. Ensure the field is typed consistently with the backend payload
+3. Do not force new UI usage if not needed — this is a contract completion fix
+
+Success criteria:
+- frontend type fully matches backend lastTimingMetrics shape
+- no silent contract gap remains
+
+After Stage 3:
+Summarize changes and STOP.
+
+Stage complete. Say "continue" to proceed.
+
+==================================================
+STAGE 4 — FINAL QUICK VERIFICATION
+==================================================
+
+Goal:
+Confirm the three targeted fixes are complete.
+
+Tasks:
+
+1. Verify:
+- slowest phase highlight now works in Tools
+- slowest phase highlight now works in Now timing detail
+- degradation banner shows friendly labels
+- run_start_to_page_ready exists in the frontend type
+- no regressions introduced
+
+2. Keep this verification concise and code-aware
+
+Success criteria:
+- all audited issues are closed
+- timing visibility pass is now clean
+
+After Stage 4:
+Summarize final improvements and STOP.
+
+Stage complete. Say "continue" to proceed.

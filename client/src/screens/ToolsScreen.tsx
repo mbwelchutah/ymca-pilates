@@ -7,7 +7,7 @@ import { DetailRow } from '../components/ui/DetailRow'
 import { ScreenshotLightbox } from '../components/ui/ScreenshotLightbox'
 import type { AppState, SessionStatus, AuthStatusEnum, Job } from '../types'
 import type { SniperRunState, SniperTiming, ConfirmedReadyState } from '../lib/api'
-import { api } from '../lib/api'
+import { api, SLOWEST_PHASE_TO_DISPLAY_KEY } from '../lib/api'
 import { FAILURE_LABEL, failureToReadinessImpact } from '../lib/failureMapper'
 import type { FailureType } from '../lib/failureTypes'
 import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL } from '../lib/readinessResolver'
@@ -476,7 +476,7 @@ function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) 
   if (!ltm) return null
 
   const total = ltm.total_first_attempt_ms
-  const slowest = ltm.slowest_phase
+  const slowest = SLOWEST_PHASE_TO_DISPLAY_KEY[ltm.slowest_phase ?? ''] ?? null
   const deg = ltm.degradation
 
   // Worst ratio across slow phases for badge display

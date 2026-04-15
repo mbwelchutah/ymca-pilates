@@ -107,6 +107,17 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Maps the short alias keys used by the backend's slowest_phase field to the
+// full metric field names used by PHASE_ORDER / lastTimingMetrics on the
+// frontend.  Phases not displayed in the per-phase rows (page_load,
+// modal_open, first_attempt) are intentionally absent.
+export const SLOWEST_PHASE_TO_DISPLAY_KEY: Record<string, string> = {
+  auth:          'auth_phase_ms',
+  class_find:    'page_ready_to_class_found',
+  card_to_click: 'class_found_to_first_click',
+  confirmation:  'first_click_to_confirmation',
+}
+
 export const api = {
   getState: (): Promise<AppState> => apiFetch('/api/state'),
 

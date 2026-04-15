@@ -12,7 +12,7 @@ import { ToggleRow } from '../components/ui/ToggleRow'
 import type { AppState, Job, Phase, SessionStatus, AuthStatusEnum } from '../types'
 import type { SniperRunState } from '../lib/api'
 import type { SniperEvent } from '../lib/failureTypes'
-import { api } from '../lib/api'
+import { api, SLOWEST_PHASE_TO_DISPLAY_KEY } from '../lib/api'
 import {
   SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL,
   DEFAULT_READINESS, computeCompositeReadiness,
@@ -2273,7 +2273,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         : key === 'page_ready_to_class_found' ? lrs.medianDiscoveryMs
                         : null
                       if (medMs == null) return null
-                      const slowest = ltm?.slowest_phase === key
+                      const slowest = SLOWEST_PHASE_TO_DISPLAY_KEY[ltm?.slowest_phase ?? ''] === key
                       return (
                         <div key={key} className={`flex items-center justify-between px-3 py-1.5 border-b border-divider last:border-0 ${slowest ? 'bg-yellow-500/5' : ''}`}>
                           <span className={`text-[12px] ${slowest ? 'text-yellow-400' : 'text-text-secondary'}`}>{label}</span>
