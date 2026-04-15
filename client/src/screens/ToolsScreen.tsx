@@ -243,6 +243,302 @@ function fmtDelay(ms: number | null | undefined): string {
   return `${Math.round(ms / 100) / 10}s`
 }
 
+function fmtSec(ms: number | null | undefined): string {
+  if (ms == null) return '—'
+  if (ms < 0)     return `${Math.round(-ms / 100) / 10}s early`
+  return `${Math.round(ms / 100) / 10}s`
+}
+
+// ── Learned Run Speed Panel ─────────────────────────────────────────────────────
+// Shows the timing baseline the bot has learned from past runs: how early it arms,
+// the source (learned vs default), and the median phase breakdown.
+
+type ReadinessData = Awaited<ReturnType<typeof api.getReadiness>>
+
+function TimingStatRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider last:border-0">
+      <span className={`text-[13px] ${muted ? 'text-text-muted' : 'text-text-secondary'}`}>{label}</span>
+      <span className={`text-[13px] font-semibold ${muted ? 'text-text-muted' : 'text-text-primary'}`}>{value}</span>
+    </div>
+  )
+}
+
+// ── Degradation Warning Banner (Stage 4) ────────────────────────────────────
+// Appears at the top of the Timing section if the last run triggered slow-phase
+// detection. Shows affected phases and their ratios so the user knows if network
+// or YMCA server latency is to blame.
+
+function DegradationWarningBanner({ readiness }: { readiness: ReadinessData | null }) {
+  const deg = readiness?.lastTimingMetrics?.degradation
+  if (!deg?.detected || !deg.slowPhases?.length) return null
+
+  return (
+    <div className="mb-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
+      <div className="flex items-start gap-2.5">
+        <span className="text-yellow-400 text-[15px] mt-0.5 flex-shrink-0">⚠</span>
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-yellow-300">Last run was slow</p>
+          <div className="mt-1.5 space-y-0.5">
+            {deg.slowPhases.map(sp => (
+              <p key={sp.phase} className="text-[12px] text-yellow-400/80">
+                {PHASE_LABELS[sp.phase] ?? sp.phase}
+                {' — '}
+                {fmtSec(sp.currentMs)} vs median {fmtSec(sp.medianMs)}
+                {' '}
+                <span className="font-semibold">×{sp.ratioX.toFixed(1)}</span>
+              </p>
+            ))}
+          </div>
+          <p className="text-[11px] text-yellow-500/70 mt-1.5">
+            Timing adapts automatically. Repeated slowness may indicate YMCA server load.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LearnedRunSpeedPanel({ readiness }: { readiness: ReadinessData | null }) {
+  const lrs = readiness?.learnedRunSpeed ?? null
+  const et  = readiness?.executionTiming ?? null
+
+  const isLearned = lrs != null
+
+  // Effective lead time: use learned neededLeadTimeMs when available;
+  // fall back to the diff between opensAt and armedAt from executionTiming.
+  const leadTimeMs: number | null = isLearned
+    ? lrs.neededLeadTimeMs
+    : (et ? Math.max(0, new Date(et.opensAt).getTime() - new Date(et.armedAt).getTime()) : null)
+
+  return (
+    <>
+      <SectionHeader title="Timing" id="tools-timing" />
+
+      {/* Degradation warning (Stage 4) — only shown when last run was unusually slow */}
+      <DegradationWarningBanner readiness={readiness} />
+
+      <Card padding="none">
+        {/* Armed lead time */}
+        <div className="px-4 py-3 border-b border-divider">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] text-text-secondary">Armed lead time</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-semibold text-text-primary">
+                {leadTimeMs != null ? fmtSec(leadTimeMs) : '—'}
+              </span>
+              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+                isLearned
+                  ? 'bg-accent-green/15 text-accent-green'
+                  : 'bg-bg-secondary text-text-muted'
+              }`}>
+                {isLearned ? 'learned' : 'default'}
+              </span>
+            </div>
+          </div>
+          {isLearned && (
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Based on {lrs.observationCount} run{lrs.observationCount !== 1 ? 's' : ''}
+            </p>
+          )}
+          {!isLearned && (
+            <p className="text-[11px] text-text-muted mt-0.5">
+              Timing adapts after 3 runs
+            </p>
+          )}
+        </div>
+
+        {/* Median phase breakdown — only shown once timing is learned */}
+        {isLearned ? (
+          <>
+            <TimingStatRow label="Median auth" value={fmtSec(lrs.medianAuthMs)} />
+            <TimingStatRow label="Median page load" value={fmtSec(lrs.medianPageLoadMs)} />
+            <TimingStatRow label="Median discovery" value={fmtSec(lrs.medianDiscoveryMs)} />
+          </>
+        ) : (
+          <TimingStatRow
+            label="Phase breakdown"
+            value="not yet available"
+            muted
+          />
+        )}
+      </Card>
+
+      {/* Last-run per-phase breakdown (Stage 3) */}
+      <LastRunTimingPanel readiness={readiness} />
+
+      {/* Next-arm context — lead available vs lead needed (Stage 5) */}
+      <ArmingContextPanel readiness={readiness} />
+    </>
+  )
+}
+
+// ── Arming Context Panel (Stage 5) ───────────────────────────────────────────
+// Shows whether the available lead time for the next run is sufficient given
+// what the bot has learned about how long the run takes.
+
+function _fmtPacificTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    })
+  } catch {
+    return iso
+  }
+}
+
+function ArmingContextPanel({ readiness }: { readiness: ReadinessData | null }) {
+  const et  = readiness?.executionTiming ?? null
+  const lrs = readiness?.learnedRunSpeed ?? null
+  if (!et) return null
+
+  const availableMs = new Date(et.opensAt).getTime() - new Date(et.armedAt).getTime()
+  const neededMs    = lrs?.neededLeadTimeMs ?? null
+  const surplus     = neededMs != null ? availableMs - neededMs : null
+  const isTight     = surplus != null && surplus < 5_000   // < 5 s margin
+  const isNegative  = surplus != null && surplus < 0
+
+  return (
+    <Card padding="none" className="mt-3">
+      <div className="px-4 py-3 border-b border-divider">
+        <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-wide">
+          Next arm
+        </span>
+      </div>
+      <TimingStatRow label="Window opens" value={_fmtPacificTime(et.opensAt)} />
+      <TimingStatRow label="Bot arms at"  value={_fmtPacificTime(et.armedAt)} />
+
+      <div className={`flex items-center justify-between px-4 py-2.5 border-b border-divider ${
+        isNegative ? 'bg-red-500/5'
+        : isTight  ? 'bg-yellow-500/5'
+        : ''
+      }`}>
+        <span className="text-[13px] text-text-secondary">Lead available</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[13px] font-semibold ${
+            isNegative ? 'text-accent-red' : isTight ? 'text-yellow-400' : 'text-text-primary'
+          }`}>
+            {fmtSec(availableMs)}
+          </span>
+          {isTight && (
+            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+              isNegative
+                ? 'bg-red-500/15 text-accent-red'
+                : 'bg-yellow-500/15 text-yellow-400'
+            }`}>
+              {isNegative ? 'too tight' : 'tight'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {neededMs != null && (
+        <TimingStatRow
+          label="Lead needed (learned)"
+          value={fmtSec(neededMs)}
+          muted={!isTight}
+        />
+      )}
+
+      {surplus != null && !isTight && (
+        <div className="px-4 py-2.5">
+          <p className="text-[11px] text-text-muted">
+            +{fmtSec(surplus)} margin above learned requirement
+          </p>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ── Last Run Timing Panel ────────────────────────────────────────────────────
+// Per-phase breakdown from the most recent booking attempt.
+
+const PHASE_LABELS: Record<string, string> = {
+  auth_phase_ms:              'Auth',
+  page_ready_to_class_found:  'Page → class',
+  class_found_to_first_click: 'Class → click',
+  first_click_to_confirmation:'Click → confirm',
+}
+
+const PHASE_ORDER = [
+  'auth_phase_ms',
+  'page_ready_to_class_found',
+  'class_found_to_first_click',
+  'first_click_to_confirmation',
+] as const
+
+function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) {
+  const ltm = readiness?.lastTimingMetrics ?? null
+  if (!ltm) return null
+
+  const total = ltm.total_first_attempt_ms
+  const slowest = ltm.slowest_phase
+  const deg = ltm.degradation
+
+  // Worst ratio across slow phases for badge display
+  const worstRatio = deg?.detected
+    ? Math.max(...(deg.slowPhases?.map(p => p.ratioX) ?? [0]))
+    : null
+
+  const hasAnyPhase = PHASE_ORDER.some(k => ltm[k] != null)
+  if (!hasAnyPhase && total == null) return null
+
+  return (
+    <Card padding="none" className="mt-3">
+      {/* Header row */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
+        <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-wide">
+          Last run · per-phase
+        </span>
+        {deg?.detected && worstRatio != null && (
+          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400">
+            slow ×{worstRatio.toFixed(1)}
+          </span>
+        )}
+      </div>
+
+      {/* Phase rows */}
+      {PHASE_ORDER.map(key => {
+        const ms = ltm[key]
+        if (ms == null) return null
+        const isSlowest = key === slowest
+        return (
+          <div
+            key={key}
+            className={`flex items-center justify-between px-4 py-2.5 border-b border-divider last:border-0 ${
+              isSlowest ? 'bg-yellow-500/5' : ''
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[13px] ${isSlowest ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                {PHASE_LABELS[key] ?? key}
+              </span>
+              {isSlowest && (
+                <span className="text-[10px] text-yellow-500 font-medium">slowest</span>
+              )}
+            </div>
+            <span className={`text-[13px] font-semibold ${isSlowest ? 'text-yellow-400' : 'text-text-primary'}`}>
+              {fmtSec(ms)}
+            </span>
+          </div>
+        )
+      })}
+
+      {/* Total row — always shown if present */}
+      {total != null && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-bg-secondary/40">
+          <span className="text-[13px] font-semibold text-text-secondary">Total</span>
+          <span className="text-[13px] font-semibold text-text-primary">{fmtSec(total)}</span>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function TimingRow({ timing }: { timing: SniperTiming }) {
   const hasData = timing.openToCardMs != null || timing.openToClickMs != null
   if (!hasData && timing.pollAttemptsPostOpen === 0) return null
@@ -980,6 +1276,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [classifierResult, setClassifierResult] = useState<ClassTruthResult | null>(null)
   const [confirmedReady,   setConfirmedReady]   = useState<ConfirmedReadyState | null>(null)
 
+  // ── Timing intelligence (one-shot fetch — changes only after new runs) ─────
+  const [readiness, setReadiness] = useState<ReadinessData | null>(null)
+
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setBotStatus).catch(() => {})
@@ -987,6 +1286,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     api.getSniperState().then(setSniperRunState).catch(() => {})
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
+    api.getReadiness().then(setReadiness).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1583,6 +1883,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
                   {/* Last Check Now (per-phase diagnostics) */}
                   <LastCheckNowSection sniperRunState={sniperRunState} />
+
+                  {/* Timing intelligence — learned run speed baseline */}
+                  <LearnedRunSpeedPanel readiness={readiness} />
 
                   {/* Schedule Cache (classifier result for selected job) */}
                   {selectedJob && classifierResult && classifierResult.fetchedAt && (() => {

@@ -407,6 +407,35 @@ export const api = {
       adjustedWarmupMs: number
       observationCount: number
     } | null
+    learnedRunSpeed: {
+      medianAuthMs:      number
+      medianPageLoadMs:  number
+      medianDiscoveryMs: number
+      medianTotalMs:     number
+      neededLeadTimeMs:  number
+      observationCount:  number
+    } | null
+    lastTimingMetrics: {
+      open_to_run_start:          number | null
+      auth_phase_ms:              number | null
+      page_ready_to_class_found:  number | null
+      class_found_to_first_click: number | null
+      modal_open_ms:              number | null
+      first_click_to_confirmation:number | null
+      open_to_confirmation:       number | null
+      total_first_attempt_ms:     number | null
+      slowest_phase:              string | null
+      degradation: {
+        detected:   boolean
+        thresholdX: number
+        slowPhases: Array<{
+          phase:     string
+          currentMs: number
+          medianMs:  number
+          ratioX:    number
+        }>
+      } | null
+    } | null
     escalation: {
       jobId:          number
       classTitle:     string | null

@@ -1101,6 +1101,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   //             30 s otherwise so the UI reacts within 1 s of any booking event.
   type BgReadiness = Awaited<ReturnType<typeof api.getReadiness>>
   const [bgReadiness, setBgReadiness] = useState<BgReadiness | null>(null)
+  // Stage 7 — expandable per-phase timing detail in the countdown area
+  const [timingDetailOpen, setTimingDetailOpen] = useState(false)
 
   // Derive the current execution phase from the most recent server response.
   // We use the server-computed executionTiming.phase (authoritative) when
@@ -2206,6 +2208,97 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                     : formatOpens(bookingOpenMs)}
                 </p>
               )}
+
+              {/* Stage 6 — light timing hint (only during too_early / warmup, not armed/sniper) */}
+              {(() => {
+                const lrs = bgReadiness?.learnedRunSpeed ?? null
+                const et  = bgReadiness?.executionTiming ?? null
+                if (!et && !lrs) return null
+                const isLearned = lrs != null
+                const leadMs = isLearned
+                  ? lrs.neededLeadTimeMs
+                  : et ? Math.max(0, new Date(et.opensAt).getTime() - new Date(et.armedAt).getTime()) : null
+                if (leadMs == null) return null
+                const leadStr = `${Math.round(leadMs / 100) / 10}s`
+                return (
+                  <button
+                    type="button"
+                    className="block text-left mt-1.5 group"
+                    onClick={() => setTimingDetailOpen(v => !v)}
+                  >
+                    <span className="text-[11px] text-text-muted group-active:opacity-70 transition-opacity">
+                      Arms{' '}
+                      <span className="font-semibold">{leadStr}</span>
+                      {' '}early
+                      {isLearned
+                        ? <span className="text-accent-green"> · learned</span>
+                        : <span className="text-text-muted"> · default</span>
+                      }
+                      <span className="ml-1 text-[9px] text-text-muted">
+                        {timingDetailOpen ? '▲' : '▼'}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })()}
+
+              {/* Stage 7 — expandable phase breakdown */}
+              {timingDetailOpen && (() => {
+                const lrs = bgReadiness?.learnedRunSpeed ?? null
+                const ltm = bgReadiness?.lastTimingMetrics ?? null
+                if (!lrs && !ltm) return null
+                type PhaseKey = 'auth_phase_ms' | 'page_ready_to_class_found' | 'class_found_to_first_click' | 'first_click_to_confirmation'
+                const phaseRows: Array<{ key: PhaseKey; label: string }> = [
+                  { key: 'auth_phase_ms',              label: 'Auth' },
+                  { key: 'page_ready_to_class_found',  label: 'Page → class' },
+                  { key: 'class_found_to_first_click', label: 'Class → click' },
+                  { key: 'first_click_to_confirmation',label: 'Click → confirm' },
+                ]
+                const fmtMs = (ms: number | null | undefined) =>
+                  ms == null ? '—' : `${Math.round(ms / 100) / 10}s`
+                return (
+                  <div className="mt-2 rounded-lg border border-divider overflow-hidden">
+                    {lrs && (
+                      <div className="px-3 py-1.5 bg-bg-secondary/60 border-b border-divider">
+                        <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide">
+                          Median · {lrs.observationCount} run{lrs.observationCount !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    )}
+                    {lrs && phaseRows.map(({ key, label }) => {
+                      // Learner tracks auth / pageLoad(run_start→page_ready) / discovery(page_ready→class_found).
+                      // class_found→click and click→confirm have no corresponding learned median.
+                      const medMs: number | null =
+                        key === 'auth_phase_ms'             ? lrs.medianAuthMs
+                        : key === 'page_ready_to_class_found' ? lrs.medianDiscoveryMs
+                        : null
+                      if (medMs == null) return null
+                      const slowest = ltm?.slowest_phase === key
+                      return (
+                        <div key={key} className={`flex items-center justify-between px-3 py-1.5 border-b border-divider last:border-0 ${slowest ? 'bg-yellow-500/5' : ''}`}>
+                          <span className={`text-[12px] ${slowest ? 'text-yellow-400' : 'text-text-secondary'}`}>{label}</span>
+                          <span className={`text-[12px] font-semibold ${slowest ? 'text-yellow-400' : 'text-text-primary'}`}>
+                            {fmtMs(medMs)}
+                            {ltm?.[key] != null && ltm[key] !== medMs && (
+                              <span className="ml-1 text-[10px] text-text-muted">
+                                last {fmtMs(ltm[key])}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {ltm?.total_first_attempt_ms != null && (
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-bg-secondary/40">
+                        <span className="text-[12px] text-text-secondary">Last total</span>
+                        <span className="text-[12px] font-semibold text-text-primary">
+                          {fmtMs(ltm.total_first_attempt_ms)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
 
