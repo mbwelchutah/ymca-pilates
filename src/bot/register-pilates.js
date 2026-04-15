@@ -1372,6 +1372,14 @@ async function runBookingJob(job, opts = {}) {
       return page.locator('[data-target-class="yes"]').first();
     }
 
+    // Cached centre of the scroll panel for the current run.  Populated on the
+    // first incremental scrollSchedulePanel call and reused for every subsequent
+    // step.  The panel's viewport position is stable throughout the discovery
+    // scan (tab clicks and scrollTop resets do not move the element), so one
+    // lookup per run is sufficient — eliminates 229 redundant querySelectorAll
+    // walks across a full 230-step discovery scan.
+    let _scrollPanelCenter = null;
+
     // Scroll the LARGEST VISIBLE scrollable panel (the schedule list) by `amount` px.
     // Uses mouse.wheel() to fire native scroll events that Bubble.io's virtual
     // RepeatingGroup listens to for re-rendering.  Direct scrollTop writes are silent
@@ -1392,26 +1400,34 @@ async function runBookingJob(job, opts = {}) {
           }
           if (best) { best.scrollTop = 0; best.dispatchEvent(new Event('scroll', { bubbles: true })); }
         });
+        // Do NOT clear _scrollPanelCenter: a scrollTop reset does not move the
+        // panel in the viewport — only its scroll position changes.
         return;
       }
 
       // INCREMENTAL: use page.mouse.wheel() so Bubble.io fires scroll/virtual-scroll events.
-      // First, move mouse to centre of the schedule panel to make sure the wheel targets it.
-      const center = await page.evaluate(() => {
-        let best = null, bestH = 0;
-        for (const el of document.querySelectorAll('*')) {
-          const s = getComputedStyle(el);
-          if (s.overflowY !== 'auto' && s.overflowY !== 'scroll' &&
-              s.overflow  !== 'auto' && s.overflow  !== 'scroll') continue;
-          if (el.scrollHeight <= el.clientHeight + 50) continue;
-          const r = el.getBoundingClientRect();
-          if (r.width < 100 || r.height < 100) continue;
-          if (r.height > bestH) { best = el; bestH = r.height; }
+      // Move mouse to the cached centre of the schedule panel before wheeling.
+      if (!_scrollPanelCenter) {
+        _scrollPanelCenter = await page.evaluate(() => {
+          let best = null, bestH = 0;
+          for (const el of document.querySelectorAll('*')) {
+            const s = getComputedStyle(el);
+            if (s.overflowY !== 'auto' && s.overflowY !== 'scroll' &&
+                s.overflow  !== 'auto' && s.overflow  !== 'scroll') continue;
+            if (el.scrollHeight <= el.clientHeight + 50) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width < 100 || r.height < 100) continue;
+            if (r.height > bestH) { best = el; bestH = r.height; }
+          }
+          if (!best) return null;
+          const r = best.getBoundingClientRect();
+          return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        });
+        if (_scrollPanelCenter) {
+          console.log(`  [scrollPanel] Panel centre cached at (${_scrollPanelCenter.x}, ${_scrollPanelCenter.y})`);
         }
-        if (!best) return null;
-        const r = best.getBoundingClientRect();
-        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-      });
+      }
+      const center = _scrollPanelCenter;
       if (center) {
         await page.mouse.move(center.x, center.y);
         await page.mouse.wheel(0, amount);
