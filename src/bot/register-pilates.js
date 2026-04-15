@@ -1966,8 +1966,27 @@ async function runBookingJob(job, opts = {}) {
         _tc.modal_wait_start = new Date().toISOString();
         await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 3000 }).catch(() => null);
         _tc.modal_ready_at   = new Date().toISOString(); // action button in DOM — BEFORE settle
-        // Small settle buffer so the modal text is fully populated.
-        await page.waitForTimeout(300);
+
+        // Stage 5: Replace the flat 300ms settle with a signal-driven text-ready wait.
+        // The action button appeared, but Bubble.io may populate modal text (class
+        // time, instructor) slightly later.  Wait until the button's ancestor
+        // container has >80 chars of textContent — the same 12-ancestor walk and
+        // threshold used by modal verification below.  Resolves as soon as text is
+        // ready; caps at 400ms so the worst case is only slightly above the old
+        // fixed 300ms, while the common case resolves in <100ms.
+        try {
+          await page.waitForFunction((sel) => {
+            const btn = document.querySelector(sel);
+            if (!btn) return true; // button gone — proceed; verification will handle it
+            let node = btn.parentElement;
+            for (let i = 0; i < 12 && node && node !== document.body; i++) {
+              if ((node.textContent || '').trim().length > 80) return true;
+              node = node.parentElement;
+            }
+            return false;
+          }, ACTION_SELECTORS.modalReady, { timeout: 400 });
+        } catch { /* cap reached — proceed regardless; verification falls back to body */ }
+
         _tc.modal_wait_done  = new Date().toISOString();
         _tc.modal_open_done  = _tc.modal_wait_done; // keep existing field for backward compat
         await captureDebug('modal', 'modal_opened');
