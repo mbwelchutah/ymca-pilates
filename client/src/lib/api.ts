@@ -442,6 +442,7 @@ export const api = {
       card_click_ms:              number | null
       modal_wait_ms:              number | null
       modal_verify_ms:            number | null
+      modal_to_action_ready_ms:   number | null
       degradation: {
         detected:   boolean
         thresholdX: number

@@ -138,6 +138,11 @@ function deriveTimingMetrics(t) {
   const card_click_ms           = delta(t.card_click_start,    t.card_click_done);
   const modal_wait_ms           = delta(t.modal_wait_start,    t.modal_wait_done);
   const modal_verify_ms         = delta(t.modal_verify_start,  t.modal_verify_done);
+  // Stage 6: modal_to_action_ready_ms — composite gap from "button in DOM"
+  // (modal_ready_at, set before the text-ready wait) to "detectActionButtons()
+  // returned a usable button" (action_ready_at, set after Stage 4 recovery).
+  // Spans: text-ready wait + verification + detectActionButtons scan.
+  const modal_to_action_ready_ms = delta(t.modal_ready_at, t.action_ready_at);
 
   // ── Slowest named phase ─────────────────────────────────────────────────────
   // Exclude open_to_run_start (directional, may be negative) and
@@ -178,6 +183,8 @@ function deriveTimingMetrics(t) {
     card_click_ms,
     modal_wait_ms,
     modal_verify_ms,
+    // Stage 6 marker: null on runs before modal_ready_at / action_ready_at existed
+    modal_to_action_ready_ms,
   };
 }
 

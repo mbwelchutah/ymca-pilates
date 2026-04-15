@@ -481,12 +481,21 @@ const PHASE_ORDER = [
 
 // Stage 2 sub-markers: finer-grained slices within each parent phase.
 // Only rendered when non-null (i.e. runs after Stage 2 was deployed).
-const PHASE_SUB_MARKERS: Partial<Record<string, Array<{ field: string; label: string }>>> = {
+//
+// slowestOf?: when present, this sub-row is highlighted in orange when its
+// value strictly exceeds every field listed in slowestOf — indicating it has
+// become the dominant cost within that phase group.
+type PhaseSubMarker = { field: string; label: string; slowestOf?: string[] }
+const PHASE_SUB_MARKERS: Partial<Record<string, PhaseSubMarker[]>> = {
   page_ready_to_class_found:  [{ field: 'filter_apply_ms', label: 'Filter' }],
   class_found_to_first_click: [{ field: 'card_click_ms',   label: 'Click'  }],
   first_click_to_confirmation:[
     { field: 'modal_wait_ms',   label: 'Modal render' },
     { field: 'modal_verify_ms', label: 'Verify text'  },
+    // Stage 6: composite gap — button in DOM → detectActionButtons confirmed.
+    // Spans text-ready wait + verification + action scan.  Highlighted when it
+    // exceeds modal_wait_ms (the prior dominant cost), surfacing a slow detect path.
+    { field: 'modal_to_action_ready_ms', label: 'Modal → action', slowestOf: ['modal_wait_ms', 'modal_verify_ms'] },
   ],
 }
 
@@ -547,17 +556,32 @@ function LastRunTimingPanel({ readiness }: { readiness: ReadinessData | null }) 
                 {fmtSec(ms)}
               </span>
             </div>
-            {subs.map(({ field, label }) => (
-              <div
-                key={field}
-                className="flex items-center justify-between pl-8 pr-4 py-1 border-b border-divider"
-              >
-                <span className="text-[11px] text-text-muted">↳ {label}</span>
-                <span className="text-[11px] font-medium text-text-muted">
-                  {fmtSec((ltm as Record<string, number | null>)[field]!)}
-                </span>
-              </div>
-            ))}
+            {subs.map(({ field, label, slowestOf }) => {
+              const ltmRec = ltm as Record<string, number | null>
+              const val = ltmRec[field]
+              // Highlight in orange when this row's value exceeds every field
+              // listed in slowestOf — it has become the dominant local cost.
+              const isSlowSub = !!slowestOf && val != null &&
+                slowestOf.every(f => (ltmRec[f] ?? 0) <= val)
+              return (
+                <div
+                  key={field}
+                  className={`flex items-center justify-between pl-8 pr-4 py-1 border-b border-divider ${isSlowSub ? 'bg-orange-500/5' : ''}`}
+                >
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[11px] ${isSlowSub ? 'text-orange-400' : 'text-text-muted'}`}>
+                      ↳ {label}
+                    </span>
+                    {isSlowSub && (
+                      <span className="text-[9px] text-orange-500 font-medium">slowest</span>
+                    )}
+                  </div>
+                  <span className={`text-[11px] font-medium ${isSlowSub ? 'text-orange-400' : 'text-text-muted'}`}>
+                    {fmtSec(val!)}
+                  </span>
+                </div>
+              )
+            })}
           </Fragment>
         )
       })}
