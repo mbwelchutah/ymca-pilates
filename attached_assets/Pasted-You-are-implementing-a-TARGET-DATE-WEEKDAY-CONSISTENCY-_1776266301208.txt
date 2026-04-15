@@ -1,0 +1,140 @@
+You are implementing a TARGET DATE / WEEKDAY CONSISTENCY AUDIT + FIX PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the class-day mismatch bug where a saved job can show one weekday (for example Tuesday) but carry a target_date that falls on a different weekday (for example Thursday), causing the bot to search the wrong tab and fail with not_found.
+
+This is likely the root cause of errors like:
+- UI shows "Tuesday, Apr 23"
+- bot error says "on Thu 23"
+- real class exists on the Tuesday tab
+
+IMPORTANT RULES
+
+- Do NOT redesign the whole scheduler
+- Keep changes focused on job consistency, tab selection, and clear diagnostics
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT THE STORED JOB FIELDS
+--------------------------------------------------
+
+For the failing job(s), inspect and report:
+- class_title
+- instructor
+- day_of_week
+- class_time
+- target_date
+- computed weekday from target_date
+
+Confirm whether day_of_week and target_date disagree.
+
+Also trace which field(s) are used by:
+- Plan display
+- Now display
+- tab selection
+- row matching error messages
+
+NO CODE CHANGES YET.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — ADD A CONSISTENCY CHECK
+--------------------------------------------------
+
+Add a single helper that validates:
+- if target_date exists, its actual weekday must match day_of_week
+
+Return:
+- isConsistent
+- storedWeekday
+- computedWeekday
+- mismatchReason
+
+Use this helper in the job normalization / read path.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — FIX DISPLAY TO STOP SHOWING IMPOSSIBLE DATES
+--------------------------------------------------
+
+Ensure UI never shows impossible combinations like:
+- "Tuesday, Apr 23" when Apr 23 is Thursday
+
+If a mismatch exists:
+- prefer showing the actual target_date with its true weekday
+- add a small issue indicator
+- do not present mixed fields as if they are valid
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — FIX BOT TAB SELECTION / MATCHING SOURCE OF TRUTH
+--------------------------------------------------
+
+Ensure the booking bot uses one coherent source of truth for date selection.
+
+If target_date exists:
+- use target_date as the actual calendar date
+- derive the weekday from target_date
+- do not independently trust a stale day_of_week label
+
+If mismatch exists:
+- log it explicitly
+- avoid silently searching the wrong tab
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — ADD CLEAR ERROR DIAGNOSTICS
+--------------------------------------------------
+
+When a mismatch exists, errors should say something like:
+- "Job inconsistency: stored weekday Tuesday does not match target_date Thursday Apr 23"
+
+instead of only:
+- "Could not find visible row ... on Thu 23"
+
+This should appear in logs and user-facing diagnostics where appropriate.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — OPTIONAL SAFE AUTO-CORRECTION
+--------------------------------------------------
+
+If safe and obvious, add a bounded correction path:
+- if target_date clearly identifies the intended calendar instance, derive weekday from target_date
+- or if the job is recurring and target_date is stale, flag for correction rather than auto-fixing blindly
+
+Be conservative. Prefer warning over risky mutation.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — FINAL QA
+--------------------------------------------------
+
+Verify:
+- impossible day/date combinations no longer display
+- the bot no longer searches Thursday for a Tuesday class
+- diagnostics clearly explain mismatches
+- the failing Gentle Yoga case is handled correctly
+
+END WITH:
+Stage complete. Say "continue" to proceed.
