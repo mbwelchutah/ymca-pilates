@@ -12,7 +12,8 @@
     "db:add": "node src/db/add-job.js",
     "db:create-test-job": "node src/db/create-test-job.js",
     "db:cleanup-test-jobs": "node src/db/cleanup-test-jobs.js",
-    "scheduler:loop": "node src/scheduler/run-scheduler-loop.js"
+    "scheduler:loop": "node src/scheduler/run-scheduler-loop.js",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -31,6 +32,7 @@
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "vitest": "^4.1.4"
   }
 }
