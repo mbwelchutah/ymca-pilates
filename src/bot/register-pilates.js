@@ -1001,7 +1001,22 @@ async function runBookingJob(job, opts = {}) {
           return null;
         });
         await page.locator('select').nth(selectIndex).selectOption(targetValue, { timeout: 3000, force: true });
-        await page.waitForTimeout(1000);
+        // Signal-driven settle: resolve as soon as the class count changes, which is
+        // the most reliable indicator that Bubble.io has applied the filter and
+        // re-rendered the schedule.  Capped at 1500 ms (vs the old flat 1000 ms)
+        // so a slow re-render still gets enough time; a fast one exits early.
+        // If initialCount was not detected, fall back to a short static pause.
+        if (initialCount !== null) {
+          await page.waitForFunction((initial) => {
+            for (const el of document.querySelectorAll('*')) {
+              const m = el.textContent.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+              if (m && el.children.length === 0) return parseInt(m[1], 10) !== initial;
+            }
+            return false; // count element not yet updated — keep polling
+          }, initialCount, { timeout: 1500 }).catch(() => {});
+        } else {
+          await page.waitForTimeout(600);
+        }
         const newCount = await page.evaluate(() => {
           for (const el of document.querySelectorAll('*')) {
             const m = el.textContent.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
@@ -1410,7 +1425,7 @@ async function runBookingJob(job, opts = {}) {
 
     // After a tab click: immediate DOM search → slow-scroll retry if not found.
     async function findCardOnTab(tabLabel) {
-      await page.waitForTimeout(1000); // let the tab panel settle
+      await page.waitForTimeout(400); // let the tab panel settle (reduced from 1000 ms)
 
       // Attempt 1: find in DOM without any scrolling.
       let card = await findTargetCard();
@@ -1549,7 +1564,10 @@ async function runBookingJob(job, opts = {}) {
           pollTabText  = tabText.trim();
           console.log('Clicking exact date tab: ' + tabText.trim());
           await dayTabs.nth(w).click();
-          await page.waitForTimeout(1000); // let tab render
+          // 300 ms settle for the nearOpen quick-scan path; for the non-nearOpen
+          // path findCardOnTab() adds its own settle wait, so total stays ~700 ms
+          // instead of the previous 2000 ms (two consecutive 1000 ms pauses).
+          await page.waitForTimeout(300);
 
           // Check if we're close to the booking window opening.
           // If so, skip the 90-second scroll scan — we'll enter poll mode shortly anyway.
@@ -1684,7 +1702,7 @@ async function runBookingJob(job, opts = {}) {
             const freshTabs = page.locator(`text=/${dayShort} \\d+/`);
             if (await freshTabs.count() > pollTabIndex) await freshTabs.nth(pollTabIndex).click();
           }
-          await page.waitForTimeout(1000); // let Bubble.io re-render
+          await page.waitForTimeout(400); // let Bubble.io re-render (reduced from 1000 ms)
           targetCard = await findTargetCard();
           if (targetCard) {
             _tc.cardFoundAt = new Date().toISOString();
