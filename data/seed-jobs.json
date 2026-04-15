@@ -5,6 +5,10 @@
     "day_of_week": "Tuesday",
     "class_time": "10:45 AM",
     "target_date": "2026-04-23",
-    "is_active": 1
+    "is_active": 1,
+    "last_result": null,
+    "last_success_at": null,
+    "last_run_at": null,
+    "last_error_message": null
   }
 ]
