@@ -33,6 +33,15 @@ const {
 const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
 const replayStore = require('../bot/replay-store');
 
+// Derives the canonical day_of_week label (e.g. "Tuesday") from a YYYY-MM-DD
+// target_date string.  Used to auto-correct stale day_of_week on job save/edit.
+// Returns null when targetDate is absent or malformed.
+function deriveDayOfWeek(targetDate) {
+  if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return null;
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  return DAYS[new Date(targetDate + 'T12:00:00Z').getUTCDay()];
+}
+
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
@@ -4657,6 +4666,16 @@ const server = http.createServer((req, res) => {
         instructor = (parsed.instructor   || '').trim();
         targetDate = parsed.target_date   || null;
 
+        // Auto-correct stale day_of_week when target_date is provided — target_date
+        // is the single source of truth, so derive day_of_week from it.
+        if (targetDate) {
+          const derived = deriveDayOfWeek(targetDate);
+          if (derived && derived !== dayOfWeek) {
+            console.log(`[job-consistency] update-job #${id}: auto-correcting day_of_week "${dayOfWeek}" → "${derived}" (target_date ${targetDate})`);
+            dayOfWeek = derived;
+          }
+        }
+
         if (!id) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, message: 'Invalid job ID' }));
@@ -4688,6 +4707,15 @@ const server = http.createServer((req, res) => {
         classTime  = fields.time       || '';
         instructor = fields.instructor || '';
         targetDate = fields.target_date || null;
+
+        // Auto-correct stale day_of_week when target_date is provided.
+        if (targetDate) {
+          const derived = deriveDayOfWeek(targetDate);
+          if (derived && derived !== dayOfWeek) {
+            console.log(`[job-consistency] update-job (form) #${id}: auto-correcting day_of_week "${dayOfWeek}" → "${derived}" (target_date ${targetDate})`);
+            dayOfWeek = derived;
+          }
+        }
 
         if (!id) { res.writeHead(302, { Location: '/?edit_error=Invalid+job+ID' }); res.end(); return; }
         const missing = [];
@@ -4884,6 +4912,15 @@ const server = http.createServer((req, res) => {
         instructor = (parsed.instructor   || '').trim();
         targetDate = parsed.target_date   || null;
 
+        // Auto-correct stale day_of_week when target_date is provided.
+        if (targetDate) {
+          const derived = deriveDayOfWeek(targetDate);
+          if (derived && derived !== dayOfWeek) {
+            console.log(`[job-consistency] add-job: auto-correcting day_of_week "${dayOfWeek}" → "${derived}" (target_date ${targetDate})`);
+            dayOfWeek = derived;
+          }
+        }
+
         const missing = [];
         if (!classTitle) missing.push('class name');
         if (!dayOfWeek)  missing.push('day');
@@ -4910,6 +4947,15 @@ const server = http.createServer((req, res) => {
         classTime  = fields.time       || '';
         instructor = fields.instructor || '';
         targetDate = fields.target_date || null;
+
+        // Auto-correct stale day_of_week when target_date is provided.
+        if (targetDate) {
+          const derived = deriveDayOfWeek(targetDate);
+          if (derived && derived !== dayOfWeek) {
+            console.log(`[job-consistency] add-job (form): auto-correcting day_of_week "${dayOfWeek}" → "${derived}" (target_date ${targetDate})`);
+            dayOfWeek = derived;
+          }
+        }
 
         const missing = [];
         if (!classTitle) missing.push('title');
