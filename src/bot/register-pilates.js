@@ -619,19 +619,32 @@ async function runBookingJob(job, opts = {}) {
   // source of truth for tab selection — day_of_week is never used when
   // target_date is present, even if the two fields disagree.
   let targetDayNum = null;
+
+  // Consistency check — hoisted so _wc is available for error messages later.
+  // Compares stored day_of_week against the actual calendar weekday of target_date.
+  const _wc = checkJobConsistency(job);
+
+  // Pre-built diagnostic prefix prepended to not_found messages when the job
+  // data is inconsistent — tells the user exactly what disagreed and why.
+  // Format: "Job inconsistency: stored weekday Tuesday does not match
+  //          target_date Thursday Apr 23. "
+  const _wcPrefix = (_wc && !_wc.isConsistent && targetDate)
+    ? (() => {
+        const dateLabel = new Date(targetDate + 'T12:00:00Z')
+          .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        return `Job inconsistency: stored weekday ${_wc.storedWeekday} does not match target_date ${_wc.computedWeekday} ${dateLabel}. `;
+      })()
+    : '';
+
   if (targetDate) {
     const d = new Date(targetDate + 'T00:00:00Z'); // parse as UTC to avoid tz shift
     dayShort     = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
     targetDayNum = d.getUTCDate(); // numeric day-of-month, e.g. 9
 
-    // Consistency check: log a warning if stored day_of_week disagrees with the
-    // calendar weekday of target_date.  The tab-selection above already uses
-    // target_date — this makes the override explicit so mismatches are visible.
-    const wc = checkJobConsistency(job);
-    if (!wc.isConsistent) {
+    if (!_wc.isConsistent) {
       console.warn(
         `[job-consistency] runBookingJob: stored day_of_week "${dayOfWeek}" ` +
-        `does not match target_date ${targetDate} (${wc.computedWeekday}). ` +
+        `does not match target_date ${targetDate} (${_wc.computedWeekday}). ` +
         `Tab selection will use "${dayShort} ${targetDayNum}" from target_date — ` +
         `ignoring stale day_of_week label.`
       );
@@ -1814,7 +1827,7 @@ async function runBookingJob(job, opts = {}) {
     // ─────────────────────────────────────────────────────────────────────────
 
     if (!targetCard) {
-      const msg = `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
+      const msg = _wcPrefix + `Could not find visible row matching ${classTitle} / ${classTimeNorm || classTime} / ${instructor || 'Stephanie'} on ${dayShort} ${targetDayNum || '(any)'}.`;
       console.log(msg);
       await captureFailure('scan', 'class_not_found');
       const _topSignals = (_lastAllTexts || []).slice(0, 3).map(r => r.txt.slice(0, 60)).join(' | ');
@@ -2227,7 +2240,7 @@ async function runBookingJob(job, opts = {}) {
         if (!secondResult.ok) {
           // Both candidates had the wrong time → target class is not on the schedule
           if (isTimeMismatch(secondResult)) {
-            const msg = `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+            const msg = _wcPrefix + `Target class not found: all candidates showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await captureFailure('scan', 'class_not_found');
             return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'All candidates showed wrong time', url: page.url() });
@@ -2244,7 +2257,7 @@ async function runBookingJob(job, opts = {}) {
         }
         // Time mismatch with no fallback → target class absent from schedule
         if (isTimeMismatch(firstResult)) {
-          const msg = `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
+          const msg = _wcPrefix + `Target class not found: best candidate showed wrong time. "${classTitle}" at ${classTimeNorm} is not on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await captureFailure('scan', 'class_not_found');
           return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Best candidate showed wrong time', url: page.url() });
