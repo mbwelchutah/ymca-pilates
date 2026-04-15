@@ -1,0 +1,86 @@
+You are doing a READ-ONLY TIMEZONE / DST ROOT-CAUSE AUDIT for the YMCA Booker app.
+
+DO NOT CHANGE CODE YET.
+
+Observed live evidence:
+- Member app / FamilyWorks on phone shows Gentle Yoga on Tue Apr 21 at 11:45 AM
+- Playwright Chromium screenshot of the same class detail/modal shows Tue Apr 21 at 10:45 AM
+- Same class, same instructor, same date, same place — only the time is 1 hour earlier in Chromium
+- This strongly suggests a browser-side timezone / DST rendering mismatch, not a simple "class not found" problem
+
+GOAL
+Find exactly why Chromium is rendering 10:45 while the live member app renders 11:45.
+
+--------------------------------------------------
+SECTION A — AUDIT PLAYWRIGHT TIMEZONE CONFIG
+--------------------------------------------------
+
+Inspect all Playwright/browser launch paths and report:
+- browser launch config
+- browser context config
+- whether timezoneId is set anywhere
+- whether locale is set anywhere
+- whether TZ env var is set anywhere
+- whether Replit/server environment sets a timezone
+
+I want exact file/function references.
+
+--------------------------------------------------
+SECTION B — AUDIT RUNTIME BROWSER TIMEZONE INSIDE THE PAGE
+--------------------------------------------------
+
+Find the easiest safe place to log or inspect, from inside the Playwright page context:
+- Intl.DateTimeFormat().resolvedOptions().timeZone
+- new Date().getTimezoneOffset()
+- Date().toString()
+- any page-side timezone/global config if FamilyWorks exposes one
+
+Goal:
+determine what timezone Chromium believes it is in during the failing run.
+
+--------------------------------------------------
+SECTION C — AUDIT HOW THE BOT DERIVES EXPECTED CLASS TIME
+--------------------------------------------------
+
+Trace exactly where expected time (11:45) comes from and where actual modal time (10:45) comes from.
+
+Show:
+- stored class_time source
+- normalization to classTimeNorm
+- where modal text is parsed
+- whether the bot is comparing rendered local text vs canonical schedule/API text
+
+I want the exact file/function path.
+
+--------------------------------------------------
+SECTION D — CHECK WHETHER THE PAGE ITSELF IS RENDERING DST WRONG
+--------------------------------------------------
+
+Audit whether FamilyWorks/Bubble might be rendering times incorrectly in Chromium due to:
+- fixed PST assumption
+- fixed UTC-8 offset
+- timezone abbreviation misuse
+- client-side conversion based on browser timezone
+
+If possible, identify whether the page uses:
+- PST / PDT strings
+- IANA zone names like America/Los_Angeles
+- fixed offsets
+
+--------------------------------------------------
+SECTION E — OUTPUT
+--------------------------------------------------
+
+Give me:
+
+1. The most likely root cause
+2. Whether this is:
+   - Playwright timezone config
+   - Chromium/browser environment timezone
+   - FamilyWorks page-side DST bug
+   - bot comparison logic trusting browser-rendered time too much
+   - some combination
+3. The smallest safe fix to apply next
+
+Do NOT change code yet.
+Audit only.
