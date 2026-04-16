@@ -1,0 +1,91 @@
+You are doing STAGE 7 — END-TO-END VALIDATION for the SAFE STATE-TRIGGERED BOOKING UPGRADE in the YMCA Booker app.
+
+DO NOT CHANGE CODE YET.
+
+PRIMARY GOAL
+
+Validate the full immediate-trigger path end to end.
+
+Stage 6 proved that non-open verdicts cannot misfire by construction.
+Now we need to verify that a real or simulated OPEN transition produces the expected runtime sequence safely.
+
+This stage is verification only.
+
+--------------------------------------------------
+SECTION A — SIMULATED END-TO-END VALIDATION
+--------------------------------------------------
+
+Prefer a safe simulated validation first.
+
+Using a non-production-safe path, verify the full sequence for a synthetic non-open → open transition:
+
+1. verdict changes to BOOKABLE
+2. _maybeRecordOpenTransition stamps
+3. consumeOpenTransition returns true once
+4. evaluateImmediateTriggerGate allows
+5. immediate-trigger:fire log appears
+6. _markImmediateTriggerFired is stamped
+7. triggerBookingFromBurst(...) is called
+8. no duplicate launches occur
+9. a second immediate-trigger attempt inside cooldown is blocked
+10. fallback behavior remains intact if the gate is blocked
+
+I want exact evidence from logs / instrumentation:
+- transition stamp
+- consume result
+- gate result
+- fire vs skip
+- cooldown state
+- triggerBookingFromBurst handoff
+
+If you cannot safely simulate this in a non-booking way, explain exactly why and move to Section B.
+
+--------------------------------------------------
+SECTION B — REAL-WINDOW READINESS CHECK
+--------------------------------------------------
+
+If a true live near-open/open case is not currently available, prepare the exact observation checklist for the next real event.
+
+Verify that the system is ready to observe:
+- fresh live verdict
+- burst:accelerate
+- immediate-trigger:fire or immediate-trigger:skip
+- Trigger row in Tools
+- cooldown state
+- no duplicate launches
+- normal Playwright handoff
+
+Show exactly what logs / UI rows should appear in:
+1. successful immediate fire
+2. cooldown-blocked repeat
+3. gate-blocked fallback to accelerated 5s burst
+
+--------------------------------------------------
+SECTION C — INTEGRATION RISK CHECK
+--------------------------------------------------
+
+Verify these integration risks specifically:
+
+1. immediate-trigger fire does not bypass runTick safety guards
+2. immediate-trigger fire does not bypass auth/running guards
+3. scheduleHotRetry still works correctly from this new entry point
+4. resetBurst / retryCount / nextRetryAt handling does not create inconsistencies
+5. cooldown and one-shot semantics remain correct across the full path
+
+--------------------------------------------------
+SECTION D — FINAL OUTPUT
+--------------------------------------------------
+
+Return:
+
+1. Whether the immediate-trigger path was validated end-to-end
+2. If simulated: exact observed sequence
+3. If not simulated: exact real-window watch plan
+4. Any remaining integration risk
+5. Whether Stage 8 should be:
+   - PASS closeout
+   - PASS WITH LIVE-OBSERVATION PENDING
+   - targeted fix
+
+STOP after reporting.
+No code changes in this stage unless a critical correctness issue is discovered.
