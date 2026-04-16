@@ -1,0 +1,142 @@
+You are implementing a SMALL FILTER FAILURE CLASSIFICATION + EMPTY-RENDER RETRY PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the Flow Yoga failure shape where:
+- filters fail to apply
+- discovery runs on unfiltered or wrong-category content
+- the final outcome is incorrectly reported as class_not_found
+
+This pass should make the outcome more truthful without redesigning filter logic.
+
+IMPORTANT RULES
+
+- Do NOT redesign filtering
+- Do NOT change modal/booking logic
+- Keep changes small and safe
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 2 — CARRY filtersFailed THROUGH THE RUN
+--------------------------------------------------
+
+Goal:
+Preserve the fact that the scan ran under failed-filter conditions.
+
+Tasks:
+
+1. Add a clear run-local flag when both filters fail to apply
+2. Carry that flag through the rest of the run
+3. Make it available at the final logRunSummary() decision point
+4. Do NOT change behavior yet beyond preserving the flag
+
+Success criteria:
+- final outcome logic can distinguish clean scans from filter-failed scans
+- no other behavior changes yet
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — FIX FINAL CLASSIFICATION WHEN FILTERS FAILED
+--------------------------------------------------
+
+Goal:
+Do not report true class_not_found when filters never established a trustworthy filtered view.
+
+Tasks:
+
+1. When filtersFailed is true and the run would otherwise end as:
+   status: 'not_found', reason: 'class_not_found'
+   change the final classification to a distinct outcome such as:
+   status: 'error', reason: 'filter_apply_failed'
+   or the smallest equivalent already used by the system
+
+2. Keep true class_not_found unchanged when filters did apply or were not needed
+3. Update user-facing / diagnostic wording so it reads like:
+   - "Could not verify class presence because schedule filters failed"
+   not
+   - "Class not found on schedule"
+
+Success criteria:
+- filter-failed unverified absence no longer masquerades as true class_not_found
+- downstream UI/logs can tell the difference
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — ADD BOUNDED EMPTY-SCHEDULE RE-CHECK
+--------------------------------------------------
+
+Goal:
+Reduce false failures caused by transient 0-row Bubble renders after filter/tab change.
+
+Tasks:
+
+1. At the current "Schedule rendered 0 rows after filter" check:
+   - if no rows are found
+   - wait one additional bounded interval (about 1000 ms)
+   - re-check once before recording the failure
+
+2. Keep this small and bounded
+3. Do NOT add a long polling loop
+4. Preserve the failure if the second check is still empty
+
+Success criteria:
+- transient empty renders are less likely to be recorded as failures
+- true empty schedule still gets detected
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — OPTIONAL FILTER SETTLE TUNING
+--------------------------------------------------
+
+Goal:
+Only if still clearly needed, slightly improve the chance that category filter applies.
+
+Tasks:
+
+1. Revisit the 1500 ms filter settle window
+2. If evidence supports it, extend it modestly (for example to 3000 ms)
+3. Keep this conservative — do not turn it into a long wait by default
+4. Explain why this helps the specific Bubble behavior observed
+
+Success criteria:
+- filter application gets a better chance to settle
+- no excessive new delay is introduced
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — VERIFY AGAINST FLOW YOGA
+--------------------------------------------------
+
+Verify using the Flow Yoga shape:
+
+- category filter fails
+- instructor filter fails
+- page shows wrong/unfiltered content
+- target class is not rendered
+
+Confirm after the pass:
+1. filtersFailed is preserved through the run
+2. final outcome is no longer true class_not_found
+3. empty-after-filter is less trigger-happy
+4. logs and UI now say the class could not be verified because filters failed
+5. true class_not_found still behaves unchanged in clean-filter cases
+
+Return exact verification results.
+
+END WITH:
+Stage complete. Say "continue" to proceed.

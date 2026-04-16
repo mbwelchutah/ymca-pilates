@@ -554,6 +554,13 @@ async function runBookingJob(job, opts = {}) {
   let _replayAction = null;  // 'register' | 'waitlist' | null
   if (!PREFLIGHT_ONLY) replayStore.startRun(_jobId, new Date().toISOString());
 
+  // ── Run-context flags — set during the run, read at logRunSummary ────────────
+  // filtersFailed: true when BOTH category and instructor filters had no effect,
+  // meaning the scan ran on unfiltered or wrong-category schedule content.
+  // Carried through to the final logRunSummary() call so outcomes like
+  // 'not_found' can be re-classified when they are not trustworthy.
+  let filtersFailed = false;
+
   // ── Timing capture — filled in during the sniper poll and action phases ──────
   // Written to _state.timing at the end of the run so it persists to the UI.
   // Stage 2 (timing markers): every major phase is now timestamped so metrics
@@ -1154,6 +1161,7 @@ async function runBookingJob(job, opts = {}) {
 
     // ── POINT 2: navigate — filter application failure ────────────────────────
     if (!categoryApplied && !instructorApplied) {
+      filtersFailed = true;  // carried through to logRunSummary for re-classification
       console.log('⚠️ Both filters failed — schedule unfiltered; scan may be noisy.');
       await captureFailure('navigate', 'filter_apply_failed');
       recordFailure({
