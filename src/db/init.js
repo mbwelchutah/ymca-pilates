@@ -7,6 +7,12 @@ const Database = require('better-sqlite3');
 const DATA_DIR = path.join(__dirname, '../../data');
 const DB_PATH = path.join(DATA_DIR, 'app.db');
 
+// Guard: sync-from-seed must run exactly once per process (at startup).
+// Running it on every openDb() call would revert user edits made via the
+// update-job API, because seed-jobs.json is only rewritten at startup from
+// PostgreSQL — not when a job is edited in-process.
+let _seedSynced = false;
+
 function openDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const db = new Database(DB_PATH);
@@ -74,11 +80,15 @@ function openDb() {
     }
   }
 
-  // Seed jobs from data/seed-jobs.json if the table is empty.
-  // This ensures a fresh production deployment starts with the correct class list.
-  const jobCount = db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n;
+  // Seed / sync jobs from data/seed-jobs.json — run exactly once per process.
+  // This ensures a fresh deployment starts with the correct class list, and
+  // applies timezone / config corrections to an existing DB on first boot.
+  // Guard prevents this from re-running on every openDb() call (which would
+  // overwrite in-process job edits made via the update-job API).
   const seedPath = path.join(DATA_DIR, 'seed-jobs.json');
-  if (fs.existsSync(seedPath)) {
+  if (!_seedSynced && fs.existsSync(seedPath)) {
+    _seedSynced = true;
+    const jobCount = db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n;
     try {
       const seeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
       if (jobCount === 0) {
