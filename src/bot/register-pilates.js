@@ -1847,6 +1847,13 @@ async function runBookingJob(job, opts = {}) {
       emitFailure('DISCOVERY', 'DISCOVERY_EMPTY', msg, {
         evidence: { ...(_topSignals ? { nearMisses: _topSignals } : {}) }
       });
+      // When filters never established a trustworthy filtered view, a not_found
+      // outcome is unverifiable — the class may simply not have been rendered.
+      // Re-classify so downstream logs/UI can tell the difference.
+      if (filtersFailed) {
+        const filterMsg = `Could not verify class presence — schedule filters failed to apply; scan ran on unfiltered content. Class may exist but was not rendered. Original: ${msg}`;
+        return logRunSummary({ status: 'error', message: filterMsg, screenshotPath, phase: 'scan', reason: 'filter_apply_failed', category: 'scan', label: 'Could not verify class — filters failed', url: page.url() });
+      }
       return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'No matching class card found', url: page.url() });
     }
 
@@ -2277,6 +2284,10 @@ async function runBookingJob(job, opts = {}) {
             const msg = _wcPrefix + `Class rows were found but the booking modal showed a different class in all cases — both candidates had the wrong time. "${classTitle}" at ${classTimeNorm} does not appear to be on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
             await captureFailure('scan', 'class_not_found');
+            if (filtersFailed) {
+              const filterMsg = `Could not verify class presence — schedule filters failed; unfiltered scan found rows but modal showed wrong class (both candidates). Class may exist at correct time but was not reliably targeted. Original: ${msg}`;
+              return logRunSummary({ status: 'error', message: filterMsg, screenshotPath, phase: 'scan', reason: 'filter_apply_failed', category: 'scan', label: 'Could not verify class — filters failed (both candidates wrong)', url: page.url() });
+            }
             return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Class rows found but modal showed wrong class (all candidates)', url: page.url() });
           }
           // Verify failure already recorded inline in attemptClickAndVerify
@@ -2294,6 +2305,10 @@ async function runBookingJob(job, opts = {}) {
           const msg = _wcPrefix + `A class row was found but the booking modal showed a different class — the best matching row had the wrong time. "${classTitle}" at ${classTimeNorm} does not appear to be on the schedule yet.`;
           console.log(`ℹ️  ${msg}`);
           await captureFailure('scan', 'class_not_found');
+          if (filtersFailed) {
+            const filterMsg = `Could not verify class presence — schedule filters failed; unfiltered scan found a row but modal showed wrong class (best candidate). Class may exist at correct time but was not reliably targeted. Original: ${msg}`;
+            return logRunSummary({ status: 'error', message: filterMsg, screenshotPath, phase: 'scan', reason: 'filter_apply_failed', category: 'scan', label: 'Could not verify class — filters failed (best candidate wrong)', url: page.url() });
+          }
           return logRunSummary({ status: 'not_found', message: msg, screenshotPath, phase: 'scan', reason: 'class_not_found', category: 'scan', label: 'Class row found but modal showed wrong class (best candidate)', url: page.url() });
         }
         // Verify failure already recorded inline in attemptClickAndVerify
