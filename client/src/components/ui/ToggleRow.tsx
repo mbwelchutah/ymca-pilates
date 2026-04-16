@@ -15,15 +15,17 @@ export function ToggleRow({ label, detail, value, onChange }: {
         aria-checked={value}
         onClick={() => onChange(!value)}
         className={`
-          relative inline-flex items-center h-7 w-12 rounded-pill transition-colors flex-shrink-0
-          ${value ? 'bg-accent-green' : 'bg-[#e5e5ea]'}
+          relative inline-flex items-center h-[31px] w-[51px] rounded-pill flex-shrink-0
+          transition-colors duration-200 ease-out
+          ${value ? 'bg-accent-green' : 'bg-[#e9e9ea]'}
         `}
       >
         <span
           className={`
-            absolute h-6 w-6 bg-white rounded-full shadow-sm
-            transition-transform duration-200
-            ${value ? 'translate-x-[calc(100%-4px)]' : 'translate-x-[2px]'}
+            absolute h-[27px] w-[27px] bg-white rounded-full
+            shadow-[0_3px_8px_rgba(0,0,0,0.15),0_1px_1px_rgba(0,0,0,0.08)]
+            transition-transform duration-200 ease-out
+            ${value ? 'translate-x-[22px]' : 'translate-x-[2px]'}
           `}
         />
       </button>

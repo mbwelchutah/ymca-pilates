@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  /* Colors */
-  --color-surface: #f9f9fb;
+  /* iOS system colors (HIG) */
+  --color-surface: #f2f2f7;
   --color-card: #ffffff;
-  --color-text-primary: #1a1a2e;
+  --color-text-primary: #1c1c1e;
   --color-text-secondary: #8e8e93;
   --color-text-muted: #c7c7cc;
   --color-accent-blue: #007aff;
@@ -12,19 +12,20 @@
   --color-accent-amber: #ff9f0a;
   --color-accent-red: #ff3b30;
   --color-accent-gray: #aeaeb2;
-  --color-divider: #f2f2f7;
+  --color-divider: #e5e5ea;
+  --color-hairline: rgba(60, 60, 67, 0.12);
 
-  /* Border radius */
-  --radius-card: 1.125rem;
+  /* Border radius — iOS cards & controls */
+  --radius-card: 1rem;          /* 16px — iOS continuous-rounded card */
   --radius-pill: 9999px;
-  --radius-btn: 0.875rem;
+  --radius-btn: 0.75rem;         /* 12px — iOS filled button */
 
-  /* Shadows */
-  --shadow-card: 0 2px 16px rgba(0,0,0,0.06);
-  --shadow-card-sm: 0 1px 8px rgba(0,0,0,0.05);
+  /* Shadows — kept subtle; iOS leans on background contrast */
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-card-sm: 0 1px 2px rgba(0,0,0,0.04);
 
-  /* Font family */
-  --font-family-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  /* Font family — SF stack with full variable-weight support */
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
 }
 
 @layer base {
@@ -39,6 +40,10 @@
        from causing layout shifts when standalone on iOS. */
     height: 100%;
     overscroll-behavior: none;
+    /* Disable iOS auto text resize on orientation change */
+    -webkit-text-size-adjust: 100%;
+    /* Enable SF Pro's optical sizing + small-caps fractions */
+    font-feature-settings: 'ss01', 'cv11';
   }
 
   body {
@@ -47,6 +52,17 @@
     height: 100%;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    color: var(--color-text-primary);
+    letter-spacing: -0.01em;
+  }
+
+  /* Tabular numerals for timers, countdowns, scores — keeps digits from
+     shifting width as they change (e.g. "9:59" → "10:00"). */
+  .tabular-nums, time, .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
   }
 
   #root {

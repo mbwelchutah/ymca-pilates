@@ -54,7 +54,11 @@ export function AppHeader({
 
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-[51] bg-white/95 backdrop-blur-md transition-shadow duration-200 ${scrolled ? 'shadow-[0_1px_0_rgba(0,0,0,0.1)]' : ''}`}
+      className={`fixed top-0 left-0 right-0 z-[51] transition-colors duration-200 ${
+        scrolled
+          ? 'bg-white/72 backdrop-blur-xl backdrop-saturate-[1.8] border-b border-[var(--color-hairline)]'
+          : 'bg-white/85 backdrop-blur-xl backdrop-saturate-[1.8]'
+      }`}
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {/* ── Row 1: Large title (collapses on scroll) + right-side actions ── */}
