@@ -77,11 +77,11 @@ function openDb() {
   // Seed jobs from data/seed-jobs.json if the table is empty.
   // This ensures a fresh production deployment starts with the correct class list.
   const jobCount = db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n;
-  if (jobCount === 0) {
-    const seedPath = path.join(DATA_DIR, 'seed-jobs.json');
-    if (fs.existsSync(seedPath)) {
-      try {
-        const seeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+  const seedPath = path.join(DATA_DIR, 'seed-jobs.json');
+  if (fs.existsSync(seedPath)) {
+    try {
+      const seeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+      if (jobCount === 0) {
         const insert = db.prepare(`
           INSERT INTO jobs
             (class_title, instructor, day_of_week, class_time, target_date, is_active,
@@ -108,9 +108,40 @@ function openDb() {
         });
         seedAll(seeds);
         console.log(`[db] Seeded ${seeds.length} job(s) from seed-jobs.json`);
-      } catch (err) {
-        console.error('[db] Failed to seed from seed-jobs.json:', err.message);
+      } else {
+        // Sync config fields from seed-jobs.json into existing rows.
+        // seed-jobs.json is always written by the UI on save, so it reflects the
+        // latest intended configuration. This corrects stale fields in a persistent
+        // production DB that pre-dates a config change (e.g. class_time timezone fix).
+        const updateStmt = db.prepare(`
+          UPDATE jobs
+             SET class_time  = ?,
+                 instructor  = ?,
+                 day_of_week = ?,
+                 target_date = ?
+           WHERE class_title = ?
+             AND (class_time != ? OR instructor != ? OR day_of_week != ? OR target_date != ?)
+        `);
+        const syncConfig = db.transaction((rows) => {
+          let updated = 0;
+          for (const r of rows) {
+            const ct  = r.class_time  ?? null;
+            const ins = r.instructor  ?? null;
+            const dow = r.day_of_week ?? null;
+            const td  = r.target_date ?? null;
+            const res = updateStmt.run(ct, ins, dow, td, r.class_title, ct, ins, dow, td);
+            if (res.changes > 0) {
+              console.log(`[db] sync-from-seed updated job "${r.class_title}": class_time=${ct}, instructor=${ins}, day_of_week=${dow}, target_date=${td}`);
+              updated++;
+            }
+          }
+          return updated;
+        });
+        const updated = syncConfig(seeds);
+        if (updated > 0) console.log(`[db] sync-from-seed: updated ${updated} job(s) from seed-jobs.json`);
       }
+    } catch (err) {
+      console.error('[db] Failed to seed/sync from seed-jobs.json:', err.message);
     }
   }
 
