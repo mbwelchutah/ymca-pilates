@@ -1673,12 +1673,16 @@ async function runBookingJob(job, opts = {}) {
           // instead of the previous 2000 ms (two consecutive 1000 ms pauses).
           await page.waitForTimeout(300);
 
-          // Check if we're close to the booking window opening.
+          // Check if we're close to the booking window opening (approaching from the future).
           // If so, skip the 90-second scroll scan — we'll enter poll mode shortly anyway.
+          // IMPORTANT: only skip scroll when the window is *upcoming* (msUntilOpen > 0).
+          // When phase=late (booking already passed), the class IS on the schedule and
+          // needs a full scroll scan to find it — the partial-render quick scan misses it.
           let nearOpen = false;
           try {
             const { bookingOpen: bwChk } = getBookingWindow(job);
-            nearOpen = bwChk && (bwChk.getTime() - Date.now()) < 15 * 60 * 1000;
+            const msUntilBwChk = bwChk ? (bwChk.getTime() - Date.now()) : Infinity;
+            nearOpen = bwChk && msUntilBwChk > 0 && msUntilBwChk < 15 * 60 * 1000;
           } catch { /* ignore */ }
 
           if (nearOpen) {
@@ -1709,14 +1713,15 @@ async function runBookingJob(job, opts = {}) {
     }
 
     // Fallback: scan all matching day tabs in order.
-    // Skip if we're within the poll window — the booking window is about to open
-    // and slow scroll scans (230 steps × 400 ms ≈ 90 s per tab) just waste time
-    // when polling will start in moments anyway.
+    // Skip if the booking window is UPCOMING and within 15 min — slow scroll scans
+    // waste time when polling is about to start.  Do NOT skip when phase=late (already
+    // past open): the class is on the schedule and needs scrolling to be found.
     if (!targetCard) {
       let skipFallback = false;
       try {
         const { bookingOpen: bwCheck } = getBookingWindow(job);
-        if (bwCheck && (bwCheck.getTime() - Date.now()) < 15 * 60 * 1000) {
+        const msUntilFallback = bwCheck ? (bwCheck.getTime() - Date.now()) : Infinity;
+        if (bwCheck && msUntilFallback > 0 && msUntilFallback < 15 * 60 * 1000) {
           console.log('Within 15 min of booking open — skipping fallback scroll scan, going to poll mode.');
           skipFallback = true;
           if (!pollTabText && dayTabCount > 0) {
