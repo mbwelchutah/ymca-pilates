@@ -46,7 +46,9 @@ const { setEscalation, clearEscalation } = require('./escalation');
 // Stage 5: run-speed observations extend this with recordRunSpeed / getLearnedRunSpeed.
 const { recordObservation, getLearnedOffsets, recordRunSpeed, getLearnedRunSpeed } = require('./timing-learner');
 // Stage 10G — Direct burst-to-booking handoff (bypasses up-to-60s tick delay).
-const { triggerBookingFromBurst } = require('./booking-bridge');
+// Stage 11.2 — `isBookingActive` lets the immediate-trigger gate pre-decide
+// without racing into triggerBookingFromBurst()'s own internal guard.
+const { triggerBookingFromBurst, isBookingActive } = require('./booking-bridge');
 // Stage 4 (freshness) — persist canonical readiness state after every preflight.
 const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
 // Stage 5 (live-truth–driven booking timing) — small, bounded urgency hints
@@ -147,6 +149,110 @@ function getRecentInfluence(jobId, opts = {}) {
   if (cur.urgency      && (now - cur.urgency.atMs)      <= ttlMs) out.urgency      = cur.urgency;
   if (cur.acceleration && (now - cur.acceleration.atMs) <= ttlMs) out.acceleration = cur.acceleration;
   return Object.keys(out).length ? out : null;
+}
+
+// ── Stage 11.2 — Immediate-trigger safety gate ──────────────────────────────
+//
+// Pure decision helper: given the current burst context + a fresh non-bookable
+// → bookable transition signal from liveTruth, decide whether it is safe to
+// fire `triggerBookingFromBurst()` *immediately* (skipping the 5 s accelerated
+// next-burst delay added in Stage 6).
+//
+// This stage builds and wires the gate but DOES NOT actually fire booking —
+// firing arrives in Stage 3.  Today the gate runs in dry-run mode at the
+// existing burst:accelerate site, logs its decision, and lets the existing
+// `_adjustedDelayMs = ACCELERATED_BURST_MS` + `scheduleBurst()` fallback
+// proceed unchanged.  No control flow is altered yet.
+//
+// Allow conditions (ALL must hold; otherwise block):
+//   1. transitionConsumed === true   — caller has already one-shot-consumed
+//                                      a fresh non-bookable→bookable flip.
+//   2. phase ∈ {sniper, late, armed} — execution-phase eligibility.  Burst
+//                                      runs in warmup too, but firing a real
+//                                      booking before the window opens is
+//                                      handled by burst:preempt; we don't
+//                                      duplicate that path here.
+//   3. msUntilOpen <= IMMEDIATE_FIRE_MAX_MS_UNTIL_OPEN (default 60_000)
+//                                    — only fire when the booking moment is
+//                                      seconds away.  Far-from-open OPEN
+//                                      verdicts are almost certainly a stale
+//                                      cache or pre-published schedule and
+//                                      the conservative path wins.
+//   4. msUntilOpen > -BURST_WINDOW_AFTER_MS — already enforced upstream by
+//                                      runBurstCheck; we re-assert defensively.
+//   5. !isBookingActive()            — nothing currently booking.  If a run
+//                                      is in flight, triggerBookingFromBurst
+//                                      would refuse anyway, but pre-checking
+//                                      avoids a noisy log + wasted call.
+//   6. !isLocked()                   — auth lock not held.  runBurstCheck
+//                                      checks this at the top, but auth state
+//                                      can flip mid-burst; re-assert.
+//   7. runNum <= MAX_BURST_RUNS      — burst-cap envelope still respected.
+//                                      Already enforced by the enclosing
+//                                      `else if`; re-asserted for clarity.
+//   8. Per-job cooldown elapsed      — Stage 4 (cooldown) infrastructure;
+//                                      enforced today via _immediateTriggerLastAt.
+//                                      Default IMMEDIATE_TRIGGER_COOLDOWN_MS = 60_000.
+//   9. !dryRunMode (skipped — dry run is a real, valid flag the executor
+//      itself honours; we DO allow the gate to pass under dryRun so the
+//      no-op booking flow still exercises end-to-end.  Reported as a
+//      side-channel field, not a block.)
+//
+// Block reasons are explicit strings so Stage 5 (visibility) can surface
+// "why immediate trigger was blocked" without log archaeology.
+const IMMEDIATE_FIRE_MAX_MS_UNTIL_OPEN = 60_000;   // seconds-from-open envelope
+const IMMEDIATE_TRIGGER_COOLDOWN_MS    = 60_000;   // per-job one-shot lockout
+const _immediateTriggerLastAt          = new Map(); // jobId → ms timestamp of last fired/decided
+
+function evaluateImmediateTriggerGate({
+  jobId,
+  phase,
+  msUntilOpen,
+  runNum,
+  maxBurstRuns,
+  transitionConsumed,
+  bookingActive,
+  authLocked,
+  dryRun,
+  now = Date.now(),
+}) {
+  // Enumerate blockers in priority order — the first matched reason wins,
+  // matching the order an operator would scan a log line.
+  if (!transitionConsumed) {
+    return { allow: false, reason: 'no fresh open transition (consume returned false)' };
+  }
+  if (phase !== 'sniper' && phase !== 'late' && phase !== 'armed') {
+    return { allow: false, reason: `phase "${phase}" not eligible (need sniper/late/armed)` };
+  }
+  if (typeof msUntilOpen === 'number' && msUntilOpen > IMMEDIATE_FIRE_MAX_MS_UNTIL_OPEN) {
+    return { allow: false, reason: `too early: ${Math.round(msUntilOpen / 1000)}s until open > ${IMMEDIATE_FIRE_MAX_MS_UNTIL_OPEN / 1000}s envelope` };
+  }
+  if (bookingActive) {
+    return { allow: false, reason: 'booking already active for this jobState' };
+  }
+  if (authLocked) {
+    return { allow: false, reason: 'auth lock currently held' };
+  }
+  if (typeof runNum === 'number' && typeof maxBurstRuns === 'number' && runNum > maxBurstRuns) {
+    return { allow: false, reason: `burst cap reached (run ${runNum} > max ${maxBurstRuns})` };
+  }
+  const lastAt = _immediateTriggerLastAt.get(jobId);
+  if (lastAt && (now - lastAt) < IMMEDIATE_TRIGGER_COOLDOWN_MS) {
+    const ageS = Math.round((now - lastAt) / 1000);
+    return { allow: false, reason: `cooldown active (last fired ${ageS}s ago, cooldown ${IMMEDIATE_TRIGGER_COOLDOWN_MS / 1000}s)` };
+  }
+  return {
+    allow:  true,
+    reason: dryRun
+      ? `eligible (dry run — executor will no-op book)`
+      : `eligible (phase=${phase}, ${typeof msUntilOpen === 'number' ? Math.round(msUntilOpen / 1000) + 's until open' : 'window unknown'})`,
+  };
+}
+
+// Stage 3 will call this AFTER successfully invoking triggerBookingFromBurst()
+// to start the per-job cooldown clock.  Exported for Stage 4/5 wiring.
+function _markImmediateTriggerFired(jobId, now = Date.now()) {
+  _immediateTriggerLastAt.set(jobId, now);
 }
 
 // ── State file ────────────────────────────────────────────────────────────────
@@ -519,6 +625,37 @@ async function runBurstCheck(dbJob) {
             afterMs:  ACCELERATED_BURST_MS,
           });
           _adjustedDelayMs = ACCELERATED_BURST_MS;
+
+          // Stage 11.2 — DRY-RUN evaluation of the immediate-trigger gate.
+          // The flip was just consumed; ask the gate whether — in Stage 3 —
+          // we would have fired triggerBookingFromBurst() right here instead
+          // of merely shortening the delay.  This stage only LOGS the
+          // decision; the existing `_adjustedDelayMs = 5_000` + scheduleBurst()
+          // fallback below remains the actual control flow.
+          //
+          // Inputs are the same context already in scope from runBurstCheck:
+          //   • execTiming.phase / msUntilOpen — from the phase computation
+          //     at the top of runBurstCheck.
+          //   • runNum / MAX_BURST_RUNS — burst-cap envelope.
+          //   • isBookingActive() / isLocked() — runtime guards (can flip
+          //     mid-burst even though runBurstCheck already checked at top).
+          //   • getDryRun() — surfaced for visibility, not as a blocker.
+          const _gate = evaluateImmediateTriggerGate({
+            jobId:              dbJob.id,
+            phase:              execTiming.phase,
+            msUntilOpen:        execTiming.msUntilOpen,
+            runNum,
+            maxBurstRuns:       MAX_BURST_RUNS,
+            transitionConsumed: true,                // we just consumed it above
+            bookingActive:      isBookingActive(),
+            authLocked:         isLocked(),
+            dryRun:             getDryRun(),
+          });
+          console.log(
+            `[preflight-loop] immediate-trigger:gate — Job #${dbJob.id} ` +
+            `would ${_gate.allow ? 'FIRE' : 'SKIP'} (${_gate.reason}). ` +
+            `[Stage 11.2 dry-run — falling back to accelerated burst.]`
+          );
         }
 
         scheduleBurst(dbJob, _adjustedDelayMs);

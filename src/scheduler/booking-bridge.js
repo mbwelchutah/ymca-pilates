@@ -101,4 +101,12 @@ async function triggerBookingFromBurst(jobId, { skipCooldown = false, onRetry = 
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-module.exports = { setBridgeCallbacks, triggerBookingFromBurst };
+// Stage 11.2 — read-only probe so callers (preflight-loop's immediate-trigger
+// gate) can pre-decide without racing into triggerBookingFromBurst().  This
+// reads the same callback as the internal guard inside the helper above, so
+// the two never disagree.
+function isBookingActive() {
+  try { return !!_isActive(); } catch (_) { return false; }
+}
+
+module.exports = { setBridgeCallbacks, triggerBookingFromBurst, isBookingActive };
