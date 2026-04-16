@@ -1,0 +1,107 @@
+You are doing a READ-ONLY ROOT-CAUSE AUDIT for the YMCA Booker app.
+
+DO NOT CHANGE CODE YET.
+
+New live evidence changes the diagnosis:
+
+Observed facts from the latest screenshots:
+- The bot UI now shows Gentle Yoga at 10:45 AM
+- The Playwright-captured modal/detail screenshot ALSO shows Gentle Yoga at 10:45 AM – 11:45 AM with Brynne
+- So the timezone mismatch is no longer the primary issue
+- The modal screenshot clearly shows the correct class and a pill that says:
+  "3 d until open registration"
+
+But the bot/Tools UI still reports failures like:
+- "Time + Instructor mismatch"
+- "Could not access registration link"
+- "Class not found on schedule"
+
+This strongly suggests the bot is correctly opening the pre-open class detail modal, but is misclassifying that state as a failure instead of "correct class, not open yet."
+
+GOAL
+Find exactly why the correct pre-open detail modal is being classified as mismatch / access failure.
+
+--------------------------------------------------
+SECTION A — TRACE THE PRE-OPEN MODAL PATH
+--------------------------------------------------
+
+Trace the exact path when the class is found and clicked before the booking window is open.
+
+I want to know:
+- where the detail modal is considered opened
+- how modal text is extracted
+- whether the extraction depends on finding a Register/Waitlist/Login button
+- how the countdown state ("3 d until open registration") is currently handled
+
+Show the exact file/function path.
+
+--------------------------------------------------
+SECTION B — AUDIT MODAL VERIFICATION ANCHOR LOGIC
+--------------------------------------------------
+
+Check whether modal verification or modal text extraction is anchored to an action button or action selector.
+
+Specifically answer:
+- If no Register/Waitlist/Login button exists yet, can the bot still correctly verify the modal text?
+- If not, where does it fail?
+- Does it fall back to body text, empty text, or wrong container text?
+
+I want the exact code path and failure mode.
+
+--------------------------------------------------
+SECTION C — AUDIT HOW THE BOT HANDLES "CORRECT CLASS, NOT OPEN YET"
+--------------------------------------------------
+
+For a modal that shows:
+- correct class title
+- correct time
+- correct instructor
+- and a countdown like "3 d until open registration"
+
+show how the bot currently classifies it.
+
+Does it become:
+- found_not_open_yet
+- action_missing
+- mismatch
+- class_not_found
+- error
+
+Explain exactly why.
+
+--------------------------------------------------
+SECTION D — AUDIT USER-FACING MESSAGE MAPPING
+--------------------------------------------------
+
+Explain why the UI is still showing messages like:
+- "Time + Instructor mismatch"
+- "Could not access registration link"
+- "Class not found on schedule"
+
+when the screenshot evidence shows the correct class detail modal.
+
+Trace:
+- final status / reason
+- last_error_message
+- Tools item label generation
+- Now screen messaging
+
+I want to know exactly where the wrong wording is coming from.
+
+--------------------------------------------------
+SECTION E — OUTPUT
+--------------------------------------------------
+
+Give me:
+
+1. The most likely root cause now
+2. Whether the correct pre-open modal is being opened
+3. Whether the bug is:
+   - modal verification anchored to action button presence
+   - wrong pre-open classification
+   - stale/generic UI messaging
+   - some combination
+4. The smallest safe fix to apply next
+
+Do NOT change code yet.
+Audit only.

@@ -2046,24 +2046,40 @@ async function runBookingJob(job, opts = {}) {
         // then fall back to document.body, potentially matching the time of a
         // DIFFERENT class (e.g. Chair Yoga 10:45a-11:45a end time matching "11:45 a").
         // Only if no [role="dialog"] is present does it fall back to page-wide search.
-        const modalText = await page.evaluate((modalSel) => {
+        // Bubble.io renders class times via CSS-styled elements; innerText is
+        // layout-aware (respects visibility/display) and returns what the user
+        // sees, while textContent may return empty for dynamically-rendered nodes.
+        let modalText = await page.evaluate((modalSel) => {
           const norm = t => (t || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
           const dialog = document.querySelector('[role="dialog"]');
           const btn = dialog ? dialog.querySelector(modalSel) : document.querySelector(modalSel);
           if (btn) {
             let node = btn.parentElement;
             for (let i = 0; i < 12 && node && node !== document.body; i++) {
-              const txt = norm(node.textContent || '').trim();
+              const txt = norm((node.innerText || node.textContent) || '').trim();
               if (txt.length > 80) return txt;
               node = node.parentElement;
             }
             // Walked out of modal without finding >80 chars — return dialog text
             // directly rather than falling back to full body (avoids false positives
             // from other classes in the schedule list).
-            if (dialog) return norm(dialog.textContent || '');
+            if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
           }
-          return norm(document.body.textContent || ''); // safe fallback (no dialog, no layout)
+          return norm((document.body.innerText || document.body.textContent) || '');
         }, ACTION_SELECTORS.modalReady).catch(() => '');
+        // If page.evaluate returned empty (Bubble.io async render / context lost),
+        // fall back to Playwright-native innerText on the dialog or full body.
+        if (!modalText || modalText.length < 10) {
+          const _dlgTxt = await page.locator('[role="dialog"]').innerText({ timeout: 2000 }).catch(() => '');
+          if (_dlgTxt && _dlgTxt.length >= 10) {
+            modalText = _dlgTxt.replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
+            console.log('[modal-text] innerText fallback used — dialog returned', modalText.length, 'chars');
+          } else {
+            const _bodyTxt = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
+            modalText = (_bodyTxt || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
+            console.log('[modal-text] innerText fallback used — body returned', modalText.length, 'chars');
+          }
+        }
         // Capture a short window around the time match for the consolidated run summary.
         // Use the actual time digits from classTimeNorm (e.g. "7:45" or "4:20").
         const _timeDigits = classTimeNorm ? classTimeNorm.split(/\s/)[0] : '';
@@ -2854,21 +2870,27 @@ async function runBookingJob(job, opts = {}) {
             ).catch(() => null);
 
             // Read modal text using the same scoped evaluate as the primary path.
-            const _retryModalText = await page.evaluate((modalSel) => {
+            // Use innerText (layout-aware) so Bubble.io CSS-rendered text is captured.
+            let _retryModalText = await page.evaluate((modalSel) => {
               const norm = t => (t || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
               const dialog = document.querySelector('[role="dialog"]');
               const btn = dialog ? dialog.querySelector(modalSel) : document.querySelector(modalSel);
               if (btn) {
                 let node = btn.parentElement;
                 for (let i = 0; i < 12 && node && node !== document.body; i++) {
-                  const txt = norm(node.textContent || '').trim();
+                  const txt = norm((node.innerText || node.textContent) || '').trim();
                   if (txt.length > 80) return txt;
                   node = node.parentElement;
                 }
-                if (dialog) return norm(dialog.textContent || '');
+                if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
               }
-              return norm((dialog || document.body).textContent || '');
+              return norm(((dialog || document.body).innerText || (dialog || document.body).textContent) || '');
             }, ACTION_SELECTORS.modalReady).catch(() => '');
+            if (!_retryModalText || _retryModalText.length < 10) {
+              const _fb = await page.locator('[role="dialog"]').innerText({ timeout: 1500 }).catch(() => '')
+                || await page.locator('body').innerText({ timeout: 1500 }).catch(() => '');
+              _retryModalText = (_fb || '').replace(/[\u00A0\u2009\u202f]+/g, ' ').toLowerCase();
+            }
 
             if (_retryModalText.includes(classTimeNorm)) {
               console.log(`[retry-modal] attempt ${attempt}: modal identity confirmed (time "${classTimeNorm}" present).`);
