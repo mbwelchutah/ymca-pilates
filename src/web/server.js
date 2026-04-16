@@ -5072,6 +5072,11 @@ const server = http.createServer((req, res) => {
 
   } else if (req.method === 'GET' && path === '/api/state') {
     const rawJobs = getAllJobs();
+    // Live FW API classifier — populates each active job's `liveAvailability`
+    // field synchronously from cache; triggers a background refresh when stale.
+    // First poll after server boot returns null (cache empty); subsequent polls
+    // get the cached classification within ~1 second of the background fetch.
+    const liveTruth = require('../classifier/liveTruth');
     // Enrich every job with phase, bookingOpenMs, and weekday-consistency check.
     const jobs = rawJobs.map(j => {
       let phase = 'unknown';
@@ -5091,7 +5096,17 @@ const server = http.createServer((req, res) => {
         );
       }
 
-      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency };
+      // Only call the live FW API for active jobs where the user is actively
+      // waiting on a verdict — that's the open booking window (`sniper`) and
+      // anything past it (`late`).  Pre-window phases (too_early, warmup) skip
+      // the API since the booking window hasn't opened yet.
+      let liveAvailability = null;
+      if (j.is_active && (phase === 'late' || phase === 'sniper')) {
+        liveAvailability = liveTruth.getCached(j.id);
+        liveTruth.refreshIfStale(j); // fire-and-forget background refresh
+      }
+
+      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency, liveAvailability };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;

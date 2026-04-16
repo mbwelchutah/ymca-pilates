@@ -2196,10 +2196,40 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="blue" />
               <span className="text-[16px] font-semibold text-accent-blue">Open · Reserve available</span>
             </div>
+          ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'bookable' ? (
+            // Live FW API confirms spots remaining — flip "Unknown · checking" to a real verdict.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="blue" />
+              <span className="text-[16px] font-semibold text-accent-blue">
+                Open · {job.liveAvailability.openSpots != null
+                  ? `${job.liveAvailability.openSpots} spot${job.liveAvailability.openSpots === 1 ? '' : 's'} left`
+                  : 'Reserve available'}
+              </span>
+            </div>
+          ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'waitlist_available' ? (
+            // Live FW API confirms class full but waitlist is open.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] font-semibold text-amber-600">Class full · Waitlist open</span>
+            </div>
+          ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'full' ? (
+            // Live FW API confirms class full with no waitlist.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] font-semibold text-amber-600">Class is full</span>
+            </div>
+          ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'cancelled' ? (
+            // Live FW API confirms class cancelled.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="gray" />
+              <span className="text-[16px] text-text-secondary">Class cancelled</span>
+            </div>
           ) : phase === 'late' && effectivePreflightStatus === 'not_found' ? (
             // Class wasn't found on the schedule — window is past but the mismatch
             // deserves a more specific message than "Registration has closed".
             // User may need to update the class name or check the YMCA schedule.
+            // (Evaluated AFTER live API verdicts so a live `bookable`/`full` result
+            // overrides a stale Playwright "not_found" cache.)
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="amber" />
               <span className="text-[16px] text-text-secondary">Class not found on schedule</span>
