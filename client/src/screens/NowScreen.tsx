@@ -2062,7 +2062,16 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     <>
       <AppHeader
         subtitle={(() => {
-          const base = isInactive ? 'Off' : cfg.label
+          const base = (() => {
+            if (isInactive) return 'Off'
+            if (phase === 'late') {
+              if (nowCardState === 'registration_open_with_spots') return 'Open · Reserve available'
+              if (nowCardState === 'registration_open_full') return isClassFull ? 'Class full' : 'Waitlist open'
+              if (nextClassMs != null && nextClassMs > Date.now()) return 'Checking availability'
+              return 'Window Closed'
+            }
+            return cfg.label
+          })()
           const flags = [
             appState.schedulerPaused && 'Paused',
             appState.dryRun          && 'Test mode',
@@ -2182,10 +2191,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               </span>
             </div>
           ) : phase === 'late' && nowCardState === 'registration_open_with_spots' ? (
-            // Past window but DOM confirms spots still available (rare but possible)
+            // Past window but DOM confirms spots still open — Reserve button visible
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="blue" />
-              <span className="text-[16px] font-semibold text-accent-blue">Registration is open</span>
+              <span className="text-[16px] font-semibold text-accent-blue">Open · Reserve available</span>
             </div>
           ) : phase === 'late' && effectivePreflightStatus === 'not_found' ? (
             // Class wasn't found on the schedule — window is past but the mismatch
@@ -2197,10 +2206,10 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
             </div>
           ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) ? (
             // Booking window has passed but the class itself is still upcoming —
-            // the scheduler is actively trying to register in this phase.
+            // the scheduler is actively trying; availability not yet confirmed.
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="amber" />
-              <span className="text-[16px] text-text-secondary">Booking window passed · attempting registration</span>
+              <span className="text-[16px] text-text-secondary">Unknown · checking availability</span>
             </div>
           ) : phase === 'late' ? (
             // Class has already started or passed — no actionable path remaining
