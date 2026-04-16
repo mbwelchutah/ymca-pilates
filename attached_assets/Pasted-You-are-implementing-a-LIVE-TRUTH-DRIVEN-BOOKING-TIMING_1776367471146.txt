@@ -1,0 +1,334 @@
+You are implementing a LIVE-TRUTH–DRIVEN BOOKING TIMING PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Use the new FamilyWorks liveTruth API layer to improve booking timing and decision-making, not just UI display.
+
+Right now liveTruth already powers status display:
+- bookable
+- waitlist
+- full
+- cancelled
+
+This pass should let that truth guide the bot’s timing and urgency, while keeping Playwright as the booking executor and fallback.
+
+This is NOT a full architecture rewrite.
+This is a focused pass to make booking behavior more state-driven and less blindly phase-driven.
+
+IMPORTANT RULES
+
+- Do NOT remove Playwright booking
+- Do NOT remove existing scheduler phases
+- Do NOT redesign the whole engine
+- Keep changes incremental and safe
+- ONE stage at a time
+
+AFTER EACH STAGE:
+1. summarize what changed
+2. explain what remains
+3. STOP
+4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+CONTEXT
+--------------------------------------------------
+
+Current state:
+- liveTruth.js calls the Bubble eventinstance API directly
+- /api/state enriches active jobs in sniper/late with liveAvailability
+- UI now shows real verdicts without Playwright
+
+But booking timing is still mostly driven by:
+- scheduler phase
+- preflight
+- burst timing
+- Playwright state
+
+We now want to use liveTruth to help answer:
+- should the bot launch aggressively now?
+- should it keep polling lightly?
+- should it avoid wasting a browser run on obviously full/cancelled states?
+- should it react faster the instant a class becomes bookable?
+
+--------------------------------------------------
+STAGE 1 — AUDIT CURRENT BOOKING DECISION PATH VS liveTruth
+--------------------------------------------------
+
+Goal:
+Map where liveTruth exists today and where it is not yet affecting booking behavior.
+
+Tasks:
+
+1. Trace the current decision path for an active job in:
+- sniper phase
+- late phase
+
+2. Show where decisions are currently driven by:
+- phase only
+- Playwright preflight
+- cached readiness
+- classifier/classTruth
+- liveAvailability
+
+3. Identify the smallest safe points where liveTruth could affect behavior without rewriting the scheduler
+
+Answer clearly:
+- where liveTruth is currently display-only
+- where it could safely influence urgency, retries, or browser launch decisions
+
+NO CODE CHANGES.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — ADD A SMALL NORMALIZED liveTruth VERDICT HELPER
+--------------------------------------------------
+
+Goal:
+Create one clean internal interpretation layer for liveTruth.
+
+Tasks:
+
+1. Add a helper that normalizes liveAvailability into a small booking-facing verdict set such as:
+- open
+- waitlist
+- full
+- cancelled
+- unknown
+
+2. Keep this internal and simple
+3. Do NOT change scheduling yet
+4. Make sure the helper is safe with null / missing / stale data
+
+Success criteria:
+- booking logic can consume one normalized verdict
+- no behavior changes yet
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — USE liveTruth TO AVOID FALSE “CLOSED” / WRONG STATUS AFTER OPEN
+--------------------------------------------------
+
+Goal:
+Make post-open state truth prefer live API evidence over vague phase-only assumptions.
+
+Tasks:
+
+1. Where the booking logic or state mapping currently depends too much on:
+- phase === late
+- stale readiness
+- weak inferred status
+
+prefer fresh liveTruth when available
+
+2. Ensure:
+- open stays open if API says bookable
+- waitlist/full/cancelled reflect API truth
+- unknown remains neutral, not overconfident
+
+3. Do NOT remove existing fallbacks — only improve the truth ordering
+
+Success criteria:
+- liveTruth becomes the preferred status signal when present
+- phase-only assumptions become less misleading
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — ADD NEAR-OPEN CACHE BYPASS / FRESHNESS RULE
+--------------------------------------------------
+
+Goal:
+Prevent stale cached liveTruth from misleading the bot right at the opening moment.
+
+Tasks:
+
+1. Audit the 30-second cache behavior
+2. Add a small near-open rule such as:
+- if msUntilOpen is very small
+- or if booking window just opened
+- bypass or aggressively refresh liveTruth instead of trusting a stale cached answer
+
+3. Keep this bounded — do not spam the API
+
+Success criteria:
+- near-open decisions use fresher truth
+- stale cache is less likely to hide newly open availability
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — USE liveTruth TO GUIDE BROWSER LAUNCH URGENCY
+--------------------------------------------------
+
+Goal:
+Use liveTruth to decide how aggressively to launch or retry, without removing Playwright.
+
+Tasks:
+
+1. Add a small policy layer such as:
+- liveTruth = open → high urgency / immediate booking path
+- liveTruth = waitlist → booking path if user allows waitlist
+- liveTruth = full / cancelled → avoid wasteful urgent browser launch
+- liveTruth = unknown → existing behavior
+
+2. Keep this conservative:
+- unknown must still fall back safely
+- do not skip Playwright if confidence is weak and booking logic still needs it
+
+3. Prefer influencing urgency and retry cadence before making any hard skip decisions
+
+Success criteria:
+- liveTruth affects urgency intelligently
+- browser work is reduced when truth is strong
+- Playwright remains fallback/executor
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — USE liveTruth TO TRIGGER FASTER ACTION WHEN A CLASS TURNS OPEN
+--------------------------------------------------
+
+Goal:
+Let the bot react quickly when the API flips from not-bookable to bookable.
+
+Tasks:
+
+1. Identify the safest place where a liveTruth transition:
+- unknown/full/waitlist → open
+can accelerate action
+
+2. Examples:
+- trigger burst earlier
+- trigger immediate preflight/booking handoff
+- shorten delay before next run
+- elevate urgency flag
+
+3. Keep this safe and bounded
+4. Do NOT create duplicate launches or retry storms
+
+Success criteria:
+- liveTruth transitions can speed up reaction time
+- the bot becomes more state-responsive
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — EXPOSE liveTruth DECISION IMPACT IN TOOLS
+--------------------------------------------------
+
+Goal:
+Make it visible how liveTruth is influencing booking behavior.
+
+Tasks:
+
+1. In Tools, add lightweight visibility for:
+- current liveTruth verdict
+- freshness / cached vs refreshed
+- whether it influenced urgency
+- whether it triggered a faster run or suppressed a wasteful one
+
+2. Keep it compact and understandable
+3. Avoid turning Tools into a raw debug dump
+
+Success criteria:
+- user can see that liveTruth is affecting decisions
+- decisions feel explainable, not magical
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 8 — VERIFY AGAINST REAL CASES
+--------------------------------------------------
+
+Goal:
+Confirm the new behavior works on realistic class states.
+
+Test against examples like:
+1. Bookable class with spots
+2. Waitlist-only class
+3. Full class
+4. Cancelled class
+5. Unknown / API unavailable
+
+Verify:
+- UI status remains correct
+- booking urgency changes appropriately
+- no false “closed” assumption remains
+- no retry storm occurs
+- Playwright still handles actual booking
+
+Success criteria:
+- liveTruth improves booking timing safely
+- fallback behavior remains intact
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 9 — FINAL QA + RISK CHECK
+--------------------------------------------------
+
+Goal:
+Make sure the system is smarter without becoming overconfident.
+
+Tasks:
+
+1. Verify:
+- stale cache does not mislead near open
+- API failure does not break booking
+- unknown state still falls back safely
+- full/cancelled states do not create unnecessary browser churn
+- open states can accelerate action
+
+2. Identify any residual risk such as:
+- stale cookies
+- wrong match identity
+- cache edge cases
+- API drift
+
+Success criteria:
+- system is more state-driven but still safe
+- no major new fragility introduced
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+FINAL SUCCESS CRITERIA
+--------------------------------------------------
+
+After this pass:
+
+- liveTruth is no longer display-only
+- booking behavior is informed by API truth when available
+- near-open freshness is improved
+- post-open status is less phase-blind
+- browser launches become more intelligent
+- transitions to bookable can trigger faster action
+- Tools can explain what liveTruth influenced
+
+The result should feel:
+- smarter
+- faster
+- less wasteful
+- more grounded in real availability
+
+It should NOT feel like:
+- phase-only guessing
+- stale cache driving the wrong choice
+- Playwright launching blindly when truth is already known
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
