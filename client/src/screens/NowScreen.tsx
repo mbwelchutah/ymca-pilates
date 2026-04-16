@@ -496,8 +496,9 @@ export function deriveNowCardState(opts: {
   //      Others ('not_open', 'unknown') fall through to planning signals below.
   if (actionDetailVerdict === 'cancel_only') return 'registration_not_open'
   if (actionDetailVerdict === 'waitlist_only') return 'registration_open_full'
+  if (actionDetailVerdict === 'ready') return 'registration_open_with_spots'
   if (domActionState === 'waitlist') return 'registration_open_full'
-  if (domActionState === 'ready' && phase === 'sniper') return 'registration_open_with_spots'
+  if (domActionState === 'ready') return 'registration_open_with_spots'
 
   // 6. Planning signals — class confirmed full/unavailable via preflight overall status
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'

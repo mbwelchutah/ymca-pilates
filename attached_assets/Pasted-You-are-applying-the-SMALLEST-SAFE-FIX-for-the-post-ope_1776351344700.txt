@@ -1,0 +1,102 @@
+You are applying the SMALLEST SAFE FIX for the post-open closed/open status bug in the YMCA Booker app.
+
+Do NOT refactor.
+Do NOT redesign the state model.
+Do NOT change bot logic, selectors, or rendering structure.
+
+--------------------------------------------------
+GOAL
+--------------------------------------------------
+
+Fix the Now card state derivation so that after the booking window opens,
+real page evidence like a visible Reserve button can still produce:
+
+registration_open_with_spots
+
+instead of incorrectly falling through to:
+
+registration_not_open
+→ "Registration has closed"
+
+The Stage 2 audit already identified the exact fix points.
+
+--------------------------------------------------
+SECTION A — APPLY FIX IN deriveNowCardState
+--------------------------------------------------
+
+File:
+NowScreen.tsx
+
+Make exactly these two targeted changes inside deriveNowCardState:
+
+1. Remove the phase gate from this condition:
+
+BEFORE:
+if (domActionState === 'ready' && phase === 'sniper') {
+  return 'registration_open_with_spots'
+}
+
+AFTER:
+if (domActionState === 'ready') {
+  return 'registration_open_with_spots'
+}
+
+2. Add handling for actionDetailVerdict === 'ready'
+
+Immediately after the existing actionDetailVerdict checks, add:
+
+if (actionDetailVerdict === 'ready') {
+  return 'registration_open_with_spots'
+}
+
+Do NOT change the existing handling for:
+- cancel_only
+- waitlist_only
+- full
+- closed
+- booked
+
+--------------------------------------------------
+SECTION B — DO NOT CHANGE UI RENDERING
+--------------------------------------------------
+
+Do NOT change the rendering branches in the UI.
+
+The audit already confirmed the correct UI branch exists:
+- phase === 'late' && nowCardState === 'registration_open_with_spots'
+  → "Registration is open"
+
+The goal is only to make that state reachable.
+
+--------------------------------------------------
+SECTION C — SAFETY CHECKS
+--------------------------------------------------
+
+After applying:
+
+1. Confirm TypeScript/build passes
+2. Confirm no other branches changed
+3. Confirm waitlist/full/booked behavior is unchanged
+
+--------------------------------------------------
+SECTION D — VERIFY THE FLOW YOGA CASE
+--------------------------------------------------
+
+Use the known Flow Yoga shape where:
+- booking window is already open
+- live FamilyWorks modal shows Reserve button
+- previous UI incorrectly said "Registration has closed"
+
+Verify after the fix:
+
+1. domActionState === 'ready' produces nowCardState = 'registration_open_with_spots'
+2. The Now screen no longer shows "Registration has closed" for this case
+3. The Now screen instead shows the already-existing open-state branch
+4. Waitlist/full/booked cases still map correctly
+
+Return:
+- exact changed snippet
+- build result
+- verification result
+
+STOP after verification.
