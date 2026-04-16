@@ -39,7 +39,14 @@ Addresses four intertwined bugs that surfaced when Job #24 (Flow Yoga Fri 12 PM)
 #### Click-attempt speedup (Apr 16, second pass)
 Production run showed every attempt was burning ~30 s waiting on the `[data-target-class="yes"]` marker that Bubble had already stripped from the DOM:
 - **`DEBUG_HIGHLIGHT` → false** (`register-pilates.js:501`).  Was hardcoded `true`; added a ~2 s `elementHandle()` wait that routinely timed out in production.  Local debug overlay is no longer on the production path.
-- **Fast marker-presence probe** (`register-pilates.js` top of `attemptClickAndVerify`).  Before the 5 s scroll / visible / box / click chain, a 0-timeout `page.$('[data-target-class="yes"]')` check fires.  If the marker is gone (Bubble re-render stripped it), we immediately re-run `findTargetCard` to re-stamp it rather than waiting ~30 s for each downstream locator op to time out.  When the marker is still present (happy path), this adds no overhead.
+
+#### Content-based card locator (Apr 16, third pass)
+Replaces the attribute-based return value of `findTargetCard` — which depended on a stamped `data-target-class="yes"` attribute that Bubble strips on every re-render — with an **attribute-independent content locator** that Playwright re-resolves on every operation.  As long as the DOM still contains the class title + time + instructor signals around a `button / [role=button] / a` descendant, every click / scroll / visibility op works across re-renders.
+- Built at the end of `findTargetCard` (`register-pilates.js` ~1485-1514): `page.locator('*').filter(hasText=title).filter(hasText=hh:mm).filter(hasText=instructor).filter({ has: buttonLocator }).last()`.
+- `filter({ has: buttonLocator })` excludes inner text-only wrappers — solves the AM tie-break bug from a second angle.
+- `.last()` picks the innermost (deepest) matching ancestor — avoids an outer page wrapper.
+- The `data-target-class` / `-second` stamps are still written inside the `page.evaluate` (for `_lastSecondCard` attribute-based fallback + diagnostic tooling), but the primary returned locator no longer reads them.
+- The fast marker-presence probe added in the second pass is removed as redundant — a content locator that survives re-renders has no marker state to check.
 
 ### Frontend (`client/src/`)
 

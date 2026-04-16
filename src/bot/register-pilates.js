@@ -1478,7 +1478,37 @@ async function runBookingJob(job, opts = {}) {
       if (_lastSecondText) {
         console.log(`Second-best row: "${_lastSecondText.slice(0, 120)}"`);
       }
-      return page.locator('[data-target-class="yes"]').first();
+
+      // ── Content-based locator (Apr 16, third pass) ───────────────────────
+      // Returning `page.locator('[data-target-class="yes"]').first()` made every
+      // downstream op fail with a 5 s timeout the moment Bubble re-rendered the
+      // schedule and stripped our data-* stamp.  Switch to a content-based
+      // locator that Playwright re-resolves on every op: as long as the DOM
+      // still contains the title + time + instructor signals around a button /
+      // link, the locator keeps working across re-renders.
+      //
+      // We use `.filter({ has: buttonLocator })` to require a button/link
+      // descendant (so inner text-only wrappers are excluded — solves the
+      // Apr 16 AM tie-break bug from a second angle), then `.last()` to pick
+      // the deepest ancestor (the most specific card, not an outer page
+      // wrapper).  If multiple distinct rows match (same class listed twice),
+      // `.last()` picks the last-in-DOM one; the existing modal-verify step
+      // still rejects wrong-class clicks as a safety net.
+      const escRx = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const buttonLoc = page.locator('button, [role="button"], a');
+      let contentLoc = page.locator('*')
+        .filter({ hasText: new RegExp(escRx(classTitle), 'i') });
+      const _tm = (classTimeNorm || '').match(/^(\d+:\d+)\s*([ap])/i);
+      if (_tm) {
+        // Use just the hh:mm fragment for filtering — display formats vary
+        // ("12:00 PM", "12:00 p", "12:00 pm") but hh:mm is consistent.
+        contentLoc = contentLoc.filter({ hasText: new RegExp(escRx(_tm[1]), 'i') });
+      }
+      if (instructorFirstName) {
+        contentLoc = contentLoc.filter({ hasText: new RegExp(escRx(instructorFirstName), 'i') });
+      }
+      contentLoc = contentLoc.filter({ has: buttonLoc }).last();
+      return contentLoc;
     }
 
     // Cached centre of the scroll panel for the current run.  Populated on the
@@ -1919,28 +1949,13 @@ async function runBookingJob(job, opts = {}) {
     // ────────────────────────────────────────────────────────────────────────────
     async function attemptClickAndVerify(card, candidateLabel) {
       try {
-        // ── FAST marker-presence check (Apr 16 production regression) ────────
-        // The `card` locator resolves via `[data-target-class="yes"]`.  Bubble
-        // re-renders the class list frequently and strips data-* attributes on
-        // every render.  If the marker was stripped between findTargetCard()
-        // and now, every downstream locator op (scroll/visible/box/click) will
-        // time out at 5 s each — ~30 s wasted per attempt.  Skip that by doing
-        // a 500 ms presence probe first, and re-running findTargetCard to
-        // re-stamp the marker when it's missing.  This is a strict speedup +
-        // reliability win: nothing changes when the marker is still present.
-        const markerPresent = await page.$('[data-target-class="yes"]').then(el => !!el).catch(() => false);
-        if (!markerPresent) {
-          console.log(`⚠️ [${candidateLabel}] data-target-class marker stripped before click — re-scanning to re-stamp`);
-          const recovered = await findTargetCard();
-          if (!recovered) {
-            console.log(`❌ [${candidateLabel}] Re-scan after marker-strip returned no candidate`);
-            await captureFailure('click', 'marker_stripped');
-            emitFailure('ACTION', 'ACTION_MARKER_STRIPPED', `Marker stripped before click and re-scan found no candidate (${candidateLabel})`);
-            return { ok: false, failMsg: 'Marker stripped before click; re-scan found no candidate', reasonTag: 'click_marker_stripped', recorded: false };
-          }
-          console.log(`✅ [${candidateLabel}] Marker re-stamped after re-scan — proceeding`);
-          card = recovered;
-        }
+        // NOTE: findTargetCard now returns a content-based locator (title +
+        // time + instructor + has-button filter chain), not an attribute-based
+        // one.  Playwright re-resolves this locator on every op, so Bubble
+        // re-renders that strip data-* attributes no longer break the click
+        // path — the earlier marker-presence probe is no longer needed.  The
+        // detach-recovery path below still catches the rarer case where the
+        // DOM simply has no matching element (e.g. schedule cleared entirely).
         // Scroll card into view
         try {
           await card.scrollIntoViewIfNeeded({ timeout: 5000 });
