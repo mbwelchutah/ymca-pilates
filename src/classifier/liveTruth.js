@@ -357,10 +357,157 @@ function refreshIfStale(job) {
   }
 }
 
+// ── Normalized booking-facing verdict ────────────────────────────────────────
+//
+// Stage 2 of the live-truth–driven booking timing pass.
+//
+// `LIVE_STATES` is the rich state set used by the UI (it distinguishes
+// `not_found` from `unknown`, exposes `cancelled` separately, etc.).  The
+// scheduler does not need that granularity — it just wants to know "should I
+// launch a browser, hold off, or hit it harder?".
+//
+// `getVerdict` collapses LIVE_STATES + a freshness check into a tiny set:
+//
+//   open       → spots available right now (bookable)
+//   waitlist   → class is full but waitlist is open
+//   full       → class is full and waitlist is closed/full
+//   cancelled  → class is cancelled
+//   unknown    → no usable signal — caller must fall back to existing behaviour
+//
+// SAFETY CONTRACT
+// - Never throws.
+// - Returns `unknown` on null / missing / malformed input.
+// - Returns `unknown` when the cached value came from a failed fetch.
+// - Returns `unknown` when the cached value is older than the freshness window
+//   (default 60s — twice the cache TTL, so a single missed refresh still
+//   counts as fresh-enough but a cookie-expired stuck cache does not).
+// - Returns `unknown` when the live classifier itself returned an `unknown` or
+//   `not_found` state.
+//
+// This helper is purely interpretive — it does NOT touch the cache, fetch from
+// the network, or change scheduler behaviour.  It exists so later stages have
+// one canonical place to read "what does live truth say about this job RIGHT
+// NOW for booking purposes" without each call site re-implementing the same
+// freshness/null guards.
+
+const VERDICTS = Object.freeze({
+  OPEN:      'open',
+  WAITLIST:  'waitlist',
+  FULL:      'full',
+  CANCELLED: 'cancelled',
+  UNKNOWN:   'unknown',
+});
+
+const DEFAULT_FRESHNESS_WINDOW_MS = 60_000;
+
+/**
+ * Normalize a cached liveAvailability object (as returned by getCached) into a
+ * small booking-facing verdict.
+ *
+ * @param {object|null} cached - Result of getCached(jobId), or null.
+ * @param {object}      [opts]
+ * @param {number}      [opts.freshnessWindowMs=60000] - Anything older than
+ *   this is treated as `unknown`.
+ * @param {number}      [opts.now=Date.now()] - Override clock for tests.
+ *
+ * @returns {{
+ *   verdict:    'open'|'waitlist'|'full'|'cancelled'|'unknown',
+ *   isFresh:    boolean,
+ *   ageMs:      number|null,
+ *   openSpots:  number|null,
+ *   reason:     string,
+ * }}
+ */
+function getVerdict(cached, opts = {}) {
+  const freshnessWindowMs = Number.isFinite(opts.freshnessWindowMs)
+    ? opts.freshnessWindowMs
+    : DEFAULT_FRESHNESS_WINDOW_MS;
+
+  // ── Null / missing input ──────────────────────────────────────────────────
+  if (!cached || typeof cached !== 'object') {
+    return { verdict: VERDICTS.UNKNOWN, isFresh: false, ageMs: null, openSpots: null,
+             reason: 'no liveAvailability cached yet' };
+  }
+
+  // ── Compute freshness ─────────────────────────────────────────────────────
+  // `ageMs` is stamped onto the result by getCached().  If it is missing for
+  // any reason, fall back to parsing fetchedAt — and if THAT is missing, treat
+  // as stale.
+  let ageMs = (typeof cached.ageMs === 'number') ? cached.ageMs : null;
+  if (ageMs == null && cached.fetchedAt) {
+    const fetchedMs = Date.parse(cached.fetchedAt);
+    if (!Number.isNaN(fetchedMs)) {
+      const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+      ageMs = now - fetchedMs;
+    }
+  }
+  const isFresh = (ageMs != null) && ageMs >= 0 && ageMs <= freshnessWindowMs;
+
+  if (!isFresh) {
+    return {
+      verdict:   VERDICTS.UNKNOWN,
+      isFresh:   false,
+      ageMs,
+      openSpots: null,
+      reason:    ageMs == null ? 'no fetchedAt on cached value' : `cached value is ${Math.round(ageMs/1000)}s old (>${Math.round(freshnessWindowMs/1000)}s freshness window)`,
+    };
+  }
+
+  // ── Map LIVE_STATES → booking verdict ─────────────────────────────────────
+  const state = cached.state;
+  switch (state) {
+    case LIVE_STATES.BOOKABLE:
+      return { verdict: VERDICTS.OPEN, isFresh, ageMs,
+               openSpots: cached.openSpots ?? null,
+               reason: cached.reason || 'live API: bookable' };
+
+    case LIVE_STATES.WAITLIST_AVAILABLE:
+      return { verdict: VERDICTS.WAITLIST, isFresh, ageMs,
+               openSpots: 0,
+               reason: cached.reason || 'live API: waitlist available' };
+
+    case LIVE_STATES.FULL:
+      return { verdict: VERDICTS.FULL, isFresh, ageMs,
+               openSpots: 0,
+               reason: cached.reason || 'live API: class full, no waitlist' };
+
+    case LIVE_STATES.CANCELLED:
+      return { verdict: VERDICTS.CANCELLED, isFresh, ageMs,
+               openSpots: null,
+               reason: cached.reason || 'live API: class cancelled' };
+
+    // `unknown` (API call failed or returned no capacity) and `not_found`
+    // (no matching event in the next 14 days) both collapse to UNKNOWN for
+    // booking purposes — the scheduler must fall back to its existing logic
+    // rather than make any decision based on these.
+    case LIVE_STATES.UNKNOWN:
+    case LIVE_STATES.NOT_FOUND:
+    default:
+      return {
+        verdict:   VERDICTS.UNKNOWN,
+        isFresh,
+        ageMs,
+        openSpots: null,
+        reason:    cached.reason || `live API state "${state}" — no booking signal`,
+      };
+  }
+}
+
+/**
+ * Convenience: combine a `getCached` lookup with `getVerdict` so callers
+ * don't have to do both.  Returns the same shape as getVerdict().
+ */
+function getVerdictForJob(jobId, opts = {}) {
+  return getVerdict(getCached(jobId), opts);
+}
+
 module.exports = {
   LIVE_STATES,
+  VERDICTS,
   fetchLive,
   refresh,
   refreshIfStale,
   getCached,
+  getVerdict,
+  getVerdictForJob,
 };
