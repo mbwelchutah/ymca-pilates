@@ -1,0 +1,117 @@
+You are doing a READ-ONLY ROOT-CAUSE AUDIT for the YMCA Booker app.
+
+DO NOT CHANGE CODE YET.
+
+We now have a different failure shape from the Gentle Yoga modal issue.
+
+Observed live evidence for Flow Yoga:
+- Tools shows:
+  - "Both schedule filters failed to apply"
+  - "Schedule rendered 0 rows after filter"
+  - screenshot of FamilyWorks showing "No Classes"
+- Now shows conflicting states:
+  - sometimes "Class not found on schedule"
+  - sometimes "Registration has closed"
+  - sometimes "Registration opens at 11:00 AM"
+  - sometimes all green through "Registration path confirmed" plus yellow text saying the class could not be found
+
+This suggests:
+1. the real bot issue is likely filter/day render instability
+2. the UI is mixing stale failure text with newer readiness state
+
+GOAL
+Find exactly why Flow Yoga is producing:
+- empty/no-classes schedule renders
+- filter-application failures
+- conflicting Now-screen state
+
+--------------------------------------------------
+SECTION A — TRACE THE FLOW YOGA RUN END TO END
+--------------------------------------------------
+
+For the latest Flow Yoga run(s), trace:
+- selected job fields
+- target_date / day tab chosen
+- category filter applied
+- instructor filter applied
+- schedule count before/after filter
+- whether "No Classes" was rendered
+- final status / reason
+- bundle.* values
+- lastPreflightSnapshot.status
+- job.last_result / last_error_message
+
+I want the exact latest values, not assumptions.
+
+--------------------------------------------------
+SECTION B — AUDIT FILTER APPLICATION FAILURE
+--------------------------------------------------
+
+Trace the exact code path for:
+- applying category filter
+- applying instructor filter
+- deciding "filter had no effect"
+- deciding "schedule rendered 0 rows after filter"
+
+Answer:
+1. What exact condition produces "Both schedule filters failed to apply"?
+2. What exact condition produces "Schedule rendered 0 rows after filter"?
+3. Can these occur transiently even when the schedule is actually fine?
+4. Is the bot checking too early after filter change?
+5. Does the page sometimes temporarily render 0 rows before repopulating?
+
+--------------------------------------------------
+SECTION C — AUDIT DAY TAB / NO-CLASSES RENDERING
+--------------------------------------------------
+
+Investigate the screenshot showing "No Classes".
+
+Answer:
+- Was the correct day tab definitely selected?
+- Could the filter state have produced an empty day even though the class exists without filters?
+- Does FamilyWorks temporarily show "No Classes" during tab/filter re-render?
+- Is the bot treating that transient empty state as final too quickly?
+
+--------------------------------------------------
+SECTION D — AUDIT NOW SCREEN CONFLICTING STATE
+--------------------------------------------------
+
+Explain why Now can show:
+- green readiness steps through "Registration path confirmed"
+AND
+- yellow text saying class could not be found
+OR
+- "Registration has closed"
+OR
+- "Registration opens at 11:00 AM"
+
+Trace exactly which data sources feed:
+- the big status line
+- the readiness checklist
+- the yellow helper text
+- the bottom "Last activity"
+
+I want to know whether Flow Yoga is exposing a stale-state merge problem in the UI.
+
+--------------------------------------------------
+SECTION E — OUTPUT
+--------------------------------------------------
+
+Give me:
+
+1. The most likely real bot bug for Flow Yoga
+   - filter instability?
+   - transient empty schedule render?
+   - wrong tab?
+   - something else?
+
+2. Whether the UI is also showing stale/conflicting state
+3. The smallest safe fix to apply next
+4. Whether the next fix should target:
+   - filter application robustness
+   - empty-render retry logic
+   - UI stale-state cleanup
+   - some combination
+
+Do NOT change code yet.
+Audit only.
