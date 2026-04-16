@@ -206,6 +206,9 @@ export const api = {
     }
   }> => apiFetch('/api/failures'),
 
+  clearFailures: (): Promise<{ success: boolean }> =>
+    apiFetch('/api/failures', { method: 'DELETE' }),
+
   getScrapedClasses: (): Promise<{ classes: ScrapedClass[] }> =>
     apiFetch('/api/scraped-classes'),
 

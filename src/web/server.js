@@ -5267,9 +5267,15 @@ const server = http.createServer((req, res) => {
     for (const row of dbSummary.byReason) summaryByReason[row.reason] = row.count;
     for (const row of dbSummary.byPhase)  summaryByPhase[row.phase]   = row.count;
 
-    // If the DB is empty, fall back to legacy filesystem scan so old screenshots still appear.
+    // If the DB is empty, fall back to legacy filesystem scan so old screenshots still appear —
+    // unless history was explicitly cleared (failures-cleared.json exists), in which case we
+    // suppress the legacy results so a clear truly shows zero failures.
+    const FAILURES_CLEARED_FILE = 'failures-cleared.json';
+    let failuresClearedAt = null;
+    try { failuresClearedAt = JSON.parse(fsM.readFileSync(FAILURES_CLEARED_FILE, 'utf8')).clearedAt; } catch {}
+
     let recent = dbRecent;
-    if (dbRecent.length === 0) {
+    if (dbRecent.length === 0 && !failuresClearedAt) {
       const dir = 'screenshots';
       if (fsM.existsSync(dir)) {
         const legacyFiles = fsM.readdirSync(dir)
@@ -5300,6 +5306,19 @@ const server = http.createServer((req, res) => {
 
     const byJob = getFailuresByJob({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() });
     json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob });
+
+  } else if (req.method === 'DELETE' && path === '/api/failures') {
+    const { clearFailures } = require('../db/failures');
+    clearFailures();
+    // Write a flag so GET /api/failures skips the legacy screenshot fallback until new DB
+    // failures are recorded — ensures "Clear history" truly produces zero displayed failures.
+    try {
+      const fsC = require('fs');
+      fsC.writeFileSync('failures-cleared.json', JSON.stringify({ clearedAt: new Date().toISOString() }));
+    } catch (e) {
+      console.warn('[failures] Could not write failures-cleared.json:', e.message);
+    }
+    json({ success: true });
 
   } else if (req.method === 'GET' && path.startsWith('/api/replay-history/')) {
     const jobId = path.split('/api/replay-history/')[1];

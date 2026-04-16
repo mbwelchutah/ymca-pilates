@@ -166,4 +166,13 @@ function getFailuresByJob({ sinceIso }) {
   }));
 }
 
-module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob };
+/**
+ * Delete all rows from the failures table.
+ */
+function clearFailures() {
+  const db = openDb();
+  db.prepare('DELETE FROM failures').run();
+  db.close();
+}
+
+module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob, clearFailures };

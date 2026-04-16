@@ -1304,6 +1304,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const scrolledRef = useRef<string | undefined>(undefined)
 
   const [failures, setFailures]           = useState<FailureData | null>(null)
+  const [clearFState, setClearFState]     = useState<'idle' | 'confirming' | 'loading'>('idle')
   const [techExpanded, setTechExpanded]     = useState(false)
   const [botStatus, setBotStatus]         = useState<BotStatus | null>(null)
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null)
@@ -1385,6 +1386,30 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
       const r = await api.setSessionKeepaliveConfig(next, keepaliveConfig.intervalMinutes)
       if (r.success) setKeepaliveConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
     } catch { /* ignored */ } finally { setKaToggling(false) }
+  }
+
+  const clearFTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => { if (clearFTimeout.current) clearTimeout(clearFTimeout.current) }
+  }, [])
+
+  async function handleClearFailures() {
+    if (clearFState === 'loading') return
+    if (clearFState === 'idle') {
+      setClearFState('confirming')
+      clearFTimeout.current = setTimeout(() => setClearFState('idle'), 4000)
+      return
+    }
+    if (clearFTimeout.current) { clearTimeout(clearFTimeout.current); clearFTimeout.current = null }
+    setClearFState('loading')
+    try {
+      await api.clearFailures()
+      const fresh = await api.getFailures().catch(() => null)
+      setFailures(fresh)
+    } catch { /* ignore */ } finally {
+      setClearFState('idle')
+    }
   }
 
   const recentFailures = failures?.recent ?? []
@@ -1625,7 +1650,13 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
         {/* ── Recent Failures ───────────────────────────────── */}
         {recentFailures.length > 0 && (
           <>
-            <SectionHeader title="Recent Failures" />
+            <SectionHeader
+              title="Recent Failures"
+              action={{
+                label: clearFState === 'confirming' ? 'Tap again to confirm' : clearFState === 'loading' ? 'Clearing…' : 'Clear history',
+                onClick: handleClearFailures,
+              }}
+            />
             <Card padding="none">
               {(() => {
                 const PAGE = 5
