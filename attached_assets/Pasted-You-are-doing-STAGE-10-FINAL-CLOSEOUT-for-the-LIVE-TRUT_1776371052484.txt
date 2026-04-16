@@ -1,0 +1,88 @@
+You are doing STAGE 10 — FINAL CLOSEOUT for the LIVE-TRUTH–DRIVEN BOOKING TIMING PASS in the YMCA Booker app.
+
+DO NOT CHANGE CODE unless a critical correctness issue is discovered.
+
+PRIMARY GOAL
+
+Close out the pass cleanly by separating:
+1. what is fully implemented and verified
+2. what is source-verified but still waiting for a real live-window event
+3. what the operator should watch next in production
+
+This is a closeout / readiness stage, not a new feature stage.
+
+--------------------------------------------------
+SECTION A — CONFIRM WHAT IS COMPLETE
+--------------------------------------------------
+
+Summarize the parts of the pass that are fully complete and verified:
+
+- normalized liveTruth verdicts
+- post-open truth ordering
+- near-open 5 s freshness rule
+- urgency hints
+- open-transition logic
+- Tools visibility
+- fallback safety
+
+For each, state whether it is:
+- code-complete
+- source-verified
+- helper-tested
+- real-case verified
+
+--------------------------------------------------
+SECTION B — IDENTIFY WHAT STILL REQUIRES A REAL LIVE EVENT
+--------------------------------------------------
+
+List the parts that cannot be fully proven without a real sniper/late / opening transition, such as:
+
+- full/unknown → open transition detection
+- consumeOpenTransition one-shot behavior in a real run
+- burst:accelerate log in a real run
+- liveRecentInfluence appearing from a real acceleration
+- 5 s near-open TTL in actual traffic
+
+Be explicit: these are not code gaps, just real-world verification gaps.
+
+--------------------------------------------------
+SECTION C — OPERATOR WATCHLIST
+--------------------------------------------------
+
+Produce a short checklist for the next real near-open / open event.
+
+Include exactly what to watch for in logs / Tools, such as:
+- fresh liveVerdict
+- urgency hint applied
+- burst cadence shortened
+- acceleration consumed once
+- no duplicate launches
+- Playwright still executes booking normally
+
+Keep it short and practical.
+
+--------------------------------------------------
+SECTION D — FINAL VERDICT
+--------------------------------------------------
+
+Give one final verdict:
+
+Choose one:
+- PASS — production-ready, awaiting live-event confirmation only
+- PASS WITH CAUTION — minor concern remains
+- HOLD — not ready
+
+Explain why in 3–6 lines.
+
+--------------------------------------------------
+SECTION E — OUTPUT
+--------------------------------------------------
+
+Return:
+1. final status
+2. what is done
+3. what is still awaiting live verification
+4. exact operator watchlist for the next real opening event
+
+STOP after reporting.
+No further code changes in this stage unless a critical correctness problem is discovered.
