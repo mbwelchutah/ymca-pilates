@@ -250,7 +250,13 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
     // text patterns are insensitive to CSS visibility so this is safe here.
     const body = (await page.evaluate(() => document.body.textContent ?? '').catch(() => '')).toLowerCase();
     // Match explicit server-side confirmations. Includes FamilyWorks waitlist phrases.
-    const textConfirm = /registered|confirmed|success|you.?re registered|booking confirmed|enrollment|added to|on the waitlist|waitlisted|waitlist confirmed|you.?re on/i.test(body);
+    // Broadened Apr 2026 after Flow Yoga run showed FW confirmation returning
+    // empty-body / terse copy (no "registered" literal). New patterns cover:
+    //   • "you're in", "you're all set", "all set"
+    //   • "thanks" / "thank you" (FW success toast)
+    //   • "reservation"/"reserved" (some classes)
+    //   • "signed up", "sign-up complete", "successfully"
+    const textConfirm = /registered|confirmed|success(?:ful)?|you.?re registered|booking confirmed|enrollment|added to|on the waitlist|waitlisted|waitlist confirmed|you.?re on|you.?re (?:in|all set)|all set|thanks? (?:for|you)|reserved|reservation (?:confirmed|complete)|signed up|sign.?up complete/i.test(body);
     return { btns, body, textConfirm };
   }
 
@@ -2677,6 +2683,26 @@ async function runBookingJob(job, opts = {}) {
             }
           }
         );
+
+        // ── Positive-inference: prior-click succeeded ─────────────────────
+        // Added Apr 2026.  When we already clicked Register/Waitlist on a
+        // PRIOR attempt (_replayAction set) AND re-opening the modal now
+        // yields `modal_nearly_empty` (no content, no buttons, no countdown),
+        // that is a strong signal the first click actually completed the
+        // booking — FamilyWorks renders the post-booking state as a terse
+        // empty dialog instead of surfacing a Cancel button in this embed.
+        // Without this branch the retry loop spins until timeout while the
+        // class is in fact already registered.
+        if (_replayAction && _diagLabel === 'modal_nearly_empty' && attempt >= 2) {
+          console.log(`✅ Booking confirmed by inference — prior ${_replayAction} click + empty modal on attempt ${attempt} = class already enrolled.`);
+          replayStore.addEvent(_jobId, 'confirm',
+            `Enrollment confirmed by inference (prior ${_replayAction} click, empty modal on retry attempt ${attempt})`);
+          registered = true;
+          // _replayAction ('register' | 'waitlist') is already set from the
+          // prior click and drives downstream status reporting correctly.
+          break;
+        }
+        // ──────────────────────────────────────────────────────────────────
       }
       // ──────────────────────────────────────────────────────────────────────
 
