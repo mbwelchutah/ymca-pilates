@@ -1,0 +1,159 @@
+You are implementing a SMALL STALE-MESSAGE + UI STATE CLEANUP PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Clean up user-facing messaging after the pre-open modal verification fix.
+
+The core bot fix is already done:
+- pre-open class detail dialogs now verify correctly
+- the correct pre-open Gentle Yoga case now returns found_not_open_yet instead of mismatch
+
+Now we want to make sure the UI does not keep showing stale or misleading failure messages from older runs.
+
+This is a SMALL cleanup pass only.
+Do NOT redesign the app.
+Do NOT change booking logic.
+Do NOT alter selectors, timing, or matching logic.
+
+IMPORTANT RULES
+
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT STALE FAILURE MESSAGE SOURCES
+--------------------------------------------------
+
+Goal:
+Find exactly where old mismatch / class-not-found messages are still coming from in the UI.
+
+Trace and report:
+- Now screen "Last activity" source
+- Now screen readiness-step labels source
+- Tools event list source
+- Tools reason / mismatch cards source
+- whether these surfaces show:
+  - latest completed run only
+  - historical runs
+  - mixed current bundle state + historical messages
+
+Specifically answer:
+1. Why old "Time + Instructor mismatch" entries still appear after the fix
+2. Why "Class not found on schedule" can still appear in Now after a later pre-open verified modal run
+3. Which UI surfaces are intentionally historical vs which should reflect current/latest state only
+
+NO CODE CHANGES YET.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — FIX NOW SCREEN TO PREFER LATEST RELEVANT RUN STATE
+--------------------------------------------------
+
+Goal:
+Make Now reflect the latest real state, not misleading stale failure text.
+
+Tasks:
+
+1. Audit how Now chooses:
+- last activity text
+- modal/action readiness step labels
+- error banner / summary text
+
+2. Ensure that when the latest relevant run is:
+- found_not_open_yet
+- modal verified
+- no action buttons yet
+
+Now does NOT keep surfacing an older mismatch/not_found message as the primary state.
+
+3. Keep historical data available elsewhere if needed, but Now should prioritize the latest relevant status for the active job.
+
+Success criteria:
+- Now no longer says "Class not found on schedule" when the latest run actually verified the modal and found_not_open_yet
+- current state is favored over stale historical failure text
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — LABEL HISTORICAL TOOLS EVENTS MORE CLEARLY
+--------------------------------------------------
+
+Goal:
+Make Tools less confusing when old failures remain visible.
+
+Tasks:
+
+1. Keep historical events visible in Tools
+2. But make it clearer they are historical entries, not the current truth for the job
+3. If appropriate, add subtle labeling or ordering clarity so the newest successful pre-open verification is easy to distinguish from older mismatch runs
+
+Do NOT remove useful history.
+Do NOT hide debugging evidence.
+Just reduce confusion.
+
+Success criteria:
+- Tools still preserves history
+- users can tell old mismatch entries are older, not current state
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — CLEAN UP USER-FACING WORDING FOR PRE-OPEN VERIFIED STATE
+--------------------------------------------------
+
+Goal:
+Make the pre-open verified state read clearly and calmly.
+
+Tasks:
+
+1. Review wording shown when the latest state is effectively:
+- correct class found
+- modal verified
+- registration not open yet
+
+2. Prefer wording like:
+- "Class found — registration not open yet"
+- "Correct class verified — waiting for registration window"
+- "Modal verified — no registration button yet"
+
+3. Avoid wording that sounds like failure when the bot is actually in the correct pre-open state
+
+Success criteria:
+- pre-open verified state sounds correct and reassuring
+- no false-failure language remains in that case
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — FINAL QA
+--------------------------------------------------
+
+Goal:
+Verify the UI now reflects the fixed bot behavior accurately.
+
+Using the Gentle Yoga pre-open case, confirm:
+1. New runs no longer create bogus "Time + Instructor mismatch" for the correct pre-open modal
+2. Now does not show stale "Class not found on schedule" as the main current message
+3. Tools can still show historical mismatch entries, but clearly as older history
+4. The latest state reads as:
+   - modal verified / correct class
+   - not open yet
+
+Return:
+- exact changes made
+- exact surfaces affected
+- confirmation that no booking logic changed
+
+END WITH:
+Stage complete. Say "continue" to proceed.
