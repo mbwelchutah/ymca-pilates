@@ -419,7 +419,7 @@ async function runBurstCheck(dbJob) {
         // unknown/stale leaves it at decision.retryDelayMs (×1.0).
         // Final delay is clamped to [5_000, 60_000] so the cadence can never
         // become unsafe (too aggressive) or effectively dormant (too slow).
-        const _adjustedDelayMs = Math.max(
+        let _adjustedDelayMs = Math.max(
           5_000,
           Math.min(60_000, Math.round(decision.retryDelayMs * _urgency.burstDelayMultiplier))
         );
@@ -430,6 +430,38 @@ async function runBurstCheck(dbJob) {
             `${decision.retryDelayMs}ms × ${_urgency.burstDelayMultiplier} = ${_adjustedDelayMs}ms.`
           );
         }
+
+        // Stage 6 — open-transition acceleration.
+        //
+        // If liveTruth observed a non-bookable→bookable flip in the last
+        // 30 s, override the next burst delay to the minimum safe floor
+        // (ACCELERATED_BURST_MS) so the next preflight fires ASAP and the
+        // newly-available class can be claimed before someone else takes it.
+        //
+        // Storm-protection guarantees:
+        //   • consumeOpenTransition is one-shot per real flip — repeated
+        //     "still open" refreshes do NOT re-arm.
+        //   • We only OVERRIDE the already-planned burst delay; we do NOT
+        //     schedule an extra burst.  scheduleBurst() also cancels any
+        //     existing timer before setting the new one, so duplicate
+        //     launches are structurally impossible.
+        //   • MAX_BURST_RUNS / shouldRetry gating still wins — if we're
+        //     out of attempts, transition has zero effect.
+        //   • Floor of 5 s prevents the override from creating an unsafe
+        //     tight loop.
+        const ACCELERATED_BURST_MS = 5_000;
+        if (
+          _adjustedDelayMs > ACCELERATED_BURST_MS &&
+          liveTruth.consumeOpenTransition(dbJob.id)
+        ) {
+          console.log(
+            `[preflight-loop] burst:accelerate — Job #${dbJob.id} ` +
+            `liveTruth flipped to OPEN; ` +
+            `shortening next burst ${_adjustedDelayMs}ms → ${ACCELERATED_BURST_MS}ms (one-shot).`
+          );
+          _adjustedDelayMs = ACCELERATED_BURST_MS;
+        }
+
         scheduleBurst(dbJob, _adjustedDelayMs);
       } else {
         console.log(`[preflight-loop] burst:stop — Job #${dbJob.id} max runs or shouldRetry=false.`);

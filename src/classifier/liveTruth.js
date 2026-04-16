@@ -64,6 +64,30 @@ function nearOpenTtlMs(msUntilOpen) {
 // In-flight de-dupe so concurrent /api/state requests don't fire duplicate calls
 const _inflight = new Map();
 
+// ── Stage 6: open-transition tracking ────────────────────────────────────────
+//
+// A "transition to open" is when the LIVE_STATES value flips from anything
+// non-bookable (full / waitlist_available / cancelled / unknown / not_found /
+// missing) to BOOKABLE on a fresh refresh.  This is the moment when reaction
+// time matters most — a class just became bookable and the next burst can be
+// fired sooner than the planned cadence.
+//
+// `_lastStateByJob` remembers the previous LIVE_STATES value per job.
+// `_openTransitionAt` stamps the wall-clock time of the most recent flip
+// to BOOKABLE; it is cleared by `consumeOpenTransition` (one-shot).
+//
+// Storm-protection contract:
+//   • One-shot per transition:  `consumeOpenTransition` clears the stamp.
+//     A second call returns false until verdict leaves OPEN AND returns.
+//   • Bounded freshness:        stamps older than `windowMs` (default 30 s)
+//     are ignored — a stale signal cannot trigger acceleration after the
+//     scheduler missed its window.
+//   • No new fetches:           transition is observed only inside the
+//     existing `refresh()` write path; this module does not poll on its
+//     own.  Read frequency is unchanged from Stage 4.
+const _lastStateByJob   = new Map();
+const _openTransitionAt = new Map();
+
 // ── Result shape ─────────────────────────────────────────────────────────────
 //
 // All fields are always present so the UI can render without null-guards.
@@ -373,6 +397,12 @@ async function refresh(job) {
         instructor: job.instructor,
       });
       _cache.set(jobId, { result, fetchedAtMs: Date.now(), failed: false });
+      // Stage 6 — detect transition to open and stamp it.
+      // Only successful (non-failed) refreshes count as a real observation;
+      // a failed refresh that happens to set state=UNKNOWN does NOT clear the
+      // "previous" memory.  This prevents a transient API error followed by
+      // recovery from being misread as a non-open→open flip.
+      _maybeRecordOpenTransition(jobId, result?.state);
       return result;
     } catch (err) {
       const result = _emptyResult(LIVE_STATES.UNKNOWN, {
@@ -380,6 +410,7 @@ async function refresh(job) {
         source: 'live_api',
       });
       _cache.set(jobId, { result, fetchedAtMs: Date.now(), failed: true });
+      // Note: failed refresh — _lastStateByJob is intentionally NOT updated.
       return result;
     } finally {
       _inflight.delete(jobId);
@@ -604,6 +635,52 @@ const URGENCY_BY_VERDICT = Object.freeze({
   [VERDICTS.CANCELLED]: { preemptBufferDeltaMs: -3_000, burstDelayMultiplier: 2.0  },
 });
 
+// ── Stage 6: open-transition observation + consumption ──────────────────────
+//
+// `_maybeRecordOpenTransition` runs immediately after a successful refresh.
+// It compares the new LIVE_STATES value against the last observed value for
+// the same job and stamps `_openTransitionAt` only on a non-bookable→bookable
+// flip.  The previous-state map is unconditionally updated so repeated
+// "still open" refreshes do NOT re-arm the signal — only a real cycle
+// (open → not-open → open) does.
+function _maybeRecordOpenTransition(jobId, newState) {
+  const prev = _lastStateByJob.get(jobId);
+  _lastStateByJob.set(jobId, newState);
+  if (newState === LIVE_STATES.BOOKABLE && prev !== LIVE_STATES.BOOKABLE) {
+    _openTransitionAt.set(jobId, Date.now());
+  }
+}
+
+/**
+ * One-shot consumer for the open-transition signal.
+ *
+ * Returns true at most once per non-bookable→bookable flip, and only if the
+ * flip happened within `windowMs` (default 30 s).  Subsequent calls return
+ * false until the verdict leaves OPEN and returns to OPEN again.
+ *
+ * Storm-protection summary:
+ *   • One-shot: stamp is deleted on consume.
+ *   • Bounded freshness: stale stamps (older than windowMs) are silently
+ *     dropped and the signal is treated as absent.
+ *   • Pure read for callers — does not trigger fetches or schedule timers.
+ *
+ * @param {number|string} jobId
+ * @param {{ windowMs?: number, now?: number }} [opts]
+ * @returns {boolean}
+ */
+function consumeOpenTransition(jobId, opts = {}) {
+  const stamp = _openTransitionAt.get(jobId);
+  if (stamp == null) return false;
+
+  const windowMs = Number.isFinite(opts.windowMs) ? opts.windowMs : 30_000;
+  const now      = Number.isFinite(opts.now)      ? opts.now      : Date.now();
+
+  // Always drop the stamp on read — either we use it now, or it's stale.
+  _openTransitionAt.delete(jobId);
+
+  return (now - stamp) <= windowMs;
+}
+
 function getUrgencyHints(verdictResult) {
   if (!verdictResult || typeof verdictResult !== 'object') return NOOP_URGENCY_HINTS;
   if (verdictResult.isFresh !== true) return NOOP_URGENCY_HINTS;
@@ -629,4 +706,5 @@ module.exports = {
   getVerdict,
   getVerdictForJob,
   getUrgencyHints,
+  consumeOpenTransition,
 };
