@@ -1,0 +1,171 @@
+You are implementing a POST-OPEN STATUS + FILTER HARDENING AUDIT/FIX PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix two bugs shown by the latest Flow Yoga screenshots:
+
+1. The app/bot incorrectly assumes a class is "closed" once the booking window has opened or once phase=late, even when the live FamilyWorks modal clearly shows a Reserve button.
+2. Filter application is still failing or being treated too literally, causing false "class not found" outcomes on unfiltered or transiently empty schedule renders.
+
+This pass should focus on:
+- post-open status truth
+- Reserve/open/closed detection
+- filter-failure handling
+- avoiding false not_found / false closed states
+
+IMPORTANT RULES
+
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+STAGE 1 — AUDIT WHY FLOW YOGA WAS MARKED CLOSED
+--------------------------------------------------
+
+READ-ONLY. NO CODE CHANGES YET.
+
+Use the latest Flow Yoga evidence:
+- live FamilyWorks modal clearly showed a Reserve button
+- app simultaneously showed "Registration has closed"
+
+Trace exactly where "Registration has closed" comes from.
+
+Answer:
+1. Is this status derived from:
+   - phase=late
+   - now > bookingOpen
+   - job.last_result
+   - bundle.action / confirmation state
+   - some UI fallback
+   - some combination
+2. Does the code ever confirm closed/sold-out status from actual page evidence before showing "closed"?
+3. Why can the UI say "closed" when the live page shows Reserve?
+
+Also trace where "Registration has closed" is used in:
+- Now screen main status
+- buttons shown/hidden
+- retry behavior
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — AUDIT POST-OPEN STATUS SOURCE OF TRUTH
+--------------------------------------------------
+
+READ-ONLY. NO CODE CHANGES YET.
+
+Trace the bot/status logic after the booking window opens.
+
+I want exact classification paths for:
+- Reserve visible
+- Waitlist visible
+- Cancel/registered visible
+- Sold out / closed
+- No action buttons
+- Filter failed / no class found
+
+Answer:
+1. What exact evidence is currently required to conclude:
+   - open
+   - waitlist
+   - booked
+   - closed
+2. Is there any path where "late" alone becomes "closed" without page evidence?
+3. What should be the correct source of truth after the window opens?
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — FIX CLOSED/OPEN STATUS TO REQUIRE PAGE EVIDENCE
+--------------------------------------------------
+
+Goal:
+Do not show or assume "Registration has closed" merely because the booking window has opened or phase=late.
+
+Requirements:
+1. After booking open, "closed" / "sold out" must require real page evidence
+   such as:
+   - known closed/full state from modal/action detection
+   - waitlist full / no reserve path with explicit closed wording
+2. phase=late or now > bookingOpen is NOT enough by itself
+3. If the bot has no real page evidence yet, use a neutral status such as:
+   - checking registration status
+   - registration window open
+   - status unknown
+4. Do not regress pre-open behavior
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — HARDEN FILTER FAILURE HANDLING
+--------------------------------------------------
+
+Goal:
+Filter failure should not too easily become false class_not_found.
+
+Tasks:
+1. Audit the current paths for:
+   - category filter no effect
+   - instructor filter no effect
+   - schedule rendered 0 rows after filter
+2. If filters fail:
+   - do NOT immediately trust filtered emptiness as true absence
+   - prefer fallback scan logic on unfiltered content when safe
+3. If the page shows unrelated content after failed filters, classify that distinctly from "class not found"
+4. Keep diagnostics rich:
+   - filter_failed
+   - unfiltered_scan
+   - empty_after_filter
+   - wrong_content_after_filter
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — FIX NOW SCREEN STATUS MAPPING
+--------------------------------------------------
+
+Goal:
+Now screen should not say "Registration has closed" or "Class not found" unless the latest run actually proved that.
+
+Tasks:
+1. Review the current status mapping for the big grey status line and supporting banner
+2. Make sure:
+   - Reserve visible / actionable state does not map to closed
+   - unknown post-open state does not map to closed
+   - filter-failure state does not map to closed
+   - stale failure state does not override a newer actionable state
+3. Keep wording calm and specific
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — VERIFY AGAINST THE FLOW YOGA CASE
+--------------------------------------------------
+
+Use the real Flow Yoga shape:
+
+- live modal showed Reserve button
+- filters were reported as failed
+- app had shown "Registration has closed"
+
+Verify after fixes:
+1. The bot/UI no longer mark this case as closed unless page evidence proves it
+2. Filter failure no longer causes easy false class_not_found
+3. If Reserve is visible, status/action path reflects that correctly
+4. Now screen no longer shows contradictory or false-closed messaging
+
+Return exact verification results.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
