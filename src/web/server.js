@@ -5112,7 +5112,12 @@ const server = http.createServer((req, res) => {
       if (j.is_active && (phase === 'late' || phase === 'sniper')) {
         liveAvailability = liveTruth.getCached(j.id);
         liveVerdict      = liveTruth.getVerdict(liveAvailability);
-        liveTruth.refreshIfStale(j); // fire-and-forget background refresh
+        // Stage 4: pass msUntilOpen so the cache uses a 5 s TTL inside the
+        // ±2 min near-open window (instead of the default 30 s).  When the
+        // booking moment is far away or unknown, the helper falls back to
+        // 30 s — preserving prior behaviour and keeping API volume bounded.
+        const msUntilOpen = (bookingOpenMs != null) ? (bookingOpenMs - Date.now()) : null;
+        liveTruth.refreshIfStale(j, { msUntilOpen });
       }
 
       return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency, liveAvailability, liveVerdict };

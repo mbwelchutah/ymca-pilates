@@ -27,6 +27,40 @@ const _cache = new Map();
 const CACHE_TTL_MS  = 30_000;   // serve cached value if newer than this
 const CACHE_FAIL_MS = 60_000;   // back off this long after a failed fetch
 
+// ── Stage 4: near-open freshness profile ─────────────────────────────────────
+//
+// The default 30 s TTL is too lax in the few minutes around booking-open,
+// where a 28-second-old verdict could easily be wrong (a class can flip from
+// `full` to `open` the instant the window opens, or vice versa as users
+// race to register).
+//
+// `nearOpenTtlMs(msUntilOpen)` returns the TTL the cache should use right now
+// for a given job, based on how close we are to the booking-open moment:
+//
+//   • > +120 s before open    → 30_000 ms (default)  — far-out, lazy refresh
+//   • -120 s … +120 s of open → 5_000  ms             — near-open, aggressive
+//   • > +120 s after open     → 30_000 ms             — back to default
+//
+// Bounds (so we never spam the FW API):
+//   • The near-open window is at most ~240 s wide → at 5 s TTL that's at most
+//     ~48 fetches per booking-open event per active job.  Single user, single
+//     backend — well within polite use.
+//   • In-flight de-dupe (the existing `_inflight` map) still prevents
+//     concurrent /api/state requests from firing duplicate fetches.
+//   • Failure backoff (CACHE_FAIL_MS = 60 s) still applies regardless of TTL
+//     override, so a flapping cookie session can never be hammered.
+const NEAR_OPEN_TTL_MS    = 5_000;
+const NEAR_OPEN_WINDOW_MS = 120_000; // ±2 min of booking open
+
+function nearOpenTtlMs(msUntilOpen) {
+  if (typeof msUntilOpen !== 'number' || !Number.isFinite(msUntilOpen)) {
+    return CACHE_TTL_MS;
+  }
+  return (Math.abs(msUntilOpen) <= NEAR_OPEN_WINDOW_MS)
+    ? NEAR_OPEN_TTL_MS
+    : CACHE_TTL_MS;
+}
+
 // In-flight de-dupe so concurrent /api/state requests don't fire duplicate calls
 const _inflight = new Map();
 
@@ -307,12 +341,18 @@ function getCached(jobId) {
   return { ...entry.result, ageMs: Date.now() - entry.fetchedAtMs };
 }
 
-// Returns true if the cached value (if any) is older than CACHE_TTL_MS or
-// absent.  Failed fetches are remembered for CACHE_FAIL_MS to avoid hammering.
-function _shouldRefresh(jobId) {
+// Returns true if the cached value (if any) is older than the applicable TTL
+// or absent.  Failed fetches are remembered for CACHE_FAIL_MS to avoid
+// hammering — the failure backoff is NOT shortened by the near-open override,
+// so a flapping cookie session can never be hammered.
+//
+// Stage 4: callers may pass `ttlMs` to use a tighter freshness window when the
+// booking moment is near.  Defaults to CACHE_TTL_MS (30 s) preserving previous
+// behaviour for far-out callers.
+function _shouldRefresh(jobId, ttlMs = CACHE_TTL_MS) {
   const entry = _cache.get(jobId);
   if (!entry) return true;
-  const ttl = entry.failed ? CACHE_FAIL_MS : CACHE_TTL_MS;
+  const ttl = entry.failed ? CACHE_FAIL_MS : ttlMs;
   return (Date.now() - entry.fetchedAtMs) >= ttl;
 }
 
@@ -351,8 +391,16 @@ async function refresh(job) {
 }
 
 // Convenience: refresh in the background if the cache is stale; never blocks.
-function refreshIfStale(job) {
-  if (_shouldRefresh(job.id)) {
+//
+// Stage 4: callers may pass `{ msUntilOpen }` so the helper picks a tighter
+// TTL when the booking moment is near (see nearOpenTtlMs).  Callers who don't
+// know msUntilOpen get the original 30 s default behaviour — backward-compat.
+//
+// `{ ttlMs }` is also accepted for explicit override (tests / fine control).
+function refreshIfStale(job, opts = {}) {
+  let ttlMs = opts.ttlMs;
+  if (ttlMs == null) ttlMs = nearOpenTtlMs(opts.msUntilOpen);
+  if (_shouldRefresh(job.id, ttlMs)) {
     refresh(job).catch(() => {});
   }
 }
