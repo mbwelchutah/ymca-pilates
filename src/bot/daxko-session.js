@@ -81,15 +81,12 @@ async function createSession(opts = {}) {
     ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
   });
 
-  // Set timezone to Mountain so Bubble.io's JavaScript renders class times in
-  // MDT/MST — matching the timezone the user's phone uses when reading/storing
-  // class times from the FamilyWorks app.  The Replit server runs UTC; without
-  // this override Chromium inherits UTC and all rendered times are ~6–7 hours off.
-  // Pacific (America/Los_Angeles) was tried first but rendered times 1 hour
-  // earlier than what the user's Mountain-timezone phone shows, causing the
-  // modal time-verification check to always fail.
+  // Set timezone to Pacific (America/Los_Angeles) so Bubble.io's JavaScript
+  // renders class times matching the YMCA's local timezone (Eugene, Oregon is
+  // Pacific).  The Replit server runs UTC; without this override Chromium
+  // inherits UTC and all rendered times are ~7 hours off.
   const context = await browser.newContext({
-    timezoneId: 'America/Denver',
+    timezoneId: 'America/Los_Angeles',
     viewport: { width: 1280, height: 800 },
   });
 
