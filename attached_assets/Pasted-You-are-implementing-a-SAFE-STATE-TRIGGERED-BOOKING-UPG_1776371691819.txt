@@ -1,0 +1,306 @@
+You are implementing a SAFE STATE-TRIGGERED BOOKING UPGRADE (STAGE 11) for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Upgrade the current liveTruth-driven acceleration system so that when a class genuinely flips to OPEN, the bot can trigger booking immediately in a bounded, safe way — instead of only shortening the next burst delay.
+
+This is NOT a full event-driven rewrite.
+This is a cautious hybrid upgrade:
+
+- first choice: immediate trigger when state flips open and safety gates pass
+- fallback: existing accelerated burst behavior from Stage 6
+
+IMPORTANT RULES
+
+- Do NOT remove Playwright as executor
+- Do NOT remove scheduler phases
+- Do NOT create duplicate launches
+- Do NOT create retry storms
+- Do NOT bypass auth / locking / running guards
+- Keep all existing fallback behavior intact
+- ONE stage at a time
+
+AFTER EACH STAGE:
+1. summarize what changed
+2. explain what remains
+3. STOP
+4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+--------------------------------------------------
+CONTEXT
+--------------------------------------------------
+
+Current system already has:
+- liveTruth verdict normalization
+- near-open 5 s TTL
+- urgency hints
+- open-transition detection
+- one-shot consumeOpenTransition(jobId)
+- accelerated next burst delay (5 s) when a transition to open is detected
+
+Current behavior:
+state flips open → next burst delay shortened to 5 s
+
+Target behavior:
+state flips open → trigger booking immediately IF safe
+otherwise → fall back to existing 5 s accelerated burst
+
+We want a hybrid model:
+- immediate action when safe
+- no duplicate launches
+- no architectural rewrite
+
+--------------------------------------------------
+STAGE 1 — AUDIT THE SAFEST IMMEDIATE-TRIGGER INSERTION POINT
+--------------------------------------------------
+
+READ-ONLY. NO CODE CHANGES YET.
+
+Goal:
+Find the safest place to convert an OPEN transition into immediate booking action.
+
+Tasks:
+
+1. Trace where consumeOpenTransition(jobId) is currently used
+2. Identify the exact point where:
+- a burst/preflight cycle is active
+- job id is known
+- current run state is known
+- running/auth/lock guards are already in force
+
+3. Compare possible trigger points:
+- inside runBurstCheck
+- before scheduleBurst
+- inside preflight-loop after verdict refresh
+- any other narrow insertion point
+
+4. Recommend the smallest safe insertion point and explain why
+
+Success criteria:
+- clear choice of insertion point
+- safety dependencies identified
+- no code changes yet
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — ADD A BOUNDED SAFETY GATE FOR IMMEDIATE TRIGGER
+--------------------------------------------------
+
+Goal:
+Define the exact conditions required before an OPEN transition can trigger immediate booking.
+
+Tasks:
+
+Create a small helper / gate that only allows immediate trigger when all of these are true (or the best equivalent set based on actual code paths):
+
+- job is in an eligible phase/window
+- no booking run already active for that job
+- not auth-locked
+- not inside an existing in-flight preflight/booking execution
+- no immediate trigger was already consumed recently for this job
+- liveTruth transition is fresh
+- existing burst window / run caps are still respected where appropriate
+
+Unknown or uncertain cases must fall back to existing accelerated-burst behavior.
+
+Success criteria:
+- immediate-trigger path is tightly gated
+- duplicate launches are structurally prevented
+- fallback remains safe
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — IMPLEMENT HYBRID IMMEDIATE TRIGGER
+--------------------------------------------------
+
+Goal:
+When OPEN transition is detected and the safety gate passes, trigger booking immediately; otherwise keep the Stage 6 accelerated-burst fallback.
+
+Tasks:
+
+1. Reuse consumeOpenTransition(jobId) as the one-shot signal
+2. If the new safety gate passes:
+- trigger the existing booking/preflight handoff immediately using the safest existing path
+- do NOT invent a brand-new booking path
+3. If the gate fails:
+- preserve current behavior (accelerated 5 s next burst)
+
+Requirements:
+- no duplicate execution
+- no change to actual booking executor (Playwright still books)
+- no scheduler redesign
+
+Success criteria:
+- open transition can cause immediate action
+- fallback to 5 s burst still exists
+- system stays bounded and safe
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — ADD COOLDOWN / ONE-SHOT PROTECTION
+--------------------------------------------------
+
+Goal:
+Ensure immediate-trigger behavior cannot thrash.
+
+Tasks:
+
+1. Add a short per-job cooldown / one-shot protection so repeated OPEN observations do not fire repeated immediate launches
+2. Make this separate from general retry cadence if that is cleaner
+3. Ensure:
+- one real open transition causes at most one immediate trigger
+- subsequent runs must rely on normal state transitions / retry logic
+
+Success criteria:
+- no trigger storm
+- one-shot semantics remain clear
+- logging makes the protection visible
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — ADD VISIBILITY IN TOOLS / LOGS
+--------------------------------------------------
+
+Goal:
+Make state-triggered behavior explainable.
+
+Tasks:
+
+Expose compact visibility for:
+- whether an open transition triggered immediate action
+- whether it fell back to accelerated burst
+- why immediate trigger was blocked (if blocked)
+- when cooldown/one-shot suppression applied
+
+Keep this compact and human-readable.
+Do NOT create a noisy debug wall.
+
+Success criteria:
+- user/operator can tell whether state-triggered booking actually fired
+- blocked reasons are visible without log archaeology
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — VERIFY SAFETY ON NON-OPEN VERDICTS
+--------------------------------------------------
+
+Goal:
+Make sure this upgrade does not misfire on waitlist/full/cancelled/unknown.
+
+Tasks:
+
+Verify:
+- waitlist does NOT trigger immediate booking unless explicitly allowed by current logic
+- full does NOT trigger immediate booking
+- cancelled does NOT trigger immediate booking
+- unknown/stale does NOT trigger immediate booking
+- all those cases continue to use existing scheduler behavior or urgency shaping only
+
+Success criteria:
+- only real OPEN transition can trigger the new path
+- all other verdicts remain safe
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — VERIFY AGAINST A REAL OR SYNTHETIC OPEN TRANSITION
+--------------------------------------------------
+
+Goal:
+Prove the new path works end-to-end.
+
+Prefer a real case if available; otherwise use the most faithful safe simulation possible.
+
+Verify:
+1. non-open → open transition occurs
+2. transition is detected once
+3. immediate trigger fires (or correctly falls back if blocked)
+4. no duplicate launches occur
+5. logs/Tools reflect what happened
+6. Playwright booking path still executes through the normal executor
+
+Return exact evidence:
+- old verdict
+- new verdict
+- trigger decision
+- whether blocked or fired
+- resulting action path
+
+Success criteria:
+- faster reaction than Stage 6
+- no storm / no duplication
+- behavior remains explainable
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 8 — FINAL QA + RISK CHECK
+--------------------------------------------------
+
+Goal:
+Close out the upgrade cleanly.
+
+Tasks:
+
+1. Verify:
+- immediate trigger only happens when safe
+- fallback to accelerated burst still works
+- no duplicate execution
+- no auth/running guard bypass
+- no scheduler instability introduced
+
+2. Provide final verdict:
+- PASS
+- PASS WITH CAUTION
+- HOLD
+
+3. List the exact conditions under which the immediate trigger is allowed
+
+Success criteria:
+- state-triggered upgrade is faster and still safe
+- the system remains understandable and bounded
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+FINAL SUCCESS CRITERIA
+--------------------------------------------------
+
+After this pass:
+
+- open transitions can trigger immediate action when safe
+- unsafe cases fall back to the existing accelerated-burst behavior
+- one-shot / cooldown protections prevent storms
+- Playwright remains the booking executor
+- Tools/logs explain whether immediate trigger fired or was blocked
+- non-open verdicts cannot misfire the immediate path
+
+The result should feel:
+- faster
+- responsive to real availability
+- still safe and bounded
+
+It should NOT feel like:
+- uncontrolled event-driven automation
+- duplicated launches
+- hidden retry storms
+- bypassed safety guards
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
