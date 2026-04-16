@@ -460,8 +460,12 @@ export function deriveNowCardState(opts: {
   lastFailedAction:         'registration' | 'preflight' | null
   domActionState:           string | null   // bgReadiness.action normalized: 'ready'|'not_open'|'waitlist'|'unknown'
   actionDetailVerdict:      string | null   // lastPreflightSnapshot.actionDetail.verdict: 'ready'|'waitlist_only'|'cancel_only'|'not_available'|…
+  // Stage 3 of live-truth booking-timing pass.  Normalized FW API verdict for
+  // the active job, or null when no live signal is available (pre-window,
+  // inactive, or fetch failed).  Shape: { verdict, isFresh, ageMs, ... }.
+  liveVerdict?: { verdict: 'open'|'waitlist'|'full'|'cancelled'|'unknown'; isFresh: boolean } | null
 }): NowCardState {
-  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction, domActionState, actionDetailVerdict } = opts
+  const { isBooked, lastResult, bookingActive, phase, effectivePreflightStatus, localArmed, lastFailedAction, domActionState, actionDetailVerdict, liveVerdict } = opts
 
   // 1. Cycle outcome already determined (DB source of truth)
   if (isBooked && lastResult === 'waitlist') return 'waitlisted'
@@ -499,6 +503,24 @@ export function deriveNowCardState(opts: {
   if (actionDetailVerdict === 'ready') return 'registration_open_with_spots'
   if (domActionState === 'waitlist') return 'registration_open_full'
   if (domActionState === 'ready') return 'registration_open_with_spots'
+
+  // 5b. Live FW API verdict (Stage 3 of live-truth booking-timing pass).
+  //     Inserted between strong DOM evidence (step 5 above) and weaker
+  //     Playwright-cache / phase-only signals (steps 6-8 below) because:
+  //       * Live API is fresher than the Playwright classifier cache (which
+  //         can be many minutes old between preflight runs).
+  //       * It's grounded in real availability — far more trustworthy than
+  //         the phase-based "sniper → assume open" fallback at step 7.
+  //     Only fires when liveVerdict.isFresh is true; otherwise the existing
+  //     preflight + phase fallbacks below run unchanged.  `unknown` never
+  //     overrides — it falls through to existing behaviour.
+  if (liveVerdict?.isFresh) {
+    if (liveVerdict.verdict === 'open')      return 'registration_open_with_spots'
+    if (liveVerdict.verdict === 'waitlist')  return 'registration_open_full'
+    if (liveVerdict.verdict === 'full')      return 'registration_open_full'
+    if (liveVerdict.verdict === 'cancelled') return 'registration_not_open'
+    // 'unknown' deliberately falls through.
+  }
 
   // 6. Planning signals — class confirmed full/unavailable via preflight overall status
   if (effectivePreflightStatus === 'waitlist_only') return 'registration_open_full'
@@ -1915,6 +1937,8 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     lastFailedAction,
     domActionState:           isReadinessForSelectedJob ? (bgReadiness?.action ?? null) : null,
     actionDetailVerdict,
+    // Stage 3: pass server-enriched normalized live verdict (or null if absent).
+    liveVerdict:              (job as any)?.liveVerdict ?? null,
   })
 
   // Classifier truth — supplements Playwright when Playwright hasn't confirmed

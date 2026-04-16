@@ -5100,13 +5100,22 @@ const server = http.createServer((req, res) => {
       // waiting on a verdict — that's the open booking window (`sniper`) and
       // anything past it (`late`).  Pre-window phases (too_early, warmup) skip
       // the API since the booking window hasn't opened yet.
+      //
+      // Stage 3 of the live-truth booking-timing pass:
+      //   `liveAvailability` — full classifier output (UI uses for messages)
+      //   `liveVerdict`      — normalized {open|waitlist|full|cancelled|unknown}
+      //                         + freshness, used as the canonical post-open
+      //                         truth signal (preferred over stale Playwright
+      //                         classifier cache or weak phase-only assumptions).
       let liveAvailability = null;
+      let liveVerdict = null;
       if (j.is_active && (phase === 'late' || phase === 'sniper')) {
         liveAvailability = liveTruth.getCached(j.id);
+        liveVerdict      = liveTruth.getVerdict(liveAvailability);
         liveTruth.refreshIfStale(j); // fire-and-forget background refresh
       }
 
-      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency, liveAvailability };
+      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency, liveAvailability, liveVerdict };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
