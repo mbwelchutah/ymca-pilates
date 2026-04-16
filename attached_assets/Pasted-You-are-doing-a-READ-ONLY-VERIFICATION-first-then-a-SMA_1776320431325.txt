@@ -1,0 +1,86 @@
+You are doing a READ-ONLY VERIFICATION first, then a SMALL UI GUARD fix for the YMCA Booker app.
+
+DO NOT CHANGE CODE UNTIL SECTION B.
+
+GOAL
+
+Use the audit findings to:
+1. verify the Flow Yoga bot fix is actually working after the nearOpen > 0 deploy
+2. then apply the smallest safe UI fix for the mixed-job readiness checklist
+
+--------------------------------------------------
+SECTION A — VERIFY FLOW YOGA AFTER nearOpen FIX
+--------------------------------------------------
+
+READ-ONLY. NO CODE CHANGES YET.
+
+For the next Flow Yoga run, verify:
+
+1. Does the run now avoid the false nearOpen path when phase=late?
+2. Does it perform the full scroll scan instead of the quick no-scroll scan?
+3. Does it now find the 12:00 PM Flow Yoga card on Fri Apr 17?
+4. What is the exact final status / reason?
+5. Do filter warnings still appear, and if so, are they still non-fatal?
+
+I want concrete evidence from the latest run:
+- relevant logs
+- final status
+- whether scroll path executed
+- whether target card was found
+
+If Flow Yoga still fails after the nearOpen fix, STOP and report root cause.
+Do NOT proceed to Section B.
+
+If Flow Yoga now succeeds or at least reaches the correct card path, continue to Section B.
+
+--------------------------------------------------
+SECTION B — APPLY SMALL UI GUARD
+--------------------------------------------------
+
+Goal:
+Stop the Now screen from showing bundle/checklist state from the wrong job.
+
+Problem:
+The readiness checklist currently reads bundle.* from the global sniper-state even when sniperState.jobId does not match the job being displayed.
+
+Fix:
+In the Now screen, only use sniperState.bundle.* for the checklist if:
+- sniperState.jobId === selectedJob.id
+
+If the ids do not match:
+- do NOT show stale green/red checklist values from another job
+- show neutral/inactive/no-current-run state instead
+
+Requirements:
+- smallest safe change only
+- do not redesign state architecture
+- do not change Tools behavior
+- do not change bot logic
+
+--------------------------------------------------
+SECTION C — VERIFY UI FIX
+--------------------------------------------------
+
+After the UI guard:
+
+1. With two active jobs, verify the Now screen no longer shows:
+- green checklist from one job
+- red failure / last activity from another job
+
+2. Confirm:
+- matching job → checklist appears normally
+- non-matching job → neutral checklist / no current readiness data
+
+--------------------------------------------------
+SECTION D — OUTPUT
+--------------------------------------------------
+
+Return:
+
+1. Verification result for Flow Yoga after the nearOpen fix
+2. Whether the full scroll scan now runs
+3. Whether the 12:00 PM card is found
+4. Exact UI file/lines changed for the per-job readiness guard
+5. Confirmation the contradictory Now screen state is resolved
+
+Stop after that.

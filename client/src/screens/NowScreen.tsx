@@ -1750,11 +1750,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Derived at render time from the live bundle + last preflight status.
   // Effective preflight status — prefer the current session value; fall back to
   // the persisted snapshot so the composite stays accurate across page refreshes.
-  const effectivePreflightStatus =
-    sniperRunState?.lastPreflightSnapshot?.status ?? null
+  const effectivePreflightStatus = isReadinessForCurrentJob
+    ? (sniperRunState?.lastPreflightSnapshot?.status ?? null)
+    : null
 
   // Timestamp of the last user-triggered Check Now (persisted in sniper-state.json).
-  const lastPreflightAt = sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null
+  const lastPreflightAt = isReadinessForCurrentJob
+    ? (sniperRunState?.lastPreflightSnapshot?.checkedAt ?? null)
+    : null
 
   // Reconcile bundle.session with bgReadiness.session (HTTP-ping derived).
   // The HTTP ping is more authoritative than the Playwright sniper bundle —
@@ -3029,7 +3032,7 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
              Priority: preflight snapshot (when more recent) > latest milestone event.
              This keeps the checklist and "Last activity" in sync — both reflect the
              same run, so they never show contradictory failure reasons. */}
-        {sniperRunState && (() => {
+        {sniperRunState && isReadinessForCurrentJob && (() => {
           const snap    = sniperRunState.lastPreflightSnapshot
           const entries = [...sniperRunState.events].reverse().filter(isMilestoneEvent)
           const latest  = entries[0]
