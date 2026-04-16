@@ -44,11 +44,12 @@ interface JobReliability {
 }
 
 interface FailureData {
-  recent:   FailureEntry[]
-  summary:  Record<string, number>
-  by_phase: Record<string, number>
-  trends:   { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
-  byJob:    JobReliability[]
+  recent:     FailureEntry[]
+  summary:    Record<string, number>
+  by_phase:   Record<string, number>
+  trends:     { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
+  byJob:      JobReliability[]
+  hideBefore: string | null
 }
 
 interface BotStatus {
@@ -1311,6 +1312,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [sniperRunState, setSniperRunState] = useState<SniperRunState | null>(null)
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [activityShowAll, setActivityShowAll]   = useState(false)
+  const [showAllFailures, setShowAllFailures]   = useState(false)
   const [lightboxSrc, setLightboxSrc]         = useState<string | null>(null)
 
   // ── Auto-preflight config (Stage 9.2) ─────────────────────────────────────
@@ -1661,7 +1663,14 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               {(() => {
                 const PAGE = 5
                 const MAX  = 10
-                const capped  = recentFailures.slice(0, MAX)
+                const hideBefore = failures?.hideBefore ?? null
+                const filtered = hideBefore && !showAllFailures
+                  ? recentFailures.filter(f => f.occurred_at >= hideBefore)
+                  : recentFailures
+                const hiddenCount = hideBefore
+                  ? recentFailures.filter(f => f.occurred_at < hideBefore).length
+                  : 0
+                const capped  = filtered.slice(0, MAX)
                 const visible = activityShowAll ? capped : capped.slice(0, PAGE)
                 const canMore = !activityShowAll && capped.length > PAGE
                 const moreCount = capped.length - PAGE
@@ -1755,6 +1764,21 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                         >
                           <span className="text-[13px] font-medium text-accent-blue">
                             {activityShowAll ? 'Show less' : `Show ${moreCount} more`}
+                          </span>
+                        </button>
+                      </>
+                    )}
+
+                    {/* ── Show all / Show recent only ─────── */}
+                    {hideBefore && hiddenCount > 0 && (
+                      <>
+                        <div className="h-px bg-divider mx-4" />
+                        <button
+                          onClick={() => setShowAllFailures(s => !s)}
+                          className="w-full px-4 py-3 text-left active:bg-divider/40 transition-colors"
+                        >
+                          <span className="text-[13px] font-medium text-accent-blue">
+                            {showAllFailures ? 'Show recent only' : `Show all (${hiddenCount} older ${hiddenCount === 1 ? 'failure' : 'failures'} hidden)`}
                           </span>
                         </button>
                       </>

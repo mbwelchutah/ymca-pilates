@@ -5305,7 +5305,18 @@ const server = http.createServer((req, res) => {
     }
 
     const byJob = getFailuresByJob({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() });
-    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob });
+
+    // Compute hideBefore: the timestamp of the most recent successful preflight run.
+    // Failures older than this are hidden by default on the UI so the list stays
+    // focused on current bot health rather than historical noise.
+    let hideBefore = null;
+    try {
+      const { loadState: loadSniperState } = require('../bot/sniper-readiness');
+      const sniperState = loadSniperState();
+      hideBefore = sniperState?.lastSuccessfulPreflightAt ?? null;
+    } catch {}
+
+    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob, hideBefore });
 
   } else if (req.method === 'DELETE' && path === '/api/failures') {
     const { clearFailures } = require('../db/failures');

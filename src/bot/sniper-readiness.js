@@ -262,14 +262,18 @@ function loadState() {
 function savePreflightSnapshot(status, details) {
   try {
     const s = loadState() || {};
+    const now = new Date().toISOString();
     s.lastPreflightSnapshot = {
-      checkedAt:       new Date().toISOString(),
+      checkedAt:       now,
       status:          status || 'unknown',
       authDetail:      details?.authDetail      ?? null,
       discoveryDetail: details?.discoveryDetail ?? null,
       modalDetail:     details?.modalDetail     ?? null,
       actionDetail:    details?.actionDetail    ?? null,
     };
+    if (status === 'success') {
+      s.lastSuccessfulPreflightAt = now;
+    }
     saveState(s);
   } catch (e) {
     console.warn('[sniper-readiness] savePreflightSnapshot failed:', e.message);

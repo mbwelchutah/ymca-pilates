@@ -204,6 +204,7 @@ export const api = {
       h24: { byReason: Array<{ reason: string; count: number }>; byPhase: Array<{ phase: string; count: number }>; total: number }
       d7:  { byReason: Array<{ reason: string; count: number }>; byPhase: Array<{ phase: string; count: number }>; total: number }
     }
+    hideBefore: string | null
   }> => apiFetch('/api/failures'),
 
   clearFailures: (): Promise<{ success: boolean }> =>
