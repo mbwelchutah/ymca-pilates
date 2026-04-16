@@ -5076,10 +5076,12 @@ const server = http.createServer((req, res) => {
     const jobs = rawJobs.map(j => {
       let phase = 'unknown';
       let bookingOpenMs = null;
+      let nextClassMs = null;
       try {
         const r = getPhase(j);
         phase        = r.phase;
-        bookingOpenMs = r.bookingOpen ? r.bookingOpen.getTime() : null;
+        bookingOpenMs = r.bookingOpen  ? r.bookingOpen.getTime()  : null;
+        nextClassMs   = r.nextClass    ? r.nextClass.getTime()    : null;
       } catch (_) { /* phase stays 'unknown' */ }
 
       const weekdayConsistency = checkJobConsistency(j);
@@ -5089,18 +5091,20 @@ const server = http.createServer((req, res) => {
         );
       }
 
-      return { ...j, phase, bookingOpenMs, weekdayConsistency };
+      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency };
     });
-    // Top-level phase + bookingOpenMs reuse the enriched first-active job's values.
+    // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;
     const phase       = firstActive ? firstActive.phase       : 'unknown';
     const bookingOpenMs = firstActive ? firstActive.bookingOpenMs : null;
+    const nextClassMs   = firstActive ? firstActive.nextClassMs   : null;
     json({
       schedulerPaused: isSchedulerPaused(),
       dryRun: getDryRun(),
       selectedJobId: firstActive ? firstActive.id : null,
       phase,
       bookingOpenMs,
+      nextClassMs,
       jobs,
     });
 

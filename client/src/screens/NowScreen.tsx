@@ -1018,6 +1018,14 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
   // Absolute epoch timestamp (ms since Unix epoch) — never a relative duration.
   const bookingOpenEpochMs = bookingOpenMs
   const phase: Phase  = computePhase(bookingOpenEpochMs)
+  // nextClassMs — used to distinguish "booking window passed but class is upcoming"
+  // from "class has already happened" when rendering phase=late.
+  // Prefer server-provided value (job.nextClassMs) which is authoritative;
+  // fall back to deriving from bookingOpenMs via the known BOOKING_LEAD offset.
+  const BOOKING_LEAD_MS = (3 * 24 * 60 * 60 * 1000) + (60 * 60 * 1000) // 3 days + 1 hr
+  const nextClassMs: number | null =
+    (job as any)?.nextClassMs ??
+    (bookingOpenMs != null ? bookingOpenMs + BOOKING_LEAD_MS : null)
 
   const cfg      = PHASE_CONFIG[phase]
   const countdown = useCountdown(bookingOpenEpochMs)
@@ -2187,8 +2195,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <StatusDot color="amber" />
               <span className="text-[16px] text-text-secondary">Class not found on schedule</span>
             </div>
+          ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) ? (
+            // Booking window has passed but the class itself is still upcoming —
+            // the scheduler is actively trying to register in this phase.
+            <div className="flex items-center gap-2.5 py-0.5">
+              <StatusDot color="amber" />
+              <span className="text-[16px] text-text-secondary">Booking window passed · attempting registration</span>
+            </div>
           ) : phase === 'late' ? (
-            // Truly closed — no actionable path remaining
+            // Class has already started or passed — no actionable path remaining
             <div className="flex items-center gap-2.5 py-0.5">
               <StatusDot color="gray" />
               <span className="text-[16px] text-text-secondary">Registration has closed</span>
