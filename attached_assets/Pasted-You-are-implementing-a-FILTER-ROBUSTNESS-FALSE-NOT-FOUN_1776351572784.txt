@@ -1,0 +1,148 @@
+You are implementing a FILTER ROBUSTNESS + FALSE NOT_FOUND REDUCTION PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Fix the Flow Yoga failure shape where:
+- category and/or instructor filters do not apply reliably
+- the page can temporarily render 0 rows or unrelated rows
+- the bot then produces false "class not found" outcomes
+
+This pass should reduce failures like:
+- "Both schedule filters failed to apply"
+- "Schedule rendered 0 rows after filter"
+- "No matching class card found"
+when the target class actually exists
+
+IMPORTANT RULES
+
+- ONE stage at a time
+- After each stage:
+  1. summarize what changed
+  2. explain what remains
+  3. STOP
+  4. WAIT for "continue"
+
+DO NOT CONTINUE AUTOMATICALLY
+
+Do NOT redesign the whole bot.
+Do NOT change unrelated modal/booking logic.
+Keep changes small, targeted, and safe.
+
+--------------------------------------------------
+STAGE 1 — AUDIT CURRENT FILTER FAILURE PATH
+--------------------------------------------------
+
+READ-ONLY. NO CODE CHANGES YET.
+
+Trace the exact Flow Yoga failure path through:
+- category filter application
+- instructor filter application
+- the "Both schedule filters failed to apply" decision
+- the "Schedule rendered 0 rows after filter" decision
+- the transition into discovery
+- the final not_found outcome
+
+Answer clearly:
+1. What exact code conditions trigger:
+   - both filters failed
+   - empty-after-filter
+   - no matching class card found
+2. Which of these are non-fatal today?
+3. When filters fail, does discovery still scan unfiltered content?
+4. Can unrelated rows (pool/sauna/etc.) dilute or confuse scoring?
+5. What is the smallest safe place to improve robustness?
+
+Return a short root-cause summary.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — HARDEN FILTER-FAILURE CLASSIFICATION
+--------------------------------------------------
+
+Goal:
+Do not let filter failure too easily look like true class absence.
+
+Tasks:
+1. Keep existing filter diagnostics
+2. But distinguish:
+   - filter_failed_unfiltered_scan
+   - empty_after_filter_transient
+   - true_class_not_found
+3. If both filters fail, do NOT immediately treat downstream not_found as equivalent to a clean filtered absence
+4. Preserve screenshots and diagnostics
+
+Success criteria:
+- filter failure is classified separately from true class absence
+- later UI/logs can tell the difference
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — IMPROVE EMPTY-AFTER-FILTER HANDLING
+--------------------------------------------------
+
+Goal:
+Reduce false failures caused by transient 0-row renders after filter or tab changes.
+
+Tasks:
+1. Audit the current fixed wait before the empty-schedule check
+2. Replace or supplement it with a more signal-driven / bounded retry where safe
+3. The bot should not treat a brief Bubble.io empty render as final too quickly
+4. Keep this lightweight and bounded — no long hidden loops
+
+Success criteria:
+- transient empty schedule renders are less likely to be treated as final
+- true empty schedule still gets detected
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — FALL BACK SAFELY WHEN FILTERS FAIL
+--------------------------------------------------
+
+Goal:
+If filters fail, scan the page in a safer way instead of treating unfiltered chaos as clean absence.
+
+Tasks:
+1. When filters fail, explicitly mark discovery as running on unfiltered content
+2. Ensure downstream failure messaging reflects that context
+3. If the page contains unrelated rows, avoid overconfident not_found conclusions
+4. Prefer a cautious "filter failed / could not verify target cleanly" style outcome when appropriate
+
+Do NOT weaken true positive detection.
+Do NOT remove existing scoring.
+
+Success criteria:
+- unfiltered-content runs are treated cautiously
+- false not_found decreases when filters are broken
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — VERIFY AGAINST FLOW YOGA
+--------------------------------------------------
+
+Use the real Flow Yoga shape:
+- Friday Apr 17
+- 12:00 PM
+- Hilary
+- category/instructor filter failures
+- unrelated rows visible
+- transient empty render possible
+
+Verify after the pass:
+1. Filter failures are still logged clearly
+2. Empty-after-filter is less trigger-happy
+3. Unfiltered scans are classified distinctly
+4. False "class not found" is reduced
+5. The final status/reason is more truthful
+
+Return exact verification results.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
