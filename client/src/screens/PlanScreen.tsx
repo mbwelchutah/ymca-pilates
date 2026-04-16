@@ -138,9 +138,19 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const [toggling, setToggling]     = useState(false)
   const [toggleErr, setToggleErr]   = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [armed, setArmed]           = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
   const [cacheInfo, setCacheInfo]   = useState<ClassTruthResult | null>(null)
+
+  // Arm the destructive button ~900ms AFTER the confirm row appears so a
+  // reflexive double-tap on "Delete" can't blow the class away.  The
+  // Remove button stays visually disabled during the arming window.
+  useEffect(() => {
+    if (!confirming) { setArmed(false); return }
+    const t = window.setTimeout(() => setArmed(true), 900)
+    return () => window.clearTimeout(t)
+  }, [confirming])
 
   useEffect(() => {
     api.classifyJob(job.id)
@@ -397,8 +407,10 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
         )}
         {confirming ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[13px] text-text-secondary">Remove this class?</span>
-            <div className="flex gap-3">
+            <span className="text-[13px] text-text-secondary truncate">
+              Remove <span className="font-semibold text-text-primary">{job.class_title}</span>?
+            </span>
+            <div className="flex gap-3 flex-shrink-0">
               <button
                 onClick={() => { setConfirming(false); setDeleteErr(null) }}
                 disabled={deleting}
@@ -408,10 +420,11 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
               </button>
               <button
                 onClick={handleConfirmDelete}
-                disabled={deleting}
-                className="text-[13px] font-semibold text-accent-red disabled:opacity-40 active:opacity-70"
+                disabled={deleting || !armed}
+                aria-disabled={deleting || !armed}
+                className="text-[13px] font-semibold text-accent-red disabled:opacity-40 active:opacity-70 transition-opacity"
               >
-                {deleting ? 'Removing…' : 'Remove'}
+                {deleting ? 'Removing…' : armed ? 'Remove' : 'Remove…'}
               </button>
             </div>
           </div>
