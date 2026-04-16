@@ -2065,6 +2065,11 @@ async function runBookingJob(job, opts = {}) {
             // from other classes in the schedule list).
             if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
           }
+          // Pre-open state: dialog IS present but no action button yet (e.g. "3 d until
+          // open registration").  Scope text to the dialog element directly — do NOT
+          // fall through to document.body which returns the entire schedule page and
+          // causes the time/instructor check to match against other class cards.
+          if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
           return norm((document.body.innerText || document.body.textContent) || '');
         }, ACTION_SELECTORS.modalReady).catch(() => '');
         // If page.evaluate returned empty (Bubble.io async render / context lost),
