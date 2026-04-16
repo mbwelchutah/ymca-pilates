@@ -1,0 +1,120 @@
+You are applying a SMALL, TARGETED FIX to the YMCA Booker bot.
+
+Do NOT refactor.
+Do NOT change logic outside the specified area.
+Do NOT alter selectors, scoring, or booking flow.
+
+--------------------------------------------------
+GOAL
+--------------------------------------------------
+
+Fix modal text extraction so that when a class detail dialog is open
+but NO Register/Waitlist/Login button exists yet (pre-open state),
+the bot still reads text from the dialog — not document.body.
+
+This ensures correct verification for pre-open classes.
+
+--------------------------------------------------
+SECTION A — APPLY FIX (PRIMARY PATH)
+--------------------------------------------------
+
+File: src/bot/register-pilates.js
+
+Locate the page.evaluate block inside attemptClickAndVerify()
+(where modal text is extracted — around lines 2055–2072).
+
+Current broken structure:
+
+- dialog is found correctly
+- btn is null in pre-open state
+- dialog.innerText is ONLY used inside if (btn)
+- fallback incorrectly uses document.body
+
+Fix:
+
+Keep ALL existing logic, but ensure this line runs even when btn is null:
+
+    if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
+
+Specifically:
+
+1. KEEP the existing:
+   if (btn) { ... ancestor walk ... }
+
+2. AFTER that block, BEFORE the body fallback, INSERT:
+
+    if (dialog) return norm((dialog.innerText || dialog.textContent) || '');
+
+3. DO NOT remove the body fallback — it remains last resort.
+
+--------------------------------------------------
+SECTION B — APPLY FIX (RETRY-MODAL PATH)
+--------------------------------------------------
+
+Locate the retry-loop modal verification path
+(after reload → re-click → modal re-check, around ~2890).
+
+Apply the SAME fix:
+
+- If dialog exists, return dialog text even if no button exists
+- Ensure body fallback is only used if dialog is missing
+
+--------------------------------------------------
+SECTION C — SAFETY CHECKS
+--------------------------------------------------
+
+After applying:
+
+1. Confirm no syntax errors
+2. Confirm TypeScript passes (if applicable)
+3. Confirm no changes to:
+   - selectors
+   - scoring logic
+   - booking window logic
+   - action button detection
+
+--------------------------------------------------
+SECTION D — VERIFICATION TEST (REQUIRED)
+--------------------------------------------------
+
+Run a live or simulated pre-open case:
+
+Target:
+Gentle Yoga — Tuesday Apr 21 — 10:45 AM — Brynne
+
+Expected behavior AFTER FIX:
+
+- Modal opens
+- Modal text is extracted from dialog (NOT body)
+- verifyTime = TRUE
+- verifyInstructor = TRUE (if enabled)
+- attemptClickAndVerify returns { ok: true }
+
+Then:
+
+Preflight:
+→ status = found_not_open_yet
+
+Booking path:
+→ enters loop
+→ no action buttons detected
+→ ACTION_BLOCKED diagnostics fire
+→ final status = found_not_open_yet
+
+--------------------------------------------------
+SECTION E — OUTPUT
+--------------------------------------------------
+
+Return:
+
+1. Confirmation the fix was applied in BOTH locations
+2. The exact updated code snippet (only the modified portion)
+3. Verification results:
+   - verifyTime result
+   - final status
+4. Confirmation that:
+   - "Time + Instructor mismatch" no longer appears for this case
+   - classification is now correct (not open yet)
+
+STOP after verification.
+Do NOT proceed to additional changes.
