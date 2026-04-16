@@ -255,6 +255,33 @@ function _markImmediateTriggerFired(jobId, now = Date.now()) {
   _immediateTriggerLastAt.set(jobId, now);
 }
 
+/**
+ * Stage 11.4 — public read-only view of the immediate-trigger cooldown for
+ * a single job.  Used by Stage 5 visibility (Tools UI) and by tests.
+ *
+ * Returns `null` when no immediate trigger has fired for this job within
+ * RECENT_INFLUENCE_TTL_MS (5 min) — older stamps are uninteresting and
+ * silently ignored on read.  When inside the visibility window:
+ *
+ *   { lastFiredAtMs:        number,    // wall-clock when the fire happened
+ *     cooldownActive:       boolean,   // true while inside cooldown
+ *     cooldownRemainingMs:  number }   // 0 once cooldown has elapsed
+ *
+ * Pure read; never mutates the cooldown stamp.
+ */
+function getImmediateTriggerStatus(jobId, now = Date.now()) {
+  const lastAt = _immediateTriggerLastAt.get(jobId);
+  if (lastAt == null) return null;
+  if ((now - lastAt) > RECENT_INFLUENCE_TTL_MS) return null;
+  const elapsed   = now - lastAt;
+  const remaining = Math.max(0, IMMEDIATE_TRIGGER_COOLDOWN_MS - elapsed);
+  return {
+    lastFiredAtMs:       lastAt,
+    cooldownActive:      remaining > 0,
+    cooldownRemainingMs: remaining,
+  };
+}
+
 // ── State file ────────────────────────────────────────────────────────────────
 
 function loadLoopState() {
@@ -1085,4 +1112,11 @@ async function runPreflightLoop({ isActive = false } = {}) {
   }
 }
 
-module.exports = { runPreflightLoop, isRunning, loadLoopState, getRecentInfluence };
+module.exports = {
+  runPreflightLoop,
+  isRunning,
+  loadLoopState,
+  getRecentInfluence,
+  // Stage 11.4 — public read-only view of immediate-trigger cooldown.
+  getImmediateTriggerStatus,
+};
