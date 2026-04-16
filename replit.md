@@ -36,6 +36,11 @@ Addresses four intertwined bugs that surfaced when Job #24 (Flow Yoga Fri 12 PM)
 - **Banner (C)**: `/force-run-job` response now includes structured `status`, `reason`, `phase` fields. `NowScreen.performBooking` uses them to derive the failure banner — replacing the old `msg.includes('class')` broad string match that flipped click/modal/verify failures to "Class not found on schedule". New copy for modal-stage failures: "Couldn't open signup modal".
 - **Ghost-class flicker (D)**: `useAppState.refresh` keeps a brief grace period (≤ 8 s, ~1-2 poll cycles) for jobs that disappear from a poll response. If they reappear within that window, the disappearance is treated as a transient server-state race (e.g. pg-sync restore), not a legitimate delete — the card stays visible instead of flickering out and back in.
 
+#### Click-attempt speedup (Apr 16, second pass)
+Production run showed every attempt was burning ~30 s waiting on the `[data-target-class="yes"]` marker that Bubble had already stripped from the DOM:
+- **`DEBUG_HIGHLIGHT` → false** (`register-pilates.js:501`).  Was hardcoded `true`; added a ~2 s `elementHandle()` wait that routinely timed out in production.  Local debug overlay is no longer on the production path.
+- **Fast marker-presence probe** (`register-pilates.js` top of `attemptClickAndVerify`).  Before the 5 s scroll / visible / box / click chain, a 0-timeout `page.$('[data-target-class="yes"]')` check fires.  If the marker is gone (Bubble re-render stripped it), we immediately re-run `findTargetCard` to re-stamp it rather than waiting ~30 s for each downstream locator op to time out.  When the marker is still present (happy path), this adds no overhead.
+
 ### Frontend (`client/src/`)
 
 | File | Purpose |

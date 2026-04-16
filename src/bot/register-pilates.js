@@ -491,10 +491,11 @@ async function attemptInlineAuth(page) {
 
 const isHeadless = process.env.HEADLESS !== 'false';
 
-// Set to false to skip visual highlights in production.
-// When true, the bot outlines the click target in the live browser and
-// appends a floating "CLICK TARGET" label — both visible in screenshots.
-const DEBUG_HIGHLIGHT = true;
+// Production: false.  When true, the bot outlines the click target in the live
+// browser and appends a floating "CLICK TARGET" label — both visible in
+// screenshots.  Useful for local debug, but in production it adds ~2 s per
+// click via an elementHandle() wait that often times out on Bubble re-renders.
+const DEBUG_HIGHLIGHT = false;
 
 // Set to true (+ run with HEADLESS=false) to open Playwright Inspector just
 // before the card click. page.pause() is a no-op in headless mode, so this
@@ -1918,6 +1919,28 @@ async function runBookingJob(job, opts = {}) {
     // ────────────────────────────────────────────────────────────────────────────
     async function attemptClickAndVerify(card, candidateLabel) {
       try {
+        // ── FAST marker-presence check (Apr 16 production regression) ────────
+        // The `card` locator resolves via `[data-target-class="yes"]`.  Bubble
+        // re-renders the class list frequently and strips data-* attributes on
+        // every render.  If the marker was stripped between findTargetCard()
+        // and now, every downstream locator op (scroll/visible/box/click) will
+        // time out at 5 s each — ~30 s wasted per attempt.  Skip that by doing
+        // a 500 ms presence probe first, and re-running findTargetCard to
+        // re-stamp the marker when it's missing.  This is a strict speedup +
+        // reliability win: nothing changes when the marker is still present.
+        const markerPresent = await page.$('[data-target-class="yes"]').then(el => !!el).catch(() => false);
+        if (!markerPresent) {
+          console.log(`⚠️ [${candidateLabel}] data-target-class marker stripped before click — re-scanning to re-stamp`);
+          const recovered = await findTargetCard();
+          if (!recovered) {
+            console.log(`❌ [${candidateLabel}] Re-scan after marker-strip returned no candidate`);
+            await captureFailure('click', 'marker_stripped');
+            emitFailure('ACTION', 'ACTION_MARKER_STRIPPED', `Marker stripped before click and re-scan found no candidate (${candidateLabel})`);
+            return { ok: false, failMsg: 'Marker stripped before click; re-scan found no candidate', reasonTag: 'click_marker_stripped', recorded: false };
+          }
+          console.log(`✅ [${candidateLabel}] Marker re-stamped after re-scan — proceeding`);
+          card = recovered;
+        }
         // Scroll card into view
         try {
           await card.scrollIntoViewIfNeeded({ timeout: 5000 });
