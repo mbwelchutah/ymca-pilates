@@ -82,6 +82,43 @@ export interface Job {
     computedWeekday: string | null
     mismatchReason: string | null
   }
+  // Stage 7: live-truth visibility (only populated for active sniper/late jobs)
+  liveAvailability?: {
+    state: 'bookable' | 'waitlist_available' | 'full' | 'cancelled' | 'unknown' | 'not_found'
+    openSpots?: number | null
+    totalCapacity?: number | null
+    reason?: string | null
+    fetchedAt?: string | null
+    ageMs?: number | null
+  } | null
+  liveVerdict?: {
+    verdict: 'open' | 'waitlist' | 'full' | 'cancelled' | 'unknown'
+    isFresh: boolean
+    ageMs: number | null
+    openSpots?: number | null
+    reason?: string
+  } | null
+  liveUrgencyHints?: {
+    preemptBufferDeltaMs: number
+    burstDelayMultiplier: number
+    source: 'live-truth' | 'fallback'
+    reason: string
+  } | null
+  liveRecentInfluence?: {
+    urgency?: {
+      atMs: number
+      reason: string
+      preemptBufferDeltaMs: number
+      burstDelayMultiplier: number
+      baseDelayMs: number
+      adjustedDelayMs: number
+    }
+    acceleration?: {
+      atMs: number
+      beforeMs: number
+      afterMs: number
+    }
+  } | null
 }
 
 export interface ScrapedClass {

@@ -29,6 +29,8 @@ const {
 const {
   runPreflightLoop,
   loadLoopState: loadPreflightLoopState,
+  // Stage 7: per-job recent live-truth influence (Tools UI).
+  getRecentInfluence: getPreflightLiveInfluence,
 } = require('../scheduler/preflight-loop');
 const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
 const replayStore = require('../bot/replay-store');
@@ -5109,9 +5111,20 @@ const server = http.createServer((req, res) => {
       //                         classifier cache or weak phase-only assumptions).
       let liveAvailability = null;
       let liveVerdict = null;
+      // Stage 7: also expose the *current* urgency hints derived from the
+      // verdict and the *recent* burst-influence record (Stage 5/6) so the
+      // Tools UI can show how live truth is steering booking behaviour.
+      let liveUrgencyHints   = null;
+      let liveRecentInfluence = null;
       if (j.is_active && (phase === 'late' || phase === 'sniper')) {
         liveAvailability = liveTruth.getCached(j.id);
         liveVerdict      = liveTruth.getVerdict(liveAvailability);
+        liveUrgencyHints = liveTruth.getUrgencyHints(liveVerdict);
+        try {
+          liveRecentInfluence = getPreflightLiveInfluence
+            ? getPreflightLiveInfluence(j.id)
+            : null;
+        } catch (_) { liveRecentInfluence = null; }
         // Stage 4: pass msUntilOpen so the cache uses a 5 s TTL inside the
         // ±2 min near-open window (instead of the default 30 s).  When the
         // booking moment is far away or unknown, the helper falls back to
@@ -5120,7 +5133,10 @@ const server = http.createServer((req, res) => {
         liveTruth.refreshIfStale(j, { msUntilOpen });
       }
 
-      return { ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency, liveAvailability, liveVerdict };
+      return {
+        ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency,
+        liveAvailability, liveVerdict, liveUrgencyHints, liveRecentInfluence,
+      };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.
     const firstActive = jobs.find(j => j.is_active) || jobs[0] || null;

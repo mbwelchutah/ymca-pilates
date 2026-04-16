@@ -103,6 +103,52 @@ const retryCount  = {};
 const burstTimers = {};
 const burstCount  = {};
 
+// ── Stage 7: per-job recent live-truth influence (for Tools UI) ──────────────
+//
+// Tracks the most recent occurrence of each kind of influence so the Tools
+// screen can show "what did liveTruth do for me lately?" without needing a
+// full event log.  All entries are bounded by RECENT_INFLUENCE_TTL_MS — older
+// records are silently ignored on read.
+//
+//   _recentInfluence[jobId] = {
+//     urgency:      { atMs, reason, preemptBufferDeltaMs, burstDelayMultiplier,
+//                     baseDelayMs, adjustedDelayMs }  // Stage 5 — most recent
+//     acceleration: { atMs, beforeMs, afterMs }       // Stage 6 — most recent
+//   }
+const _recentInfluence       = new Map();
+const RECENT_INFLUENCE_TTL_MS = 5 * 60 * 1000;  // 5 min — covers a full booking event
+
+function _recordUrgencyInfluence(jobId, info) {
+  const cur = _recentInfluence.get(jobId) || {};
+  cur.urgency = { atMs: Date.now(), ...info };
+  _recentInfluence.set(jobId, cur);
+}
+
+function _recordAccelerationInfluence(jobId, info) {
+  const cur = _recentInfluence.get(jobId) || {};
+  cur.acceleration = { atMs: Date.now(), ...info };
+  _recentInfluence.set(jobId, cur);
+}
+
+/**
+ * Snapshot of the most recent live-truth influences on this job's burst
+ * decisions.  Returns null if nothing is recent enough.
+ *
+ * @param {number|string} jobId
+ * @param {{ ttlMs?: number, now?: number }} [opts]
+ * @returns {{ urgency?: object, acceleration?: object } | null}
+ */
+function getRecentInfluence(jobId, opts = {}) {
+  const cur = _recentInfluence.get(jobId);
+  if (!cur) return null;
+  const ttlMs = Number.isFinite(opts.ttlMs) ? opts.ttlMs : RECENT_INFLUENCE_TTL_MS;
+  const now   = Number.isFinite(opts.now)   ? opts.now   : Date.now();
+  const out = {};
+  if (cur.urgency      && (now - cur.urgency.atMs)      <= ttlMs) out.urgency      = cur.urgency;
+  if (cur.acceleration && (now - cur.acceleration.atMs) <= ttlMs) out.acceleration = cur.acceleration;
+  return Object.keys(out).length ? out : null;
+}
+
 // ── State file ────────────────────────────────────────────────────────────────
 
 function loadLoopState() {
@@ -429,6 +475,14 @@ async function runBurstCheck(dbJob) {
             `${_urgency.reason} → next burst delay ` +
             `${decision.retryDelayMs}ms × ${_urgency.burstDelayMultiplier} = ${_adjustedDelayMs}ms.`
           );
+          // Stage 7 — record for Tools UI.
+          _recordUrgencyInfluence(dbJob.id, {
+            reason:                _urgency.reason,
+            preemptBufferDeltaMs:  _urgency.preemptBufferDeltaMs,
+            burstDelayMultiplier:  _urgency.burstDelayMultiplier,
+            baseDelayMs:           decision.retryDelayMs,
+            adjustedDelayMs:       _adjustedDelayMs,
+          });
         }
 
         // Stage 6 — open-transition acceleration.
@@ -459,6 +513,11 @@ async function runBurstCheck(dbJob) {
             `liveTruth flipped to OPEN; ` +
             `shortening next burst ${_adjustedDelayMs}ms → ${ACCELERATED_BURST_MS}ms (one-shot).`
           );
+          // Stage 7 — record for Tools UI.
+          _recordAccelerationInfluence(dbJob.id, {
+            beforeMs: _adjustedDelayMs,
+            afterMs:  ACCELERATED_BURST_MS,
+          });
           _adjustedDelayMs = ACCELERATED_BURST_MS;
         }
 
@@ -858,4 +917,4 @@ async function runPreflightLoop({ isActive = false } = {}) {
   }
 }
 
-module.exports = { runPreflightLoop, isRunning, loadLoopState };
+module.exports = { runPreflightLoop, isRunning, loadLoopState, getRecentInfluence };

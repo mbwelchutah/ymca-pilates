@@ -789,6 +789,117 @@ function KVRow({ label, value, mono = false }: { label: string; value: string; m
   )
 }
 
+// ─── Stage 7 ──────────────────────────────────────────────────────────────
+// Compact "Live Truth" card: shows the current fresh verdict from FW (with
+// age), the urgency hints currently being applied to burst cadence, and the
+// most recent acceleration record (one-shot open-transition flips).
+//
+// This is *visibility*, not a debug dump.  When verdict is unknown/stale and
+// no influence has been recorded recently, the whole card collapses to a
+// single fallback line so the user is not staring at empty rows.
+//
+// All inputs come pre-shaped from /api/state — this component never fetches
+// or computes truth itself.
+type LiveTruthSnapshot = {
+  liveAvailability?: Job['liveAvailability']
+  liveVerdict?:      Job['liveVerdict']
+  liveUrgencyHints?: Job['liveUrgencyHints']
+  liveRecentInfluence?: Job['liveRecentInfluence']
+}
+function fmtAgeMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return '—'
+  if (ms < 1000)    return `${Math.round(ms)} ms`
+  if (ms < 60_000)  return `${Math.round(ms / 1000)}s ago`
+  return `${Math.round(ms / 60_000)}m ago`
+}
+function fmtDeltaMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms === 0) return '0'
+  const sign = ms > 0 ? '+' : '−'
+  const abs  = Math.abs(ms)
+  return abs >= 1000 ? `${sign}${(abs / 1000).toFixed(1)}s` : `${sign}${abs}ms`
+}
+function LiveTruthSection({ snap }: { snap: LiveTruthSnapshot }) {
+  const v   = snap.liveVerdict ?? null
+  const u   = snap.liveUrgencyHints ?? null
+  const inf = snap.liveRecentInfluence ?? null
+
+  const hasFreshVerdict = !!(v && v.isFresh && v.verdict !== 'unknown')
+  const hasUrgencyEffect = !!(u && (u.preemptBufferDeltaMs !== 0 || u.burstDelayMultiplier !== 1))
+  const hasRecentAccel = !!(inf?.acceleration)
+  const hasRecentUrgency = !!(inf?.urgency)
+
+  if (!hasFreshVerdict && !hasUrgencyEffect && !hasRecentAccel && !hasRecentUrgency) {
+    return (
+      <>
+        <SectionHeader title="Live Truth" id="tools-live-truth" />
+        <Card padding="none">
+          <div className="px-4 py-3 text-[12px] text-text-muted">
+            No fresh live signal — using cached classifier + phase fallbacks.
+          </div>
+        </Card>
+      </>
+    )
+  }
+
+  const verdictDot =
+    v?.verdict === 'open'     ? 'bg-accent-green' :
+    v?.verdict === 'waitlist' ? 'bg-accent-amber' :
+    v?.verdict === 'full'     ? 'bg-accent-red'   :
+    v?.verdict === 'cancelled'? 'bg-accent-red'   : 'bg-divider'
+  const verdictLabel = v?.verdict ? v.verdict.toUpperCase() : 'UNKNOWN'
+  const fresh = v?.isFresh ? 'fresh' : 'stale'
+  const freshClr = v?.isFresh ? 'text-accent-green' : 'text-text-muted'
+
+  return (
+    <>
+      <SectionHeader title="Live Truth" id="tools-live-truth" />
+      <Card padding="none">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-divider">
+          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${verdictDot}`} />
+          <span className="text-[13px] font-semibold text-text-primary">{verdictLabel}</span>
+          <span className={`text-[11px] ml-auto ${freshClr}`}>
+            {fresh} · {fmtAgeMs(v?.ageMs ?? null)}
+          </span>
+        </div>
+        <div className="px-4 py-3 space-y-1.5 border-b border-divider">
+          {u && (
+            <KVRow
+              label="Urgency"
+              value={
+                hasUrgencyEffect
+                  ? `preempt ${fmtDeltaMs(u.preemptBufferDeltaMs)} · cadence ×${u.burstDelayMultiplier.toFixed(2)} (${u.reason})`
+                  : `none (${u.reason})`
+              }
+            />
+          )}
+          {v?.openSpots != null && (
+            <KVRow label="Spots"   value={String(v.openSpots)} />
+          )}
+          {v?.reason && (
+            <KVRow label="Reason"  value={v.reason} />
+          )}
+        </div>
+        {(hasRecentAccel || hasRecentUrgency) && (
+          <div className="px-4 py-3 space-y-1.5">
+            {hasRecentAccel && inf!.acceleration && (
+              <KVRow
+                label="Accel"
+                value={`flipped → OPEN; next burst ${(inf!.acceleration.beforeMs / 1000).toFixed(1)}s → ${(inf!.acceleration.afterMs / 1000).toFixed(1)}s · ${fmtAgeMs(Date.now() - inf!.acceleration.atMs)}`}
+              />
+            )}
+            {hasRecentUrgency && inf!.urgency && (
+              <KVRow
+                label="Last hint"
+                value={`${inf!.urgency.reason} · ${(inf!.urgency.baseDelayMs / 1000).toFixed(1)}s → ${(inf!.urgency.adjustedDelayMs / 1000).toFixed(1)}s · ${fmtAgeMs(Date.now() - inf!.urgency.atMs)}`}
+              />
+            )}
+          </div>
+        )}
+      </Card>
+    </>
+  )
+}
+
 function freshnessColor(f: string | null | undefined): string {
   if (f === 'fresh')  return 'text-accent-green'
   if (f === 'aging')  return 'text-accent-amber'
@@ -2045,6 +2156,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                       </>
                     )
                   })()}
+
+                  {/* Stage 7 — Live Truth (verdict + urgency + recent influence) */}
+                  {selectedJob && (selectedJob.phase === 'late' || selectedJob.phase === 'sniper') && (
+                    <LiveTruthSection
+                      snap={{
+                        liveAvailability:    selectedJob.liveAvailability,
+                        liveVerdict:         selectedJob.liveVerdict,
+                        liveUrgencyHints:    selectedJob.liveUrgencyHints,
+                        liveRecentInfluence: selectedJob.liveRecentInfluence,
+                      }}
+                    />
+                  )}
 
                   {/* Confirmed Ready (freshness diagnostics) */}
                   {confirmedReady && confirmedReady.overall.checkedAt && (
