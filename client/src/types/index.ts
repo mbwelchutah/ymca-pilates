@@ -119,6 +119,17 @@ export interface Job {
       afterMs: number
     }
   } | null
+  liveImmediateTrigger?: {
+    lastFiredAtMs:       number | null
+    cooldownActive:      boolean
+    cooldownRemainingMs: number
+    lastDecision: {
+      atMs:           number
+      decision:       'fire' | 'skip'
+      reason:         string
+      transitionAtMs: number
+    } | null
+  } | null
 }
 
 export interface ScrapedClass {

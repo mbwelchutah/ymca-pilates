@@ -31,6 +31,8 @@ const {
   loadLoopState: loadPreflightLoopState,
   // Stage 7: per-job recent live-truth influence (Tools UI).
   getRecentInfluence: getPreflightLiveInfluence,
+  // Stage 11.5 — per-job immediate-trigger status (Tools UI).
+  getImmediateTriggerStatus: getPreflightImmediateTriggerStatus,
 } = require('../scheduler/preflight-loop');
 const { acquireLock: acquireAuthLock, releaseLock: releaseAuthLock, isLocked: isAuthLocked, lockOwner: authLockOwner } = require('../bot/auth-lock');
 const replayStore = require('../bot/replay-store');
@@ -5116,6 +5118,7 @@ const server = http.createServer((req, res) => {
       // Tools UI can show how live truth is steering booking behaviour.
       let liveUrgencyHints   = null;
       let liveRecentInfluence = null;
+      let liveImmediateTrigger = null;
       if (j.is_active && (phase === 'late' || phase === 'sniper')) {
         liveAvailability = liveTruth.getCached(j.id);
         liveVerdict      = liveTruth.getVerdict(liveAvailability);
@@ -5125,6 +5128,12 @@ const server = http.createServer((req, res) => {
             ? getPreflightLiveInfluence(j.id)
             : null;
         } catch (_) { liveRecentInfluence = null; }
+        // Stage 11.5 — surface immediate-trigger gate decisions + cooldown.
+        try {
+          liveImmediateTrigger = getPreflightImmediateTriggerStatus
+            ? getPreflightImmediateTriggerStatus(j.id)
+            : null;
+        } catch (_) { liveImmediateTrigger = null; }
         // Stage 4: pass msUntilOpen so the cache uses a 5 s TTL inside the
         // ±2 min near-open window (instead of the default 30 s).  When the
         // booking moment is far away or unknown, the helper falls back to
@@ -5136,6 +5145,7 @@ const server = http.createServer((req, res) => {
       return {
         ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency,
         liveAvailability, liveVerdict, liveUrgencyHints, liveRecentInfluence,
+        liveImmediateTrigger,
       };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.

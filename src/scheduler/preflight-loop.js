@@ -255,6 +255,31 @@ function _markImmediateTriggerFired(jobId, now = Date.now()) {
   _immediateTriggerLastAt.set(jobId, now);
 }
 
+// Stage 11.5 — per-job tracker for the *most recent* gate decision (fire OR
+// skip).  Powers the Tools UI "Trigger" row so operators can see at a glance
+// whether the last open-transition flip was acted on or blocked, and why.
+//
+// Shape: { atMs, decision: 'fire'|'skip', reason, transitionAtMs }
+//   • atMs            — wall-clock when the gate decision was made
+//   • decision        — 'fire' (gate.allow=true) | 'skip' (gate.allow=false)
+//   • reason          — gate.reason verbatim (skip cause, or 'eligible')
+//   • transitionAtMs  — wall-clock of the open-transition flip that triggered
+//                       this decision (always present — we only record after
+//                       consumeOpenTransition returned true)
+//
+// Bounded to RECENT_INFLUENCE_TTL_MS (5 min) on read.  Pure write side; no
+// timers, no async.
+const _lastImmediateDecision = new Map();
+
+function _recordImmediateDecision(jobId, decision, reason, now = Date.now()) {
+  _lastImmediateDecision.set(jobId, {
+    atMs:           now,
+    decision,
+    reason,
+    transitionAtMs: now,   // we always record at the moment of consume
+  });
+}
+
 /**
  * Stage 11.4 — public read-only view of the immediate-trigger cooldown for
  * a single job.  Used by Stage 5 visibility (Tools UI) and by tests.
@@ -270,15 +295,36 @@ function _markImmediateTriggerFired(jobId, now = Date.now()) {
  * Pure read; never mutates the cooldown stamp.
  */
 function getImmediateTriggerStatus(jobId, now = Date.now()) {
-  const lastAt = _immediateTriggerLastAt.get(jobId);
-  if (lastAt == null) return null;
-  if ((now - lastAt) > RECENT_INFLUENCE_TTL_MS) return null;
-  const elapsed   = now - lastAt;
-  const remaining = Math.max(0, IMMEDIATE_TRIGGER_COOLDOWN_MS - elapsed);
+  const lastAt   = _immediateTriggerLastAt.get(jobId);
+  const decision = _lastImmediateDecision.get(jobId);
+
+  // Drop entries older than the visibility TTL (keep cooldown logic intact;
+  // the underlying maps are only consulted by the gate within 60 s anyway).
+  const haveLastFire = lastAt != null && (now - lastAt) <= RECENT_INFLUENCE_TTL_MS;
+  const haveDecision = decision != null && (now - decision.atMs) <= RECENT_INFLUENCE_TTL_MS;
+  if (!haveLastFire && !haveDecision) return null;
+
+  let cooldown = null;
+  if (haveLastFire) {
+    const elapsed   = now - lastAt;
+    const remaining = Math.max(0, IMMEDIATE_TRIGGER_COOLDOWN_MS - elapsed);
+    cooldown = {
+      lastFiredAtMs:       lastAt,
+      cooldownActive:      remaining > 0,
+      cooldownRemainingMs: remaining,
+    };
+  }
+
   return {
-    lastFiredAtMs:       lastAt,
-    cooldownActive:      remaining > 0,
-    cooldownRemainingMs: remaining,
+    lastFiredAtMs:       cooldown?.lastFiredAtMs       ?? null,
+    cooldownActive:      cooldown?.cooldownActive      ?? false,
+    cooldownRemainingMs: cooldown?.cooldownRemainingMs ?? 0,
+    lastDecision:        haveDecision ? {
+      atMs:           decision.atMs,
+      decision:       decision.decision,        // 'fire' | 'skip'
+      reason:         decision.reason,
+      transitionAtMs: decision.transitionAtMs,
+    } : null,
   };
 }
 
@@ -701,6 +747,7 @@ async function runBurstCheck(dbJob) {
             // consumeOpenTransition is one-shot — but defensive) cannot
             // double-launch.
             _markImmediateTriggerFired(dbJob.id);
+            _recordImmediateDecision(dbJob.id, 'fire', _gate.reason);
             triggerBookingFromBurst(dbJob.id, {
               onRetry: (status) => scheduleHotRetry(dbJob, _immediateOpensAtMs, 1, status),
             }).catch(e =>
@@ -710,6 +757,7 @@ async function runBurstCheck(dbJob) {
           }
 
           // Gate blocked → fall through to existing Stage 6 accelerated burst.
+          _recordImmediateDecision(dbJob.id, 'skip', _gate.reason);
           console.log(
             `[preflight-loop] immediate-trigger:skip — Job #${dbJob.id} ` +
             `${_gate.reason}; falling back to accelerated ${ACCELERATED_BURST_MS}ms burst.`

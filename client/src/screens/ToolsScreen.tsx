@@ -805,6 +805,7 @@ type LiveTruthSnapshot = {
   liveVerdict?:      Job['liveVerdict']
   liveUrgencyHints?: Job['liveUrgencyHints']
   liveRecentInfluence?: Job['liveRecentInfluence']
+  liveImmediateTrigger?: Job['liveImmediateTrigger']
 }
 function fmtAgeMs(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return '—'
@@ -822,13 +823,15 @@ function LiveTruthSection({ snap }: { snap: LiveTruthSnapshot }) {
   const v   = snap.liveVerdict ?? null
   const u   = snap.liveUrgencyHints ?? null
   const inf = snap.liveRecentInfluence ?? null
+  const it  = snap.liveImmediateTrigger ?? null
 
   const hasFreshVerdict = !!(v && v.isFresh && v.verdict !== 'unknown')
   const hasUrgencyEffect = !!(u && (u.preemptBufferDeltaMs !== 0 || u.burstDelayMultiplier !== 1))
   const hasRecentAccel = !!(inf?.acceleration)
   const hasRecentUrgency = !!(inf?.urgency)
+  const hasImmediateTrigger = !!(it && (it.lastDecision || it.lastFiredAtMs != null))
 
-  if (!hasFreshVerdict && !hasUrgencyEffect && !hasRecentAccel && !hasRecentUrgency) {
+  if (!hasFreshVerdict && !hasUrgencyEffect && !hasRecentAccel && !hasRecentUrgency && !hasImmediateTrigger) {
     return (
       <>
         <SectionHeader title="Live Truth" id="tools-live-truth" />
@@ -879,7 +882,7 @@ function LiveTruthSection({ snap }: { snap: LiveTruthSnapshot }) {
             <KVRow label="Reason"  value={v.reason} />
           )}
         </div>
-        {(hasRecentAccel || hasRecentUrgency) && (
+        {(hasRecentAccel || hasRecentUrgency || hasImmediateTrigger) && (
           <div className="px-4 py-3 space-y-1.5">
             {hasRecentAccel && inf!.acceleration && (
               <KVRow
@@ -891,6 +894,36 @@ function LiveTruthSection({ snap }: { snap: LiveTruthSnapshot }) {
               <KVRow
                 label="Last hint"
                 value={`${inf!.urgency.reason} · ${(inf!.urgency.baseDelayMs / 1000).toFixed(1)}s → ${(inf!.urgency.adjustedDelayMs / 1000).toFixed(1)}s · ${fmtAgeMs(Date.now() - inf!.urgency.atMs)}`}
+              />
+            )}
+            {/* Stage 11.5 — Immediate-trigger gate decisions + cooldown.    */}
+            {/* Single compact row: shows last decision (FIRE/SKIP), reason, */}
+            {/* age, and cooldown remaining when active.                     */}
+            {hasImmediateTrigger && it!.lastDecision && (
+              <KVRow
+                label="Trigger"
+                value={
+                  `${it!.lastDecision.decision === 'fire' ? 'FIRE' : 'SKIP'}` +
+                  ` · ${it!.lastDecision.reason}` +
+                  ` · ${fmtAgeMs(Date.now() - it!.lastDecision.atMs)}` +
+                  (it!.cooldownActive
+                    ? ` · cooldown ${Math.ceil(it!.cooldownRemainingMs / 1000)}s left`
+                    : it!.lastFiredAtMs != null
+                      ? ` · cooldown ready`
+                      : '')
+                }
+              />
+            )}
+            {/* No decision recorded yet, but a cooldown stamp survives — */}
+            {/* show just the cooldown so operators understand re-arm gating. */}
+            {hasImmediateTrigger && !it!.lastDecision && it!.lastFiredAtMs != null && (
+              <KVRow
+                label="Trigger"
+                value={
+                  it!.cooldownActive
+                    ? `cooldown ${Math.ceil(it!.cooldownRemainingMs / 1000)}s left · last fire ${fmtAgeMs(Date.now() - it!.lastFiredAtMs)}`
+                    : `cooldown ready · last fire ${fmtAgeMs(Date.now() - it!.lastFiredAtMs)}`
+                }
               />
             )}
           </div>
