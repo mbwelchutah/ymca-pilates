@@ -32,7 +32,7 @@ const { getAllJobs }       = require('../db/jobs');
 const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
-const { loadState }        = require('../bot/sniper-readiness');
+const { loadState, updateLastSuccessfulPreflightAt } = require('../bot/sniper-readiness');
 // Stage 10 (auth-truth-unification): loadStatus (session-status.json) replaced by
 // getCanonicalAuthTruth for session-failed gate. lastFailureType from auth-state.json
 // now provides the timeout/auth_failed distinction.
@@ -290,6 +290,8 @@ async function runBurstCheck(dbJob) {
       nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
       // Stage 10D — clear any pending escalation on success.
       clearEscalation(dbJob.id);
+      // Task #57 — record successful automated preflight for auto-hide logic.
+      updateLastSuccessfulPreflightAt();
       // Stage 10F — record when the action became available relative to opensAt.
       if (execTiming?.opensAt) {
         recordObservation(dbJob.id, {
@@ -717,6 +719,8 @@ async function runPreflightLoop({ isActive = false } = {}) {
         nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
         // Stage 10D — clear any pending escalation now that the action succeeded.
         clearEscalation(dbJob.id);
+        // Task #57 — record successful automated preflight for auto-hide logic.
+        updateLastSuccessfulPreflightAt();
       }
 
       saveLoopState({

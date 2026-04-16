@@ -253,6 +253,20 @@ function loadState() {
   }
 }
 
+// Updates lastSuccessfulPreflightAt to the current timestamp.
+// Called by auto-preflight and preflight-loop after a successful automated run
+// so that the /api/failures hideBefore logic applies to both manual and automated
+// successful checks (Task #57).
+function updateLastSuccessfulPreflightAt() {
+  try {
+    const s = loadState() || {};
+    s.lastSuccessfulPreflightAt = new Date().toISOString();
+    saveState(s);
+  } catch (e) {
+    console.warn('[sniper-readiness] updateLastSuccessfulPreflightAt failed:', e.message);
+  }
+}
+
 // Persists a snapshot of the last user-triggered preflight result.
 // Called from server.js after /api/preflight completes.  The snapshot
 // survives page refreshes and lets the frontend restore the composite label
@@ -364,5 +378,6 @@ module.exports = {
   saveState,
   loadState,
   savePreflightSnapshot,
+  updateLastSuccessfulPreflightAt,
   resolveState,
 };

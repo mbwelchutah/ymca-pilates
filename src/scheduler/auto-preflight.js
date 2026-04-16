@@ -15,7 +15,7 @@ const { getAllJobs }       = require('../db/jobs');
 const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
-const { loadState }        = require('../bot/sniper-readiness');
+const { loadState, updateLastSuccessfulPreflightAt } = require('../bot/sniper-readiness');
 const { loadStatus }       = require('../bot/session-check');
 const { isLocked }         = require('../bot/auth-lock');
 const { getAuthState, updateAuthState } = require('../bot/auth-state');
@@ -340,6 +340,7 @@ async function checkAutoPreflights({ isActive = false } = {}) {
               `confirmed-ready will refresh via ping.`
             );
             updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now() });
+            updateLastSuccessfulPreflightAt();
             appendLog({
               timestamp:   firedAt,
               jobId:       dbJob.id,
@@ -376,6 +377,7 @@ async function checkAutoPreflights({ isActive = false } = {}) {
 
           const status = (result.status === 'success' || result.status === 'booked') ? 'pass' : 'fail';
           console.log(`[auto-preflight] ${trigger.name} done — ${status}: ${result.message}`);
+          if (status === 'pass') updateLastSuccessfulPreflightAt();
 
           appendLog({
             timestamp:   firedAt,
