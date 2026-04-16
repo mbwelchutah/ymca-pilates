@@ -1683,25 +1683,63 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       const r = await api.forceRunJob(job.id)
       const msg = (r.message ?? '').toLowerCase()
       const isWaitlist = msg.includes('waitlist')
+      // Prefer structured fields (phase + reason) from the backend — falls back to
+      // string matching on message only when they aren't present.  This prevents
+      // the historical misclassification where broad msg.includes('class') flipped
+      // click/modal/verify failures to "Class not found on schedule" just because
+      // the word "class" appeared in the error message.
+      const status = (r.status || '').toLowerCase()
+      const phase  = (r.phase  || '').toLowerCase()
+      const reason = (r.reason || '').toLowerCase()
+      // Classify by STATUS first — status distinguishes real failure classes
+      // (found_not_open_yet / not_found / full / closed / error) from each other,
+      // which phase alone cannot do.  Only when status is 'error' do we drill
+      // into phase/reason to pick the specific error banner.  This prevents the
+      // regression where a blanket `phase === 'action'` bucket swept up
+      // `found_not_open_yet` (reason=button_not_visible, which runs in the
+      // action phase but is NOT a modal failure).
+      const isNotOpenYet = status === 'found_not_open_yet'
+      const isFullOrClosed = status === 'full' || status === 'closed'
+      const isScanNotFound = status === 'not_found'
+      const isErrorStatus  = status === 'error'
+      // Only within 'error' status do we map to specific error banners.
+      const isAuthFail  = isErrorStatus && (phase === 'auth'
+        || reason.includes('auth') || reason.includes('session') || reason.includes('login'))
+      // Modal failure: explicit click/verify/modal phases, or reason tags that
+      // unambiguously indicate click/marker problems.  Note: phase === 'action'
+      // is intentionally EXCLUDED — it catches benign button_not_visible cases.
+      const isModalFail = isErrorStatus && (
+           phase === 'click' || phase === 'verify' || phase === 'modal'
+        || reason === 'marker_stripped' || reason === 'click_marker_stripped'
+        || reason.includes('modal') || reason.includes('click'))
+      // Fallback string-match path for responses that lack structured fields.
+      const fallbackAuth  = !status && !phase && (msg.includes('session') || msg.includes('auth') || msg.includes('login'))
+      const fallbackScan  = !status && !phase && (msg.includes('not found') || msg.includes('class not found'))
+      const fallbackModal = !status && !phase && msg.includes('modal')
       const failIdx: number | null = r.success !== false ? null : (() => {
-        if (msg.includes('session') || msg.includes('auth') || msg.includes('login')) return 0
-        if (msg.includes('class') || msg.includes('not found'))                        return 2
-        if (msg.includes('modal'))                                                     return 3
+        if (isAuthFail     || fallbackAuth)  return 0
+        if (isScanNotFound || fallbackScan)  return 2
+        if (isModalFail    || fallbackModal) return 3
+        // found_not_open_yet / full / closed / unclassified — surface on final step
         return 4
       })()
       finalizeSteps(BOOK_STEP_LIST, failIdx)
       const color: 'green' | 'amber' | 'red' = r.success !== false
         ? (isWaitlist ? 'amber' : 'green')
-        : 'red'
+        : (isNotOpenYet ? 'amber' : 'red')
       const text = r.success !== false
         ? (isWaitlist ? 'On waitlist' : 'Registered')
-        : msg.includes('session') || msg.includes('auth') || msg.includes('login')
-          ? 'Session expired — sign in again'
-          : msg.includes('class') || msg.includes('not found')
-            ? 'Class not found on schedule'
-            : msg.includes('modal')
-              ? 'Could not access registration modal'
-              : (r.message ?? 'Registration failed')
+        : isNotOpenYet
+          ? 'Class not open for booking yet'
+          : isFullOrClosed
+            ? (status === 'full' ? 'Class is full' : 'Registration closed')
+            : (isAuthFail || fallbackAuth)
+              ? 'Session expired — sign in again'
+              : (isScanNotFound || fallbackScan)
+                ? 'Class not found on schedule'
+                : (isModalFail || fallbackModal)
+                  ? "Couldn't open signup modal"
+                  : (r.message ?? 'Registration failed')
       setExecDone({ ok: r.success !== false, text, color })
       if (r.success !== false) { haptic('success'); playTone('success') }
       else                     { haptic('error');   playTone('error');   setLastFailedAction('registration') }

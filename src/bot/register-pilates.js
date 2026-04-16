@@ -1360,21 +1360,32 @@ async function runBookingJob(job, opts = {}) {
           // (most specific element) wins — so 7:45 AM (13) always beats 2:45 PM (8).
           if (score < confidenceThreshold) continue;
 
+          // Does this element contain an interactive child (button, [role=button], <a>)?
+          // Cards have them; inner text wrappers usually don't.  When two rows tie
+          // on score + visibility, prefer the one that the click helper can actually
+          // dispatch a real click on — otherwise we fall through to the cursor:pointer
+          // hunt which can land on a detail-page link instead of the signup button.
+          const hasClickableChild = !!el.querySelector("button, [role='button'], a");
+
           allRows.push({
             el,
             score,
             reasons,
             desc,
             visible: looks_card,
+            hasClickableChild,
             txt: txt.slice(0, 200),
           });
         }
 
         // Sort: highest score first; prefer visible (looks_card) within same score;
-        // tie-break on fewest descendants (most specific element).
+        // then prefer elements with an interactive child (button/[role=button]/a) —
+        // this is the real clickable card, not an inner text wrapper;
+        // finally tie-break on fewest descendants (most specific element).
         allRows.sort((a, b) =>
           b.score - a.score ||
           (b.visible ? 1 : 0) - (a.visible ? 1 : 0) ||
+          (b.hasClickableChild ? 1 : 0) - (a.hasClickableChild ? 1 : 0) ||
           a.desc - b.desc
         );
 
@@ -1961,6 +1972,10 @@ async function runBookingJob(job, opts = {}) {
           clickTarget = clickable;
           clickDesc   = 'button/[role=button]/a child';
         } else {
+          // No interactive child under the matched element.  With the T002 tie-break
+          // fix this should be rare — usually the scorer picked an inner text wrapper
+          // that slipped past visibility guards.  Log loudly so we can spot it.
+          console.log(`⚠️ [${candidateLabel}] Matched element has NO button/[role=button]/a child — falling back to cursor:pointer hunt (may land on a detail-page link instead of signup).`);
           // Step 2: cursor:pointer child — evaluate directly on the card element
           const markedPointer = await card.evaluate(el => {
             for (const child of el.querySelectorAll('*')) {
@@ -2000,21 +2015,30 @@ async function runBookingJob(job, opts = {}) {
           await clickTarget.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
           await clickTarget.click({ timeout: 5000 });
         } catch (clickErr) {
-          console.log(`⚠️ Normal click failed (${candidateLabel}), force-clicking:`, clickErr.message.split('\n')[0]);
+          // Distinguish marker-stripped (Bubble re-render cleared data-target-class
+          // between set and click) from a real click failure.  Playwright's locator
+          // timeout message always mentions the failing selector, so matching on it
+          // is reliable.
+          const markerStripped = /data-target-class(?:-second)?\s*=/.test(clickErr.message || '');
+          const failLabel = markerStripped
+            ? 'Marker attribute stripped by re-render before click landed'
+            : 'Normal click failed — using force click';
+          const failReason = markerStripped ? 'click_marker_stripped' : 'click_fallback';
+          console.log(`⚠️ Normal click failed (${candidateLabel})${markerStripped ? ' [marker-stripped]' : ''}, force-clicking:`, clickErr.message.split('\n')[0]);
           // ── Capture before emitting so screenshot ref is attached to event ─
-          await captureFailure('click', 'fallback_used');
+          await captureFailure('click', markerStripped ? 'marker_stripped' : 'fallback_used');
           emitFailure('ACTION', 'ACTION_FORCE_CLICK_USED', `Normal click failed — force-click fallback (${candidateLabel})`);
           // ─────────────────────────────────────────────────────────────────
           // ── POINT 5: click — fallback to force click ──────────────────────
           recordFailure({
             jobId:    job.id || job.jobId || null,
-            phase:    'click', reason: 'click_fallback',
-            category: 'click', label: 'Normal click failed — using force click',
+            phase:    'click', reason: failReason,
+            category: 'click', label: failLabel,
             message:  clickErr.message.split('\n')[0],
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { candidateLabel, clickDesc },
+            context:  { candidateLabel, clickDesc, markerStripped },
           });
           // ─────────────────────────────────────────────────────────────────
           await card.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});

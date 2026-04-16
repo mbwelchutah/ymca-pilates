@@ -165,7 +165,13 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
 
-  forceRunJob: (id: number): Promise<{ success: boolean; message: string }> =>
+  forceRunJob: (id: number): Promise<{
+    success: boolean;
+    message: string;
+    status?: string | null;
+    reason?: string | null;
+    phase?: string | null;
+  }> =>
     apiFetch(`/force-run-job?id=${id}`, { method: 'POST' }),
 
   runDryRun: (jobId: number): Promise<{ success: boolean; status: string; message: string; label: string; color: 'green' | 'amber' | 'red' }> =>

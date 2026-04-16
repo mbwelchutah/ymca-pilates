@@ -3943,7 +3943,17 @@ const server = http.createServer((req, res) => {
         }, { dryRun: getDryRun() });
         const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found', 'full', 'closed'];
         setLastRun(dbJob.id, result.status, NON_SUCCESS_STATUSES.includes(result.status) ? (result.message || null) : null);
-        json({ success: !NON_SUCCESS_STATUSES.includes(result.status), message: `Job #${jobId}: ${result.status} — ${result.message}` });
+        // Expose structured status/reason/phase so the UI can branch on the real
+        // failure mode instead of string-matching the message (see NowScreen
+        // performBooking — broad msg.includes('class') was misclassifying click/
+        // modal failures as "Class not found on schedule").
+        json({
+          success: !NON_SUCCESS_STATUSES.includes(result.status),
+          message: `Job #${jobId}: ${result.status} — ${result.message}`,
+          status:  result.status || null,
+          reason:  result.reason || null,
+          phase:   result.phase  || null,
+        });
       } catch (err) {
         console.error(`Force run error:`, err.message);
         setLastRun(dbJob.id, 'error', err.message);

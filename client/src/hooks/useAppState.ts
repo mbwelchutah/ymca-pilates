@@ -22,11 +22,45 @@ export function useAppState() {
   const failCount = useRef(0)
   // True once we have had at least one successful fetch.
   const hasLoaded = useRef(false)
+  // Tracks jobs that disappeared from a single poll response — if they reappear
+  // on the very next poll, the disappearance was a transient server read (e.g.
+  // a pg-sync restore race), NOT a legitimate delete.  Guards against the
+  // "ghost class disappears and comes back" flicker observed on Apr 16.
+  const pendingDisappearance = useRef<Map<number, { job: AppState['jobs'][number]; seenAt: number }>>(new Map())
+  const MAX_GHOST_RETENTION_MS = 8000 // ~1-2 poll cycles at 5 s interval
 
   const refresh = useCallback(async () => {
     try {
       const fresh = await api.getState()
-      setState(fresh)
+      // Merge: any job that existed on the previous load but is absent now gets
+      // a one-cycle grace period before disappearing from the UI.  If it comes
+      // back on the next poll, the "disappearance" was a transient server read.
+      // If it doesn't come back within MAX_GHOST_RETENTION_MS, we drop it.
+      // Using setState(prev => ...) so `prev.jobs` is always the latest state,
+      // not a stale closure from when refresh was created.
+      setState(prev => {
+        const now = Date.now()
+        const freshIds = new Set((fresh.jobs || []).map(j => j.id))
+        // Add newly-missing jobs to the pending map.
+        for (const p of prev.jobs || []) {
+          if (p.id != null && !freshIds.has(p.id) && !pendingDisappearance.current.has(p.id)) {
+            pendingDisappearance.current.set(p.id, { job: p, seenAt: now })
+          }
+        }
+        // Remove from pending any job that came back.
+        for (const id of Array.from(pendingDisappearance.current.keys())) {
+          if (freshIds.has(id)) pendingDisappearance.current.delete(id)
+        }
+        // Expire stale pendings.
+        for (const [id, rec] of Array.from(pendingDisappearance.current.entries())) {
+          if (now - rec.seenAt > MAX_GHOST_RETENTION_MS) pendingDisappearance.current.delete(id)
+        }
+        // Compose: fresh jobs + any still-pending disappeared jobs (preserved
+        // temporarily so their card doesn't flicker out of the list).
+        const retained = Array.from(pendingDisappearance.current.values()).map(r => r.job)
+        const mergedJobs = retained.length > 0 ? [...(fresh.jobs || []), ...retained] : (fresh.jobs || [])
+        return { ...fresh, jobs: mergedJobs }
+      })
       setError(null)
       failCount.current = 0
       hasLoaded.current = true

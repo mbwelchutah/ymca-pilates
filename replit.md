@@ -29,6 +29,13 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 | `src/db/pg-init.js` | PostgreSQL sync: restores jobs from PostgreSQL → `data/seed-jobs.json` on startup (PG → SQLite direction only). |
 | `src/db/pg-sync.js` | Bidirectional PG helpers: `initFromPg` (startup restore), `syncJobsToPg` (fire-and-forget, legacy), `syncJobsToPgAsync` (awaitable, used by server.js mutation handlers and production startup sync). Serialised via `_syncChain` promise queue — concurrent mutations wait their turn and always read a fresh SQLite snapshot, preventing the interleaved-DELETE duplicate-row bug. `_doSyncJobsToPgCore` reads from SQLite directly (not seed-jobs.json). |
 
+#### Flow-Yoga-failure pass (Apr 16)
+Addresses four intertwined bugs that surfaced when Job #24 (Flow Yoga Fri 12 PM) failed at the 3 PM window with a misleading "Class not found on schedule" banner, a modal YES selector timeout, and a ghost-class disappear-then-return flicker on the Plan tab.
+- **Tie-break (A)**: `register-pilates.js:findTargetCard` sort now prefers elements that contain an interactive child (`button/[role=button]/a`) over the leanest-descendant-count wrapper. Previously, two equally-scored rows (e.g. duplicate recurring-class DOM entries, desc=27 vs desc=28) could pick a text-only wrapper, causing the click helper's cursor:pointer fallback to land on a class detail page instead of the signup modal.
+- **Click helper (B)**: `attemptClickAndVerify` logs loudly when the matched element has no interactive child, and tags marker-stripped click timeouts (`click_marker_stripped`) distinctly from generic click fallbacks so downstream telemetry/UI can differentiate.
+- **Banner (C)**: `/force-run-job` response now includes structured `status`, `reason`, `phase` fields. `NowScreen.performBooking` uses them to derive the failure banner — replacing the old `msg.includes('class')` broad string match that flipped click/modal/verify failures to "Class not found on schedule". New copy for modal-stage failures: "Couldn't open signup modal".
+- **Ghost-class flicker (D)**: `useAppState.refresh` keeps a brief grace period (≤ 8 s, ~1-2 poll cycles) for jobs that disappear from a poll response. If they reappear within that window, the disappearance is treated as a transient server-state race (e.g. pg-sync restore), not a legitimate delete — the card stays visible instead of flickering out and back in.
+
 ### Frontend (`client/src/`)
 
 | File | Purpose |
