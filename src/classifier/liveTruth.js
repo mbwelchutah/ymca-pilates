@@ -549,6 +549,76 @@ function getVerdictForJob(jobId, opts = {}) {
   return getVerdict(getCached(jobId), opts);
 }
 
+// ── Stage 5: Urgency hints for browser-launch policy ─────────────────────────
+//
+// The scheduler (preflight-loop.js) decides:
+//   • how aggressively to preempt the booking launch before opensAt
+//   • how soon to fire the next burst preflight check
+//
+// These two knobs control wasted browser launches.  When live truth tells us
+// something useful, we can nudge them — without ever HARD SKIPPING work
+// (Playwright remains the canonical executor / fallback).
+//
+// `getUrgencyHints(verdictResult)` translates a normalized verdict into two
+// small, BOUNDED adjustments:
+//
+//   {
+//     preemptBufferDeltaMs:  additive on PREEMPT_BUFFER_MS  (range −3 s … +5 s)
+//     burstDelayMultiplier:  multiplicative on retryDelayMs (range 0.75 … 2.0)
+//     source: 'live-truth' | 'fallback',
+//     reason: human-readable string,
+//   }
+//
+// Mapping (only applied when verdict.isFresh):
+//
+//   open      → +5 s buffer, ×0.75 delay   (slightly more urgent, faster polling)
+//   waitlist  → +2 s buffer, ×0.85 delay   (mildly urgent — codebase accepts waitlist)
+//   full      → −3 s buffer, ×1.5  delay   (less wasteful, but still polls)
+//   cancelled → −3 s buffer, ×2.0  delay   (slow poll — class can be reinstated)
+//   unknown   →  0 s buffer, ×1.0  delay   (no change — fall back to base policy)
+//   stale     →  0 s buffer, ×1.0  delay   (treated as unknown — see freshness gate)
+//
+// SAFETY CONTRACT
+// - Never throws; never returns null.
+// - Stale or unknown verdicts always return the no-op hint.
+// - Multiplier ∈ [0.75, 2.0] — caller is still expected to clamp final values
+//   against absolute floors/ceilings (e.g. min 5 s burst delay).
+// - Buffer delta is small enough that even worst-case −3 s with PREEMPT_BUFFER_MS
+//   = 5 s leaves a 2 s safety margin before preempt logic refuses to fire.
+// - `full`/`cancelled` NEVER reduce the multiplier below 1 — they only slow
+//   things down.  No verdict can prevent the next burst from running.
+//
+// This function is pure: no I/O, no state writes.
+
+const NOOP_URGENCY_HINTS = Object.freeze({
+  preemptBufferDeltaMs: 0,
+  burstDelayMultiplier: 1,
+  source:               'fallback',
+  reason:               'no usable verdict',
+});
+
+const URGENCY_BY_VERDICT = Object.freeze({
+  [VERDICTS.OPEN]:      { preemptBufferDeltaMs:  5_000, burstDelayMultiplier: 0.75 },
+  [VERDICTS.WAITLIST]:  { preemptBufferDeltaMs:  2_000, burstDelayMultiplier: 0.85 },
+  [VERDICTS.FULL]:      { preemptBufferDeltaMs: -3_000, burstDelayMultiplier: 1.5  },
+  [VERDICTS.CANCELLED]: { preemptBufferDeltaMs: -3_000, burstDelayMultiplier: 2.0  },
+});
+
+function getUrgencyHints(verdictResult) {
+  if (!verdictResult || typeof verdictResult !== 'object') return NOOP_URGENCY_HINTS;
+  if (verdictResult.isFresh !== true) return NOOP_URGENCY_HINTS;
+
+  const cfg = URGENCY_BY_VERDICT[verdictResult.verdict];
+  if (!cfg) return NOOP_URGENCY_HINTS;
+
+  return {
+    preemptBufferDeltaMs: cfg.preemptBufferDeltaMs,
+    burstDelayMultiplier: cfg.burstDelayMultiplier,
+    source:               'live-truth',
+    reason:               `verdict=${verdictResult.verdict} (age ${Math.round((verdictResult.ageMs ?? 0) / 1000)}s)`,
+  };
+}
+
 module.exports = {
   LIVE_STATES,
   VERDICTS,
@@ -558,4 +628,5 @@ module.exports = {
   getCached,
   getVerdict,
   getVerdictForJob,
+  getUrgencyHints,
 };

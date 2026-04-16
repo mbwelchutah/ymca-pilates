@@ -49,6 +49,10 @@ const { recordObservation, getLearnedOffsets, recordRunSpeed, getLearnedRunSpeed
 const { triggerBookingFromBurst } = require('./booking-bridge');
 // Stage 4 (freshness) — persist canonical readiness state after every preflight.
 const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
+// Stage 5 (live-truth–driven booking timing) — small, bounded urgency hints
+// derived from the live FW API verdict.  Never hard-skips browser launches;
+// only nudges the preempt buffer and next-burst delay.
+const liveTruth = require('../classifier/liveTruth');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -356,11 +360,29 @@ async function runBurstCheck(dbJob) {
       const _preemptSource  = _learnedSpeed ? 'learned' : 'default';
       const PREEMPT_BUFFER_MS = 5_000;  // 5 s safety buffer on top of lead time
 
+      // Stage 5 — nudge the preempt buffer based on fresh live truth.
+      // Fresh `open`/`waitlist` widens the buffer (preempt slightly earlier);
+      // fresh `full`/`cancelled` shrinks it (avoids wasteful early launches);
+      // unknown/stale leaves it unchanged.  Final buffer is clamped ≥ 0 so the
+      // preempt threshold can never go below the bare lead time.
+      const _urgency = liveTruth.getUrgencyHints(
+        liveTruth.getVerdict(liveTruth.getCached(dbJob.id))
+      );
+      const _effectiveBufferMs = Math.max(0, PREEMPT_BUFFER_MS + _urgency.preemptBufferDeltaMs);
+      if (_urgency.source === 'live-truth' && _urgency.preemptBufferDeltaMs !== 0) {
+        console.log(
+          `[preflight-loop] burst:urgency — Job #${dbJob.id} ` +
+          `${_urgency.reason} → preempt buffer ` +
+          `${PREEMPT_BUFFER_MS}ms ${_urgency.preemptBufferDeltaMs >= 0 ? '+' : ''}` +
+          `${_urgency.preemptBufferDeltaMs}ms = ${_effectiveBufferMs}ms.`
+        );
+      }
+
       if (
         failureType === 'action_not_open'   &&
         result.status === 'found_not_open_yet' &&
         execTiming.msUntilOpen > 0          &&
-        execTiming.msUntilOpen <= _preemptLeadMs + PREEMPT_BUFFER_MS
+        execTiming.msUntilOpen <= _preemptLeadMs + _effectiveBufferMs
       ) {
         const _preemptOpensAtMs = execTiming?.opensAt
           ? new Date(execTiming.opensAt).getTime()
@@ -391,7 +413,24 @@ async function runBurstCheck(dbJob) {
         console.log(`[preflight-loop] burst:escalate — Job #${dbJob.id} click_failed; stopping burst.`);
         resetBurst(dbJob.id);
       } else if (decision.shouldRetry && runNum < MAX_BURST_RUNS) {
-        scheduleBurst(dbJob, decision.retryDelayMs);
+        // Stage 5 — apply burst-delay multiplier from live truth.
+        // Fresh `open`/`waitlist` shortens the delay (poll faster);
+        // fresh `full`/`cancelled` lengthens it (less wasted work);
+        // unknown/stale leaves it at decision.retryDelayMs (×1.0).
+        // Final delay is clamped to [5_000, 60_000] so the cadence can never
+        // become unsafe (too aggressive) or effectively dormant (too slow).
+        const _adjustedDelayMs = Math.max(
+          5_000,
+          Math.min(60_000, Math.round(decision.retryDelayMs * _urgency.burstDelayMultiplier))
+        );
+        if (_urgency.source === 'live-truth' && _adjustedDelayMs !== decision.retryDelayMs) {
+          console.log(
+            `[preflight-loop] burst:cadence — Job #${dbJob.id} ` +
+            `${_urgency.reason} → next burst delay ` +
+            `${decision.retryDelayMs}ms × ${_urgency.burstDelayMultiplier} = ${_adjustedDelayMs}ms.`
+          );
+        }
+        scheduleBurst(dbJob, _adjustedDelayMs);
       } else {
         console.log(`[preflight-loop] burst:stop — Job #${dbJob.id} max runs or shouldRetry=false.`);
         resetBurst(dbJob.id);
