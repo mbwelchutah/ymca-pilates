@@ -626,35 +626,66 @@ async function runBurstCheck(dbJob) {
           });
           _adjustedDelayMs = ACCELERATED_BURST_MS;
 
-          // Stage 11.2 — DRY-RUN evaluation of the immediate-trigger gate.
-          // The flip was just consumed; ask the gate whether — in Stage 3 —
-          // we would have fired triggerBookingFromBurst() right here instead
-          // of merely shortening the delay.  This stage only LOGS the
-          // decision; the existing `_adjustedDelayMs = 5_000` + scheduleBurst()
-          // fallback below remains the actual control flow.
+          // Stage 11.3 — Immediate-trigger hybrid: if the safety gate allows,
+          // fire booking RIGHT NOW via the same triggerBookingFromBurst() path
+          // used by burst:ready and burst:preempt.  Otherwise, fall through to
+          // the Stage 6 accelerated-burst behavior (scheduleBurst below) —
+          // identical to pre-Stage-11.3 control flow.
           //
-          // Inputs are the same context already in scope from runBurstCheck:
-          //   • execTiming.phase / msUntilOpen — from the phase computation
-          //     at the top of runBurstCheck.
-          //   • runNum / MAX_BURST_RUNS — burst-cap envelope.
-          //   • isBookingActive() / isLocked() — runtime guards (can flip
-          //     mid-burst even though runBurstCheck already checked at top).
-          //   • getDryRun() — surfaced for visibility, not as a blocker.
+          // Mirrors burst:preempt's fire pattern (L540-555):
+          //   • resetBurst                     — drop pending timer + clear count
+          //   • retryCount[id]   = 0
+          //   • nextRetryAt[id]  = now + MIN_INTERVAL_MS
+          //   • clearEscalation                — wipe stale escalation flag
+          //   • triggerBookingFromBurst        — fire-and-forget, .catch() logs
+          //   • _markImmediateTriggerFired     — start per-job 60s cooldown
+          //
+          // Why we mirror burst:preempt and not burst:ready: both are
+          // "preflight reported failure but we should act anyway" contexts.
+          // burst:ready already has its own immediate-fire branch when
+          // preflight returns success — that path is unchanged.
           const _gate = evaluateImmediateTriggerGate({
             jobId:              dbJob.id,
             phase:              execTiming.phase,
             msUntilOpen:        execTiming.msUntilOpen,
             runNum,
             maxBurstRuns:       MAX_BURST_RUNS,
-            transitionConsumed: true,                // we just consumed it above
+            transitionConsumed: true,                // just consumed above
             bookingActive:      isBookingActive(),
             authLocked:         isLocked(),
             dryRun:             getDryRun(),
           });
+
+          if (_gate.allow) {
+            console.log(
+              `[preflight-loop] immediate-trigger:fire — Job #${dbJob.id} ` +
+              `liveTruth flipped to OPEN; ${_gate.reason}. ` +
+              `Firing booking now (skipping ${ACCELERATED_BURST_MS}ms accelerated burst).`
+            );
+            const _immediateOpensAtMs = execTiming?.opensAt
+              ? new Date(execTiming.opensAt).getTime()
+              : null;
+            resetBurst(dbJob.id);
+            retryCount[dbJob.id]  = 0;
+            nextRetryAt[dbJob.id] = Date.now() + MIN_INTERVAL_MS;
+            clearEscalation(dbJob.id);
+            // Start per-job cooldown BEFORE the async fire so a second
+            // back-to-back consume in the same tick (extremely unlikely —
+            // consumeOpenTransition is one-shot — but defensive) cannot
+            // double-launch.
+            _markImmediateTriggerFired(dbJob.id);
+            triggerBookingFromBurst(dbJob.id, {
+              onRetry: (status) => scheduleHotRetry(dbJob, _immediateOpensAtMs, 1, status),
+            }).catch(e =>
+              console.error(`[preflight-loop] immediate-trigger:error — Job #${dbJob.id}:`, e.message)
+            );
+            return;  // skip scheduleBurst below — booking now in flight
+          }
+
+          // Gate blocked → fall through to existing Stage 6 accelerated burst.
           console.log(
-            `[preflight-loop] immediate-trigger:gate — Job #${dbJob.id} ` +
-            `would ${_gate.allow ? 'FIRE' : 'SKIP'} (${_gate.reason}). ` +
-            `[Stage 11.2 dry-run — falling back to accelerated burst.]`
+            `[preflight-loop] immediate-trigger:skip — Job #${dbJob.id} ` +
+            `${_gate.reason}; falling back to accelerated ${ACCELERATED_BURST_MS}ms burst.`
           );
         }
 
