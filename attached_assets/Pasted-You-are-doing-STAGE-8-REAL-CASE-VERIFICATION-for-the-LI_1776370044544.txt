@@ -1,0 +1,157 @@
+You are doing STAGE 8 — REAL-CASE VERIFICATION for the LIVE-TRUTH–DRIVEN BOOKING TIMING PASS in the YMCA Booker app.
+
+DO NOT CHANGE CODE YET.
+
+PRIMARY GOAL
+
+Verify that the new liveTruth-driven behavior works correctly in real cases and does not create unsafe or misleading scheduling behavior.
+
+At this point the system should already have:
+- normalized liveTruth verdicts
+- near-open 5 s freshness rule
+- urgency hints affecting burst cadence / preempt buffer
+- open-transition acceleration
+- Tools visibility for liveTruth influence
+
+This stage is verification only.
+
+IMPORTANT RULES
+
+- NO code changes unless the verification proves something is broken
+- Use concrete evidence from live or near-live cases
+- Be precise about what actually happened vs what should have happened
+
+AFTER THIS STAGE:
+1. summarize what was verified
+2. list any failures or gaps
+3. recommend whether Stage 9 should be no-change closeout or targeted fix
+4. STOP
+
+--------------------------------------------------
+SECTION A — VERIFY OPEN / BOOKABLE CASE
+--------------------------------------------------
+
+Find one job/case where liveTruth returns bookable / open.
+
+Verify:
+1. liveVerdict.verdict = open
+2. liveVerdict.isFresh = true
+3. Tools shows the verdict and freshness correctly
+4. liveUrgencyHints reflects the stronger urgency policy
+5. Burst/preflight cadence is actually shortened relative to baseline
+6. UI status does NOT incorrectly say closed/full
+7. Playwright booking path is still intact if booking is attempted
+
+Return exact evidence:
+- verdict
+- age/freshness
+- urgency values
+- any cadence/preempt logs
+- resulting UI label
+
+--------------------------------------------------
+SECTION B — VERIFY WAITLIST CASE
+--------------------------------------------------
+
+Find one case where liveTruth returns waitlist.
+
+Verify:
+1. liveVerdict.verdict = waitlist
+2. UI shows waitlist/full style correctly
+3. liveUrgencyHints is mildly more urgent than fallback
+4. No false "open with spots" state appears
+5. Booking path still allows waitlist logic where appropriate
+
+Return exact evidence.
+
+--------------------------------------------------
+SECTION C — VERIFY FULL OR CANCELLED CASE
+--------------------------------------------------
+
+Find one case where liveTruth returns full or cancelled.
+
+Verify:
+1. liveVerdict.verdict = full OR cancelled
+2. UI reflects this correctly
+3. liveUrgencyHints softens cadence / preempt urgency
+4. Browser work is reduced or softened compared with open
+5. No false "Registration is open" or false-closed-from-phase-only bug remains
+
+Return exact evidence.
+
+--------------------------------------------------
+SECTION D — VERIFY UNKNOWN / API-UNAVAILABLE CASE
+--------------------------------------------------
+
+Find one case where liveTruth is unknown, stale, or unavailable.
+
+Verify:
+1. liveVerdict.verdict = unknown OR isFresh = false
+2. liveUrgencyHints falls back to no-op
+3. Existing scheduler behavior remains unchanged
+4. UI stays neutral rather than overconfident
+5. No hard dependency on API truth breaks booking behavior
+
+Return exact evidence.
+
+--------------------------------------------------
+SECTION E — VERIFY OPEN-TRANSITION ACCELERATION
+--------------------------------------------------
+
+Find a case where a class flips from non-open → open,
+or simulate/trace a real transition already captured.
+
+Verify:
+1. _maybeRecordOpenTransition recorded the flip
+2. consumeOpenTransition was consumed exactly once
+3. next burst delay was accelerated to ACCELERATED_BURST_MS = 5_000
+4. no duplicate launches or retry storm occurred
+5. reaction time improved compared with baseline
+
+Return exact evidence:
+- old verdict
+- new verdict
+- timestamp / freshness
+- acceleration log
+- resulting burst delay
+
+If no real transition occurred yet, say so explicitly and show what evidence is missing.
+
+--------------------------------------------------
+SECTION F — CHECK FOR UNINTENDED SIDE EFFECTS
+--------------------------------------------------
+
+Verify that none of these regressed:
+
+1. Unknown/stale verdicts do NOT suppress legitimate booking attempts
+2. Full/cancelled verdicts do NOT permanently suppress activity — only soften urgency
+3. Waitlist/open/full/cancelled UI labels remain consistent with actual verdicts
+4. Tools visibility stays compact and readable
+5. No duplicate or excessive API calls appear near open
+6. No retry storm or burst-timer duplication appears
+
+--------------------------------------------------
+SECTION G — FINAL OUTPUT
+--------------------------------------------------
+
+Provide:
+
+1. Which of these were fully verified:
+- open
+- waitlist
+- full/cancelled
+- unknown
+- open-transition acceleration
+
+2. For each verified case:
+- exact observed behavior
+- whether it matched expectation
+
+3. Any gaps still unverified due to lack of a real case
+4. Whether Stage 9 should be:
+- no-change closeout
+OR
+- targeted fix for a specific verified issue
+
+STOP after reporting.
+Do NOT make new changes in this stage.
