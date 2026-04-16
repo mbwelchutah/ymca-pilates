@@ -1193,19 +1193,35 @@ async function runBookingJob(job, opts = {}) {
     }).catch(() => true); // default true — don't false-positive on eval error
 
     if (!scheduleHasRows) {
-      console.log('⚠️ Schedule appears empty (0 time-bearing card-sized rows) — possible render failure.');
-      await captureFailure('navigate', 'schedule_not_rendered');
-      recordFailure({
-        jobId:    job.id || job.jobId || null,
-        phase:    'navigate', reason: 'schedule_not_rendered',
-        category: 'navigate', label: 'Schedule rendered 0 rows after filter',
-        message:  'No time-containing card-sized elements visible after filter application',
-        classTitle,
-        screenshot: _screenshotRef(screenshotPath),
-        url:      page.url(),
-        context:  { categoryApplied, instructorApplied },
-      });
-      // Non-terminal — continue; tab click may trigger re-render.
+      console.log('⚠️ Schedule appears empty (0 time-bearing card-sized rows) — waiting 1000 ms then re-checking...');
+      await page.waitForTimeout(1000);
+      const scheduleHasRowsRetry = await page.evaluate(() => {
+        const timeRe = /\d{1,2}:\d{2}/;
+        return [...document.querySelectorAll('*')].some(el => {
+          if (el.children.length === 0) return false;
+          if (!timeRe.test(el.textContent)) return false;
+          const r = el.getBoundingClientRect();
+          return r.width >= 100 && r.height >= 30;
+        });
+      }).catch(() => true);
+
+      if (!scheduleHasRowsRetry) {
+        console.log('⚠️ Schedule still empty after 1000 ms retry — recording render failure and continuing.');
+        await captureFailure('navigate', 'schedule_not_rendered');
+        recordFailure({
+          jobId:    job.id || job.jobId || null,
+          phase:    'navigate', reason: 'schedule_not_rendered',
+          category: 'navigate', label: 'Schedule rendered 0 rows after filter',
+          message:  'No time-containing card-sized elements visible after filter application (confirmed after 1000 ms retry)',
+          classTitle,
+          screenshot: _screenshotRef(screenshotPath),
+          url:      page.url(),
+          context:  { categoryApplied, instructorApplied },
+        });
+        // Non-terminal — continue; tab click may trigger re-render.
+      } else {
+        console.log('✅ Schedule rows appeared after 1000 ms retry — continuing normally.');
+      }
     }
     // ─────────────────────────────────────────────────────────────────────────
 
