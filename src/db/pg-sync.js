@@ -13,7 +13,16 @@
 const fs   = require('fs');
 const path = require('path');
 
-const SEED_PATH = path.join(__dirname, '../../data/seed-jobs.json');
+const SEED_PATH   = path.join(__dirname, '../../data/seed-jobs.json');
+const INIT_MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
+
+// True iff pg-init.js completed initFromPg() successfully at startup.
+// When false, syncJobsToPgAsync refuses to run — its DELETE+INSERT would
+// otherwise wipe good PG data using a potentially-stale SQLite snapshot
+// (seeded from git's seed-jobs.json after a failed pg-init).
+function _pgInitWasSuccessful() {
+  try { return fs.existsSync(INIT_MARKER); } catch (_) { return false; }
+}
 
 // Lazily create a connection pool so this file can be required anywhere
 // without immediately failing if PG env vars aren't set.
@@ -115,6 +124,20 @@ function _doSyncJobsToPg() {
 // Core work — reads SQLite at execution time (not enqueue time) so it always
 // captures the most-recent committed state of the jobs table.
 async function _doSyncJobsToPgCore() {
+  // Durability guard: if pg-init.js did NOT successfully read from PG at
+  // startup, SQLite may have been seeded from git's stale seed-jobs.json
+  // (which only contains whatever was committed to the repo — any UI-created
+  // jobs are missing).  Pushing that SQLite state to PG via DELETE+INSERT
+  // would silently wipe good production data.  Refuse and log loudly.
+  if (!_pgInitWasSuccessful()) {
+    const msg = '[pg-sync] REFUSING to sync — pg-init marker missing. ' +
+                'DELETE+INSERT with a possibly-stale SQLite would wipe good PG data. ' +
+                'Restart the server; if the marker is still missing, pg-init is failing ' +
+                '(check DATABASE_URL and PG reachability).';
+    console.error(msg);
+    throw new Error('pg-init-not-ok');
+  }
+
   // Read the current job list from SQLite (authoritative runtime source).
   // Falls back to seed-jobs.json only if SQLite hasn't been initialised yet
   // (e.g. during a very early startup before openDb() is first called).
