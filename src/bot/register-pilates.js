@@ -1478,6 +1478,28 @@ async function runBookingJob(job, opts = {}) {
 
         if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
 
+        // ── Tie-break diagnostic ───────────────────────────────────────────────
+        // When the top two candidates are equal on score+visibility, record WHY
+        // the winner was picked so we can confirm the Apr 16 fix is firing.
+        // (Inner text wrappers tied with their outer card on score+visible; the
+        // outer card has a button child, so hasClickableChild flipped the choice.)
+        let tieBreakNote = null;
+        if (allRows.length >= 2) {
+          const w = allRows[0], r = allRows[1];
+          if (w.score === r.score && w.visible === r.visible) {
+            const reason = w.hasClickableChild !== r.hasClickableChild
+              ? `winner has clickable child (${w.hasClickableChild}) vs runner-up (${r.hasClickableChild})`
+              : w.desc !== r.desc
+                ? `winner has fewer descendants (${w.desc} vs ${r.desc})`
+                : `tied on every axis — DOM order picked the winner`;
+            tieBreakNote = {
+              reason,
+              winner:    { desc: w.desc, hasClickable: w.hasClickableChild, txt: w.txt.slice(0, 80) },
+              runnerUp:  { desc: r.desc, hasClickable: r.hasClickableChild, txt: r.txt.slice(0, 80) },
+            };
+          }
+        }
+
         // Mark best match so Playwright can locate it via attribute selector
         allRows[0].el.setAttribute('data-target-class', 'yes');
 
@@ -1499,6 +1521,7 @@ async function runBookingJob(job, opts = {}) {
           reasons:      allRows[0].reasons,
           desc:         allRows[0].desc,
           visible:      allRows[0].visible,
+          tieBreakNote,
           rowFull,
           rowWaitlist,
           secondMatched: secondRow && secondRow.score >= confidenceThreshold - 2 ? secondRow.txt : null,
@@ -1527,6 +1550,15 @@ async function runBookingJob(job, opts = {}) {
         result.allResults.forEach((r, i) =>
           console.log(`    [${i}] score=${r.score} desc=${r.desc} visible=${r.visible} (${r.reasons}) "${r.txt}"`)
         );
+      }
+
+      // Tie-break diagnostic: surfaces WHY allRows[0] beat allRows[1] when they
+      // were equal on score+visibility (catches the Apr 16 hasClickableChild flip).
+      if (result.tieBreakNote) {
+        const tb = result.tieBreakNote;
+        console.log(`  [tie-break] ${tb.reason}`);
+        console.log(`    winner:    desc=${tb.winner.desc}    hasClickable=${tb.winner.hasClickable} "${tb.winner.txt}"`);
+        console.log(`    runner-up: desc=${tb.runnerUp.desc}    hasClickable=${tb.runnerUp.hasClickable} "${tb.runnerUp.txt}"`);
       }
 
       if (!result.matched) {
