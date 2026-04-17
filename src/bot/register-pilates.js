@@ -1534,12 +1534,16 @@ async function runBookingJob(job, opts = {}) {
         // Sort: highest score first; prefer visible (looks_card) within same score;
         // then prefer elements with an interactive child (button/[role=button]/a) —
         // this is the real clickable card, not an inner text wrapper;
-        // finally tie-break on fewest descendants (most specific element).
+        // then tie-break on fewest descendants (most specific element);
+        // finally, prefer shorter normalized text (tighter element with less
+        // surrounding chrome) so two otherwise-identical candidates resolve
+        // deterministically instead of falling through to DOM order.
         allRows.sort((a, b) =>
           b.score - a.score ||
           (b.visible ? 1 : 0) - (a.visible ? 1 : 0) ||
           (b.hasClickableChild ? 1 : 0) - (a.hasClickableChild ? 1 : 0) ||
-          a.desc - b.desc
+          a.desc - b.desc ||
+          a.txt.length - b.txt.length
         );
 
         if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
@@ -1557,11 +1561,13 @@ async function runBookingJob(job, opts = {}) {
               ? `winner has clickable child (${w.hasClickableChild}) vs runner-up (${r.hasClickableChild})`
               : w.desc !== r.desc
                 ? `winner has fewer descendants (${w.desc} vs ${r.desc})`
-                : `tied on every axis — DOM order picked the winner`;
+                : w.txt.length !== r.txt.length
+                  ? `winner has shorter normalized text (${w.txt.length} vs ${r.txt.length} chars)`
+                  : `tied on every axis (incl. text length) — DOM order picked the winner`;
             tieBreakNote = {
               reason,
-              winner:    { desc: w.desc, hasClickable: w.hasClickableChild, txt: w.txt.slice(0, 80) },
-              runnerUp:  { desc: r.desc, hasClickable: r.hasClickableChild, txt: r.txt.slice(0, 80) },
+              winner:    { desc: w.desc, hasClickable: w.hasClickableChild, txtLen: w.txt.length, txt: w.txt.slice(0, 80) },
+              runnerUp:  { desc: r.desc, hasClickable: r.hasClickableChild, txtLen: r.txt.length, txt: r.txt.slice(0, 80) },
             };
           }
         }
