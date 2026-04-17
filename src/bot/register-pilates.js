@@ -3099,6 +3099,11 @@ async function runBookingJob(job, opts = {}) {
             registered = true;
             break;
           } else {
+            // Detail-page handler — symmetric with Register branch below.
+            const detailRes2 = await completeBookingOnDetailPageIfNavigated('Register(full→waitlist)');
+            if (detailRes2.handled && (detailRes2.signal === 'success' || detailRes2.signal === 'already_registered')) {
+              console.log(`✅ DETAIL-PAGE flow signaled success on full class (${detailRes2.reason}) — verifying via schedule rescrape...`);
+            }
             // Schedule re-scrape: definitive verification before declaring failure.
             const verify2 = await verifyViaScheduleRescrape('Register(full→waitlist)');
             if (verify2.verified === true) {
@@ -3146,6 +3151,16 @@ async function runBookingJob(job, opts = {}) {
         _state.isConfirming = false;
 
         if (!regResult.confirmed) {
+          // Detail-page handler: some FW class types navigate to a class detail
+          // page (/m?p=schedules-class&class=...) instead of opening the signup
+          // modal. The helper detects this, completes the booking on the detail
+          // page, then navigates back to the schedule embed so rescrape can
+          // verify. No-op when the click stayed on the schedule embed.
+          const detailRes = await completeBookingOnDetailPageIfNavigated('Register');
+          if (detailRes.handled && (detailRes.signal === 'success' || detailRes.signal === 'already_registered')) {
+            console.log(`✅ DETAIL-PAGE flow signaled success (${detailRes.reason}) — verifying via schedule rescrape...`);
+            // Don't trust the helper alone — let rescrape authoritatively verify.
+          }
           // Schedule re-scrape: definitive verification before declaring failure.
           // FW often returns an empty modal after Register click — neither success
           // nor failure signals appear. Re-finding the card and inspecting the
@@ -3219,6 +3234,11 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         } else {
+          // Detail-page handler — symmetric with Register branch above.
+          const detailResW = await completeBookingOnDetailPageIfNavigated('Waitlist');
+          if (detailResW.handled && (detailResW.signal === 'success' || detailResW.signal === 'already_registered')) {
+            console.log(`✅ DETAIL-PAGE flow signaled waitlist success (${detailResW.reason}) — verifying via schedule rescrape...`);
+          }
           // Schedule re-scrape: definitive verification before declaring failure.
           const verifyW = await verifyViaScheduleRescrape('Waitlist');
           if (verifyW.verified === true) {

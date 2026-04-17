@@ -51,7 +51,16 @@ Hardened against false-positives via four guards: dialog-detach check before re-
 A second look at the production logs (the IMG_1490–1492 batch) reframed the detail-page navigation as a *consequence* of an upstream tie-break misfire, not a primary bug:
 - The findTargetCard scorer can return two equally-scored rows; without a clickable-child preference the lower-`desc` (leaner inner text wrapper) wins, then the click helper's `cursor:pointer` fallback dispatches on a non-interactive child that happens to be a "view details" link → page navigates off the schedule embed → modal closes empty.
 - All four bug fixes from the diagnosis (A tie-break, B click-helper guard, C banner mode, D ghost-class flicker) were *already* in the codebase from earlier April commits (`bcc7c4f2`, `a0f4476`, NowScreen structured `phase`/`reason` banner logic, useAppState `pendingDisappearance` grace). The session validated that the existing fixes cover the failure mode.
-- A defensive `completeBookingOnDetailPageIfNavigated` helper sits at `register-pilates.js:2511` (defined but not wired). It can be wired into the post-click branches if a future production run shows detail-page navigation is genuinely required by some FW class type, rather than being a symptom of clicking the wrong element.
+- A defensive `completeBookingOnDetailPageIfNavigated` helper sits at `register-pilates.js:2511`.
+
+**Apr 17 evening — detail-page handler wired.** The next live run (Job #24, Friday 12 PM Flow Yoga · Hilary, screenshot IMG_1520) advanced through "Class found → Modal reached → Registration action" and then stalled at "Waiting for confirmation". Logs showed the modal opened correctly and the YES click landed; FW then *navigated the page off the schedule embed* to `/m?p=schedules-class&class=...` even though the correct card was clicked. This confirmed detail-page navigation is genuine FW behaviour for this class type, not a wrong-click symptom.
+
+The `completeBookingOnDetailPageIfNavigated` helper is now wired into all three post-click failure branches in `runBookingJob` (Register at line 3157, Waitlist at line 3236, Register-on-full-class at line 3106). The helper runs BEFORE the existing `verifyViaScheduleRescrape` so:
+1. If the click stayed on the schedule embed → helper is a no-op, rescrape proceeds as before.
+2. If the click navigated to a detail page → helper verifies identity (title + time + instructor), checks for already-registered state, clicks Register/Reserve on the detail page, then navigates back to the schedule embed.
+3. The rescrape always runs after — the helper itself never reports success directly. The on-schedule rescrape's modal button inspection ("Cancel Registration" vs "Register") is the authoritative confirmation.
+
+Infinite-loop guard (per architect review): each call site invokes the helper exactly once per attempt. The bounded retry loop already caps total attempts; the helper itself does not loop.
 
 #### Click-attempt speedup (Apr 16, second pass)
 Production run showed every attempt was burning ~30 s waiting on the `[data-target-class="yes"]` marker that Bubble had already stripped from the DOM:
