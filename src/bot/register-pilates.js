@@ -2486,6 +2486,129 @@ async function runBookingJob(job, opts = {}) {
     }
     // ────────────────────────────────────────────────────────────────────────────
 
+    // ── Detail-page booking handler ────────────────────────────────────────────
+    // Some FW class cards (e.g. Flow Yoga) respond to "Register" clicks by
+    // NAVIGATING to a class detail page (URL pattern /m?p=schedules-class&class=…)
+    // instead of opening an inline booking modal. The user must then click a
+    // second Register button on the detail page to actually reserve.
+    //
+    // Called immediately after every Register/Waitlist click. If the URL has
+    // navigated away from the schedule embed, this helper:
+    //   1. Verifies we're on a FamilyWorks page (not navigated externally).
+    //   2. Verifies identity (title + time + optional instructor in page text).
+    //   3. Finds the real Register/Reserve button on the detail page.
+    //   4. Clicks it and waits for a state change.
+    //   5. Navigates back to the schedule embed so the existing
+    //      verifyViaScheduleRescrape flow can authoritatively confirm.
+    //
+    // No-op when no navigation happened. Always tries to restore the schedule
+    // embed before returning so the outer flow can keep working.
+    //
+    // Returns: { handled: bool, signal: 'success'|'already_registered'|'no_button'|'no_signal'|'identity_mismatch'|'error', reason: string }
+    async function completeBookingOnDetailPageIfNavigated(actionLabel) {
+      // Wait briefly for any navigation triggered by the click to settle
+      await page.waitForTimeout(600);
+      const currentUrl = page.url();
+
+      // Not a detail-page navigation — modal-based flow continues normally
+      if (currentUrl.includes('schedulesembed')) {
+        return { handled: false };
+      }
+      if (!currentUrl.includes('familyworks.app')) {
+        console.log(`[detail-page] ${actionLabel}: navigated OFF FamilyWorks (url=${currentUrl}) — restoring schedule and bailing`);
+        await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+        return { handled: true, signal: 'error', reason: 'navigated_off_familyworks' };
+      }
+
+      console.log(`[detail-page] ${actionLabel}: detected navigation to ${currentUrl} — completing booking on detail page`);
+
+      try {
+        // 1. Wait for detail page to render (Bubble.io SPA needs a beat)
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+
+        // 2. Identity check — refuse to interact with a page that isn't the right class
+        const pageText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const idTitle = !!classTitle && pageText.includes(String(classTitle).toLowerCase());
+        const idTime  = !!classTimeNorm && pageText.includes(String(classTimeNorm).toLowerCase());
+        const idInst  = !instructorFirstName || pageText.includes(String(instructorFirstName).toLowerCase());
+        if (!idTitle || !idTime || !idInst) {
+          console.log(`[detail-page] ${actionLabel}: identity mismatch (title=${idTitle} time=${idTime} instructor=${idInst}) — refusing to click anything`);
+          await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+          return { handled: true, signal: 'identity_mismatch', reason: 'detail_page_identity_mismatch' };
+        }
+        console.log(`[detail-page] ${actionLabel}: identity verified on detail page`);
+
+        // 3. First check whether the original click ALREADY registered us —
+        //    detail page may now show "Cancel Registration" / "View Reservation"
+        const alreadyReservedNow = await page.locator(
+          'button:visible:has-text("Cancel Registration"), button:visible:has-text("View Reservation"), ' +
+          'button:visible:has-text("Unregister"), button:visible:has-text("Leave Waitlist"), ' +
+          '[role="button"]:visible:has-text("Cancel Registration"), [role="button"]:visible:has-text("View Reservation")'
+        ).count().catch(() => 0);
+        if (alreadyReservedNow > 0) {
+          console.log(`[detail-page] ${actionLabel}: detail page already shows Cancel/View Reservation — first click DID register the user`);
+          await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+          return { handled: true, signal: 'already_registered', reason: 'first_click_registered' };
+        }
+
+        // 4. Find the real Register/Reserve button on the detail page.
+        //    Exclude "Login to Register" so we don't false-match the auth gate.
+        //    Use exact-text matching to avoid hitting unrelated text elements.
+        const detailRegisterBtn = page.locator(
+          'button:visible, [role="button"]:visible, a:visible'
+        ).filter({
+          hasText: /^(register|reserve|sign\s*up|join\s*waitlist|waitlist)$/i
+        }).first();
+
+        const btnCount = await detailRegisterBtn.count().catch(() => 0);
+        if (btnCount === 0) {
+          console.log(`[detail-page] ${actionLabel}: no Register/Reserve button found on detail page — restoring schedule`);
+          await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+          return { handled: true, signal: 'no_button', reason: 'detail_page_no_register_button' };
+        }
+
+        const detailBtnText = (await detailRegisterBtn.textContent().catch(() => '') || '').replace(/\s+/g, ' ').trim();
+        console.log(`[detail-page] ${actionLabel}: clicking detail-page button "${detailBtnText}"`);
+        const clickErr = await detailRegisterBtn.click({ timeout: 5000 }).then(() => null).catch(e => e);
+        if (clickErr) {
+          console.log(`[detail-page] ${actionLabel}: detail-page click error — ${clickErr.message}`);
+          await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+          return { handled: true, signal: 'error', reason: 'detail_page_click_error', error: clickErr.message };
+        }
+
+        // 5. Wait for some change — possible outcomes: button text flips,
+        //    a confirmation modal opens, or the page navigates again.
+        await page.waitForTimeout(2000);
+
+        const postBtns = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
+        const cleanedPost = postBtns.map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const successButton = cleanedPost.some(t =>
+          /view\s*reservation|view\s*waitlist|unregister|cancel\s*registration|leave\s*waitlist/i.test(t)
+        );
+        const successText = /you.?re registered|reservation\s*confirmed|registered\s*successfully|booking\s*confirmed|you.?re\s*on\s*the\s*waitlist/i
+          .test((await page.locator('body').innerText().catch(() => '')).toLowerCase());
+
+        // 6. Always navigate back to schedule embed so the outer flow / rescrape
+        //    can run its authoritative check. Even if we got a success signal,
+        //    don't trust it alone — let the rescrape verify.
+        await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+
+        if (successButton || successText) {
+          console.log(`[detail-page] ${actionLabel}: detail-page click produced success signal (button=${successButton}, text=${successText}) — back on schedule, rescrape will verify`);
+          return { handled: true, signal: 'success', reason: 'detail_page_success_signal' };
+        }
+        console.log(`[detail-page] ${actionLabel}: detail-page click produced no decisive signal — back on schedule, rescrape will verify authoritatively`);
+        return { handled: true, signal: 'no_signal', reason: 'detail_page_no_signal' };
+      } catch (e) {
+        console.log(`[detail-page] ${actionLabel}: helper threw — ${e.message}`);
+        await page.goto('https://my.familyworks.app/schedulesembed/eugeneymca?search=yes', { timeout: 60000 }).catch(() => {});
+        return { handled: true, signal: 'error', reason: 'detail_page_exception', error: e.message };
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────────
+
     // Try the best candidate first; if post-click verification fails, attempt
     // the second-best candidate once (PART 6).
     // Rules: only try second-best once; never skip verification; fail safe.
