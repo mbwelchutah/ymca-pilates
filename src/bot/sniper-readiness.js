@@ -153,6 +153,14 @@ function createRunState(jobId) {
     // Persisted across runs so the NowScreen badge survives page refreshes
     // and scheduler cycles.  Only savePreflightSnapshot() ever writes this.
     lastPreflightSnapshot: prior?.lastPreflightSnapshot ?? null,
+    // Stage 10E — structured post-click outcome from the most recent run:
+    //   { finalOutcome: "booked"|"waitlisted"|"still_open"|"ambiguous"|null,
+    //     confirmationSignals: { action, hasUnregisterButton, hasWaitlistText,
+    //                            hasRegisterButton, hasWaitlistButton,
+    //                            visibleButtons, checkedAt, elapsedMs } | null,
+    //     capturedAt: ISO }
+    // Written by emitSuccess() when a confirmation result is supplied.
+    lastConfirmation: prior?.lastConfirmation ?? null,
   };
 }
 
@@ -217,7 +225,12 @@ function emitEvent(state, phase, failureType, message, extra = {}) {
 }
 
 // Marks the run as fully successful — all three readiness dimensions confirmed.
-function emitSuccess(state) {
+// Stage 10E: optional `confirmation` carries the structured post-click outcome
+// ({ finalOutcome, confirmationSignals }) captured by confirmBookingOutcome().
+// When provided, it is persisted on state.lastConfirmation and recorded as
+// evidence on the CONFIRMATION event so the readiness bundle reflects the
+// verified booking outcome.
+function emitSuccess(state, confirmation = null) {
   const ts = new Date().toISOString();
   state.bundle = {
     session:   'SESSION_READY',
@@ -227,13 +240,27 @@ function emitSuccess(state) {
   state.sniperState = 'SNIPER_READY';
   state.phase       = 'CONFIRMATION';
   state.updatedAt   = ts;
+  if (confirmation && confirmation.finalOutcome) {
+    state.lastConfirmation = {
+      finalOutcome:        confirmation.finalOutcome,
+      confirmationSignals: confirmation.confirmationSignals || null,
+      capturedAt:          ts,
+    };
+  }
   state.events.push({
     phase:       'CONFIRMATION',
     failureType: null,
-    message:     'Booking completed successfully',
+    message:     confirmation && confirmation.finalOutcome
+      ? `Booking completed successfully (finalOutcome=${confirmation.finalOutcome})`
+      : 'Booking completed successfully',
     timestamp:   ts,
     screenshot:  null,
-    evidence:    null,
+    evidence:    confirmation && confirmation.finalOutcome
+      ? {
+          finalOutcome:        confirmation.finalOutcome,
+          confirmationSignals: confirmation.confirmationSignals || null,
+        }
+      : null,
   });
 }
 

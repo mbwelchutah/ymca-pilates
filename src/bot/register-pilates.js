@@ -374,6 +374,85 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
   return { confirmed: false, viaPopup: false, cancelFound: false, weakSignal: true };
 }
 
+// ── Stage 10E: Strong post-click outcome detector ────────────────────────────
+// Standalone helper called once per attempted Register/Waitlist click to
+// classify the post-click DOM into a single canonical outcome with the raw
+// signals that produced the verdict.
+//
+// Outcomes (priority order):
+//   "booked"      — Unregister / Cancel / View Reservation visible (strongest)
+//   "waitlisted"  — waitlist-specific confirmation text observed
+//   "still_open"  — Register / Waitlist button still present (click had no effect)
+//   "ambiguous"   — none of the above; re-checked every 2 s for up to 10 s
+//
+// Returns { finalOutcome, confirmationSignals } — confirmationSignals records
+// the raw button + text observations used for classification, the attempted
+// action, when the check ran, and how long it took. This object is surfaced
+// on the run result and persisted to sniper-state so the readiness bundle
+// shows the verified booking outcome.
+async function confirmBookingOutcome(page, action, scope = null) {
+  const POLL_INTERVAL_MS = 2000;
+  const MAX_TOTAL_MS     = 10000;
+  const startedAt        = Date.now();
+
+  async function readSignalsOnce() {
+    // Scope button detection to the open modal (if still attached) to avoid
+    // picking up Register/Cancel buttons elsewhere on the schedule page.
+    // Falls back to page-wide automatically when the scope element detached.
+    let _scope = scope;
+    if (_scope) {
+      try { if ((await _scope.count()) === 0) _scope = null; }
+      catch { _scope = null; }
+    }
+    const btns = await detectActionButtons(page, _scope).catch(() => ({
+      hasCancel: false, hasRegister: false, hasWaitlist: false, allBtnTexts: [],
+    }));
+    const body = (await page.evaluate(() => document.body.textContent ?? '').catch(() => '')).toLowerCase();
+    const waitlistText =
+      /\bon the waitlist\b|\bwaitlisted\b|\bwaitlist confirmed\b|you.?re on the waitlist/i.test(body);
+    const cancelText =
+      /\bcancel registration\b|\bleave waitlist\b|\bview reservation\b|\bview waitlist\b|\bunregister\b/i.test(body);
+    return {
+      hasUnregisterButton: !!btns.hasCancel || cancelText,
+      hasWaitlistText:     waitlistText,
+      hasRegisterButton:   !!btns.hasRegister,
+      hasWaitlistButton:   !!btns.hasWaitlist,
+      visibleButtons:      btns.allBtnTexts || [],
+    };
+  }
+
+  function classify(sig) {
+    if (sig.hasUnregisterButton) return 'booked';
+    if (sig.hasWaitlistText)     return 'waitlisted';
+    if (action === 'register' && sig.hasRegisterButton) return 'still_open';
+    if (action === 'waitlist' && sig.hasWaitlistButton) return 'still_open';
+    return 'ambiguous';
+  }
+
+  let signals = await readSignalsOnce();
+  let outcome = classify(signals);
+
+  while (outcome === 'ambiguous' && (Date.now() - startedAt) < MAX_TOTAL_MS) {
+    await page.waitForTimeout(POLL_INTERVAL_MS).catch(() => {});
+    signals = await readSignalsOnce();
+    outcome = classify(signals);
+  }
+
+  return {
+    finalOutcome: outcome,
+    confirmationSignals: {
+      action,
+      hasUnregisterButton: signals.hasUnregisterButton,
+      hasWaitlistText:     signals.hasWaitlistText,
+      hasRegisterButton:   signals.hasRegisterButton,
+      hasWaitlistButton:   signals.hasWaitlistButton,
+      visibleButtons:      signals.visibleButtons,
+      checkedAt:           new Date().toISOString(),
+      elapsedMs:           Date.now() - startedAt,
+    },
+  };
+}
+
 // ── Inline Familyworks authentication ─────────────────────────────────────
 // Called when a booking modal shows "Login to Register" despite a successful
 // Daxko login.  Clicks the button, handles whatever login flow appears
@@ -2981,6 +3060,10 @@ async function runBookingJob(job, opts = {}) {
     advance(_state, 'ACTION');
     const maxAttempts = maxAttemptsOpt || 20;
     let registered = false;
+    // Stage 10E — sticky structured outcome of the most recent post-click
+    // confirmation. Populated by confirmBookingOutcome() at each Register/
+    // Waitlist click site and surfaced on the run result + sniper-state.
+    let _lastConfirmation = { finalOutcome: null, confirmationSignals: null };
 
     // ── PREFLIGHT GATE ─────────────────────────────────────────────────────────
     // When preflightOnly is set, check readiness of the booking action without
@@ -3348,231 +3431,124 @@ async function runBookingJob(job, opts = {}) {
           replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
           _tc.actionClickAt = new Date().toISOString();
           await registerBtn.first().click();
-          _state.isConfirming = true;
-          _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+          // ── Stage 10E POINT 6 (full→waitlist) — strong post-click confirmation ──
+          _state.isConfirming    = true;
+          _state.confirmingPhase = attempt > 1
+            ? `Retry ${attempt} of ${maxAttempts} · confirming…`
+            : 'Confirming booking outcome…';
           saveState(_state);
           _tc.confirmation_check_start = new Date().toISOString();
-          const wlResult2 = await checkBookingConfirmed(page, _jobId, attempt, 'Register(full→waitlist)', replayStore);
+          _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope);
           _tc.confirmation_check_done = new Date().toISOString();
-          _state.isConfirming = false;
+          _state.isConfirming    = false;
           _state.confirmingPhase = null;
-          if (wlResult2.confirmed) {
-            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (via Register button${wlResult2.viaPopup ? ' + popup' : ''}) — Cancel button: ${wlResult2.cancelFound}`);
-            console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
+          console.log(`[stage-10e] Register(full→waitlist): finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
+          if (_lastConfirmation.finalOutcome === 'booked' || _lastConfirmation.finalOutcome === 'waitlisted') {
+            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
+            console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
             registered = true;
             break;
-          } else {
-            // Detail-page handler — symmetric with Register branch below.
-            _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
-            const detailRes2 = await completeBookingOnDetailPageIfNavigated('Register(full→waitlist)');
-            // Task #60 — trust definitive helper outcomes; only rescrape on no_signal.
-            if (detailRes2.handled) {
-              if (detailRes2.signal === 'success' || detailRes2.signal === 'already_registered') {
-                console.log(`✅ DETAIL-PAGE: ${detailRes2.reason} — trusting helper, skipping rescrape (Task #60).`);
-                replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via detail-page flow (${detailRes2.reason})`);
-                console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
-                registered = true;
-                break;
-              }
-              if (detailRes2.signal === 'identity_mismatch' || detailRes2.signal === 'no_button' || detailRes2.signal === 'error') {
-                console.log(`❌ DETAIL-PAGE: ${detailRes2.reason} (signal=${detailRes2.signal}) — definitive failure, skipping rescrape (Task #60).`);
-                await captureFailure('post_click', 'detail_page_definitive_failure');
-                recordFailure({
-                  jobId:    job.id || job.jobId || null,
-                  phase:    'post_click', reason: detailRes2.reason,
-                  category: 'post_click', label: `Detail-page handler (full→waitlist): ${detailRes2.signal}`,
-                  message:  `Detail-page handler returned ${detailRes2.signal} (${detailRes2.reason}) — waitlist not joined.`,
-                  classTitle,
-                  screenshot: _screenshotRef(screenshotPath),
-                  url:      page.url(),
-                  context:  { attempt, detailSignal: detailRes2.signal, detailReason: detailRes2.reason },
-                });
-                if (!wlResult2.weakSignal) _replayAction = null;
-                await page.waitForTimeout(3000);
-                continue;
-              }
-            }
-            // Schedule re-scrape: definitive verification before declaring failure.
-            _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
-            const verify2 = await verifyViaScheduleRescrape('Register(full→waitlist)');
-            if (verify2.reason === 'not_on_schedule_page') {
-              _consecNotOnSchedulePage++;
-              if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
-                console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page (full→waitlist) — bailing (Task #60 cap).`);
-                _endConfirming();
-                await captureFailure('post_click', 'detail_page_loop');
-                return logRunSummary({
-                  status: 'error',
-                  message: 'Register-on-full click navigates off schedule embed every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
-                  screenshotPath,
-                  phase: 'post_click',
-                  reason: 'detail_page_loop',
-                  category: 'post_click',
-                  label: 'Detail-page navigation loop on full→waitlist (retry cap reached)',
-                  url: page.url(),
-                });
-              }
-            } else {
-              _consecNotOnSchedulePage = 0;
-            }
-            if (verify2.verified === true) {
-              console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join (via Register on full class): buttons=${JSON.stringify(verify2.buttons)}`);
-              replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verify2.buttons.join('|')})`);
-              registered = true;
-              break;
-            }
-            if (verify2.verified === false) {
-              console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT enrolled — Register/Waitlist still visible.`);
-              await captureFailure('post_click', 'definitive_not_enrolled');
-              recordFailure({
-                jobId:    job.id || job.jobId || null,
-                phase:    'post_click', reason: 'click_silent_no_op',
-                category: 'post_click', label: 'Register-as-waitlist click did not enroll',
-                message:  'Register (full→waitlist) clicked but schedule rescrape confirms user is NOT enrolled.',
-                classTitle,
-                screenshot: _screenshotRef(screenshotPath),
-                url:      page.url(),
-                context:  { attempt, viaPopup: wlResult2.viaPopup, rescrapeReason: verify2.reason, rescrapeButtons: verify2.buttons },
-              });
-              _replayAction = null;
-              await page.waitForTimeout(3000);
-              continue;
-            }
-            // Truly ambiguous (rescrape inconclusive) — fall through to existing retry path
-            console.log(`⚠️ Post-waitlist (via Register): booking did not complete; rescrape ${verify2.reason}. Retrying...`);
-            await captureFailure('post_click', 'result_unknown');
-            // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
-            // may find Cancel confirming the waitlist join happened.
-            if (!wlResult2.weakSignal) _replayAction = null;
-            await page.waitForTimeout(3000);
-            continue;
           }
+          // still_open or ambiguous → record structured failure and exit attempt
+          // loop with new "unconfirmed" status (Stage 10E mapping).
+          {
+            await captureFailure('post_click', 'unconfirmed');
+            const _reason = _lastConfirmation.finalOutcome === 'still_open'
+              ? 'click_silent_no_op'
+              : 'registration_unclear';
+            recordFailure({
+              jobId:    job.id || job.jobId || null,
+              phase:    'post_click', reason: _reason,
+              category: 'post_click',
+              label:    `Register(full→waitlist) outcome: ${_lastConfirmation.finalOutcome}`,
+              message:  `Register (full→waitlist) clicked but post-click outcome was "${_lastConfirmation.finalOutcome}" after up to 10 s of re-checks.`,
+              classTitle,
+              screenshot: _screenshotRef(screenshotPath),
+              url:      page.url(),
+              context:  {
+                attempt,
+                finalOutcome:        _lastConfirmation.finalOutcome,
+                confirmationSignals: _lastConfirmation.confirmationSignals,
+              },
+            });
+            _endConfirming();
+            return logRunSummary({
+              status:   'unconfirmed',
+              message:  `Register (full→waitlist) clicked but the booking could not be confirmed (finalOutcome=${_lastConfirmation.finalOutcome}).`,
+              screenshotPath,
+              phase:    'post_click',
+              reason:   _reason,
+              category: 'post_click',
+              label:    `Register(full→waitlist) outcome: ${_lastConfirmation.finalOutcome}`,
+              url:      page.url(),
+              recorded: true,
+              finalOutcome:        _lastConfirmation.finalOutcome,
+              confirmationSignals: _lastConfirmation.confirmationSignals,
+            });
+          }
+          // ── End Stage 10E POINT 6 (full→waitlist) ──────────────────────────
         }
         // ─────────────────────────────────────────────────────────────────
         _replayAction = 'register';
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
-        _state.isConfirming = true;
-        _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+        // ── Stage 10E POINT 6 (Register) — strong post-click confirmation ──
+        _state.isConfirming    = true;
+        _state.confirmingPhase = attempt > 1
+          ? `Retry ${attempt} of ${maxAttempts} · confirming…`
+          : 'Confirming booking outcome…';
         saveState(_state);
         _tc.confirmation_check_start = new Date().toISOString();
-        const regResult = await checkBookingConfirmed(page, _jobId, attempt, 'Register', replayStore);
+        _lastConfirmation = await confirmBookingOutcome(page, 'register', _attemptModalScope);
         _tc.confirmation_check_done = new Date().toISOString();
-        _state.isConfirming = false;
+        _state.isConfirming    = false;
         _state.confirmingPhase = null;
-
-        if (!regResult.confirmed) {
-          // Detail-page handler: some FW class types navigate to a class detail
-          // page (/m?p=schedules-class&class=...) instead of opening the signup
-          // modal. The helper detects this, completes the booking on the detail
-          // page, then navigates back to the schedule embed so rescrape can
-          // verify. No-op when the click stayed on the schedule embed.
-          _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
-          const detailRes = await completeBookingOnDetailPageIfNavigated('Register');
-          // Task #60 — trust definitive helper outcomes; only fall through to
-          // the (slow) rescrape when the helper had no signal or did nothing.
-          if (detailRes.handled) {
-            if (detailRes.signal === 'success' || detailRes.signal === 'already_registered') {
-              console.log(`✅ DETAIL-PAGE: ${detailRes.reason} — trusting helper, skipping rescrape (Task #60).`);
-              replayStore.addEvent(_jobId, 'confirm', `Registration confirmed via detail-page flow (${detailRes.reason})`);
-              console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
-              registered = true;
-              break;
-            }
-            if (detailRes.signal === 'identity_mismatch' || detailRes.signal === 'no_button' || detailRes.signal === 'error') {
-              console.log(`❌ DETAIL-PAGE: ${detailRes.reason} (signal=${detailRes.signal}) — definitive failure, skipping rescrape (Task #60).`);
-              await captureFailure('post_click', 'detail_page_definitive_failure');
-              recordFailure({
-                jobId:    job.id || job.jobId || null,
-                phase:    'post_click', reason: detailRes.reason,
-                category: 'post_click', label: `Detail-page handler: ${detailRes.signal}`,
-                message:  `Detail-page handler returned ${detailRes.signal} (${detailRes.reason}) — registration not completed.`,
-                classTitle,
-                screenshot: _screenshotRef(screenshotPath),
-                url:      page.url(),
-                context:  { attempt, detailSignal: detailRes.signal, detailReason: detailRes.reason },
-              });
-              _replayAction = null;
-              await page.waitForTimeout(3000);
-              continue;
-            }
-            // signal === 'no_signal' → fall through to rescrape
-          }
-          // Schedule re-scrape: definitive verification before declaring failure.
-          // FW often returns an empty modal after Register click — neither success
-          // nor failure signals appear. Re-finding the card and inspecting the
-          // modal that opens (Register vs. View Reservation/Cancel) tells us
-          // authoritatively whether the click actually booked the user.
-          _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
-          const verify = await verifyViaScheduleRescrape('Register');
-          // Task #60 retry cap on repeated off-embed bailouts.
-          if (verify.reason === 'not_on_schedule_page') {
-            _consecNotOnSchedulePage++;
-            if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
-              console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page — bailing out of retry loop (Task #60 cap).`);
-              _endConfirming();
-              await captureFailure('post_click', 'detail_page_loop');
-              return logRunSummary({
-                status: 'error',
-                message: 'Click navigates off schedule embed on every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
-                screenshotPath,
-                phase: 'post_click',
-                reason: 'detail_page_loop',
-                category: 'post_click',
-                label: 'Detail-page navigation loop (retry cap reached)',
-                url: page.url(),
-              });
-            }
-          } else {
-            _consecNotOnSchedulePage = 0;
-          }
-          if (verify.verified === true) {
-            console.log(`✅ SCHEDULE-RESCRAPE confirmed registration: buttons=${JSON.stringify(verify.buttons)}`);
-            replayStore.addEvent(_jobId, 'confirm', `Registration confirmed via schedule rescrape (buttons: ${verify.buttons.join('|')})`);
-            console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || ''} (verified via schedule rescrape)`);
-            registered = true;
-            break;
-          }
-          if (verify.verified === false) {
-            console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT registered — Register button still visible.`);
-            await captureFailure('post_click', 'definitive_not_registered');
-            recordFailure({
-              jobId:    job.id || job.jobId || null,
-              phase:    'post_click', reason: 'click_silent_no_op',
-              category: 'post_click', label: 'Register click did not register the user',
-              message:  'Register clicked but schedule rescrape confirms user is NOT registered (Register button still appears on the card).',
-              classTitle,
-              screenshot: _screenshotRef(screenshotPath),
-              url:      page.url(),
-              context:  { attempt, viaPopup: regResult.viaPopup, rescrapeReason: verify.reason, rescrapeButtons: verify.buttons },
-            });
-            // Clear replay action — definitive no-op means no prior side effect to recover.
-            _replayAction = null;
-            await page.waitForTimeout(3000);
-            continue;
-          }
-          // Truly ambiguous (rescrape inconclusive) — preserve old retry behavior.
-          console.log(`⚠️ Post-Register: rescrape inconclusive (${verify.reason}). Retrying...`);
-          await captureFailure('post_click', 'result_unknown');
+        console.log(`[stage-10e] Register: finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
+        if (_lastConfirmation.finalOutcome === 'booked' || _lastConfirmation.finalOutcome === 'waitlisted') {
+          replayStore.addEvent(_jobId, 'confirm', `Registration confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
+          console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'} (outcome=${_lastConfirmation.finalOutcome})`);
+          registered = true;
+          break;
+        }
+        // still_open or ambiguous → record structured failure and exit attempt
+        // loop with new "unconfirmed" status (Stage 10E mapping).
+        {
+          await captureFailure('post_click', 'unconfirmed');
+          const _reason = _lastConfirmation.finalOutcome === 'still_open'
+            ? 'click_silent_no_op'
+            : 'registration_unclear';
           recordFailure({
             jobId:    job.id || job.jobId || null,
-            phase:    'post_click', reason: 'registration_unclear',
-            category: 'post_click', label: 'No confirmation after Register click',
-            message:  'Register button clicked but booking not confirmed (no Cancel button appeared, no action buttons changed)',
+            phase:    'post_click', reason: _reason,
+            category: 'post_click',
+            label:    `Register outcome: ${_lastConfirmation.finalOutcome}`,
+            message:  `Register clicked but post-click outcome was "${_lastConfirmation.finalOutcome}" after up to 10 s of re-checks.`,
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { attempt, viaPopup: regResult.viaPopup, rescrapeReason: verify.reason },
+            context:  {
+              attempt,
+              finalOutcome:        _lastConfirmation.finalOutcome,
+              confirmationSignals: _lastConfirmation.confirmationSignals,
+            },
           });
-          await page.waitForTimeout(3000);
-          continue;  // retry this attempt
+          _endConfirming();
+          return logRunSummary({
+            status:   'unconfirmed',
+            message:  `Register clicked but the booking could not be confirmed (finalOutcome=${_lastConfirmation.finalOutcome}).`,
+            screenshotPath,
+            phase:    'post_click',
+            reason:   _reason,
+            category: 'post_click',
+            label:    `Register outcome: ${_lastConfirmation.finalOutcome}`,
+            url:      page.url(),
+            recorded: true,
+            finalOutcome:        _lastConfirmation.finalOutcome,
+            confirmationSignals: _lastConfirmation.confirmationSignals,
+          });
         }
-        // ─────────────────────────────────────────────────────────────────
-        console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || 'Stephanie'} (cancelFound=${regResult.cancelFound}, viaPopup=${regResult.viaPopup})`);
-        replayStore.addEvent(_jobId, 'confirm', `Registration confirmed — Cancel button: ${regResult.cancelFound}`);
-        registered = true;
-        break;
+        // ── End Stage 10E POINT 6 (Register) ──────────────────────────────
       } else if (hasWaitlist) {
         if (DRY_RUN) {
           console.log('DRY RUN: Would click Waitlist button. Done.');
@@ -3583,116 +3559,62 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
-        _state.isConfirming = true;
-        _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+        // ── Stage 10E POINT 6 (Waitlist) — strong post-click confirmation ──
+        _state.isConfirming    = true;
+        _state.confirmingPhase = attempt > 1
+          ? `Retry ${attempt} of ${maxAttempts} · confirming…`
+          : 'Confirming booking outcome…';
         saveState(_state);
         _tc.confirmation_check_start = new Date().toISOString();
-        const wlResult = await checkBookingConfirmed(page, _jobId, attempt, 'Waitlist', replayStore);
+        _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope);
         _tc.confirmation_check_done = new Date().toISOString();
-        _state.isConfirming = false;
+        _state.isConfirming    = false;
         _state.confirmingPhase = null;
-        if (wlResult.confirmed) {
-          replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (cancelFound=${wlResult.cancelFound}, viaPopup=${wlResult.viaPopup})`);
-          console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
+        console.log(`[stage-10e] Waitlist: finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
+        if (_lastConfirmation.finalOutcome === 'booked' || _lastConfirmation.finalOutcome === 'waitlisted') {
+          replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
+          console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
           registered = true;
           break;
-        } else {
-          // Detail-page handler — symmetric with Register branch above.
-          _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
-          const detailResW = await completeBookingOnDetailPageIfNavigated('Waitlist');
-          // Task #60 — trust definitive helper outcomes; only rescrape on no_signal.
-          if (detailResW.handled) {
-            if (detailResW.signal === 'success' || detailResW.signal === 'already_registered') {
-              console.log(`✅ DETAIL-PAGE: ${detailResW.reason} — trusting helper, skipping rescrape (Task #60).`);
-              replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via detail-page flow (${detailResW.reason})`);
-              console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
-              registered = true;
-              break;
-            }
-            if (detailResW.signal === 'identity_mismatch' || detailResW.signal === 'no_button' || detailResW.signal === 'error') {
-              console.log(`❌ DETAIL-PAGE: ${detailResW.reason} (signal=${detailResW.signal}) — definitive failure, skipping rescrape (Task #60).`);
-              await captureFailure('post_click', 'detail_page_definitive_failure');
-              recordFailure({
-                jobId:    job.id || job.jobId || null,
-                phase:    'post_click', reason: detailResW.reason,
-                category: 'post_click', label: `Detail-page handler (waitlist): ${detailResW.signal}`,
-                message:  `Detail-page handler returned ${detailResW.signal} (${detailResW.reason}) — waitlist not joined.`,
-                classTitle,
-                screenshot: _screenshotRef(screenshotPath),
-                url:      page.url(),
-                context:  { attempt, detailSignal: detailResW.signal, detailReason: detailResW.reason },
-              });
-              if (!wlResult.weakSignal) _replayAction = null;
-              await page.waitForTimeout(3000);
-              continue;
-            }
-          }
-          // Schedule re-scrape: definitive verification before declaring failure.
-          _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
-          const verifyW = await verifyViaScheduleRescrape('Waitlist');
-          if (verifyW.reason === 'not_on_schedule_page') {
-            _consecNotOnSchedulePage++;
-            if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
-              console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page (waitlist) — bailing (Task #60 cap).`);
-              _endConfirming();
-              await captureFailure('post_click', 'detail_page_loop');
-              return logRunSummary({
-                status: 'error',
-                message: 'Waitlist click navigates off schedule embed on every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
-                screenshotPath,
-                phase: 'post_click',
-                reason: 'detail_page_loop',
-                category: 'post_click',
-                label: 'Detail-page navigation loop on waitlist (retry cap reached)',
-                url: page.url(),
-              });
-            }
-          } else {
-            _consecNotOnSchedulePage = 0;
-          }
-          if (verifyW.verified === true) {
-            console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join: buttons=${JSON.stringify(verifyW.buttons)}`);
-            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verifyW.buttons.join('|')})`);
-            console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} (verified via schedule rescrape)`);
-            registered = true;
-            break;
-          }
-          if (verifyW.verified === false) {
-            console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT on waitlist — Waitlist button still visible.`);
-            await captureFailure('post_click', 'definitive_not_enrolled');
-            recordFailure({
-              jobId:    job.id || job.jobId || null,
-              phase:    'post_click', reason: 'click_silent_no_op',
-              category: 'post_click', label: 'Waitlist click did not enroll the user',
-              message:  'Waitlist clicked but schedule rescrape confirms user is NOT on the waitlist (Waitlist button still visible).',
-              classTitle,
-              screenshot: _screenshotRef(screenshotPath),
-              url:      page.url(),
-              context:  { attempt, viaPopup: wlResult.viaPopup, rescrapeReason: verifyW.reason, rescrapeButtons: verifyW.buttons },
-            });
-            _replayAction = null;
-            await page.waitForTimeout(3000);
-            continue;
-          }
-          // Truly ambiguous (rescrape inconclusive) — preserve old retry behavior.
-          console.log(`⚠️ Post-waitlist: rescrape inconclusive (${verifyW.reason}). Retrying...`);
-          await captureFailure('post_click', 'result_unknown');
+        }
+        // still_open or ambiguous → record structured failure and exit attempt
+        // loop with new "unconfirmed" status (Stage 10E mapping).
+        {
+          await captureFailure('post_click', 'unconfirmed');
+          const _reason = _lastConfirmation.finalOutcome === 'still_open'
+            ? 'click_silent_no_op'
+            : 'registration_unclear';
           recordFailure({
             jobId:    job.id || job.jobId || null,
-            phase:    'post_click', reason: 'registration_unclear',
-            category: 'post_click', label: 'No confirmation after Waitlist click',
-            message:  'Waitlist button clicked but booking not confirmed (no Cancel button appeared)',
+            phase:    'post_click', reason: _reason,
+            category: 'post_click',
+            label:    `Waitlist outcome: ${_lastConfirmation.finalOutcome}`,
+            message:  `Waitlist clicked but post-click outcome was "${_lastConfirmation.finalOutcome}" after up to 10 s of re-checks.`,
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { attempt, viaPopup: wlResult.viaPopup, weakSignal: !!wlResult.weakSignal, rescrapeReason: verifyW.reason },
+            context:  {
+              attempt,
+              finalOutcome:        _lastConfirmation.finalOutcome,
+              confirmationSignals: _lastConfirmation.confirmationSignals,
+            },
           });
-          // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
-          // may find Cancel confirming the waitlist join happened.
-          if (!wlResult.weakSignal) _replayAction = null;
-          await page.waitForTimeout(3000);
-          continue;
+          _endConfirming();
+          return logRunSummary({
+            status:   'unconfirmed',
+            message:  `Waitlist clicked but the booking could not be confirmed (finalOutcome=${_lastConfirmation.finalOutcome}).`,
+            screenshotPath,
+            phase:    'post_click',
+            reason:   _reason,
+            category: 'post_click',
+            label:    `Waitlist outcome: ${_lastConfirmation.finalOutcome}`,
+            url:      page.url(),
+            recorded: true,
+            finalOutcome:        _lastConfirmation.finalOutcome,
+            confirmationSignals: _lastConfirmation.confirmationSignals,
+          });
         }
+        // ── End Stage 10E POINT 6 (Waitlist) ──────────────────────────────
       } else {
         // No Register or Waitlist button visible.
         // On the first attempt, decide whether to wait (booking opens soon) or
@@ -3942,9 +3864,51 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'success', 'Booking confirmed', classTitle);
       }
     }
-    emitSuccess(_state);
+    // Stage 10E — capture a structured post-click outcome (booked / waitlisted /
+    // still_open / ambiguous) and the raw signals that produced the verdict.
+    // Surfaced on the run result and persisted via emitSuccess → saveState so
+    // the readiness bundle reflects the verified booking outcome.
+    // Prefer the click-site outcome captured by confirmBookingOutcome(), which
+    // is the authoritative success verdict (booked / waitlisted) from POINT 6.
+    // Fall back to a fresh terminal snapshot only if no click-site result was
+    // recorded (e.g. legacy code paths or DRY_RUN flows).
+    let _confirmation = (_lastConfirmation && _lastConfirmation.finalOutcome)
+      ? _lastConfirmation
+      : { finalOutcome: null, confirmationSignals: null };
+    if (!DRY_RUN && !_confirmation.finalOutcome) {
+      try {
+        const _attemptedAction = _replayAction === 'waitlist' ? 'waitlist' : 'register';
+        _state.isConfirming    = true;
+        _state.confirmingPhase = 'Capturing final outcome…';
+        saveState(_state);
+        _confirmation = await confirmBookingOutcome(page, _attemptedAction);
+        console.log(`[stage-10e] terminal finalOutcome=${_confirmation.finalOutcome} signals=${JSON.stringify(_confirmation.confirmationSignals)}`);
+      } catch (e) {
+        console.warn('[stage-10e] confirmBookingOutcome failed:', e.message);
+      } finally {
+        _state.isConfirming    = false;
+        _state.confirmingPhase = null;
+      }
+    } else if (_confirmation.finalOutcome) {
+      console.log(`[stage-10e] reusing click-site finalOutcome=${_confirmation.finalOutcome}`);
+    }
+    emitSuccess(_state, _confirmation);
     _saveFwStatus({ ready: true, status: 'FAMILYWORKS_READY', checkedAt: new Date().toISOString(), source: 'booking', detail: 'Booking completed successfully — FamilyWorks session confirmed active' });
-    return logRunSummary({ status: _replayAction === 'waitlist' ? 'waitlist' : 'booked', message: successMsg, screenshotPath });
+    // Derive top-level status from the authoritative finalOutcome when
+    // available so a Register click that actually joined a waitlist (the
+    // class filled between scrape and click) reports as "waitlist" instead
+    // of "booked".  Falls back to _replayAction for parity with legacy code.
+    const _terminalStatus =
+      _confirmation.finalOutcome === 'waitlisted' ? 'waitlist' :
+      _confirmation.finalOutcome === 'booked'     ? 'booked'   :
+      (_replayAction === 'waitlist' ? 'waitlist' : 'booked');
+    return logRunSummary({
+      status: _terminalStatus,
+      message: successMsg,
+      screenshotPath,
+      finalOutcome:        _confirmation.finalOutcome,
+      confirmationSignals: _confirmation.confirmationSignals,
+    });
 
   } catch (err) {
     console.error('❌ Error:', err.message);
