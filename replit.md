@@ -37,6 +37,16 @@ Addresses four intertwined bugs that surfaced when Job #24 (Flow Yoga Fri 12 PM)
 - **Banner (C)**: `/force-run-job` response now includes structured `status`, `reason`, `phase` fields. `NowScreen.performBooking` uses them to derive the failure banner — replacing the old `msg.includes('class')` broad string match that flipped click/modal/verify failures to "Class not found on schedule". New copy for modal-stage failures: "Couldn't open signup modal".
 - **Ghost-class flicker (D)**: `useAppState.refresh` keeps a brief grace period (≤ 8 s, ~1-2 poll cycles) for jobs that disappear from a poll response. If they reappear within that window, the disappearance is treated as a transient server-state race (e.g. pg-sync restore), not a legitimate delete — the card stays visible instead of flickering out and back in.
 
+#### Schedule re-scrape verification (Apr 17)
+After repeated false-positive incidents where the bot reported "Registered" for runs that left no actual FamilyWorks reservation, added an authoritative post-click verification path. When `checkBookingConfirmed` returns unconfirmed (no Cancel button, no confirmation text — the FW empty-modal pattern), `verifyViaScheduleRescrape` (`register-pilates.js` ~2362) closes the modal, re-finds the same target card via `findTargetCard`, re-clicks it, and inspects the dialog-scoped buttons:
+- "View Reservation" / "Unregister" / "Cancel Registration" / "Leave Waitlist" → `verified:true` (definitive registered)
+- "Register" / "Waitlist" / "Join Waitlist" → `verified:false` (definitive NOT registered, recorded as `click_silent_no_op`)
+- empty / other → `verified:null` (truly ambiguous, falls through to existing retry path)
+
+Hardened against false-positives via four guards: dialog-detach check before re-click (refuses to read stale state if Escape didn't close the modal); explicit re-opened dialog wait; full identity verification (title + time + optional instructor must all appear in re-opened modal text — refuses to interpret on any mismatch, preventing wrong-card matches); modal-scoped button reads (no page-wide bleed-through). Wired into all three click failure branches: Register, Waitlist, and Register-on-full-class waitlist. Architect-approved.
+
+**First production run revealed the actual root cause** of Flow Yoga failures: clicking "Register" navigates to a class detail page (`/m?p=schedules-class&class=...`) instead of reserving. The empty-modal symptoms were the modal closing as the page navigated away. The rescrape helper's URL guard correctly detected the navigation and bailed `not_on_schedule_page` rather than falsely confirming. Follow-up work needs to handle the detail-page navigation (recognize it, then complete the booking from the detail page).
+
 #### Click-attempt speedup (Apr 16, second pass)
 Production run showed every attempt was burning ~30 s waiting on the `[data-target-class="yes"]` marker that Bubble had already stripped from the DOM:
 - **`DEBUG_HIGHLIGHT` → false** (`register-pilates.js:501`).  Was hardcoded `true`; added a ~2 s `elementHandle()` wait that routinely timed out in production.  Local debug overlay is no longer on the production path.

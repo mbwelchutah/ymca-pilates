@@ -2338,6 +2338,154 @@ async function runBookingJob(job, opts = {}) {
     }
     // ────────────────────────────────────────────────────────────────────────────
 
+    // ── Schedule re-scrape verification ────────────────────────────────────────
+    // After a Register/Waitlist click that produced an empty / ambiguous modal
+    // (no Cancel button, no confirmation text, no Register/Waitlist re-appearing),
+    // the bot historically had no authoritative way to know whether the click
+    // actually booked the user. The April 2026 false-positive incident showed
+    // why "guess it worked" is unsafe.
+    //
+    // The authoritative check FamilyWorks gives us is the modal itself: when a
+    // class is NOT booked, opening the card shows a "Register" (or "Waitlist")
+    // button. When it IS booked, it shows "View Reservation" / "Unregister" /
+    // "Cancel Registration" / "Leave Waitlist" instead.
+    //
+    // So this helper closes any open modal, re-finds the same target card via
+    // findTargetCard(), re-clicks it to open a fresh modal, and inspects the
+    // visible buttons. Returns:
+    //   { verified: true,  reason: 'reservation_or_cancel_visible', buttons }
+    //   { verified: false, reason: 'register_still_visible',         buttons }
+    //   { verified: null,  reason: 'rescrape_card_not_found' | 'ambiguous' | ... }
+    async function verifyViaScheduleRescrape(actionLabel) {
+      try {
+        console.log(`[schedule-rescrape] ${actionLabel}: starting post-click verification...`);
+
+        // 1. Close any modal that may still be open. Use BOTH a button-absence
+        //    check (action buttons gone) AND a role=dialog detachment check.
+        //    Empty-modal case: button-absence alone fires immediately even with
+        //    the dialog still open, so we additionally wait for the dialog to
+        //    detach (or time out, in which case we'll bail as ambiguous).
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForFunction(() => {
+          const btns = [...document.querySelectorAll('button, [role="button"]')];
+          return !btns.some(el => {
+            const t = (el.textContent || '').toLowerCase().trim();
+            return (t.includes('register') || t.includes('reserve') ||
+                    t.includes('waitlist') || t === 'login to register') &&
+                   el.getBoundingClientRect().width > 0;
+          });
+        }, { timeout: 1500 }).catch(() => {});
+        await page.keyboard.press('Escape').catch(() => {});
+        // Explicitly wait for the dialog to disappear before rescraping.
+        const dialogClosed = await page.waitForFunction(() => {
+          const dlgs = [...document.querySelectorAll('[role="dialog"]')];
+          return !dlgs.some(d => {
+            const r = d.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          });
+        }, { timeout: 1500 }).then(() => true).catch(() => false);
+        if (!dialogClosed) {
+          console.log(`[schedule-rescrape] ${actionLabel}: dialog did not close after Escape — bailing as ambiguous to avoid reading stale modal state`);
+          return { verified: null, reason: 'modal_did_not_close', buttons: [] };
+        }
+        await page.waitForTimeout(150);
+
+        // 2. Defensive: if click navigated us away from the schedule embed,
+        //    return ambiguous rather than rescraping a wrong page.
+        if (!page.url().includes('schedulesembed')) {
+          console.log(`[schedule-rescrape] ${actionLabel}: not on schedule embed (url=${page.url()}) — cannot rescrape`);
+          return { verified: null, reason: 'not_on_schedule_page', buttons: [] };
+        }
+
+        // 3. Re-locate the same target card (markers from prior findTargetCard
+        //    call were cleared after click; this performs a fresh content-based
+        //    scan exactly the way the original location did).
+        let recheckCard = null;
+        try {
+          recheckCard = await findTargetCard();
+        } catch (e) {
+          console.log(`[schedule-rescrape] ${actionLabel}: findTargetCard error — ${e.message}`);
+          return { verified: null, reason: 'rescrape_card_lookup_error', buttons: [], error: e.message };
+        }
+        if (!recheckCard) {
+          console.log(`[schedule-rescrape] ${actionLabel}: card no longer found on schedule (could mean removed, scrolled off, or page state changed)`);
+          return { verified: null, reason: 'rescrape_card_not_found', buttons: [] };
+        }
+
+        // 4. Click to re-open modal — prefer interactive child, fall back to card itself
+        try { await recheckCard.scrollIntoViewIfNeeded({ timeout: 2000 }); } catch {}
+        const innerClickable = recheckCard.locator("button, [role='button'], a").first();
+        const clickTarget = (await innerClickable.count()) > 0 ? innerClickable : recheckCard;
+        const reclickErr = await clickTarget.click({ timeout: 5000 }).then(() => null).catch((e) => e);
+        if (reclickErr) {
+          console.log(`[schedule-rescrape] ${actionLabel}: re-click error — ${reclickErr.message}`);
+          return { verified: null, reason: 'rescrape_reclick_error', buttons: [], error: reclickErr.message };
+        }
+
+        // 5. Wait for the dialog to actually appear before reading anything.
+        const dialogOpened = await page.waitForSelector('[role="dialog"]:visible', { timeout: 3000 })
+          .then(() => true).catch(() => false);
+        if (!dialogOpened) {
+          console.log(`[schedule-rescrape] ${actionLabel}: re-opened dialog never appeared — ambiguous`);
+          return { verified: null, reason: 'rescrape_dialog_did_not_open', buttons: [] };
+        }
+        await page.waitForSelector(ACTION_SELECTORS.modalReady, { timeout: 2000 }).catch(() => null);
+        await page.waitForTimeout(300);
+
+        // 6. CRITICAL: identity-verify the re-opened modal before trusting its
+        //    button state. If findTargetCard re-selected a similar but different
+        //    card (e.g. score tie shifted), the buttons we read could belong to
+        //    an OTHER class that the user happens to be registered for —
+        //    producing a false positive identical to the bug we're fixing.
+        //    Same pattern as attemptClickAndVerify (~line 2247).
+        const dialogScope = page.locator('[role="dialog"]:visible').first();
+        const modalText = (await dialogScope.evaluate(el => (el.innerText || el.textContent || '')).catch(() => '')).toLowerCase();
+        // Title MUST match — most discriminating signal. Time MUST match.
+        // Instructor only checked when configured. Refuse to interpret on any mismatch.
+        const idVerifyTitle = !!classTitle && modalText.includes(String(classTitle).toLowerCase());
+        const idVerifyTime  = !!classTimeNorm && modalText.includes(String(classTimeNorm).toLowerCase());
+        const idVerifyInst  = !instructorFirstName || modalText.includes(String(instructorFirstName).toLowerCase());
+        if (!idVerifyTitle || !idVerifyTime || !idVerifyInst) {
+          console.log(`[schedule-rescrape] ${actionLabel}: re-opened modal does NOT match target identity (title=${idVerifyTitle} time=${idVerifyTime} instructor=${idVerifyInst}) — refusing to interpret. Modal preview: "${modalText.slice(0, 120)}"`);
+          await page.keyboard.press('Escape').catch(() => {});
+          return { verified: null, reason: 'rescrape_identity_mismatch', buttons: [], modalPreview: modalText.slice(0, 200) };
+        }
+
+        // 7. Read button text SCOPED TO THE DIALOG — not page-wide. A page-wide
+        //    read would pick up any "Cancel"/"Reserved" labels on background
+        //    schedule rows, producing false positives.
+        const btnTexts = await dialogScope
+          .locator('button:visible, [role="button"]:visible')
+          .allTextContents().catch(() => []);
+        const cleaned = btnTexts.map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+        const hasConfirmedReservation = cleaned.some(t =>
+          /view\s*reservation|view\s*waitlist|unregister|cancel\s*registration|leave\s*waitlist/i.test(t)
+        );
+        const hasOnlyRegister = !hasConfirmedReservation &&
+          cleaned.some(t => /^register$|^reserve$|^waitlist$|^join\s*waitlist$/i.test(t));
+
+        // 8. Close the modal we just opened
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(150);
+
+        if (hasConfirmedReservation) {
+          console.log(`[schedule-rescrape] ${actionLabel}: ✅ VERIFIED REGISTERED — dialog buttons: ${JSON.stringify(cleaned)}`);
+          return { verified: true, reason: 'reservation_or_cancel_visible', buttons: cleaned };
+        }
+        if (hasOnlyRegister) {
+          console.log(`[schedule-rescrape] ${actionLabel}: ❌ VERIFIED NOT REGISTERED — Register/Waitlist still in dialog: ${JSON.stringify(cleaned)}`);
+          return { verified: false, reason: 'register_still_visible', buttons: cleaned };
+        }
+        console.log(`[schedule-rescrape] ${actionLabel}: ⚠️ AMBIGUOUS — no decisive button text in dialog: ${JSON.stringify(cleaned)}`);
+        return { verified: null, reason: 'ambiguous', buttons: cleaned };
+      } catch (e) {
+        console.log(`[schedule-rescrape] ${actionLabel}: helper threw — ${e.message}`);
+        return { verified: null, reason: 'rescrape_exception', buttons: [], error: e.message };
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────────
+
     // Try the best candidate first; if post-click verification fails, attempt
     // the second-best candidate once (PART 6).
     // Rules: only try second-best once; never skip verification; fail safe.
@@ -2828,7 +2976,33 @@ async function runBookingJob(job, opts = {}) {
             registered = true;
             break;
           } else {
-            console.log('⚠️ Post-waitlist (via Register): booking did not complete. Retrying...');
+            // Schedule re-scrape: definitive verification before declaring failure.
+            const verify2 = await verifyViaScheduleRescrape('Register(full→waitlist)');
+            if (verify2.verified === true) {
+              console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join (via Register on full class): buttons=${JSON.stringify(verify2.buttons)}`);
+              replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verify2.buttons.join('|')})`);
+              registered = true;
+              break;
+            }
+            if (verify2.verified === false) {
+              console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT enrolled — Register/Waitlist still visible.`);
+              await captureFailure('post_click', 'definitive_not_enrolled');
+              recordFailure({
+                jobId:    job.id || job.jobId || null,
+                phase:    'post_click', reason: 'click_silent_no_op',
+                category: 'post_click', label: 'Register-as-waitlist click did not enroll',
+                message:  'Register (full→waitlist) clicked but schedule rescrape confirms user is NOT enrolled.',
+                classTitle,
+                screenshot: _screenshotRef(screenshotPath),
+                url:      page.url(),
+                context:  { attempt, viaPopup: wlResult2.viaPopup, rescrapeReason: verify2.reason, rescrapeButtons: verify2.buttons },
+              });
+              _replayAction = null;
+              await page.waitForTimeout(3000);
+              continue;
+            }
+            // Truly ambiguous (rescrape inconclusive) — fall through to existing retry path
+            console.log(`⚠️ Post-waitlist (via Register): booking did not complete; rescrape ${verify2.reason}. Retrying...`);
             await captureFailure('post_click', 'result_unknown');
             // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
             // may find Cancel confirming the waitlist join happened.
@@ -2849,7 +3023,39 @@ async function runBookingJob(job, opts = {}) {
         _state.isConfirming = false;
 
         if (!regResult.confirmed) {
-          // Booking genuinely did not complete — record the failure and retry next attempt.
+          // Schedule re-scrape: definitive verification before declaring failure.
+          // FW often returns an empty modal after Register click — neither success
+          // nor failure signals appear. Re-finding the card and inspecting the
+          // modal that opens (Register vs. View Reservation/Cancel) tells us
+          // authoritatively whether the click actually booked the user.
+          const verify = await verifyViaScheduleRescrape('Register');
+          if (verify.verified === true) {
+            console.log(`✅ SCHEDULE-RESCRAPE confirmed registration: buttons=${JSON.stringify(verify.buttons)}`);
+            replayStore.addEvent(_jobId, 'confirm', `Registration confirmed via schedule rescrape (buttons: ${verify.buttons.join('|')})`);
+            console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} with ${instructor || ''} (verified via schedule rescrape)`);
+            registered = true;
+            break;
+          }
+          if (verify.verified === false) {
+            console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT registered — Register button still visible.`);
+            await captureFailure('post_click', 'definitive_not_registered');
+            recordFailure({
+              jobId:    job.id || job.jobId || null,
+              phase:    'post_click', reason: 'click_silent_no_op',
+              category: 'post_click', label: 'Register click did not register the user',
+              message:  'Register clicked but schedule rescrape confirms user is NOT registered (Register button still appears on the card).',
+              classTitle,
+              screenshot: _screenshotRef(screenshotPath),
+              url:      page.url(),
+              context:  { attempt, viaPopup: regResult.viaPopup, rescrapeReason: verify.reason, rescrapeButtons: verify.buttons },
+            });
+            // Clear replay action — definitive no-op means no prior side effect to recover.
+            _replayAction = null;
+            await page.waitForTimeout(3000);
+            continue;
+          }
+          // Truly ambiguous (rescrape inconclusive) — preserve old retry behavior.
+          console.log(`⚠️ Post-Register: rescrape inconclusive (${verify.reason}). Retrying...`);
           await captureFailure('post_click', 'result_unknown');
           recordFailure({
             jobId:    job.id || job.jobId || null,
@@ -2859,7 +3065,7 @@ async function runBookingJob(job, opts = {}) {
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { attempt, viaPopup: regResult.viaPopup },
+            context:  { attempt, viaPopup: regResult.viaPopup, rescrapeReason: verify.reason },
           });
           await page.waitForTimeout(3000);
           continue;  // retry this attempt
@@ -2890,7 +3096,34 @@ async function runBookingJob(job, opts = {}) {
           registered = true;
           break;
         } else {
-          console.log('⚠️ Post-waitlist: booking did not complete. Retrying...');
+          // Schedule re-scrape: definitive verification before declaring failure.
+          const verifyW = await verifyViaScheduleRescrape('Waitlist');
+          if (verifyW.verified === true) {
+            console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join: buttons=${JSON.stringify(verifyW.buttons)}`);
+            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verifyW.buttons.join('|')})`);
+            console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} (verified via schedule rescrape)`);
+            registered = true;
+            break;
+          }
+          if (verifyW.verified === false) {
+            console.log(`❌ SCHEDULE-RESCRAPE confirmed NOT on waitlist — Waitlist button still visible.`);
+            await captureFailure('post_click', 'definitive_not_enrolled');
+            recordFailure({
+              jobId:    job.id || job.jobId || null,
+              phase:    'post_click', reason: 'click_silent_no_op',
+              category: 'post_click', label: 'Waitlist click did not enroll the user',
+              message:  'Waitlist clicked but schedule rescrape confirms user is NOT on the waitlist (Waitlist button still visible).',
+              classTitle,
+              screenshot: _screenshotRef(screenshotPath),
+              url:      page.url(),
+              context:  { attempt, viaPopup: wlResult.viaPopup, rescrapeReason: verifyW.reason, rescrapeButtons: verifyW.buttons },
+            });
+            _replayAction = null;
+            await page.waitForTimeout(3000);
+            continue;
+          }
+          // Truly ambiguous (rescrape inconclusive) — preserve old retry behavior.
+          console.log(`⚠️ Post-waitlist: rescrape inconclusive (${verifyW.reason}). Retrying...`);
           await captureFailure('post_click', 'result_unknown');
           recordFailure({
             jobId:    job.id || job.jobId || null,
@@ -2900,7 +3133,7 @@ async function runBookingJob(job, opts = {}) {
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
-            context:  { attempt, viaPopup: wlResult.viaPopup, weakSignal: !!wlResult.weakSignal },
+            context:  { attempt, viaPopup: wlResult.viaPopup, weakSignal: !!wlResult.weakSignal, rescrapeReason: verifyW.reason },
           });
           // Preserve _replayAction='waitlist' if weak signal fired — re-open modal
           // may find Cancel confirming the waitlist join happened.
