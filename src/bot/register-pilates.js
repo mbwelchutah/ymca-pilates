@@ -1543,7 +1543,8 @@ async function runBookingJob(job, opts = {}) {
           (b.visible ? 1 : 0) - (a.visible ? 1 : 0) ||
           (b.hasClickableChild ? 1 : 0) - (a.hasClickableChild ? 1 : 0) ||
           a.desc - b.desc ||
-          a.txt.length - b.txt.length
+          a.txt.length - b.txt.length ||
+          (a.txt < b.txt ? -1 : a.txt > b.txt ? 1 : 0)
         );
 
         if (allRows.length === 0) return { matched: null, allResults: [], allTexts };
@@ -1563,7 +1564,9 @@ async function runBookingJob(job, opts = {}) {
                 ? `winner has fewer descendants (${w.desc} vs ${r.desc})`
                 : w.txt.length !== r.txt.length
                   ? `winner has shorter normalized text (${w.txt.length} vs ${r.txt.length} chars)`
-                  : `tied on every axis (incl. text length) — DOM order picked the winner`;
+                  : w.txt !== r.txt
+                    ? `winner has lexicographically earlier text (deterministic tie-break)`
+                    : `truly identical candidates — DOM order picked the winner`;
             tieBreakNote = {
               reason,
               winner:    { desc: w.desc, hasClickable: w.hasClickableChild, txtLen: w.txt.length, txt: w.txt.slice(0, 80) },
