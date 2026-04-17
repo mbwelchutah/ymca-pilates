@@ -303,6 +303,15 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
   // FamilyWorks sometimes takes 2–4 s to show "Cancel" after processing —
   // wait up to 3 s but exit early if Cancel/Register state changes.
   if (!step1.btns.hasRegister && !step1.btns.hasWaitlist) {
+    // Fast-bail (Task #60): if the click navigated the page OFF the schedule
+    // embed (detail-page navigation), the delayed-Cancel wait will never
+    // produce a signal — Cancel/Register live on the schedule embed only.
+    // Skip the 3 s wait and let the detail-page handler pick up the case.
+    const _curUrl = (() => { try { return page.url(); } catch { return ''; } })();
+    if (_curUrl && !_curUrl.includes('schedulesembed')) {
+      console.log(`[confirm-check] buttons gone AND off schedule embed (url=${_curUrl}) — fast-bail, skipping 3 s delayed-Cancel wait`);
+      return { confirmed: false, viaPopup: false, cancelFound: false, weakSignal: true, offEmbed: true };
+    }
     console.log(`[confirm-check] buttons gone — waiting up to 3 s for delayed Cancel/text confirmation...`);
     await _waitForConfirmSignal(page, 3000);
     const step1b = await readSignals();
@@ -2658,8 +2667,11 @@ async function runBookingJob(job, opts = {}) {
     //
     // Returns: { handled: bool, signal: 'success'|'already_registered'|'no_button'|'no_signal'|'identity_mismatch'|'error', reason: string }
     async function completeBookingOnDetailPageIfNavigated(actionLabel) {
-      // Wait briefly for any navigation triggered by the click to settle
-      await page.waitForTimeout(600);
+      // Wait briefly for any navigation triggered by the click to settle.
+      // (Task #60: tightened from 600 → 300 ms.  Bubble.io's SPA navigation
+      // fires within ~150 ms in practice; 300 ms keeps a safety margin without
+      // adding 300 ms to every successful in-modal flow.)
+      await page.waitForTimeout(300);
       const currentUrl = page.url();
 
       // Not a detail-page navigation — modal-based flow continues normally
@@ -2675,9 +2687,11 @@ async function runBookingJob(job, opts = {}) {
       console.log(`[detail-page] ${actionLabel}: detected navigation to ${currentUrl} — completing booking on detail page`);
 
       try {
-        // 1. Wait for detail page to render (Bubble.io SPA needs a beat)
+        // 1. Wait for detail page to render (Bubble.io SPA needs a beat).
+        // (Task #60: tightened from 1500 → 800 ms.  Detail page is mostly
+        // server-side rendered; 800 ms is enough for Bubble's hydration.)
         await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(800);
 
         // 2. Identity check — refuse to interact with a page that isn't the right class
         const pageText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
@@ -2731,7 +2745,10 @@ async function runBookingJob(job, opts = {}) {
 
         // 5. Wait for some change — possible outcomes: button text flips,
         //    a confirmation modal opens, or the page navigates again.
-        await page.waitForTimeout(2000);
+        // (Task #60: tightened from 2000 → 1000 ms.  The button-state read
+        //  immediately after is the actual decisive signal; settle wait only
+        //  needs to outlast Bubble's render hop.)
+        await page.waitForTimeout(1000);
 
         const postBtns = await page.locator('button:visible, [role="button"]:visible').allTextContents().catch(() => []);
         const cleanedPost = postBtns.map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -3095,7 +3112,32 @@ async function runBookingJob(job, opts = {}) {
     }
     // ──────────────────────────────────────────────────────────────────────────
 
+    // Task #60 retry cap: when verifyViaScheduleRescrape returns
+    // `not_on_schedule_page` repeatedly, the click reliably navigated us off
+    // the schedule embed (detail-page flow) and rescrape can never succeed.
+    // After 2 such consecutive outcomes, bail out instead of burning the full
+    // 20-attempt loop on a known-bad path.  Reset on any other rescrape result.
+    let _consecNotOnSchedulePage = 0;
+    const NOT_ON_SCHEDULE_RETRY_CAP = 2;
+
+    // Task #60 — lifecycle helper for the post-click confirming sub-phase.
+    // Persists the cleared state so the readiness API never reports a stale
+    // confirmingPhase across iteration boundaries (continue / break / return).
+    const _endConfirming = () => {
+      try {
+        if (_state.isConfirming || _state.confirmingPhase) {
+          _state.isConfirming = false;
+          _state.confirmingPhase = null;
+          saveState(_state);
+        }
+      } catch (_) { /* non-fatal — state file write failure is just stale UI */ }
+    };
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Wipe any stale confirming state from a previous iteration so the
+      // (typically 3 s) inter-attempt waits do not leave the UI showing
+      // "Re-checking schedule…" while the bot is actually idle.
+      _endConfirming();
       if (attempt === 1) _tc.first_click_attempt_start = new Date().toISOString();
       if (attempt === 2 && !_tc.first_click_attempt_done) _tc.first_click_attempt_done = new Date().toISOString();
       _tc.action_attempt_start = new Date().toISOString();
@@ -3240,11 +3282,14 @@ async function runBookingJob(job, opts = {}) {
           replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
           _tc.actionClickAt = new Date().toISOString();
           await registerBtn.first().click();
-          _state.isConfirming = true; saveState(_state);
+          _state.isConfirming = true;
+          _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+          saveState(_state);
           _tc.confirmation_check_start = new Date().toISOString();
           const wlResult2 = await checkBookingConfirmed(page, _jobId, attempt, 'Register(full→waitlist)', replayStore);
           _tc.confirmation_check_done = new Date().toISOString();
           _state.isConfirming = false;
+          _state.confirmingPhase = null;
           if (wlResult2.confirmed) {
             replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (via Register button${wlResult2.viaPopup ? ' + popup' : ''}) — Cancel button: ${wlResult2.cancelFound}`);
             console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
@@ -3252,12 +3297,58 @@ async function runBookingJob(job, opts = {}) {
             break;
           } else {
             // Detail-page handler — symmetric with Register branch below.
+            _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
             const detailRes2 = await completeBookingOnDetailPageIfNavigated('Register(full→waitlist)');
-            if (detailRes2.handled && (detailRes2.signal === 'success' || detailRes2.signal === 'already_registered')) {
-              console.log(`✅ DETAIL-PAGE flow signaled success on full class (${detailRes2.reason}) — verifying via schedule rescrape...`);
+            // Task #60 — trust definitive helper outcomes; only rescrape on no_signal.
+            if (detailRes2.handled) {
+              if (detailRes2.signal === 'success' || detailRes2.signal === 'already_registered') {
+                console.log(`✅ DETAIL-PAGE: ${detailRes2.reason} — trusting helper, skipping rescrape (Task #60).`);
+                replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via detail-page flow (${detailRes2.reason})`);
+                console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
+                registered = true;
+                break;
+              }
+              if (detailRes2.signal === 'identity_mismatch' || detailRes2.signal === 'no_button' || detailRes2.signal === 'error') {
+                console.log(`❌ DETAIL-PAGE: ${detailRes2.reason} (signal=${detailRes2.signal}) — definitive failure, skipping rescrape (Task #60).`);
+                await captureFailure('post_click', 'detail_page_definitive_failure');
+                recordFailure({
+                  jobId:    job.id || job.jobId || null,
+                  phase:    'post_click', reason: detailRes2.reason,
+                  category: 'post_click', label: `Detail-page handler (full→waitlist): ${detailRes2.signal}`,
+                  message:  `Detail-page handler returned ${detailRes2.signal} (${detailRes2.reason}) — waitlist not joined.`,
+                  classTitle,
+                  screenshot: _screenshotRef(screenshotPath),
+                  url:      page.url(),
+                  context:  { attempt, detailSignal: detailRes2.signal, detailReason: detailRes2.reason },
+                });
+                if (!wlResult2.weakSignal) _replayAction = null;
+                await page.waitForTimeout(3000);
+                continue;
+              }
             }
             // Schedule re-scrape: definitive verification before declaring failure.
+            _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
             const verify2 = await verifyViaScheduleRescrape('Register(full→waitlist)');
+            if (verify2.reason === 'not_on_schedule_page') {
+              _consecNotOnSchedulePage++;
+              if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
+                console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page (full→waitlist) — bailing (Task #60 cap).`);
+                _endConfirming();
+                await captureFailure('post_click', 'detail_page_loop');
+                return logRunSummary({
+                  status: 'error',
+                  message: 'Register-on-full click navigates off schedule embed every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
+                  screenshotPath,
+                  phase: 'post_click',
+                  reason: 'detail_page_loop',
+                  category: 'post_click',
+                  label: 'Detail-page navigation loop on full→waitlist (retry cap reached)',
+                  url: page.url(),
+                });
+              }
+            } else {
+              _consecNotOnSchedulePage = 0;
+            }
             if (verify2.verified === true) {
               console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join (via Register on full class): buttons=${JSON.stringify(verify2.buttons)}`);
               replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verify2.buttons.join('|')})`);
@@ -3296,11 +3387,14 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await registerBtn.first().click();
-        _state.isConfirming = true; saveState(_state);
+        _state.isConfirming = true;
+        _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+        saveState(_state);
         _tc.confirmation_check_start = new Date().toISOString();
         const regResult = await checkBookingConfirmed(page, _jobId, attempt, 'Register', replayStore);
         _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming = false;
+        _state.confirmingPhase = null;
 
         if (!regResult.confirmed) {
           // Detail-page handler: some FW class types navigate to a class detail
@@ -3308,17 +3402,65 @@ async function runBookingJob(job, opts = {}) {
           // modal. The helper detects this, completes the booking on the detail
           // page, then navigates back to the schedule embed so rescrape can
           // verify. No-op when the click stayed on the schedule embed.
+          _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
           const detailRes = await completeBookingOnDetailPageIfNavigated('Register');
-          if (detailRes.handled && (detailRes.signal === 'success' || detailRes.signal === 'already_registered')) {
-            console.log(`✅ DETAIL-PAGE flow signaled success (${detailRes.reason}) — verifying via schedule rescrape...`);
-            // Don't trust the helper alone — let rescrape authoritatively verify.
+          // Task #60 — trust definitive helper outcomes; only fall through to
+          // the (slow) rescrape when the helper had no signal or did nothing.
+          if (detailRes.handled) {
+            if (detailRes.signal === 'success' || detailRes.signal === 'already_registered') {
+              console.log(`✅ DETAIL-PAGE: ${detailRes.reason} — trusting helper, skipping rescrape (Task #60).`);
+              replayStore.addEvent(_jobId, 'confirm', `Registration confirmed via detail-page flow (${detailRes.reason})`);
+              console.log(`SUCCESS: Registered for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
+              registered = true;
+              break;
+            }
+            if (detailRes.signal === 'identity_mismatch' || detailRes.signal === 'no_button' || detailRes.signal === 'error') {
+              console.log(`❌ DETAIL-PAGE: ${detailRes.reason} (signal=${detailRes.signal}) — definitive failure, skipping rescrape (Task #60).`);
+              await captureFailure('post_click', 'detail_page_definitive_failure');
+              recordFailure({
+                jobId:    job.id || job.jobId || null,
+                phase:    'post_click', reason: detailRes.reason,
+                category: 'post_click', label: `Detail-page handler: ${detailRes.signal}`,
+                message:  `Detail-page handler returned ${detailRes.signal} (${detailRes.reason}) — registration not completed.`,
+                classTitle,
+                screenshot: _screenshotRef(screenshotPath),
+                url:      page.url(),
+                context:  { attempt, detailSignal: detailRes.signal, detailReason: detailRes.reason },
+              });
+              _replayAction = null;
+              await page.waitForTimeout(3000);
+              continue;
+            }
+            // signal === 'no_signal' → fall through to rescrape
           }
           // Schedule re-scrape: definitive verification before declaring failure.
           // FW often returns an empty modal after Register click — neither success
           // nor failure signals appear. Re-finding the card and inspecting the
           // modal that opens (Register vs. View Reservation/Cancel) tells us
           // authoritatively whether the click actually booked the user.
+          _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
           const verify = await verifyViaScheduleRescrape('Register');
+          // Task #60 retry cap on repeated off-embed bailouts.
+          if (verify.reason === 'not_on_schedule_page') {
+            _consecNotOnSchedulePage++;
+            if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
+              console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page — bailing out of retry loop (Task #60 cap).`);
+              _endConfirming();
+              await captureFailure('post_click', 'detail_page_loop');
+              return logRunSummary({
+                status: 'error',
+                message: 'Click navigates off schedule embed on every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
+                screenshotPath,
+                phase: 'post_click',
+                reason: 'detail_page_loop',
+                category: 'post_click',
+                label: 'Detail-page navigation loop (retry cap reached)',
+                url: page.url(),
+              });
+            }
+          } else {
+            _consecNotOnSchedulePage = 0;
+          }
           if (verify.verified === true) {
             console.log(`✅ SCHEDULE-RESCRAPE confirmed registration: buttons=${JSON.stringify(verify.buttons)}`);
             replayStore.addEvent(_jobId, 'confirm', `Registration confirmed via schedule rescrape (buttons: ${verify.buttons.join('|')})`);
@@ -3375,11 +3517,14 @@ async function runBookingJob(job, opts = {}) {
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
         await waitlistBtn.first().click();
-        _state.isConfirming = true; saveState(_state);
+        _state.isConfirming = true;
+        _state.confirmingPhase = attempt > 1 ? `Retry ${attempt} of ${maxAttempts} · checking response…` : 'Checking response…';
+        saveState(_state);
         _tc.confirmation_check_start = new Date().toISOString();
         const wlResult = await checkBookingConfirmed(page, _jobId, attempt, 'Waitlist', replayStore);
         _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming = false;
+        _state.confirmingPhase = null;
         if (wlResult.confirmed) {
           replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (cancelFound=${wlResult.cancelFound}, viaPopup=${wlResult.viaPopup})`);
           console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime}`);
@@ -3387,12 +3532,58 @@ async function runBookingJob(job, opts = {}) {
           break;
         } else {
           // Detail-page handler — symmetric with Register branch above.
+          _state.isConfirming = true; _state.confirmingPhase = 'Verifying on detail page…'; saveState(_state);
           const detailResW = await completeBookingOnDetailPageIfNavigated('Waitlist');
-          if (detailResW.handled && (detailResW.signal === 'success' || detailResW.signal === 'already_registered')) {
-            console.log(`✅ DETAIL-PAGE flow signaled waitlist success (${detailResW.reason}) — verifying via schedule rescrape...`);
+          // Task #60 — trust definitive helper outcomes; only rescrape on no_signal.
+          if (detailResW.handled) {
+            if (detailResW.signal === 'success' || detailResW.signal === 'already_registered') {
+              console.log(`✅ DETAIL-PAGE: ${detailResW.reason} — trusting helper, skipping rescrape (Task #60).`);
+              replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via detail-page flow (${detailResW.reason})`);
+              console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} via detail-page flow`);
+              registered = true;
+              break;
+            }
+            if (detailResW.signal === 'identity_mismatch' || detailResW.signal === 'no_button' || detailResW.signal === 'error') {
+              console.log(`❌ DETAIL-PAGE: ${detailResW.reason} (signal=${detailResW.signal}) — definitive failure, skipping rescrape (Task #60).`);
+              await captureFailure('post_click', 'detail_page_definitive_failure');
+              recordFailure({
+                jobId:    job.id || job.jobId || null,
+                phase:    'post_click', reason: detailResW.reason,
+                category: 'post_click', label: `Detail-page handler (waitlist): ${detailResW.signal}`,
+                message:  `Detail-page handler returned ${detailResW.signal} (${detailResW.reason}) — waitlist not joined.`,
+                classTitle,
+                screenshot: _screenshotRef(screenshotPath),
+                url:      page.url(),
+                context:  { attempt, detailSignal: detailResW.signal, detailReason: detailResW.reason },
+              });
+              if (!wlResult.weakSignal) _replayAction = null;
+              await page.waitForTimeout(3000);
+              continue;
+            }
           }
           // Schedule re-scrape: definitive verification before declaring failure.
+          _state.confirmingPhase = 'Re-checking schedule…'; saveState(_state);
           const verifyW = await verifyViaScheduleRescrape('Waitlist');
+          if (verifyW.reason === 'not_on_schedule_page') {
+            _consecNotOnSchedulePage++;
+            if (_consecNotOnSchedulePage >= NOT_ON_SCHEDULE_RETRY_CAP) {
+              console.log(`⚠️ Hit ${NOT_ON_SCHEDULE_RETRY_CAP}× consecutive not_on_schedule_page (waitlist) — bailing (Task #60 cap).`);
+              _endConfirming();
+              await captureFailure('post_click', 'detail_page_loop');
+              return logRunSummary({
+                status: 'error',
+                message: 'Waitlist click navigates off schedule embed on every attempt and detail-page handler produced no confirming signal — giving up after retry cap.',
+                screenshotPath,
+                phase: 'post_click',
+                reason: 'detail_page_loop',
+                category: 'post_click',
+                label: 'Detail-page navigation loop on waitlist (retry cap reached)',
+                url: page.url(),
+              });
+            }
+          } else {
+            _consecNotOnSchedulePage = 0;
+          }
           if (verifyW.verified === true) {
             console.log(`✅ SCHEDULE-RESCRAPE confirmed waitlist join: buttons=${JSON.stringify(verifyW.buttons)}`);
             replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed via schedule rescrape (buttons: ${verifyW.buttons.join('|')})`);
@@ -3644,6 +3835,11 @@ async function runBookingJob(job, opts = {}) {
     if (!_tc.action_attempt_done)      _tc.action_attempt_done      = new Date().toISOString();
     if (!_tc.first_click_attempt_done) _tc.first_click_attempt_done = new Date().toISOString();
 
+    // Task #60 — clear any residual confirming sub-phase from a successful
+    // (registered=true; break) exit out of the cascade so the readiness API
+    // doesn't continue reporting "Re-checking schedule…" after we're done.
+    _endConfirming();
+
     if (!registered) {
       const classDesc = [
         classTitle,
@@ -3686,6 +3882,11 @@ async function runBookingJob(job, opts = {}) {
 
   } catch (err) {
     console.error('❌ Error:', err.message);
+    // Task #60 — clear any in-progress confirming sub-phase so an unexpected
+    // throw mid-cascade doesn't leave the readiness API reporting
+    // "Verifying on detail page…" forever.  No-op if the helper isn't in scope
+    // (early throws before the retry loop define it).
+    try { if (typeof _endConfirming === 'function') _endConfirming(); } catch {}
     if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'failure', 'Booking failed', err.message.split('\n')[0]);
     // Playwright renderer crash ("page.goto: Page crashed") — the Chrome process was
     // killed by the OS (OOM / segfault).  A fresh browser launch on the next attempt

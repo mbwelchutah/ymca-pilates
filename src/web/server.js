@@ -5240,6 +5240,7 @@ const server = http.createServer((req, res) => {
         executionTiming = computeExecutionTiming(job, {
           // Stage 10E — precise isConfirming from sniper state; falls back to jobState.active.
           isConfirming:           _sniperState?.isConfirming ?? jobState.active,
+          confirmingPhase:        _sniperState?.confirmingPhase ?? null,
           // Stage 10F — apply learned offsets when available (null = use defaults).
           warmupOffsetOverrideMs: learned?.adjustedWarmupOffsetMs ?? null,
           armedOffsetOverrideMs:  learned?.adjustedArmedOffsetMs  ?? null,

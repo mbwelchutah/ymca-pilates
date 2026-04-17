@@ -167,6 +167,8 @@ and current high-risk areas.  Update it after major subsystem passes.
 - **Circular dependency guard**: `readiness-state.js` lazy-requires `confirmed-ready.js` inside `computeReadiness()` (not top-level) to avoid the `confirmed-ready ↔ readiness-state` initialisation race.
 - **Label hysteresis**: confidence label only downgrades when score falls below a grace-zone floor (High→Medium requires <75, Medium→Low requires <55) to prevent UI oscillation.
 - **State hysteresis**: NowScreen top-level card state only transitions when `isTransitionAllowed()` permits, preventing flicker from transient signals.
+- **Post-click speed (Task #60)**: After Register/Waitlist click, fast-bail in `checkBookingConfirmed` when URL is off `schedulesembed` (skips 3 s delayed-Cancel wait); detail-page helper outcomes `success`/`already_registered` are trusted (no rescrape) and `no_button`/`identity_mismatch`/`error` short-circuit to retry without rescrape; only `no_signal`/unhandled fall through to `verifyViaScheduleRescrape`. Settle waits in `completeBookingOnDetailPageIfNavigated` tightened (600→300, 1500→800, 2000→1000 ms). Retry loop bails after 2 consecutive `not_on_schedule_page` rescrape outcomes (`detail_page_loop` failure).
+- **Live confirming feedback (Task #60)**: `_state.confirmingPhase` (sniper-readiness) carries a sub-phase string ("Checking response…", "Verifying on detail page…", "Re-checking schedule…", "Retry N of M · checking response…") set at every transition in the post-click cascade, surfaced via `executionTiming.confirmingPhase`, and consumed by NowScreen's blue "Confirming registration…" banner so the user sees what the bot is doing.
 
 ## Environment
 

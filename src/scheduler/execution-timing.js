@@ -59,6 +59,7 @@ const ARMED_OFFSET_MS  =     45 * 1000;  // 45 seconds before window opens
 function computeExecutionTiming(job, {
   now               = new Date(),
   isConfirming      = false,
+  confirmingPhase   = null,
   warmupOffsetOverrideMs = null,
   armedOffsetOverrideMs  = null,
 } = {}) {
@@ -94,6 +95,10 @@ function computeExecutionTiming(job, {
     warmupAt:      warmupAt.toISOString(),
     armedAt:       armedAt.toISOString(),
     phase,
+    // Task #60 — sub-phase string surfaced only while phase==='confirming'.
+    // Lets the frontend rotate banner copy ("Verifying on detail page…",
+    // "Re-checking schedule…", "Retry 2/3…") without coupling UI to internals.
+    confirmingPhase: phase === 'confirming' ? (confirmingPhase || null) : null,
     msUntilOpen,
     msUntilWarmup,
     msUntilArmed,

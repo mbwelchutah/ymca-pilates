@@ -2244,10 +2244,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
               <span className="text-[17px] font-semibold text-accent-blue">Registering…</span>
             </div>
           ) : bgReadiness?.executionTiming?.phase === 'confirming' ? (
-            // Stage 10E — booking in flight, waiting for confirmation
+            // Stage 10E — booking in flight, waiting for confirmation.
+            // Task #60 — sub-phase string from backend rotates the copy
+            // ("Checking response…", "Verifying on detail page…",
+            //  "Re-checking schedule…", "Retry N of M · checking response…").
             <div className="bg-accent-blue/10 rounded-2xl px-4 py-3 flex items-center gap-2.5">
               <StatusDot color="blue" />
-              <span className="text-[17px] font-semibold text-accent-blue">Confirming registration…</span>
+              <span className="text-[17px] font-semibold text-accent-blue">
+                {bgReadiness?.executionTiming?.confirmingPhase || 'Confirming registration…'}
+              </span>
             </div>
           ) : phase === 'late' && bgReadiness?.armed?.state === 'booking' ? (
             // Booking running in late phase — keep blue (active)

@@ -419,6 +419,7 @@ export const api = {
       warmupAt:      string        // ISO — when warmup phase begins (3 min before)
       armedAt:       string        // ISO — when armed phase begins (45 s before)
       phase:         'waiting' | 'warmup' | 'armed' | 'executing' | 'confirming'
+      confirmingPhase?: string | null  // Sub-phase copy while phase==='confirming' (Task #60)
       msUntilOpen:   DurationMs    // negative when window is already open
       msUntilWarmup: DurationMs
       msUntilArmed:  DurationMs

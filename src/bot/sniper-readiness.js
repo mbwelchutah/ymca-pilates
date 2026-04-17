@@ -145,6 +145,11 @@ function createRunState(jobId) {
     // button click and cleared when checkBookingConfirmed() resolves.
     // Allows computeExecutionTiming() to report phase='confirming' precisely.
     isConfirming: false,
+    // Task #60 — Sub-phase string surfaced to the frontend so NowScreen can
+    // rotate the "Confirming registration…" banner with more specific copy
+    // (e.g. "Verifying on detail page…", "Re-checking schedule…", "Retry 2/3…").
+    // Cleared whenever isConfirming flips to false.
+    confirmingPhase: null,
     // Persisted across runs so the NowScreen badge survives page refreshes
     // and scheduler cycles.  Only savePreflightSnapshot() ever writes this.
     lastPreflightSnapshot: prior?.lastPreflightSnapshot ?? null,
