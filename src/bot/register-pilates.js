@@ -3884,9 +3884,15 @@ async function runBookingJob(job, opts = {}) {
     console.error('❌ Error:', err.message);
     // Task #60 — clear any in-progress confirming sub-phase so an unexpected
     // throw mid-cascade doesn't leave the readiness API reporting
-    // "Verifying on detail page…" forever.  No-op if the helper isn't in scope
-    // (early throws before the retry loop define it).
-    try { if (typeof _endConfirming === 'function') _endConfirming(); } catch {}
+    // "Verifying on detail page…" forever.  Inlined (rather than calling
+    // _endConfirming) because that helper is block-scoped inside the try.
+    try {
+      if (_state && (_state.isConfirming || _state.confirmingPhase)) {
+        _state.isConfirming = false;
+        _state.confirmingPhase = null;
+        saveState(_state);
+      }
+    } catch { /* non-fatal — state file write failure is just stale UI */ }
     if (!PREFLIGHT_ONLY) replayStore.addEvent(_jobId, 'failure', 'Booking failed', err.message.split('\n')[0]);
     // Playwright renderer crash ("page.goto: Page crashed") — the Chrome process was
     // killed by the OS (OOM / segfault).  A fresh browser launch on the next attempt
