@@ -2049,6 +2049,17 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     status:  'Status',
   }
 
+  // When the class currently has open spots, surface a clear call-to-action
+  // ("Get spot") on the secondary button instead of the generic state label.
+  // Tapping still opens the same action sheet (Register Now is the first row),
+  // so the behaviour is unchanged — only the label leans into the opportunity.
+  // Skipped for 'fix' / 'status' so error/issue states keep their own copy.
+  const _openSpotsCount = job?.liveAvailability?.openSpots ?? 0
+  const _hasOpenSpots   = job?.liveAvailability?.state === 'bookable' && _openSpotsCount > 0
+  const secondaryLabel  = (_hasOpenSpots && (secondaryAction === 'ready' || secondaryAction === 'options' || secondaryAction === 'check'))
+    ? 'Get spot'
+    : SECONDARY_LABEL[secondaryAction]
+
   // Action sheet rows change based on the assistant's read of the situation.
   const secondarySheetItems: { label: string; sub: string; handler: () => void }[] = (() => {
     switch (secondaryAction) {
@@ -2914,9 +2925,9 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
                         <button
                           onClick={() => setShowActionSheet(true)}
                           className="flex-shrink-0 min-w-[5.5rem] px-4 flex items-center justify-center rounded-2xl bg-text-primary/[0.06] text-[14px] font-medium text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
-                          aria-label={SECONDARY_LABEL[secondaryAction]}
+                          aria-label={secondaryLabel}
                         >
-                          {SECONDARY_LABEL[secondaryAction]}
+                          {secondaryLabel}
                         </button>
                       )}
                     </div>
