@@ -688,6 +688,11 @@ async function runBookingJob(job, opts = {}) {
   let _lastModalPreview = '';
   let _lastBestReasons = [];   // reasons array from last findTargetCard() hit
   let _lastAllTexts    = [];   // allTexts from last findTargetCard() miss
+  // Set by applyFilterBySelectIndex when the schedule panel still has 0 cards
+  // after a polled wait — distinguishes "filter had no effect" from "schedule
+  // wasn't rendered yet" so the caller can skip the noisy unfiltered fallback
+  // and let the retry loop re-attempt with a fresh page state. (Task #59)
+  let _scheduleNotLoaded = false;
 
   // logRunSummary — defined before the try block so it is in scope for both
   // the try body and the catch handler.  Returns `result` so it can be inlined:
@@ -1047,6 +1052,53 @@ async function runBookingJob(job, opts = {}) {
     // Fix: get the wrapper's Bubble.io class suffix (unique per element), then use
     // Playwright's native locator.click() which replays the full event sequence.
     async function applyFilterBySelectIndex(selectIndex, targetValue, filterLabel) {
+      // ── Readiness wait (Apr 17 evening, Task #59) ──────────────────────────
+      // Race condition: the filter pill is in the DOM and the count element
+      // shows "0 classes this week" before the schedule embed has populated
+      // any cards. Applying the filter at this moment makes Bubble.io's
+      // selectOption a no-op (count stays 0 → 0), the helper returns false,
+      // and the caller falls through to an unfiltered scan against a panel
+      // that is *also* empty — which then races a card-render and ends up
+      // scoring against whatever happens to render first (in the Apr 16 case,
+      // the Rise & Align Yoga 6:15 AM promo).
+      //
+      // Detect this state up front: if the schedule has 0 cards AND 0 count,
+      // poll briefly for at least one card to render. If still empty, return
+      // a special signal (`_scheduleNotLoaded = true`) so the caller can skip
+      // the unfiltered fallback entirely and let the retry loop try again
+      // with a fresh page state.
+      // Probe: read the "X classes this week" count element. null = element not
+      // rendered yet; 0 = rendered but no classes loaded; >0 = schedule populated.
+      const probeCount = async () => await page.evaluate(() => {
+        for (const el of document.querySelectorAll('*')) {
+          const m = (el.textContent || '').match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+          if (m && el.children.length === 0) return parseInt(m[1], 10);
+        }
+        return null;
+      });
+
+      const c0 = await probeCount();
+      if (c0 === null || c0 === 0) {
+        console.log(`  Filter #${selectIndex} (${filterLabel}): schedule count is ${c0} — waiting up to 2s for schedule to populate before applying filter…`);
+        const start = Date.now();
+        const deadline = start + 2000;
+        let ready = false;
+        while (Date.now() < deadline) {
+          await page.waitForTimeout(150);
+          const cN = await probeCount();
+          if (cN !== null && cN > 0) {
+            console.log(`  Filter #${selectIndex} (${filterLabel}): schedule populated (count=${cN}) after ${Date.now() - start}ms.`);
+            ready = true;
+            break;
+          }
+        }
+        if (!ready) {
+          console.log(`  ⚠️ Filter #${selectIndex} (${filterLabel}): schedule count still ${await probeCount()} after 2s wait — flagging schedule_not_loaded, skipping unfiltered fallback.`);
+          _scheduleNotLoaded = true;
+          return false;
+        }
+      }
+
       // Step 1: Walk up from the hidden <select> to find the INDIVIDUAL PILL wrapper.
       // Key: the pill contains exactly 1 <select>; the filter bar row contains all 4.
       // We use this to skip past the row and find the pill precisely.
@@ -1164,7 +1216,38 @@ async function runBookingJob(job, opts = {}) {
     if (!instructorApplied) console.log('⚠️ Instructor filter not applied — will scan all instructors.');
 
     // ── POINT 2: navigate — filter application failure ────────────────────────
+    // Distinguish two failure modes:
+    //   (a) schedule_not_loaded — schedule panel was empty before & after the
+    //       readiness wait. The unfiltered scan would race a card-render and
+    //       could click an unrelated promo (Apr 16 Rise & Align Yoga incident).
+    //       Bail with a distinct reason so the retry loop tries again with a
+    //       fresh page state instead of falling into the noisy scan.
+    //   (b) filter_apply_failed — schedule had cards, but native selectOption
+    //       didn't change the count. Existing behaviour: continue with an
+    //       unfiltered scan.
     if (!categoryApplied && !instructorApplied) {
+      if (_scheduleNotLoaded) {
+        console.log('⚠️ Schedule not loaded when filters were applied — bailing with schedule_not_loaded (skipping unfiltered fallback to avoid wrong-card click).');
+        await captureFailure('navigate', 'schedule_not_loaded');
+        recordFailure({
+          jobId:    job.id || job.jobId || null,
+          phase:    'navigate', reason: 'schedule_not_loaded',
+          category: 'navigate', label: 'Schedule panel had not rendered when filters were applied',
+          message:  'Schedule panel was empty after readiness wait — filters could not be evaluated; will retry with a fresh page state.',
+          classTitle,
+          screenshot: _screenshotRef(screenshotPath),
+          url:      page.url(),
+          context:  { categoryApplied, instructorApplied, scheduleNotLoaded: true },
+        });
+        return logRunSummary({
+          status: 'error',
+          message: 'Schedule had not rendered when filters were applied — will retry on the next attempt.',
+          screenshotPath,
+          phase: 'navigate', reason: 'schedule_not_loaded',
+          category: 'navigate', label: 'Schedule not loaded',
+          url: page.url(),
+        });
+      }
       filtersFailed = true;  // carried through to logRunSummary for re-classification
       console.log('⚠️ Both filters failed — schedule unfiltered; scan may be noisy.');
       await captureFailure('navigate', 'filter_apply_failed');
@@ -1510,8 +1593,45 @@ async function runBookingJob(job, opts = {}) {
       if (instructorFirstName) {
         contentLoc = contentLoc.filter({ hasText: new RegExp(escRx(instructorFirstName), 'i') });
       }
-      contentLoc = contentLoc.filter({ has: buttonLoc }).last();
-      return contentLoc;
+      contentLoc = contentLoc.filter({ has: buttonLoc });
+
+      // ── Size guard (Apr 17 evening, Task #59) ────────────────────────────
+      // `.last()` picks the deepest match, but in some Bubble.io renders the
+      // content filters bubble up to a page-level wrapper (the schedule embed
+      // root, or a top promo banner) that happens to contain ALL the title /
+      // time / instructor text plus a button descendant somewhere.  Returning
+      // that page-sized element makes Playwright click somewhere in the middle
+      // of the viewport — which lands on whatever class card happens to render
+      // there (e.g. Rise & Align Yoga 6:15 AM was clicked instead of the
+      // Flow Yoga 12:00 PM target on Apr 16).
+      //
+      // Walk the matches from deepest → shallowest and return the first whose
+      // bounding box looks card-sized (width < viewport width, height ≤ 400 px).
+      // Reject candidates that are page-wide or taller than a single class row.
+      const all = await contentLoc.all();
+      if (all.length === 0) {
+        return contentLoc.last(); // nothing to choose — let downstream fail naturally
+      }
+      const vp = page.viewportSize() || { width: 1280, height: 800 };
+      // Iterate deepest-first (Playwright returns DOM order; deepest match is .last()).
+      for (let i = all.length - 1; i >= 0; i--) {
+        const cand = all[i];
+        let box = null;
+        try { box = await cand.boundingBox({ timeout: 500 }); } catch {}
+        if (!box) continue;
+        const tooWide = box.width >= vp.width;
+        const tooTall = box.height > 400;
+        if (tooWide || tooTall) {
+          console.log(`  ⚠️ content-locator size guard: rejecting candidate [${i}] box=${JSON.stringify(box)} (vp.width=${vp.width}, tooWide=${tooWide}, tooTall=${tooTall})`);
+          continue;
+        }
+        return cand;
+      }
+      // None of the candidates were card-shaped — return null so the caller
+      // falls through to the existing `data-target-class` attribute path
+      // (or fails cleanly) instead of clicking a page-level wrapper.
+      console.log(`  ⚠️ content-locator size guard: all ${all.length} candidate(s) were page-sized — returning null, caller will fall back to attribute locator`);
+      return null;
     }
 
     // Cached centre of the scroll panel for the current run.  Populated on the
