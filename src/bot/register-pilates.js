@@ -1038,6 +1038,100 @@ async function runBookingJob(job, opts = {}) {
     }, { timeout: 15000 }).catch(() => console.log('⚠️ Dropdown options slow to load, proceeding anyway'));
     _tc.page_nav_done = new Date().toISOString();
 
+    // ── Centralized schedule-readiness wait (Task #62) ─────────────────────
+    // Replaces the inline 2-second wait that previously lived inside
+    // applyFilterBySelectIndex.  Runs ONCE here, just after navigation, with
+    // a more generous ~10 s budget and a multi-signal probe (count text /
+    // visible class card / spinner gone).  If the wait fails we perform
+    // exactly one page.reload() + re-probe before flagging
+    // _scheduleNotLoaded — preserving the unfiltered-fallback skip from
+    // Task #59 so we never click on rows when the schedule never rendered.
+    async function waitForScheduleReady() {
+      const start    = Date.now();
+      const deadline = start + 10000;
+      let lastProbe  = null;
+      let sawSpinner = false;     // gate for spinner_gone signal
+      let pollCount  = 0;
+      let lastLogAt  = start;
+      while (Date.now() < deadline) {
+        pollCount++;
+        lastProbe = await page.evaluate(() => {
+          let count = null;
+          for (const el of document.querySelectorAll('*')) {
+            if (el.children.length !== 0) continue;
+            const t = el.textContent || '';
+            const m = t.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+            if (m) { count = parseInt(m[1], 10); break; }
+          }
+          let cardVisible = false;
+          const timeRe = /\b\d{1,2}:\d{2}\s*(AM|PM)\b/i;
+          for (const el of document.querySelectorAll('*')) {
+            if (el.children.length !== 0) continue;
+            const t = (el.textContent || '').trim();
+            if (!timeRe.test(t)) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) { cardVisible = true; break; }
+          }
+          let spinnerVisible = false;
+          for (const el of document.querySelectorAll('[class*="loading" i],[class*="spinner" i],[class*="loader" i]')) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) { spinnerVisible = true; break; }
+          }
+          return { count, cardVisible, spinnerVisible };
+        }).catch(() => ({ count: null, cardVisible: false, spinnerVisible: false }));
+        if (lastProbe.spinnerVisible) sawSpinner = true;
+        if (lastProbe.count !== null && lastProbe.count > 0) {
+          return { ready: true, signal: `count_text=${lastProbe.count}`, elapsedMs: Date.now() - start, polls: pollCount };
+        }
+        if (lastProbe.cardVisible) {
+          return { ready: true, signal: 'card_visible', elapsedMs: Date.now() - start, polls: pollCount };
+        }
+        // spinner_gone: only safe to treat as ready when we previously observed
+        // a spinner AND the count widget has rendered (count !== null), since
+        // a count of 0 with no spinner could otherwise be a genuinely empty
+        // schedule that we'd mis-classify as ready. Combined gating keeps the
+        // false-positive surface narrow.
+        if (sawSpinner && !lastProbe.spinnerVisible && lastProbe.count !== null) {
+          return { ready: true, signal: `spinner_gone(count=${lastProbe.count})`, elapsedMs: Date.now() - start, polls: pollCount };
+        }
+        // Periodic progress log (~1 Hz) so slow renders are visible in logs.
+        if (Date.now() - lastLogAt >= 1000) {
+          console.log(`[schedule-ready]   …probing (${Date.now() - start}ms elapsed, polls=${pollCount}, count=${lastProbe.count}, cardVisible=${lastProbe.cardVisible}, spinnerVisible=${lastProbe.spinnerVisible}, sawSpinner=${sawSpinner})`);
+          lastLogAt = Date.now();
+        }
+        await page.waitForTimeout(200);
+      }
+      return { ready: false, signal: null, elapsedMs: Date.now() - start, polls: pollCount, lastProbe, sawSpinner };
+    }
+
+    console.log(`[schedule-ready] (initial) probing schedule readiness up to 10s…`);
+    let scheduleReadiness = await waitForScheduleReady();
+    if (scheduleReadiness.ready) {
+      console.log(`[schedule-ready] (initial) ready — signal=${scheduleReadiness.signal} after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}).`);
+    } else {
+      console.log(`[schedule-ready] (initial) NOT ready after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}, sawSpinner=${scheduleReadiness.sawSpinner}, lastProbe=${JSON.stringify(scheduleReadiness.lastProbe)}) — performing ONE page.reload() retry before bailing.`);
+      try {
+        await page.reload({ timeout: 60000, waitUntil: 'domcontentloaded' });
+      } catch (rErr) {
+        console.log(`[schedule-ready] page.reload() threw: ${rErr.message}`);
+      }
+      await page.waitForTimeout(1000);
+      // Re-wait for dropdowns to repopulate after reload.
+      await page.waitForFunction(() => {
+        const selects = document.querySelectorAll('select');
+        for (const sel of selects) { if (sel.options.length > 1) return true; }
+        return false;
+      }, { timeout: 15000 }).catch(() => console.log('[schedule-ready] (after-reload) dropdown options slow to load, proceeding anyway'));
+      console.log(`[schedule-ready] (after-reload) re-probing schedule readiness up to 10s…`);
+      scheduleReadiness = await waitForScheduleReady();
+      if (scheduleReadiness.ready) {
+        console.log(`[schedule-ready] (after-reload) ready — signal=${scheduleReadiness.signal} after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}).`);
+      } else {
+        console.log(`[schedule-ready] (after-reload) STILL not ready after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}, sawSpinner=${scheduleReadiness.sawSpinner}, lastProbe=${JSON.stringify(scheduleReadiness.lastProbe)}) — flagging _scheduleNotLoaded; caller will bail with schedule_not_loaded after the unfiltered-fallback skip.`);
+        _scheduleNotLoaded = true;
+      }
+    }
+
     // Log all selects and their options so we can see what filters are available.
     const allSelectInfo = await page.evaluate(() => {
       return Array.from(document.querySelectorAll('select')).map((sel, i) => ({
@@ -1061,51 +1155,14 @@ async function runBookingJob(job, opts = {}) {
     // Fix: get the wrapper's Bubble.io class suffix (unique per element), then use
     // Playwright's native locator.click() which replays the full event sequence.
     async function applyFilterBySelectIndex(selectIndex, targetValue, filterLabel) {
-      // ── Readiness wait (Apr 17 evening, Task #59) ──────────────────────────
-      // Race condition: the filter pill is in the DOM and the count element
-      // shows "0 classes this week" before the schedule embed has populated
-      // any cards. Applying the filter at this moment makes Bubble.io's
-      // selectOption a no-op (count stays 0 → 0), the helper returns false,
-      // and the caller falls through to an unfiltered scan against a panel
-      // that is *also* empty — which then races a card-render and ends up
-      // scoring against whatever happens to render first (in the Apr 16 case,
-      // the Rise & Align Yoga 6:15 AM promo).
-      //
-      // Detect this state up front: if the schedule has 0 cards AND 0 count,
-      // poll briefly for at least one card to render. If still empty, return
-      // a special signal (`_scheduleNotLoaded = true`) so the caller can skip
-      // the unfiltered fallback entirely and let the retry loop try again
-      // with a fresh page state.
-      // Probe: read the "X classes this week" count element. null = element not
-      // rendered yet; 0 = rendered but no classes loaded; >0 = schedule populated.
-      const probeCount = async () => await page.evaluate(() => {
-        for (const el of document.querySelectorAll('*')) {
-          const m = (el.textContent || '').match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
-          if (m && el.children.length === 0) return parseInt(m[1], 10);
-        }
-        return null;
-      });
-
-      const c0 = await probeCount();
-      if (c0 === null || c0 === 0) {
-        console.log(`  Filter #${selectIndex} (${filterLabel}): schedule count is ${c0} — waiting up to 2s for schedule to populate before applying filter…`);
-        const start = Date.now();
-        const deadline = start + 2000;
-        let ready = false;
-        while (Date.now() < deadline) {
-          await page.waitForTimeout(150);
-          const cN = await probeCount();
-          if (cN !== null && cN > 0) {
-            console.log(`  Filter #${selectIndex} (${filterLabel}): schedule populated (count=${cN}) after ${Date.now() - start}ms.`);
-            ready = true;
-            break;
-          }
-        }
-        if (!ready) {
-          console.log(`  ⚠️ Filter #${selectIndex} (${filterLabel}): schedule count still ${await probeCount()} after 2s wait — flagging schedule_not_loaded, skipping unfiltered fallback.`);
-          _scheduleNotLoaded = true;
-          return false;
-        }
+      // Schedule-readiness wait now lives centrally (Task #62) — it runs
+      // ONCE just after navigation with a 10s budget + reload retry, and
+      // sets `_scheduleNotLoaded = true` if the schedule never rendered.
+      // If that flag is set, short-circuit immediately so the caller's bail
+      // path fires (skipping the noisy unfiltered fallback from Task #59).
+      if (_scheduleNotLoaded) {
+        console.log(`  Filter #${selectIndex} (${filterLabel}): _scheduleNotLoaded is set — skipping filter application.`);
+        return false;
       }
 
       // Step 1: Walk up from the hidden <select> to find the INDIVIDUAL PILL wrapper.
@@ -1236,13 +1293,13 @@ async function runBookingJob(job, opts = {}) {
     //       unfiltered scan.
     if (!categoryApplied && !instructorApplied) {
       if (_scheduleNotLoaded) {
-        console.log('⚠️ Schedule not loaded when filters were applied — bailing with schedule_not_loaded (skipping unfiltered fallback to avoid wrong-card click).');
+        console.log('⚠️ Schedule not loaded after centralized 10s wait + one reload retry (Task #62) — bailing with schedule_not_loaded (skipping unfiltered fallback to avoid wrong-card click).');
         await captureFailure('navigate', 'schedule_not_loaded');
         recordFailure({
           jobId:    job.id || job.jobId || null,
           phase:    'navigate', reason: 'schedule_not_loaded',
-          category: 'navigate', label: 'Schedule panel had not rendered when filters were applied',
-          message:  'Schedule panel was empty after readiness wait — filters could not be evaluated; will retry with a fresh page state.',
+          category: 'navigate', label: 'Schedule panel had not rendered after readiness wait + reload retry',
+          message:  'Schedule panel was empty after centralized readiness wait (10s) and one in-run page.reload() retry — filters could not be evaluated; will retry with a fresh page state.',
           classTitle,
           screenshot: _screenshotRef(screenshotPath),
           url:      page.url(),
