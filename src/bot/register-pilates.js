@@ -1951,6 +1951,12 @@ async function runBookingJob(job, opts = {}) {
     // Never throws — all errors are returned as { ok: false }.
     // ────────────────────────────────────────────────────────────────────────────
     async function attemptClickAndVerify(card, candidateLabel) {
+      // Set to true when the in-function T003 promotion swaps `card` to the
+      // second-best candidate.  Bubbled up via the return value so the outer
+      // caller can skip its own second-best fallback retry (which would
+      // double-attempt the same card and could misclassify the outcome as
+      // "both candidates had the wrong time" when only one was tried).
+      let _usedSecondBest = false;
       try {
         // NOTE: findTargetCard now returns a content-based locator (title +
         // time + instructor + has-button filter chain), not an attribute-based
@@ -1985,7 +1991,7 @@ async function runBookingJob(job, opts = {}) {
           const recoveredCard = await findTargetCard();
           if (!recoveredCard) {
             console.log(`❌ [${candidateLabel}] Local recovery: re-scan returned no candidate`);
-            return { ok: false, failMsg: 'Card element detached; local re-scan found no candidate', reasonTag: 'error', recorded: false };
+            return { ok: false, failMsg: 'Card element detached; local re-scan found no candidate', reasonTag: 'error', recorded: false, usedSecondBest: _usedSecondBest };
           }
           console.log(`  Re-scan found fresh element — scrolling into view for re-check`);
           try {
@@ -1998,7 +2004,7 @@ async function runBookingJob(job, opts = {}) {
           ]);
           if (!recVis && !recBox) {
             console.log(`❌ [${candidateLabel}] Recovered element also detached after re-scan`);
-            return { ok: false, failMsg: 'Card detached twice; recovered element also not visible', reasonTag: 'error', recorded: false };
+            return { ok: false, failMsg: 'Card detached twice; recovered element also not visible', reasonTag: 'error', recorded: false, usedSecondBest: _usedSecondBest };
           }
           console.log(`✅ [${candidateLabel}] Local recovery succeeded — proceeding with fresh element`);
           card = recoveredCard; // reassign: all downstream code in this function uses `card`
@@ -2016,28 +2022,73 @@ async function runBookingJob(job, opts = {}) {
           // No interactive child under the matched element.  With the T002 tie-break
           // fix this should be rare — usually the scorer picked an inner text wrapper
           // that slipped past visibility guards.  Log loudly so we can spot it.
-          console.log(`⚠️ [${candidateLabel}] Matched element has NO button/[role=button]/a child — falling back to cursor:pointer hunt (may land on a detail-page link instead of signup).`);
-          // Step 2: cursor:pointer child — evaluate directly on the card element
-          const markedPointer = await card.evaluate(el => {
-            for (const child of el.querySelectorAll('*')) {
-              const r = child.getBoundingClientRect();
-              if (r.width < 20 || r.height < 10) continue;
-              if (getComputedStyle(child).cursor === 'pointer') {
-                child.setAttribute('data-click-target', 'yes');
-                return true;
-              }
+          console.log(`⚠️ [${candidateLabel}] Matched element has NO button/[role=button]/a child.`);
+
+          // ── T003 guard: prefer second-best card if it has a clickable child ──
+          // findTargetCard() marks the runner-up with data-target-class-second.
+          // Switching to it before the cursor:pointer hunt avoids the failure mode
+          // observed Apr 16 (click landed on an inner non-interactive node, then
+          // the cursor:pointer fallback navigated to a class detail page instead
+          // of opening the signup modal).
+          const secondCard           = page.locator('[data-target-class-second="yes"]').first();
+          const secondCount          = await secondCard.count().catch(() => 0);
+          const secondHasClickable   = secondCount > 0
+            ? (await secondCard.locator("button, [role='button'], a").count().catch(() => 0)) > 0
+            : false;
+
+          if (secondHasClickable) {
+            // Verify the promoted card is still attached/visible before swapping.
+            // Bubble.io can re-render between the count() above and the click —
+            // fall through to cursor:pointer hunt rather than committing to a
+            // stale element that will only fail at click time.
+            try { await secondCard.scrollIntoViewIfNeeded({ timeout: 3000 }); } catch (_) {}
+            await page.waitForTimeout(200);
+            const [secVis, secBox] = await Promise.all([
+              secondCard.isVisible({ timeout: 2000 }).catch(() => false),
+              secondCard.boundingBox({ timeout: 2000 }).catch(() => null),
+            ]);
+
+            if (secVis || secBox) {
+              console.log(`✅ [${candidateLabel}] Second-best card has a clickable child — switching to it instead of cursor:pointer hunt.`);
+              emitEvent(_state, 'ACTION', null, 'Second-best card promoted (winner had no clickable child)', {
+                evidence: { reason: 'winner_no_clickable_child', usedSecondBest: 'true' }
+              });
+              _usedSecondBest = true;
+              card        = secondCard;
+              clickTarget = secondCard.locator("button, [role='button'], a").first();
+              clickDesc   = 'second-best card → button/[role=button]/a child';
+            } else {
+              console.log(`⚠️ [${candidateLabel}] Second-best card detached after marker check — falling through to cursor:pointer hunt on original.`);
+              emitEvent(_state, 'ACTION', null, 'Second-best card detached before promotion', {
+                evidence: { reason: 'second_best_detached' }
+              });
+              // fall into the cursor:pointer hunt branch below
             }
-            return false;
-          });
-          if (markedPointer) {
-            clickTarget = page.locator('[data-click-target="yes"]').first();
-            clickDesc   = 'cursor:pointer child';
-            // Do NOT remove the attribute here — the locator depends on it.
-            // Cleanup happens below after the click attempt.
-          } else {
-            // Step 3: force-click the card itself as last resort
-            clickTarget = card;
-            clickDesc   = 'card itself (last resort force click)';
+          }
+          if (!_usedSecondBest) {
+            console.log(`⚠️ [${candidateLabel}] No usable second-best card — falling back to cursor:pointer hunt (may land on a detail-page link instead of signup).`);
+            // Step 2: cursor:pointer child — evaluate directly on the card element
+            const markedPointer = await card.evaluate(el => {
+              for (const child of el.querySelectorAll('*')) {
+                const r = child.getBoundingClientRect();
+                if (r.width < 20 || r.height < 10) continue;
+                if (getComputedStyle(child).cursor === 'pointer') {
+                  child.setAttribute('data-click-target', 'yes');
+                  return true;
+                }
+              }
+              return false;
+            });
+            if (markedPointer) {
+              clickTarget = page.locator('[data-click-target="yes"]').first();
+              clickDesc   = 'cursor:pointer child';
+              // Do NOT remove the attribute here — the locator depends on it.
+              // Cleanup happens below after the click attempt.
+            } else {
+              // Step 3: force-click the card itself as last resort
+              clickTarget = card;
+              clickDesc   = 'card itself (last resort force click)';
+            }
           }
         }
 
@@ -2237,7 +2288,7 @@ async function runBookingJob(job, opts = {}) {
             actual:   modalText.slice(0, 300),
             context:  { candidateLabel, verifyTime, verifyInst, reasonTag, modalPreview: _lastModalPreview },
           });
-          return { ok: false, failMsg, reasonTag, recorded: true };
+          return { ok: false, failMsg, reasonTag, recorded: true, usedSecondBest: _usedSecondBest };
         }
 
         if (!verifyInst) {
@@ -2255,7 +2306,7 @@ async function runBookingJob(job, opts = {}) {
         _state.bundle.session   = 'SESSION_READY';
         _state.bundle.discovery = 'DISCOVERY_READY';
         _state.sniperState      = 'SNIPER_BOOKING';
-        return { ok: true };
+        return { ok: true, usedSecondBest: _usedSecondBest };
 
       } catch (err) {
         const failMsg = `Unexpected error during click/verify (${candidateLabel}): ${err.message}`;
@@ -2282,7 +2333,7 @@ async function runBookingJob(job, opts = {}) {
             }
           });
         }
-        return { ok: false, failMsg, reasonTag: 'error', recorded: true };
+        return { ok: false, failMsg, reasonTag: 'error', recorded: true, usedSecondBest: _usedSecondBest };
       }
     }
     // ────────────────────────────────────────────────────────────────────────────
@@ -2332,8 +2383,16 @@ async function runBookingJob(job, opts = {}) {
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
 
     if (!firstResult.ok) {
-      // Decide whether to try the second-best fallback
-      const secondQualifies = _lastSecondCard && _lastSecondScore >= CONFIDENCE_THRESHOLD - 2;
+      // Decide whether to try the second-best fallback.
+      // T003: if attemptClickAndVerify already promoted the second-best card
+      // in-function (winner had no clickable child), do NOT retry it here —
+      // doing so would double-attempt the same card and could misclassify the
+      // outcome as "both candidates had the wrong time" when only one was tried.
+      const alreadyPromotedSecond = firstResult.usedSecondBest === true;
+      const secondQualifies = !alreadyPromotedSecond && _lastSecondCard && _lastSecondScore >= CONFIDENCE_THRESHOLD - 2;
+      if (alreadyPromotedSecond) {
+        console.log(`ℹ️  Skipping outer second-best retry — second-best was already promoted inside the first attempt.`);
+      }
 
       if (secondQualifies) {
         console.log(`⚠️ Best match failed verification, trying second-best candidate once`);
