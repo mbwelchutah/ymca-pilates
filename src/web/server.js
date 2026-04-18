@@ -5777,7 +5777,31 @@ const server = http.createServer(async (req, res) => {
     // history (SQLite is wiped on every container redeploy).
     const historyResetAt = getFailuresResetAt();
 
-    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob, hideBefore, historyResetAt });
+    // Task #91 — surface whether the rows above came from the durable PG
+    // mirror or were newly recorded since this boot.  After an incident, the
+    // operator needs to confirm at a glance that restoreFailuresFromPg() ran
+    // on the latest restart (and how many rows it pulled back), or — if PG
+    // was unreachable — see that explicitly instead of an unexplained empty
+    // list.  Status is stamped to disk by pg-failures.js since pg-init runs
+    // in a separate process from this server.
+    let historyRestore = null;
+    try {
+      const { getRestoreStatus } = require('../db/pg-failures');
+      historyRestore = getRestoreStatus();
+    } catch (e) {
+      console.warn('[failures] could not read PG restore status:', e.message);
+    }
+
+    json({
+      recent: recent.slice(0, 10),
+      summary: summaryByReason,
+      by_phase: summaryByPhase,
+      trends,
+      byJob,
+      hideBefore,
+      historyResetAt,
+      historyRestore,
+    });
 
   } else if (req.method === 'DELETE' && path === '/api/failures') {
     const { clearFailures } = require('../db/failures');

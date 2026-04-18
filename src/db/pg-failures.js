@@ -21,6 +21,36 @@ const path = require('path');
 // the marker (single-row INSERTs cannot wipe data the way DELETE+INSERT can).
 const INIT_MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
 
+// Records the outcome of the most recent restoreFailuresFromPg() call.  pg-init
+// runs in a separate, short-lived process from the long-running server, so we
+// cannot share state via a module variable — the file is the only durable
+// channel between the two.  GET /api/failures reads it via getRestoreStatus()
+// to surface "Restored N rows at ..." (or the error reason) on the Failure
+// Insights panel, so an operator can confirm at a glance that the durable
+// PG restore actually ran on the latest boot.
+const RESTORE_STATUS_FILE = path.join(__dirname, '../../data/.pg-failures-restore-status.json');
+
+function writeRestoreStatus(status) {
+  try {
+    fs.mkdirSync(path.dirname(RESTORE_STATUS_FILE), { recursive: true });
+    fs.writeFileSync(RESTORE_STATUS_FILE, JSON.stringify(status, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[pg-failures] failed to write restore-status marker (non-fatal):', e.message);
+  }
+}
+
+// Synchronously read the most recent restore outcome.  Returns null if the
+// marker file is missing (e.g. PG not configured, or this is the first boot
+// after the feature landed and pg-init hasn't run yet).  Returned object
+// shape mirrors what writeRestoreStatus stamps below.
+function getRestoreStatus() {
+  try {
+    return JSON.parse(fs.readFileSync(RESTORE_STATUS_FILE, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
 let _pool = null;
 function getPool() {
   if (!_pool) {
@@ -125,6 +155,7 @@ async function mirrorFailureToPg(row) {
 // boot.
 async function restoreFailuresFromPg() {
   if (!process.env.DATABASE_URL) return;
+  const startedAt = new Date().toISOString();
   if (!fs.existsSync(INIT_MARKER)) {
     // pg-init didn't succeed this boot — PG may be unreachable.  We still try
     // to read failures (read-only is safe), but log the gap for the operator.
@@ -199,11 +230,28 @@ async function restoreFailuresFromPg() {
     }
 
     db.close();
+    const completedAt = new Date().toISOString();
     console.log(
       `[pg-failures] Restore complete — ${rows.length} PG row(s), ${inserted} new into SQLite, resetAt ${restoredResetAt ? 'restored from PG' : 'seeded into PG'}.`
     );
+    writeRestoreStatus({
+      ok:           true,
+      restoredAt:   completedAt,
+      startedAt,
+      restoredRows: rows.length,
+      insertedRows: inserted,
+      error:        null,
+    });
   } catch (err) {
     console.error('[pg-failures] restore failed (non-fatal, history will start empty):', err.message);
+    writeRestoreStatus({
+      ok:           false,
+      restoredAt:   new Date().toISOString(),
+      startedAt,
+      restoredRows: 0,
+      insertedRows: 0,
+      error:        err.message,
+    });
   }
 }
 
@@ -240,4 +288,5 @@ module.exports = {
   mirrorFailureToPg,
   restoreFailuresFromPg,
   clearFailuresInPg,
+  getRestoreStatus,
 };

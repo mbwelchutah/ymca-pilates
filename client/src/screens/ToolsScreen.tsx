@@ -61,6 +61,20 @@ interface FailureData {
   // bootstrap or DELETE /api/failures).  Surfaced so the Failure Insights
   // panel can label trends as "since X" rather than implying durable history.
   historyResetAt?: string | null
+  // Task #91 — outcome of the most recent restoreFailuresFromPg() at boot.
+  // null when PG mirroring isn't configured or the marker file hasn't been
+  // written yet on this machine.  When present, the Failure Insights panel
+  // renders a small subtitle confirming the durable mirror was actually
+  // pulled back on the last restart, or — if ok=false — surfaces the error
+  // instead of silently showing an empty list.
+  historyRestore?: {
+    ok:           boolean
+    restoredAt:   string
+    startedAt?:   string
+    restoredRows: number
+    insertedRows?: number
+    error:        string | null
+  } | null
 }
 
 interface BotStatus {
@@ -1802,14 +1816,35 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             empty-history-after-restart case, which is exactly when the user
             most needs to know that "0 failures" reflects a wiped log rather
             than durable health. */}
-        {failures !== null && failures?.historyResetAt && (
+        {failures !== null && (failures?.historyResetAt || failures?.historyRestore) && (
           <div
             data-testid="failure-history-reset-notice"
             className="px-1 -mt-1 mb-1"
           >
-            <p className="text-[11px] text-text-muted">
-              History resets on restart — last reset {fmtStr(failures.historyResetAt)}
-            </p>
+            {failures?.historyResetAt && (
+              <p className="text-[11px] text-text-muted">
+                History resets on restart — last reset {fmtStr(failures.historyResetAt)}
+              </p>
+            )}
+            {/* Task #91 — confirm the durable PG mirror was actually pulled
+                back on the last boot.  If the restore failed, say so plainly
+                so an empty list isn't mistaken for a clean slate. */}
+            {failures?.historyRestore && failures.historyRestore.ok && (
+              <p
+                data-testid="failure-history-restore-notice"
+                className="text-[11px] text-text-muted"
+              >
+                Restored {failures.historyRestore.restoredRows} {failures.historyRestore.restoredRows === 1 ? 'row' : 'rows'} from durable storage at {fmtStr(failures.historyRestore.restoredAt)}
+              </p>
+            )}
+            {failures?.historyRestore && !failures.historyRestore.ok && (
+              <p
+                data-testid="failure-history-restore-notice"
+                className="text-[11px] text-accent-red"
+              >
+                Durable storage restore failed at {fmtStr(failures.historyRestore.restoredAt)}{failures.historyRestore.error ? ` — ${failures.historyRestore.error}` : ''}
+              </p>
+            )}
           </div>
         )}
 

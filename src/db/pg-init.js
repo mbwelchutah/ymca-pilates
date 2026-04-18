@@ -14,10 +14,15 @@ const { initFromPg }            = require('./pg-sync');
 const { restoreFailuresFromPg } = require('./pg-failures');
 
 const MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
+// Stale restore-status marker from a previous boot would mislead the Failure
+// Insights panel into showing yesterday's restore as if it happened today, so
+// wipe it up front and let restoreFailuresFromPg() re-stamp the real outcome.
+const RESTORE_STATUS = path.join(__dirname, '../../data/.pg-failures-restore-status.json');
 
 // Remove any stale marker from a previous boot before attempting this init.
 // If pg-init fails this time, the absence of the marker must reflect THIS run.
 try { fs.unlinkSync(MARKER); } catch (_) { /* absent is fine */ }
+try { fs.unlinkSync(RESTORE_STATUS); } catch (_) { /* absent is fine */ }
 
 initFromPg().then(async () => {
   try {
