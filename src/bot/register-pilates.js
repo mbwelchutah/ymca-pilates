@@ -1499,7 +1499,22 @@ async function runBookingJob(job, opts = {}) {
           }
           return null;
         });
-        console.log(`  Native selectOption for "${targetValue}": class count ${initialCount} → ${newCount}`);
+        // PRIMARY success signal: the <select>'s selectedOption text now matches
+        // what we asked for.  Class-count delta is unreliable on empty days
+        // (e.g. Good Friday closure: count stays 0→0 even when filters apply).
+        const selectedText = await page.evaluate((idx) => {
+          const sel = document.querySelectorAll('select')[idx];
+          if (!sel) return null;
+          const opt = sel.options[sel.selectedIndex];
+          return opt ? (opt.text || '').trim() : null;
+        }, selectIndex);
+        console.log(`  Native selectOption for "${targetValue}": class count ${initialCount} → ${newCount}, selectedOption="${selectedText}"`);
+        const norm = (s) => (s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+        const targetTrim = (targetValue || '').trim();
+        if (selectedText && norm(selectedText) === norm(targetTrim)) {
+          console.log(`✅ Filter #${selectIndex} (${filterLabel}) applied via native select — selectedOption matches target.`);
+          return true;
+        }
         if (newCount !== null && newCount !== initialCount) {
           console.log(`✅ Filter #${selectIndex} (${filterLabel}) applied via native select — count changed!`);
           return true;
@@ -1509,7 +1524,7 @@ async function runBookingJob(job, opts = {}) {
       // dropdown without completing a selection leaves it in a partially-applied state
       // that corrupts subsequent filter attempts (observed: count dropped from 79→14
       // when pill was clicked but option was never selected).
-      console.log(`  Native selectOption did not change class count — skipping pill click to avoid state corruption.`);
+      console.log(`  Native selectOption did not change class count and selectedOption (${selectedText}) ≠ target (${targetTrim}) — skipping pill click to avoid state corruption.`);
       return false;
     } catch (nse) {
       console.log(`  Native selectOption threw: ${nse.message} — skipping pill click to avoid state corruption.`);
