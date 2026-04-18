@@ -12,6 +12,8 @@ const { getPhase, isPastClass } = require('../scheduler/booking-window');
 const { checkJobConsistency } = require('../scheduler/job-consistency');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
+// Task #70 — schedule_not_loaded backoff (per-job in-memory gate).
+const scheduleBackoff        = require('../scheduler/schedule-not-loaded-backoff');
 // Stage 10G — Booking bridge: lets burst-to-booking handoff update jobState.
 const { setBridgeCallbacks } = require('../scheduler/booking-bridge');
 const {
@@ -3941,6 +3943,9 @@ const server = http.createServer(async (req, res) => {
           dayOfWeek:   dbJob.day_of_week,
           targetDate:  dbJob.target_date  || null,
         }, { dryRun: getDryRun() });
+        // Task #70 — feed schedule_not_loaded backoff so a successful force-run
+        // (or any non-`schedule_not_loaded` reason) clears any active gate.
+        try { scheduleBackoff.recordResult(dbJob.id, result.reason || null); } catch (_) {}
         const NON_SUCCESS_STATUSES = ['error', 'found_not_open_yet', 'not_found', 'full', 'closed'];
         setLastRun(dbJob.id, result.status, NON_SUCCESS_STATUSES.includes(result.status) ? (result.message || null) : null);
         // Expose structured status/reason/phase so the UI can branch on the real
@@ -4042,6 +4047,10 @@ const server = http.createServer(async (req, res) => {
             targetDate: dbJob.target_date || null,
             maxAttempts: 1,
           }, { preflightOnly: true, dryRun: getDryRun() });
+          // Task #70 — manual preflight bypasses the backoff GATE (it skips
+          // the tick); but its outcome still feeds the tracker so a successful
+          // schedule load resets the gate immediately.
+          try { scheduleBackoff.recordResult(dbJob.id, result.reason || null); } catch (_) {}
           const { loadState, savePreflightSnapshot } = require('../bot/sniper-readiness');
           const state = loadState();
 
@@ -5204,7 +5213,9 @@ const server = http.createServer(async (req, res) => {
     if (!jobId) { json({ success: false, message: 'Missing job id' }); return; }
     (async () => {
       try {
-        const results = await runTick({ onlyJobId: jobId });
+        // Task #70 — manual "Run Scheduler" on a single job bypasses the
+        // schedule_not_loaded backoff gate so the user can always force a try.
+        const results = await runTick({ onlyJobId: jobId, bypassScheduleBackoff: true });
         const r = results[0];
         if (!r) {
           json({ success: true, message: `Job #${jobId} not found or inactive — nothing ran` });
@@ -5382,10 +5393,17 @@ const server = http.createServer(async (req, res) => {
       // next week" prompt instead of the stale countdown / Issue badge.
       const passed = !!j.target_date && nextClassMs != null && nextClassMs < Date.now();
 
+      // Task #70 — surface schedule_not_loaded backoff state when present so
+      // the Tools tab can show a calm "Paused — schedule not loading
+      // (retry in N m)" badge instead of a runaway failure counter.
+      const msToOpen = bookingOpenMs != null ? (bookingOpenMs - Date.now()) : null;
+      const scheduleBackoffStatus = scheduleBackoff.snapshotForApi(j.id, msToOpen);
+
       return {
         ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency,
         liveAvailability, liveVerdict, liveUrgencyHints, liveRecentInfluence,
         liveImmediateTrigger, passed,
+        scheduleBackoff: scheduleBackoffStatus,
       };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.

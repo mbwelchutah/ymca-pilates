@@ -11,6 +11,8 @@ const { getDryRun }                 = require('../bot/dry-run-state');
 const { loadState, emitTickSkip }   = require('../bot/sniper-readiness');
 // Stage 6 — feed booking-run timing into the run-speed learner.
 const { recordRunSpeed }            = require('./timing-learner');
+// Task #70 — backoff for repeated `schedule_not_loaded` failures.
+const scheduleBackoff               = require('./schedule-not-loaded-backoff');
 // Stage 10 (auth-truth-unification): session-failed gate now reads from the
 // canonical source (auth-state.json via getCanonicalAuthTruth) instead of
 // session-status.json (loadStatus).  lastFailureType (written by session-check.js)
@@ -67,7 +69,7 @@ const pastClassLogged = new Set();
 //     the action was available and the booking failed transiently.  Never set
 //     for normal scheduler or manual invocations.
 // Returns an array of result objects: { jobId, phase, status, message }.
-async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
+async function runTick({ onlyJobId = null, skipCooldown = false, bypassScheduleBackoff = false } = {}) {
   const label = onlyJobId ? `job #${onlyJobId} only` : 'all jobs';
   console.log(`\n[${nowLabel()}] --- Scheduler tick (${label}) ---`);
 
@@ -337,14 +339,36 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       }
     }
 
+    // Task #70 — schedule_not_loaded backoff gate.
+    // After 3 consecutive `schedule_not_loaded` failures we skip this job for
+    // an exponentially-growing window so we don't hammer Daxko (and flood the
+    // failure log).  The gate is auto-lifted within 10 min of booking-open so
+    // we never miss a window the user is actively waiting on.
+    if (!bypassScheduleBackoff) {
+      let msToOpen = null;
+      try { msToOpen = getPhase(job).msUntilOpen; } catch (_) { /* keep null */ }
+      const bs = scheduleBackoff.getBackoffStatus(dbJob.id, msToOpen);
+      if (bs.inBackoff) {
+        const retryMin = Math.max(1, Math.round(bs.retryInMs / 60000));
+        const msg = `schedule_not_loaded backoff (retry in ~${retryMin} min, ${bs.consecutive} consecutive)`;
+        if (scheduleBackoff.markLoggedOnce(dbJob.id)) {
+          console.log(`  => SKIPPING Job #${dbJob.id} — ${msg}`);
+        }
+        results.push({ jobId: dbJob.id, phase, status: 'skipped', message: msg });
+        continue;
+      }
+    }
+
     runningJobs.add(dbJob.id);
     console.log(`  => RUNNING Job #${dbJob.id}...`);
 
     let lastResult = 'error';
     let lastErrMsg = null;
+    let lastReason = null;
     try {
       const result = await runBookingJob(job, { dryRun: getDryRun() });
       lastResult = result.status;
+      lastReason = result.reason || null;
       const NON_SUCCESS = ['error', 'found_not_open_yet', 'not_found'];
       if (NON_SUCCESS.includes(result.status)) lastErrMsg = result.message || null;
       console.log(`  => FINISHED Job #${dbJob.id}. status: ${result.status} | ${result.message}`);
@@ -354,6 +378,9 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
       console.error(`  => ERROR Job #${dbJob.id}:`, err.message);
       results.push({ jobId: dbJob.id, phase, status: 'error', message: lastErrMsg });
     } finally {
+      // Task #70 — feed the outcome to the schedule_not_loaded backoff tracker.
+      // Any non-`schedule_not_loaded` reason (including success) clears the gate.
+      try { scheduleBackoff.recordResult(dbJob.id, lastReason); } catch (_) { /* best-effort */ }
       setLastRun(dbJob.id, lastResult, lastErrMsg);
       runningJobs.delete(dbJob.id);
       // Stage 7 — refresh confirmed-ready state so the UI and /api/confirmed-ready

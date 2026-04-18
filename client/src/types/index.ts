@@ -94,6 +94,17 @@ export interface Job {
     computedWeekday: string | null
     mismatchReason: string | null
   }
+  // Task #70 — schedule_not_loaded backoff state.  Present (non-null) only
+  // when at least one consecutive `schedule_not_loaded` failure has been
+  // recorded for this job in this process.  inBackoff=true means the
+  // scheduler is skipping this job until backoffUntilMs.
+  scheduleBackoff?: {
+    inBackoff: boolean
+    consecutive: number
+    backoffUntilMs: number
+    retryInMs: number
+    nearOpenLifted?: boolean
+  } | null
   // Stage 7: live-truth visibility (only populated for active sniper/late jobs)
   liveAvailability?: {
     state: 'bookable' | 'waitlist_available' | 'full' | 'cancelled' | 'unknown' | 'not_found'

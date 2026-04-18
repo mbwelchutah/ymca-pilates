@@ -1755,18 +1755,32 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                   const neverRun = !job.last_result
                   const transient = rel?.transient_count ?? 0
 
+                  // Task #70 — calm "Paused" state when the scheduler has
+                  // backed off `schedule_not_loaded` for this job.  Takes
+                  // precedence over the reliability rollup so we don't show
+                  // an angry red counter for a known-transient YMCA glitch
+                  // we're already deferring on.
+                  const sb = job.scheduleBackoff
+                  const isPaused = !!(sb && sb.inBackoff)
+                  const pauseRetryMin = isPaused
+                    ? Math.max(1, Math.round((sb!.retryInMs) / 60000))
+                    : 0
+
                   // Authoritative status comes from the server-side shared
                   // classifier (src/scheduler/failure-classification.js).
                   // Fallback recomputes the same policy locally for older
                   // /api/failures payloads.
-                  const computedStatus: 'at_risk' | 'not_run' | 'healthy' =
-                    rel?.status
-                      ?? (fails >= 1 || isDown ? 'at_risk'
-                          : neverRun           ? 'not_run'
-                                                : 'healthy')
+                  const computedStatus: 'at_risk' | 'not_run' | 'healthy' | 'paused' =
+                    isPaused ? 'paused'
+                      : (rel?.status
+                          ?? (fails >= 1 || isDown ? 'at_risk'
+                              : neverRun           ? 'not_run'
+                                                    : 'healthy'))
 
                   let dot: string, statusText: string, statusColor: string
-                  if (computedStatus === 'at_risk') {
+                  if (computedStatus === 'paused') {
+                    dot = 'bg-yellow-400';   statusText = `Paused — retry in ${pauseRetryMin} m`; statusColor = 'text-yellow-500'
+                  } else if (computedStatus === 'at_risk') {
                     dot = 'bg-accent-red';   statusText = 'At risk'; statusColor = 'text-accent-red'
                   } else if (computedStatus === 'not_run') {
                     dot = 'bg-divider';      statusText = 'Not run'; statusColor = 'text-text-muted'
