@@ -278,32 +278,26 @@ function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSel
             )}
           </div>
           {/* On/Off toggle + ›  grouped on the right.
-              Past-dated jobs render a dimmed, non-toggleable "Paused" pill so
-              the toggle doesn't read as actionable while the scheduler is
-              skipping the job. */}
+              Past-dated jobs keep the same On/Off control but dim it to ~40%
+              opacity and disable interaction so the user can see at a glance
+              that auto-registration is paused.  Trying to flip it on (via the
+              click handler's guard) surfaces the inline "advance to next
+              week" hint below in `toggleErr`. */}
           <div className="flex-shrink-0 flex items-center gap-1.5">
-            {job.passed ? (
-              <span
-                className="px-3 py-1 rounded-full text-[12px] font-semibold bg-[#f2f2f7] text-text-muted opacity-70"
-                title="Class has passed — advance to next week to resume"
-              >
-                Paused
-              </span>
-            ) : (
-              <button
-                onClick={handleToggleClick}
-                disabled={toggling}
-                className={`
-                  px-3 py-1 rounded-full text-[12px] font-semibold
-                  transition-colors active:opacity-70 disabled:opacity-40
-                  ${job.is_active
-                    ? 'bg-accent-green/10 text-accent-green'
-                    : 'bg-[#f2f2f7] text-text-secondary'}
-                `}
-              >
-                {toggling ? '…' : job.is_active ? 'On' : 'Off'}
-              </button>
-            )}
+            <button
+              onClick={handleToggleClick}
+              disabled={toggling || !!job.passed}
+              title={job.passed ? 'Class has passed — advance to next week to resume' : undefined}
+              className={`
+                px-3 py-1 rounded-full text-[12px] font-semibold
+                transition-colors active:opacity-70 disabled:opacity-40
+                ${job.is_active
+                  ? 'bg-accent-green/10 text-accent-green'
+                  : 'bg-[#f2f2f7] text-text-secondary'}
+              `}
+            >
+              {toggling ? '…' : job.is_active ? 'On' : 'Off'}
+            </button>
             {/* Disclosure indicator — communicates that the card body taps to Now */}
             <svg
               className="w-[14px] h-[14px] text-[#c8c8cc] flex-shrink-0"

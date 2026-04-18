@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun, advanceJobOneWeek } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun, advanceJobOneWeek, inactivatePastJobs } = require('../db/jobs');
 const { syncJobsToPgAsync } = require('../db/pg-sync');
 const { openDb } = require('../db/init');
 const { runBookingJob, cancelRegistration } = require('../bot/register-pilates');
@@ -5120,6 +5120,15 @@ const server = http.createServer(async (req, res) => {
     return;
 
   } else if (req.method === 'GET' && path === '/api/jobs') {
+    // Self-heal stale active past one-offs before responding so the UI never
+    // sees a "passed && is_active=1" row.  Best-effort PG sync follows so the
+    // durable mirror matches what we just persisted in SQLite.
+    try {
+      if (inactivatePastJobs() > 0) {
+        syncJobsToPgAsync().catch(e =>
+          console.error('[pg-sync] /api/jobs past-class sync failed:', e.message));
+      }
+    } catch (e) { console.error('inactivatePastJobs (jobs) failed:', e.message); }
     // Enrich each job with `passed` so clients can react to expired one-offs
     // even when fetching this lighter endpoint instead of /api/state.
     json(getAllJobs().map(j => ({ ...j, passed: isPastClass(j) })));
@@ -5151,6 +5160,14 @@ const server = http.createServer(async (req, res) => {
     json(result);
 
   } else if (req.method === 'GET' && path === '/api/state') {
+    // Self-heal stale active past one-offs so the Plan screen's primary feed
+    // never includes a "passed && is_active=1" row.  Best-effort PG sync.
+    try {
+      if (inactivatePastJobs() > 0) {
+        syncJobsToPgAsync().catch(e =>
+          console.error('[pg-sync] /api/state past-class sync failed:', e.message));
+      }
+    } catch (e) { console.error('inactivatePastJobs (state) failed:', e.message); }
     const rawJobs = getAllJobs();
     // Live FW API classifier — populates each active job's `liveAvailability`
     // field synchronously from cache; triggers a background refresh when stale.

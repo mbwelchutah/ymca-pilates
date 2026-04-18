@@ -164,17 +164,74 @@ function advanceJobOneWeek(id) {
     bumps++;
   }
 
+  // Re-activate the job when advancing — the user explicitly chose to roll
+  // forward, so they want auto-registration on for the new occurrence even if
+  // we previously auto-inactivated it during the past-class reconciliation.
   db.prepare(`
     UPDATE jobs
     SET target_date        = ?,
+        is_active          = 1,
         last_run_at        = NULL,
         last_result        = NULL,
         last_error_message = NULL,
         last_success_at    = NULL
     WHERE id = ?
   `).run(iso, id);
+  // Forget any past-inactivation log gate for this id so future expirations
+  // will log once again.
+  _pastInactivatedLogged.delete(id);
   syncSeed();
   return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun, advanceJobOneWeek };
+// One-shot log gate so the "inactivating past class" line prints exactly once
+// per job per process — not on every API listing or every scheduler tick.
+// Cleared when the job becomes future again or is removed (see prune below).
+const _pastInactivatedLogged = new Set();
+
+// Reconciles stale state: any one-off (target_date) job whose date+time is
+// already past AND still has is_active=1 gets flipped to inactive in SQLite,
+// so the storage reflects reality (the scheduler skips it anyway). Also prunes
+// the log gate against the current job set so it can't grow unboundedly.
+// Called by both the scheduler tick and the API list endpoints so existing
+// rows self-heal on the next render even if the scheduler hasn't ticked yet.
+//
+// Returns the number of jobs that were actually flipped this call (0 when
+// everything is already in sync).  Callers may use that to decide whether to
+// trigger a PostgreSQL sync.
+function inactivatePastJobs() {
+  // Lazy require avoids circular dep at module load time.
+  const { isPastClass } = require('../scheduler/booking-window');
+  const db   = openDb();
+  const rows = db.prepare('SELECT id, class_title, target_date, day_of_week, class_time, is_active FROM jobs').all();
+  const currentIds = new Set(rows.map(r => r.id));
+
+  // Prune log gate: any ID we've previously logged that no longer exists in
+  // the DB (deleted) should be forgotten so the Set can't leak.
+  for (const id of _pastInactivatedLogged) {
+    if (!currentIds.has(id)) _pastInactivatedLogged.delete(id);
+  }
+
+  let flipped = 0;
+  for (const r of rows) {
+    if (!r.target_date) continue;          // recurring jobs roll forward
+    if (!isPastClass(r))  {
+      // Job is future again (e.g. user advanced or edited the date) — clear
+      // the log gate so a future past state will log once again.
+      _pastInactivatedLogged.delete(r.id);
+      continue;
+    }
+    if (r.is_active === 1) {
+      db.prepare('UPDATE jobs SET is_active = 0 WHERE id = ?').run(r.id);
+      flipped++;
+      if (!_pastInactivatedLogged.has(r.id)) {
+        console.log(`[past-class] Inactivated job #${r.id} (${r.class_title} ${r.day_of_week} ${r.class_time} on ${r.target_date}) — class has passed; awaiting user advance/keep/remove.`);
+        _pastInactivatedLogged.add(r.id);
+      }
+    }
+  }
+  if (flipped > 0) syncSeed();
+  return flipped;
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun, advanceJobOneWeek, inactivatePastJobs };

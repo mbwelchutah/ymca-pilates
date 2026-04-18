@@ -4,7 +4,7 @@
 //
 // Does NOT check isSchedulerPaused() — callers decide whether to gate on it.
 
-const { getAllJobs, setLastRun }    = require('../db/jobs');
+const { getAllJobs, setLastRun, inactivatePastJobs } = require('../db/jobs');
 const { getPhase, isPastClass }     = require('./booking-window');
 const { runBookingJob }             = require('../bot/register-pilates');
 const { getDryRun }                 = require('../bot/dry-run-state');
@@ -80,13 +80,36 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     return [];
   }
 
-  console.log(`  Active jobs in scope: ${jobs.length}`);
+  // Reconcile any past one-off jobs *before* iterating: flips is_active=0 in
+  // SQLite (and seed-jobs.json) for one-off classes whose date+time is past,
+  // and prunes the in-process log gate against the current job set.  This
+  // means stale active rows self-heal on every tick and the `jobs` list
+  // below already excludes them via the is_active=1 filter.
+  let flippedByPast = 0;
+  try {
+    flippedByPast = inactivatePastJobs();
+    if (flippedByPast > 0) {
+      // Re-fetch so we don't try to run the just-deactivated rows in this tick.
+      jobs = getAllJobs().filter(j => j.is_active === 1);
+      // Best-effort PG sync so durability matches SQLite — fire-and-forget
+      // is acceptable here because the next tick (or any API mutation) will
+      // re-attempt sync if this one fails.
+      try {
+        const { syncJobsToPgAsync } = require('../db/pg-sync');
+        syncJobsToPgAsync().catch(e =>
+          console.error('[pg-sync] tick past-class sync failed:', e.message));
+      } catch (_) { /* pg-sync not available; SQLite + seed-jobs is enough */ }
+    }
+  } catch (e) {
+    console.error('  WARN inactivatePastJobs failed:', e.message);
+  }
+
+  console.log(`  Active jobs in scope: ${jobs.length}${flippedByPast > 0 ? ` (after auto-inactivating ${flippedByPast} past one-off${flippedByPast === 1 ? '' : 's'})` : ''}`);
   const results = [];
 
-  // Reconcile the past-class log gate against the *full* current job set
-  // (active or not) so IDs for jobs that have been deleted, deactivated, or
-  // advanced no longer accumulate in memory.  Without this, the Set could
-  // grow unboundedly over a long-lived process.
+  // Reconcile the in-tick `pastClassLogged` Set (separate from the
+  // inactivatePastJobs gate) against the current job set so it can't grow
+  // unboundedly across long-lived processes.  Defensive: never block a tick.
   try {
     const currentIds = new Set(getAllJobs().map(j => j.id));
     for (const id of pastClassLogged) {

@@ -16,11 +16,11 @@
     "is_active": 1
   },
   {
-    "class_title": "TEST_TODAY_PAST",
-    "instructor": "T",
+    "class_title": "PAST DEMO Yoga",
+    "instructor": "Demo",
     "day_of_week": "Friday",
-    "class_time": "12:01 AM",
-    "target_date": "2026-04-24",
+    "class_time": "12:00 PM",
+    "target_date": "2026-04-10",
     "is_active": 0
   }
 ]
