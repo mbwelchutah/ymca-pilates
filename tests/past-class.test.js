@@ -207,8 +207,20 @@ describe('API: past-class endpoints', () => {
     // (triggered by /api/jobs/:id/advance) can be rolled back in afterAll.
     if (fs.existsSync(SEED_PATH)) fs.copyFileSync(SEED_PATH, SEED_BACKUP);
 
-    // Clean any leftovers from prior runs.
+    // Clean any leftovers from prior runs — both in SQLite and (defensively)
+    // in seed-jobs.json itself, since a prior interrupted test can leave the
+    // seed file polluted with PASTTEST_API_* rows whose target_date then gets
+    // re-applied to fresh inserts via init.js's UPDATE-by-class_title sync.
     db.prepare("DELETE FROM jobs WHERE class_title LIKE 'PASTTEST_API_%'").run();
+    if (fs.existsSync(SEED_PATH)) {
+      try {
+        const seeds = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
+        const cleaned = seeds.filter(s => !String(s.class_title || '').startsWith('PASTTEST_API_'));
+        if (cleaned.length !== seeds.length) {
+          fs.writeFileSync(SEED_PATH, JSON.stringify(cleaned, null, 2), 'utf8');
+        }
+      } catch { /* leave seed alone if unparseable */ }
+    }
 
     // A clearly-past one-off class — used by both advance-success and toggle-409.
     // Use a date 60 days in the (real) past so advanceJobOneWeek's 520-bump

@@ -7,6 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { AccountSheet } from './components/AccountSheet'
 import { useAppState } from './hooks/useAppState'
 import { api } from './lib/api'
+import { decideStickySelection } from './lib/stickySelection'
 import type { SessionStatus, AuthStatusEnum } from './types'
 
 const SESSION_POLL_MS      = 90 * 1000  // 90 s — background steady-state
@@ -106,43 +107,42 @@ export default function App() {
   const [graceExpiryTick, setGraceExpiryTick] = useState(0)
 
   useEffect(() => {
-    const isValid = selectedJobId !== null && state.jobs.some(j => j.id === selectedJobId)
-    if (isValid) {
-      // Selection is healthy — clear any miss tracking + banner.
+    // If we recently pinned a specific job (e.g. just after create/select) and
+    // it hasn't shown up in the list yet, wait — don't fall back to a random job.
+    const sticky = stickySelectionRef.current
+    if (sticky && Date.now() < sticky.until && selectedJobId === sticky.id &&
+        !state.jobs.some(j => j.id === selectedJobId)) {
+      return
+    }
+
+    const decision = decideStickySelection({
+      jobs:           state.jobs,
+      selectedJobId,
+      lastKnownJob:   lastKnownJobRef.current,
+      missingSinceMs: missingSinceRef.current,
+      nowMs:          Date.now(),
+      graceWindowMs:  STICKY_MISS_GRACE_MS,
+    })
+
+    if (decision.action === 'ok') {
       missingSinceRef.current = null
       if (selectionResyncing) setSelectionResyncing(false)
       return
     }
 
-    // If we recently pinned a specific job (e.g. just after create/select) and
-    // it hasn't shown up in the list yet, wait — don't fall back to a random job.
-    const sticky = stickySelectionRef.current
-    if (sticky && Date.now() < sticky.until && selectedJobId === sticky.id) return
-
-    // Sticky-on-transient-miss: hold the selection (and show the resync banner)
-    // for STICKY_MISS_GRACE_MS before falling back to a different job.  This
-    // covers the SQLite↔PG↔seed-jobs drift window where a row briefly vanishes
-    // from one store but is still present in another.  Runs even when the
-    // jobs list is empty so a single-job disappearance still gets the grace.
-    if (selectedJobId !== null && lastKnownJobRef.current?.id === selectedJobId) {
-      const now = Date.now()
-      if (missingSinceRef.current === null) missingSinceRef.current = now
-      const elapsed = now - missingSinceRef.current
-      if (elapsed < STICKY_MISS_GRACE_MS) {
-        if (!selectionResyncing) setSelectionResyncing(true)
-        // Schedule an explicit re-check at expiry so we flush even if no
-        // poll lands in the meantime.  Returning the cleanup cancels the
-        // pending tick if the effect re-runs sooner.
-        const remaining = STICKY_MISS_GRACE_MS - elapsed
-        const t = setTimeout(() => setGraceExpiryTick(n => n + 1), remaining + 50)
-        return () => clearTimeout(t)
-      }
+    if (decision.action === 'resync') {
+      missingSinceRef.current = decision.missingSinceMs
+      if (!selectionResyncing) setSelectionResyncing(true)
+      // Schedule an explicit re-check at expiry so we flush even if no
+      // poll lands in the meantime.  Returning the cleanup cancels the
+      // pending tick if the effect re-runs sooner.
+      const remaining = decision.expiresAtMs - Date.now()
+      const t = setTimeout(() => setGraceExpiryTick(n => n + 1), Math.max(50, remaining + 50))
+      return () => clearTimeout(t)
     }
 
-    // Grace expired (or no last-known job) — fall back to whatever the
-    // current jobs list offers (which may be nothing, leaving selection null).
-    const fallback = state.jobs.find(j => j.is_active) ?? state.jobs[0] ?? null
-    const newId = fallback?.id ?? null
+    // action === 'fallback'
+    const newId = decision.nextSelectedId
     if (newId !== selectedJobId) {
       setSelectedJobId(newId)
       if (newId != null) localStorage.setItem('selectedJobId', String(newId))

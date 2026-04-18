@@ -2950,12 +2950,24 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
                             <span className="mt-0.5 shrink-0"><StatusDot color="red" /></span>
                             <p className="text-[14px] font-medium text-accent-red">{guardMessage}</p>
                           </div>
-                          <button
-                            onClick={handleGuardCancel}
-                            className="w-full rounded-2xl py-3 text-[15px] font-semibold bg-text-primary/[0.06] text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
-                          >
-                            OK
-                          </button>
+                          {/* Task #68 — when the block was caused by a lookup-miss
+                              (server has no record of this job), give the user a
+                              dedicated Refresh affordance alongside OK so they can
+                              re-fetch state without leaving the booking flow. */}
+                          <div className="flex items-stretch gap-2">
+                            <button
+                              onClick={() => { refresh(); handleGuardCancel(); }}
+                              className="flex-1 rounded-2xl py-3 text-[15px] font-semibold bg-accent-blue/[0.10] text-accent-blue active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
+                            >
+                              Refresh
+                            </button>
+                            <button
+                              onClick={handleGuardCancel}
+                              className="flex-1 rounded-2xl py-3 text-[15px] font-semibold bg-text-primary/[0.06] text-text-primary active:scale-[0.97] active:opacity-70 transition-[transform,opacity] duration-150 ease-out"
+                            >
+                              OK
+                            </button>
+                          </div>
                         </>
                       )}
                     </div>

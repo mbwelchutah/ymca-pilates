@@ -127,6 +127,52 @@ function openDb() {
         seedAll(seeds);
         console.log(`[db] Seeded ${seeds.length} job(s) from seed-jobs.json`);
       } else {
+        // Task #68 — root drift fix.
+        // Previously the else branch only UPDATEd existing rows by class_title
+        // and never INSERTed seed rows missing from SQLite.  That left an
+        // SQLite-vs-(PG/seed) divergence whenever a new job appeared in PG
+        // (and thus in seed-jobs.json after pg-init) without first being
+        // created locally — exactly the "Yoga Nidra disappeared" pattern the
+        // integrity-audit started flagging.  We now insert any seed row whose
+        // identity tuple (class_title + day_of_week + class_time + target_date)
+        // is absent from SQLite, BEFORE running the per-row config sync.
+        const tupleKey = (r) =>
+          [r.class_title ?? '', r.day_of_week ?? '', r.class_time ?? '', r.target_date ?? ''].join('|');
+        const existingTuples = new Set(
+          db.prepare('SELECT class_title, day_of_week, class_time, target_date FROM jobs').all().map(tupleKey)
+        );
+        const missing = seeds.filter(r => !existingTuples.has(tupleKey(r)));
+        if (missing.length > 0) {
+          const insert = db.prepare(`
+            INSERT INTO jobs
+              (class_title, instructor, day_of_week, class_time, target_date, is_active,
+               last_result, last_success_at, last_run_at, last_error_message,
+               advance_count, weekly_suggest_dismissed, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          const now = new Date().toISOString();
+          const insertAll = db.transaction((rows) => {
+            for (const r of rows) {
+              insert.run(
+                r.class_title,
+                r.instructor         ?? null,
+                r.day_of_week        ?? null,
+                r.class_time         ?? null,
+                r.target_date        ?? null,
+                r.is_active !== undefined ? (r.is_active ? 1 : 0) : 1,
+                r.last_result        ?? null,
+                r.last_success_at    ?? null,
+                r.last_run_at        ?? null,
+                r.last_error_message ?? null,
+                Number.isFinite(r.advance_count) ? r.advance_count : 0,
+                r.weekly_suggest_dismissed ? 1 : 0,
+                now
+              );
+            }
+          });
+          insertAll(missing);
+          console.log(`[db] sync-from-seed: inserted ${missing.length} drift-recovered row(s) into SQLite (${missing.map(m => m.class_title).join(', ')})`);
+        }
         // Sync config fields from seed-jobs.json into existing rows.
         // seed-jobs.json is always written by the UI on save, so it reflects the
         // latest intended configuration. This corrects stale fields in a persistent

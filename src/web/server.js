@@ -4000,6 +4000,27 @@ const server = http.createServer(async (req, res) => {
       if (lookupCode) {
         const currentIds = getAllJobs().map(j => j.id);
         console.warn(`[preflight] lookup-miss code=${lookupCode} requestedJobId=${numericJobId ?? '<none>'} currentJobIds=[${currentIds.join(',')}]`);
+        // Task #68 — emit a categorised failure record so the Tools failure
+        // trends panel can group these miss events alongside other booking
+        // failures.  category=JOB_LOOKUP_MISS / phase=system / reason=lookupCode.
+        // Best-effort: a failure to log must not block the response.
+        try {
+          const { recordFailure } = require('../db/failures');
+          recordFailure({
+            jobId:      numericJobId ?? null,
+            phase:      'system',
+            reason:     lookupCode.toLowerCase(),
+            message:    lookupMsg,
+            classTitle: null,
+            screenshot: null,
+            category:   'JOB_LOOKUP_MISS',
+            label:      lookupMsg,
+            expected:   numericJobId != null ? String(numericJobId) : '<active job>',
+            actual:     `currentJobIds=[${currentIds.join(',')}]`,
+            url:        '/api/preflight',
+            context:    { code: lookupCode, requestedJobId: numericJobId, currentJobIds },
+          });
+        } catch (e) { /* failure-log emission is best-effort */ }
         json({
           success:        false,
           code:           lookupCode,
@@ -5273,6 +5294,23 @@ const server = http.createServer(async (req, res) => {
       }
     } catch (e) { console.error('inactivatePastJobs (state) failed:', e.message); }
     const rawJobs = getAllJobs();
+    // Task #68 — /api/state miss instrumentation.
+    // Compare the current job-id set to the previous response's set; if any
+    // ids vanished (or the count dropped to 0), log a structured WARN with
+    // before/after context so we can correlate UI "card disappeared" reports
+    // with the server-side moment the row left state.  Memory-only — purely
+    // diagnostic, no behaviour change.
+    try {
+      const currIds = new Set(rawJobs.map(j => j.id));
+      const prevIds = global.__lastStateJobIds instanceof Set ? global.__lastStateJobIds : null;
+      if (prevIds) {
+        const vanished = [...prevIds].filter(id => !currIds.has(id));
+        if (vanished.length > 0) {
+          console.warn(`[state-miss] /api/state job(s) disappeared since previous poll: vanished=[${vanished.join(',')}] prev=[${[...prevIds].join(',')}] curr=[${[...currIds].join(',')}]`);
+        }
+      }
+      global.__lastStateJobIds = currIds;
+    } catch (_) { /* instrumentation is best-effort */ }
     // Live FW API classifier — populates each active job's `liveAvailability`
     // field synchronously from cache; triggers a background refresh when stale.
     // First poll after server boot returns null (cache empty); subsequent polls
