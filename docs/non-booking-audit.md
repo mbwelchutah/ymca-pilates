@@ -31,6 +31,29 @@ Grading rubric:
 | `/api/readiness` | GET | **Silent** | If the readiness state has no jobId, silently falls back to "first active job in DB". UI can't distinguish "explicitly tracked" from "fallback". |
 | `/api/confirmed-ready` | GET | **Silent** | Same fallback to first active job when `?jobId` is missing/invalid. |
 
+### Jobs read endpoints (booking-job mutations are out of scope; reads aren't)
+
+| Endpoint | Method | Grade | Notes |
+|---|---|---|---|
+| `/api/jobs` | GET | **Silent** | Always 200. Same `inactivatePastJobs()` side effect as `/api/state`; the response is enriched with a `passed` flag but the act of mutating rows is not surfaced. |
+| `/api/jobs/:id/classify` | GET | Good | Returns 400 with `{error:'Invalid job ID'}` and 404 with `{error:'Job not found'}`. Cache-only — no fallback synthesis. |
+
+### Replay history
+
+| Endpoint | Method | Grade | Notes |
+|---|---|---|---|
+| `/api/replay-history/:jobId` | GET | Good | 400 + `{error:'Missing jobId'}` when path is empty; otherwise returns whatever `replayStore.getReplayList` produces (empty array is honest). |
+| `/api/replay/:jobId(/:runId)` | GET | Good | 400 on missing jobId, 404 + `{error:'No replay found'}` when not found. The underlying store is local-only / lost on deploy (see §3). |
+
+### Diagnostic helpers
+
+| Endpoint | Method | Grade | Notes |
+|---|---|---|---|
+| `/api/dry-run` | POST | **Misleading** | Always returns 200. On thrown exception emits `{success:false, status:'error', message: err.message, label:'Run failed'}` — the *raw* `err.message` is shown to the user, which can leak stack-style strings. Job-not-found is reported as `{success:false, message:'Job not found'}` instead of a 404. |
+| `/run-job` | GET | **Misleading** | Always 200. "Job not found" returned as `{started:false, log: 'No job found...'}` with no status code. Treats a busy bot as a successful no-op (`{started:false, log:'Already running…'}`). |
+| `/clean-test-jobs` | GET | **Misleading** | Destructive (deletes rows) but exposed as a GET, so any link prefetch can fire it. Always 200; no auth check. |
+| `/register` | GET | Good | Trivial helper — kicks off `runInBackground` for job 1; returns `{started:true}`. Same "always 200" pattern as `/run-job` but documented as a developer-only entry point. |
+
 ### Failures / screenshots
 
 | Endpoint | Method | Grade | Notes |
@@ -216,7 +239,68 @@ state.
 
 ---
 
-## 5. What this audit deliberately did not cover
+## 5. Appendix — every route in `src/web/server.js`
+
+Completeness check: each route defined in `src/web/server.js` is listed
+below with its in-scope decision. In-scope rows are graded above.
+
+| Route | Method | In scope? | Reason |
+|---|---|---|---|
+| `/` | GET | No | Static HTML / SPA shell. |
+| `/sw.js` | GET | No | Service worker bundle (PWA). |
+| `/manifest.json` | GET | No | PWA manifest. |
+| `/apple-touch-icon.png`, `/icon-192.png`, `/icon-512.png` | GET | No | Generated PWA icons. |
+| `/status` | GET | Yes | Diagnostic. |
+| `/register` | GET | Yes | Diagnostic helper. |
+| `/force-run-job` | POST | No | Booking surface (#68–#71). |
+| `/api/preflight` | POST | No | Booking surface. |
+| `/api/dry-run` | POST | Yes | Diagnostic helper that runs the booking pipeline in dry-run mode but is reachable from non-booking UI. |
+| `/api/session-status` | GET | Yes | Auth/session. |
+| `/api/session-check` | POST | Yes | Auth/session. |
+| `/api/settings-login` | POST | Yes | Settings/auth. |
+| `/api/settings-refresh` | POST | Yes | Settings/auth. |
+| `/api/validate-session` | POST | Yes | Auth/session. |
+| `/api/settings-clear` | POST | Yes | Settings/auth. |
+| `/api/auto-preflight-config` | GET / POST | Yes | Automation config. |
+| `/api/session-keepalive-config` | GET / POST | Yes | Automation config. |
+| `/run-job` | GET | Yes | Diagnostic helper. |
+| `/clean-test-jobs` | GET | Yes | Destructive diagnostic. |
+| `/update-job` | POST | No | Booking-job mutation. |
+| `/toggle-active` | POST | No | Booking-job mutation. |
+| `/api/jobs/:id/advance` | POST | No | Booking-job mutation. |
+| `/api/jobs/:id/convert-to-recurring` | POST | No | Booking-job mutation. |
+| `/api/jobs/:id/dismiss-weekly-suggestion` | POST | No | Booking-job mutation. |
+| `/delete-job` | POST | No | Booking-job mutation. |
+| `/reset-booking` | POST | No | Booking surface. |
+| `/clear-escalation` | POST | No | Booking surface. |
+| `/cancel-registration` | POST | No | Booking surface. |
+| `/add-job` | POST | No | Booking-job mutation. |
+| `/run-scheduler-once` | POST | No | Booking surface. |
+| `/run-selected-scheduler` | POST | No | Booking surface. |
+| `/pause-scheduler` | POST | Yes | Scheduler global. |
+| `/resume-scheduler` | POST | Yes | Scheduler global. |
+| `/set-dry-run` | POST | Yes | Scheduler global. |
+| `/api/jobs` | GET | Yes | Read endpoint with side effects. |
+| `/api/jobs/:id/classify` | GET | Yes | Read endpoint. |
+| `/api/state` | GET | Yes | Dashboard read. |
+| `/api/sniper-state` | GET | Yes | Read endpoint. |
+| `/api/readiness` | GET | Yes | Read endpoint. |
+| `/api/confirmed-ready` | GET | Yes | Read endpoint. |
+| `/api/failures` | GET / DELETE | Yes | Failure log. |
+| `/api/replay-history/:jobId` | GET | Yes | Replay history. |
+| `/api/replay/:jobId(/:runId)` | GET | Yes | Replay history. |
+| `/api/scraped-classes` | GET | Yes | Schedule scrape. |
+| `/refresh-schedule` | POST | Yes | Schedule scrape. |
+| `/api/screenshots/:rel` | GET | Yes | Screenshot serving. |
+| `/screenshots/:file` | GET | Yes | Legacy screenshot serving. |
+| `* (SPA fallback)` | GET | No | React index.html catch-all when `dist/` is built. |
+| `/api/recovery/reset-job-state` | POST | Yes | Recovery tool. |
+| `/api/recovery/resync-pg` | POST | Yes | Recovery tool. |
+| `/api/recovery/clear-transient` | POST | Yes | Recovery tool. |
+
+---
+
+## 6. What this audit deliberately did not cover
 
 - Anything inside the Now / Plan / preflight surface (tasks #68–#71).
 - The scheduler/phase model itself (separate audit).
