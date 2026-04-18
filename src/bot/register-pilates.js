@@ -40,6 +40,8 @@ const REASONTAG_TO_REASON = {
   'time':            'modal_time_mismatch',
   'instructor':      'modal_instructor_mismatch',
   'time-instructor': 'modal_mismatch',
+  'title':           'modal_title_mismatch',     // Stage 5: same-time wrong-class (e.g. Flow Yoga vs Rise & Align Yoga at 9:00)
+  'time-title':      'modal_mismatch',           // both time and title wrong
   'error':           'unexpected_error',
 };
 
@@ -2882,15 +2884,45 @@ async function runBookingJob(job, opts = {}) {
         const verifyTime = !!classTimeNorm && modalText.includes(classTimeNorm);
         // Skip instructor check when no instructor was specified on the job (instructorFirstName === null).
         const verifyInst = instructorFirstName ? modalText.includes(instructorFirstName) : true;
-        console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, classTimeNorm, instructorFirstName }));
+
+        // ── Self-Healing / Safe Recovery Pass — Stage 5: title-presence gate ──
+        // Time-only verification cannot distinguish two classes that happen to
+        // run at the SAME hour (e.g. "Flow Yoga" 9:00 vs "Rise & Align Yoga"
+        // 9:00 — the April 2026 wrong-class incident). Strengthen verification
+        // by also requiring the target class title's distinguishing words to
+        // appear in modalText. We require ALL words >=4 chars from classTitle
+        // to be present (case-insensitive substring). Falls back open (skip)
+        // if the title contains no words >=4 chars, so single-word/short
+        // titles never get false-failed by an over-strict gate.
+        const _titleWords = (classTitle || '')
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter(w => w.length >= 4);
+        const verifyTitle = _titleWords.length === 0
+          ? true                                      // no usable words → don't gate
+          : _titleWords.every(w => modalText.includes(w));
+        const _missingTitleWords = _titleWords.filter(w => !modalText.includes(w));
+
+        console.log(`Modal verification (${candidateLabel}) —`, JSON.stringify({ verifyTime, verifyInst, verifyTitle, classTimeNorm, instructorFirstName, classTitle, missingTitleWords: _missingTitleWords }));
         _tc.modal_verify_done = new Date().toISOString();
 
-        // Time mismatch = definitive fail (we clicked the wrong class / window not open yet).
-        // Instructor mismatch only = soft warning — instructor may be a substitute this week;
-        // class title + time match is sufficient to confirm identity, so we proceed.
-        if (!verifyTime) {
-          const reasonTag   = verifyInst ? 'time' : 'time-instructor';
-          const reasonLabel = { 'time': 'Time mismatch', 'time-instructor': 'Time + Instructor mismatch' }[reasonTag] || 'Time mismatch';
+        // Time OR title mismatch = definitive fail (we clicked the wrong class).
+        //   - Time mismatch:  modal opened on a different time slot
+        //   - Title mismatch: same-time-different-class wrong-modal (Stage 5)
+        // Instructor mismatch only = soft warning — instructor may be a substitute
+        // this week; if time + title both match, identity is confirmed, proceed.
+        // pageHealth = wrong_modal classification applies to either failure.
+        if (!verifyTime || !verifyTitle) {
+          let reasonTag;
+          if (!verifyTime && !verifyTitle)        reasonTag = 'time-title';
+          else if (!verifyTime)                   reasonTag = verifyInst ? 'time' : 'time-instructor';
+          else                                    reasonTag = 'title';
+          const reasonLabel = {
+            'time':            'Time mismatch',
+            'time-instructor': 'Time + Instructor mismatch',
+            'title':           'Wrong class title in modal (same-time collision)',
+            'time-title':      'Wrong class title AND time in modal',
+          }[reasonTag] || 'Modal verification failed';
           console.log(`❌ Modal verification failed (${candidateLabel}):`, reasonLabel);
           const _ftMap = { 'time': 'VERIFY_TIME_MISMATCH', 'time-instructor': 'VERIFY_MISMATCH' };
           console.log('Expected:', { time: classTimeNorm, instructor: instructorFirstName });
@@ -3262,7 +3294,10 @@ async function runBookingJob(job, opts = {}) {
     //     which definitively means our target slot hasn't appeared yet)
     //   - Instructor mismatch or unexpected exception → error
     //     (something unexpected happened that warrants investigation)
-    const isTimeMismatch = r => r.reasonTag === 'time' || r.reasonTag === 'time-instructor';
+    // Stage 5: title and time-title mismatches are also "wrong modal opened"
+    // outcomes — same containment path applies (try second-best, else bail safely).
+    const isTimeMismatch = r => r.reasonTag === 'time' || r.reasonTag === 'time-instructor'
+                             || r.reasonTag === 'title' || r.reasonTag === 'time-title';
 
     // Row-capacity signal from schedule row — guides behavior but does not
     // necessarily prevent clicking:
