@@ -915,12 +915,17 @@ async function runBookingJob(job, opts = {}) {
       _tc.browser_launch_start = new Date().toISOString();
       // Task #71 — gate the page.goto retry on "not past booking open" so we
       // never spend a second 60 s budget while the click race is already on.
-      let _pastBookingOpen = false;
+      // Pass a callback so the check is re-evaluated at the retry decision
+      // point (after the first 60 s attempt) rather than frozen at session
+      // creation time — booking open may have arrived during attempt 1.
+      let _bookingOpenMs = null;
       try {
         const { bookingOpen: _bo } = getBookingWindow(job);
-        _pastBookingOpen = _bo && _bo.getTime() <= Date.now();
-      } catch (_) { /* default false — retry permitted */ }
-      _session = await createSession({ headless: isHeadless, pastBookingOpen: _pastBookingOpen });
+        _bookingOpenMs = _bo ? _bo.getTime() : null;
+      } catch (_) { /* leave null — retry permitted */ }
+      const _pastBookingOpenFn = () =>
+        _bookingOpenMs != null && Date.now() >= _bookingOpenMs;
+      _session = await createSession({ headless: isHeadless, pastBookingOpen: _pastBookingOpenFn });
       _tc.browser_launch_done  = new Date().toISOString();
       // Auth succeeded — update session-status.json so the UI reflects the fresh result.
       saveSessionStatus({

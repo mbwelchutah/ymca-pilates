@@ -40,17 +40,31 @@ function _isTimeoutError(err) {
  * Exported so the unit test can drive it with a mocked page.
  */
 async function gotoWithRetry(page, url, opts = {}) {
-  const allowRetry = opts.allowRetry !== false;
-  const gotoOpts   = { timeout: DAXKO_GOTO_TIMEOUT_MS };
+  // allowRetry can be a boolean OR a no-arg callback (re-evaluated at the
+  // catch site).  The callback form lets the caller re-check "past booking
+  // open" right before the retry decision — important because the first
+  // attempt can burn a full 60 s and the booking window may have opened
+  // during it.
+  const allowRetryOpt = opts.allowRetry;
+  const gotoOpts      = { timeout: DAXKO_GOTO_TIMEOUT_MS };
   if (opts.waitUntil) gotoOpts.waitUntil = opts.waitUntil;
 
   try {
     return await page.goto(url, gotoOpts);
   } catch (err) {
-    if (!allowRetry || !_isTimeoutError(err)) throw err;
+    if (!_isTimeoutError(err)) throw err;
+    const canRetry =
+      typeof allowRetryOpt === 'function'
+        ? !!allowRetryOpt()
+        : allowRetryOpt !== false;
+    if (!canRetry) throw err;
     console.warn(
-      `[session] page.goto timeout on first attempt (${url}, ${DAXKO_GOTO_TIMEOUT_MS / 1000}s) — retrying once.`,
+      `[session] page.goto timeout on first attempt (${url}, ${DAXKO_GOTO_TIMEOUT_MS / 1000}s) — reloading and retrying once.`,
     );
+    // Best-effort reload to flush any partial state from the timed-out
+    // attempt before the second try.  Failures here are non-fatal — the
+    // retry goto below is the actual recovery path.
+    try { await page.reload({ timeout: 5000 }).catch(() => {}); } catch (_) {}
     return await page.goto(url, gotoOpts);
   }
 }
@@ -87,8 +101,13 @@ async function createSession(opts = {}) {
   const screenshotDir    = opts.screenshotDir || 'screenshots';
   // Task #71 — when the booking window has already opened we suppress the
   // one-shot timeout retry: a second 60 s budget would cost the click race.
-  const pastBookingOpen  = opts.pastBookingOpen === true;
-  const allowGotoRetry   = !pastBookingOpen;
+  // Caller may pass a callback (re-evaluated at the catch site, after the
+  // first 60 s attempt has elapsed) or a static boolean.
+  const pastBookingOpenOpt = opts.pastBookingOpen;
+  const allowGotoRetry =
+    typeof pastBookingOpenOpt === 'function'
+      ? () => !pastBookingOpenOpt()
+      : () => pastBookingOpenOpt !== true;
 
   // ── Stage 3: Fast validation — try HTTP ping before touching a browser ────
   // If saved cookies are still valid (Tier-2 HTTP ping), we can skip the entire

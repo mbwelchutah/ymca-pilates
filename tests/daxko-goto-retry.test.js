@@ -28,9 +28,11 @@ function makeTimeoutError() {
 
 function makePage(impls) {
   const calls = [];
+  const reloads = [];
   const queue = impls.slice();
   return {
     calls,
+    reloads,
     goto: async (url, opts) => {
       calls.push({ url, opts });
       const next = queue.shift();
@@ -38,6 +40,7 @@ function makePage(impls) {
       if (next.throw) throw next.throw;
       return next.return ?? null;
     },
+    reload: async (opts) => { reloads.push(opts); return null; },
   };
 }
 
@@ -75,6 +78,35 @@ describe('gotoWithRetry — Daxko auth page.goto retry helper', () => {
       gotoWithRetry(page, 'https://example.com', { allowRetry: false }),
     ).rejects.toThrow(/timeout/i);
     expect(page.calls).toHaveLength(1);
+  });
+
+  test('reloads between attempts before retrying after a timeout', async () => {
+    const page = makePage([{ throw: makeTimeoutError() }, { return: 'ok' }]);
+    const r = await gotoWithRetry(page, 'https://example.com');
+    expect(r).toBe('ok');
+    expect(page.calls).toHaveLength(2);
+    expect(page.reloads).toHaveLength(1);
+  });
+
+  test('allowRetry callback is re-evaluated at the catch site', async () => {
+    // Callback returns true → retry happens (and we provide a 2nd goto).
+    let invoked = 0;
+    const pageOk = makePage([{ throw: makeTimeoutError() }, { return: 'ok' }]);
+    const r = await gotoWithRetry(pageOk, 'https://example.com', {
+      allowRetry: () => { invoked++; return true; },
+    });
+    expect(r).toBe('ok');
+    expect(invoked).toBe(1);
+    expect(pageOk.calls).toHaveLength(2);
+
+    // Callback returns false → retry is suppressed (simulates booking-open
+    // having arrived during the first 60s attempt).
+    const pageBlocked = makePage([{ throw: makeTimeoutError() }]);
+    await expect(
+      gotoWithRetry(pageBlocked, 'https://example.com', { allowRetry: () => false }),
+    ).rejects.toThrow(/timeout/i);
+    expect(pageBlocked.calls).toHaveLength(1);
+    expect(pageBlocked.reloads).toHaveLength(0);
   });
 
   test('uses the bumped 60 s timeout (DAXKO_GOTO_TIMEOUT_MS) on every call', async () => {
