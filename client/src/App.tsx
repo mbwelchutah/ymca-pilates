@@ -77,24 +77,88 @@ export default function App() {
   // is the timestamp after which the pin expires.
   const stickySelectionRef = useRef<{ id: number; until: number } | null>(null)
 
-  useEffect(() => {
-    if (state.jobs.length === 0) return
-    const isValid = selectedJobId !== null && state.jobs.some(j => j.id === selectedJobId)
-    if (!isValid) {
-      // If we recently pinned a specific job (e.g. just after create/select) and
-      // it hasn't shown up in the list yet, wait — don't fall back to a random job.
-      const sticky = stickySelectionRef.current
-      if (sticky && Date.now() < sticky.until && selectedJobId === sticky.id) return
+  // Task #68 — sticky-on-transient-miss.
+  // The polled state already retains "ghost" jobs for ~8 s via useAppState's
+  // pendingDisappearance map, but a longer drift between SQLite/PG/seed-jobs
+  // can still cause the watched job to vanish from state.jobs.  To prevent the
+  // "card disappeared and came back" surprise reported in the Yoga Nidra bug,
+  // we (a) snapshot the last-known job object whenever it appears in state,
+  // (b) keep the user's selection pinned for a 12 s grace window when it goes
+  // missing, and (c) hand the snapshot + a "resyncing" flag to NowScreen so
+  // the hero card stays visible with a subtle banner instead of jumping to
+  // the empty placeholder.
+  const lastKnownJobRef = useRef<typeof state.jobs[number] | null>(null)
+  const missingSinceRef = useRef<number | null>(null)
+  const STICKY_MISS_GRACE_MS = 12_000
 
-      const fallback = state.jobs.find(j => j.is_active) ?? state.jobs[0]
-      const newId = fallback?.id ?? null
-      if (newId !== selectedJobId) {
-        setSelectedJobId(newId)
-        if (newId != null) localStorage.setItem('selectedJobId', String(newId))
-        else localStorage.removeItem('selectedJobId')
+  // Snapshot the last good observation of the selected job whenever the
+  // polled state contains it.  This ref drives the staleSelectedJob fallback.
+  useEffect(() => {
+    if (selectedJobId == null) { lastKnownJobRef.current = null; return }
+    const seen = state.jobs.find(j => j.id === selectedJobId)
+    if (seen) lastKnownJobRef.current = seen
+  }, [state.jobs, selectedJobId])
+
+  const [selectionResyncing, setSelectionResyncing] = useState(false)
+  // Bumped from inside a setTimeout when the grace window expires, so the
+  // effect below re-runs and flushes selectionResyncing even if no poll has
+  // landed in the interim.
+  const [graceExpiryTick, setGraceExpiryTick] = useState(0)
+
+  useEffect(() => {
+    const isValid = selectedJobId !== null && state.jobs.some(j => j.id === selectedJobId)
+    if (isValid) {
+      // Selection is healthy — clear any miss tracking + banner.
+      missingSinceRef.current = null
+      if (selectionResyncing) setSelectionResyncing(false)
+      return
+    }
+
+    // If we recently pinned a specific job (e.g. just after create/select) and
+    // it hasn't shown up in the list yet, wait — don't fall back to a random job.
+    const sticky = stickySelectionRef.current
+    if (sticky && Date.now() < sticky.until && selectedJobId === sticky.id) return
+
+    // Sticky-on-transient-miss: hold the selection (and show the resync banner)
+    // for STICKY_MISS_GRACE_MS before falling back to a different job.  This
+    // covers the SQLite↔PG↔seed-jobs drift window where a row briefly vanishes
+    // from one store but is still present in another.  Runs even when the
+    // jobs list is empty so a single-job disappearance still gets the grace.
+    if (selectedJobId !== null && lastKnownJobRef.current?.id === selectedJobId) {
+      const now = Date.now()
+      if (missingSinceRef.current === null) missingSinceRef.current = now
+      const elapsed = now - missingSinceRef.current
+      if (elapsed < STICKY_MISS_GRACE_MS) {
+        if (!selectionResyncing) setSelectionResyncing(true)
+        // Schedule an explicit re-check at expiry so we flush even if no
+        // poll lands in the meantime.  Returning the cleanup cancels the
+        // pending tick if the effect re-runs sooner.
+        const remaining = STICKY_MISS_GRACE_MS - elapsed
+        const t = setTimeout(() => setGraceExpiryTick(n => n + 1), remaining + 50)
+        return () => clearTimeout(t)
       }
     }
-  }, [state.jobs, selectedJobId])
+
+    // Grace expired (or no last-known job) — fall back to whatever the
+    // current jobs list offers (which may be nothing, leaving selection null).
+    const fallback = state.jobs.find(j => j.is_active) ?? state.jobs[0] ?? null
+    const newId = fallback?.id ?? null
+    if (newId !== selectedJobId) {
+      setSelectedJobId(newId)
+      if (newId != null) localStorage.setItem('selectedJobId', String(newId))
+      else localStorage.removeItem('selectedJobId')
+    }
+    missingSinceRef.current = null
+    if (selectionResyncing) setSelectionResyncing(false)
+  }, [state.jobs, selectedJobId, selectionResyncing, graceExpiryTick])
+
+  // Snapshot used by NowScreen when the polled state misses the selection.
+  // Only honoured while selectionResyncing is true so deletes still flush
+  // the card after the grace window.
+  const staleSelectedJob =
+    selectionResyncing && lastKnownJobRef.current?.id === selectedJobId
+      ? lastKnownJobRef.current
+      : null
 
 
   // ── Auto-advance to Now when the watched class gets booked ────────────────
@@ -179,6 +243,8 @@ export default function App() {
           <NowScreen
             appState={state}
             selectedJobId={selectedJobId}
+            staleSelectedJob={staleSelectedJob}
+            selectionResyncing={selectionResyncing}
             loading={loading}
             error={error}
             refresh={refresh}

@@ -33,6 +33,12 @@ import type { ClassTruthResult } from '../lib/classTruth'
 interface NowScreenProps {
   appState: AppState
   selectedJobId: number | null
+  /** Last-known job snapshot used when polled state transiently drops the
+   *  selection.  When provided AND selectionResyncing=true, NowScreen renders
+   *  this object instead of the empty placeholder, with a "Resyncing…" banner
+   *  to signal the data is stale.  See App.tsx sticky-on-transient-miss. */
+  staleSelectedJob?: import('../types').Job | null
+  selectionResyncing?: boolean
   loading: boolean
   error: string | null
   refresh: () => void
@@ -1028,13 +1034,16 @@ function blockedReason(s: SniperRunState | null, sessionStatus: SessionStatus | 
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function NowScreen({ appState, selectedJobId, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal, tab = 'now', onTabChange = () => {}, scrolled = false, onPinSelection }: NowScreenProps) {
+export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, selectionResyncing = false, loading, error, refresh, onGoToTools, onAccount, accountAttention, authStatus, polledStatus, onDismissEscalation, bgRefreshSignal, tab = 'now', onTabChange = () => {}, scrolled = false, onPinSelection }: NowScreenProps) {
   // Strict lookup — no silent fallback to jobs[0].
   // App.tsx's selectedJobId validation effect is the single source of truth:
   // when the watched job is deleted it updates selectedJobId before the next
-  // render, so NowScreen never needs to guess.  When job is transiently null
-  // the hero card renders its own "No class selected" empty state.
-  const job = appState.jobs.find(j => j.id === selectedJobId) ?? null
+  // render, so NowScreen never needs to guess.  When the polled state
+  // transiently misses the selection (Task #68), App.tsx hands us
+  // staleSelectedJob + selectionResyncing so the card stays visible with a
+  // banner instead of jumping to the empty placeholder.
+  const liveJob = appState.jobs.find(j => j.id === selectedJobId) ?? null
+  const job = liveJob ?? (selectionResyncing ? staleSelectedJob : null)
 
   const bookingOpenMs = job ? computeBookingOpenMs(job) : null
   // Absolute epoch timestamp (ms since Unix epoch) — never a relative duration.
@@ -1620,6 +1629,18 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
     let armedThisRun = false
     try {
       const r = await api.runPreflight(job.id)
+      // Lookup-miss codes (Task #68) — server could not find the requested
+      // job in the DB.  Surface a clear, honest message instead of letting
+      // the failIdx mapper paint it as a generic step failure.  Triggers a
+      // refresh so the polled state catches up to the server's view.
+      if (r.code === 'JOB_GONE' || r.code === 'JOB_INACTIVE' || r.code === 'NO_ACTIVE_JOBS') {
+        finalizeSteps(PREFLIGHT_STEP_LIST, null)
+        haptic('error')
+        setExecDone({ ok: false, text: r.message ?? 'Class not found in your plan', color: 'red' })
+        setLastFailedAction('preflight')
+        refresh()
+        return
+      }
       // "found_not_open_yet" = session ok, class found, modal reachable —
       // registration window just isn't open yet. All steps pass; show amber.
       if (r.status === 'found_not_open_yet') {
@@ -1768,6 +1789,15 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       setGuardMessage(null)
       try {
         const r = await api.runPreflight(job.id)
+        // Lookup-miss codes (Task #68): server doesn't have this job — block
+        // the booking with an honest message and refresh state.
+        if (r.code === 'JOB_GONE' || r.code === 'JOB_INACTIVE' || r.code === 'NO_ACTIVE_JOBS') {
+          haptic('error')
+          setGuardState('blocked')
+          setGuardMessage(r.message ?? 'Class not found in your plan')
+          refresh()
+          return
+        }
         if (r.status === 'success') {
           // All clear — proceed straight to booking with no extra prompt.
           await performBooking()
@@ -2160,6 +2190,29 @@ export function NowScreen({ appState, selectedJobId, loading, error, refresh, on
       />
 
       <ScreenContainer>
+        {/* Task #68 — sticky-on-transient-miss banner.  When the polled state
+             briefly drops the selected job (e.g. SQLite/PG drift), App.tsx
+             keeps the last-known card visible and sets selectionResyncing so
+             we render this subtle banner explaining why the card may be
+             stale, with a Refresh button to re-fetch state on demand. */}
+        {selectionResyncing && job && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-3 flex items-center justify-between gap-3"
+          >
+            <p className="text-[13px] text-amber-900">
+              Resyncing this class with the server… showing the last known card.
+            </p>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="text-[12px] font-semibold text-amber-900 underline underline-offset-2"
+            >
+              Refresh
+            </button>
+          </div>
+        )}
         {/* ── Hero card ──────────────────────────────────────────── */}
         <Card padding="md">
           {/* Class name */}

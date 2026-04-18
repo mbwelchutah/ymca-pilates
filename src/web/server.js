@@ -3970,8 +3970,45 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let jobId;
       try { jobId = JSON.parse(body).jobId; } catch { /* fall through */ }
-      const dbJob = jobId ? getJobById(Number(jobId)) : (getAllJobs().find(j => j.is_active === 1) || null);
-      if (!dbJob) { json({ success: false, message: 'No job found for preflight' }); return; }
+      const numericJobId = jobId != null ? Number(jobId) : null;
+
+      // Differentiated lookup so the UI can distinguish:
+      //   NO_ACTIVE_JOBS  — no jobId sent and no active jobs exist
+      //   JOB_GONE        — jobId sent but the row no longer exists (drift / deleted)
+      //   JOB_INACTIVE    — jobId sent and row exists but is_active=0 (toggled off)
+      // Each case logs the requested id + the current job-id set so we can
+      // forensically correlate vanish-cycles between SQLite/PG/seed-jobs.
+      let dbJob = null;
+      let lookupCode = null;
+      let lookupMsg  = null;
+      if (numericJobId != null && Number.isFinite(numericJobId)) {
+        dbJob = getJobById(numericJobId);
+        if (!dbJob) {
+          lookupCode = 'JOB_GONE';
+          lookupMsg  = 'This class is no longer in your plan. Pull to refresh, or re-add it from the schedule.';
+        } else if (!dbJob.is_active) {
+          lookupCode = 'JOB_INACTIVE';
+          lookupMsg  = 'This class is turned off. Switch it on in the Plan tab to run a readiness check.';
+        }
+      } else {
+        dbJob = getAllJobs().find(j => j.is_active === 1) || null;
+        if (!dbJob) {
+          lookupCode = 'NO_ACTIVE_JOBS';
+          lookupMsg  = 'No active classes to check. Add or activate a class in the Plan tab.';
+        }
+      }
+      if (lookupCode) {
+        const currentIds = getAllJobs().map(j => j.id);
+        console.warn(`[preflight] lookup-miss code=${lookupCode} requestedJobId=${numericJobId ?? '<none>'} currentJobIds=[${currentIds.join(',')}]`);
+        json({
+          success:        false,
+          code:           lookupCode,
+          message:        lookupMsg,
+          requestedJobId: numericJobId,
+          currentJobIds:  currentIds,
+        });
+        return;
+      }
       console.log(`[preflight] Running readiness check for Job #${dbJob.id} (${dbJob.class_title})`);
       (async () => {
         try {
@@ -5873,6 +5910,23 @@ if (PORT === 5000) {
     .then(() => console.log('[pg-sync] Startup sync: SQLite → PostgreSQL complete.'))
     .catch(e  => console.error('[pg-sync] Startup sync failed (non-fatal):', e.message));
 }
+
+// Task #68 — three-store integrity audit.
+// Logs a structured warning if SQLite/PG/seed-jobs.json disagree on which
+// jobs exist (by class_title + day_of_week + class_time + target_date tuple).
+// Runs once at boot in both dev and prod so drift becomes loudly visible
+// instead of silently driving "card disappeared and came back" cycles.
+// Delayed slightly so the startup sync above (when it runs) has a chance to
+// settle first; failures are non-fatal.
+setTimeout(() => {
+  try {
+    const { runIntegrityAudit } = require('../db/integrity-audit');
+    runIntegrityAudit().catch(e =>
+      console.warn('[integrity-audit] failed (non-fatal):', e.message));
+  } catch (e) {
+    console.warn('[integrity-audit] could not start (non-fatal):', e.message);
+  }
+}, 5_000);
 
 // Stage 2: Clear any stale isAuthInProgress/authOperation left in auth-state.json
 // by a previous server crash.  The in-memory lock is always false on a fresh

@@ -371,6 +371,15 @@ export const api = {
 
   runPreflight: (jobId: number): Promise<{
     success:         boolean
+    /** Distinguishes lookup-miss responses from real preflight outcomes:
+     *  JOB_GONE       — the requested jobId no longer exists in the DB
+     *  JOB_INACTIVE   — the row exists but is_active=0
+     *  NO_ACTIVE_JOBS — no jobId sent and no active jobs exist
+     *  Absent on a real preflight run (success or otherwise). */
+    code?:           'JOB_GONE' | 'JOB_INACTIVE' | 'NO_ACTIVE_JOBS'
+    /** Server-side context for forensic debugging of vanish-cycles. */
+    requestedJobId?: number | null
+    currentJobIds?:  number[]
     status:          string
     message:         string
     sniperState:     SniperRunState | null
