@@ -34,6 +34,10 @@ export interface ClassTruthResult {
   // Stage 4/5 addition — always present; always file-level (savedAt)
   cacheFileFreshness: CacheFreshness;
   source:             ClassTruthSource;
+  // Task #84 — schedule cache file timestamp (savedAt), surfaced so the
+  // Tools UI can render "Schedule scraped X ago" without needing to know
+  // about per-entry vs file-level freshness.  Null when no cache exists.
+  scrapedAt?:         string | null;
 }
 
 // Convenience type-guard

@@ -101,26 +101,45 @@ describe('Freshness fields exposed on read endpoints (Task #84)', () => {
     expect(res.json.runs.length).toBe(0);
   });
 
+  it('GET /api/jobs/:id/classify includes a top-level scrapedAt field', async () => {
+    // Use whichever job exists in the seeded DB.  classify never launches
+    // Playwright — it just reads the cache file — so this is safe and fast.
+    const jobs = await request('GET', '/api/jobs');
+    const list = Array.isArray(jobs.json) ? jobs.json : [];
+    if (list.length === 0) {
+      // No jobs in DB — request a known-bad id to verify error path doesn't
+      // accidentally include scrapedAt and to keep the test meaningful.
+      const r = await request('GET', '/api/jobs/9999999/classify');
+      expect(r.status).toBe(404);
+      return;
+    }
+    const r = await request('GET', `/api/jobs/${list[0].id}/classify`);
+    expect(r.status).toBe(200);
+    expect(r.json).toBeTruthy();
+    // Contract: the envelope must always include the scrapedAt key.
+    // The value is null when the cache file is missing, otherwise an ISO string.
+    expect(Object.prototype.hasOwnProperty.call(r.json, 'scrapedAt')).toBe(true);
+    if (r.json.scrapedAt !== null) {
+      expect(typeof r.json.scrapedAt).toBe('string');
+      expect(Number.isFinite(Date.parse(r.json.scrapedAt))).toBe(true);
+    }
+  });
+
   it('Replay history entries — when present — carry a capturedAt timestamp', async () => {
     // Walk the existing on-disk replay store via the API. If any job has
     // recorded runs (e.g. from prior dev usage), every entry must include
-    // a capturedAt ISO string.  If no replays exist anywhere, the test is
-    // a no-op against the contract — the previous test already covers the
-    // empty-history shape.
+    // a capturedAt ISO string. The previous "empty runs[]" test covers the
+    // post-restart empty case the UI relies on.
     const jobs = await request('GET', '/api/jobs');
     const list = Array.isArray(jobs.json) ? jobs.json : [];
-    let totalChecked = 0;
     for (const j of list) {
       const r = await request('GET', `/api/replay-history/${j.id}`);
-      if (r.status !== 200) continue;
-      for (const run of (r.json?.runs ?? [])) {
+      expect(r.status).toBe(200);
+      expect(Array.isArray(r.json?.runs)).toBe(true);
+      for (const run of r.json.runs) {
         expect(typeof run.capturedAt).toBe('string');
         expect(Number.isFinite(Date.parse(run.capturedAt))).toBe(true);
-        totalChecked++;
       }
     }
-    // Sanity: the loop must have executed (at least one job to query).
-    expect(list.length >= 0).toBe(true);
-    expect(totalChecked).toBeGreaterThanOrEqual(0);
   });
 });

@@ -2235,9 +2235,26 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                       st === 'waitlist_available' ? 'bg-accent-amber' :
                       st === 'full'               ? 'bg-accent-red'   :
                       st === 'not_found'          ? 'bg-text-muted'   : 'bg-divider'
+                    // Task #84 — schedule cache age relative to now, with
+                    // amber styling when missing or older than 12 h.
+                    const STALE_MS = 12 * 60 * 60 * 1000
+                    const scrapedAtIso = cr.scrapedAt ?? cr.fetchedAt
+                    const scrapeAge    = scrapedAtIso ? Date.now() - new Date(scrapedAtIso).getTime() : null
+                    const scrapeStale  = scrapeAge == null || scrapeAge > STALE_MS
+                    const scrapeRel = (() => {
+                      if (scrapeAge == null)               return 'Schedule never scraped'
+                      if (scrapeAge < 60_000)              return 'Schedule scraped just now'
+                      if (scrapeAge < 3_600_000)           return `Schedule scraped ${Math.floor(scrapeAge / 60_000)} m ago`
+                      if (scrapeAge < 86_400_000)          return `Schedule scraped ${Math.floor(scrapeAge / 3_600_000)} h ago`
+                      return                                      `Schedule scraped ${Math.floor(scrapeAge / 86_400_000)} d ago`
+                    })()
                     return (
                       <>
                         <SectionHeader title="Schedule Cache" id="tools-cache" />
+                        {/* Task #84 — relative-time scrape freshness, amber when stale */}
+                        <p className={`text-[12px] mb-2 -mt-1 px-1 ${scrapeStale ? 'text-amber-600 font-medium' : 'text-text-muted'}`}>
+                          {scrapeRel}
+                        </p>
                         <Card padding="none">
                           <div className="flex items-center gap-2 px-4 py-3 border-b border-divider">
                             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />

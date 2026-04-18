@@ -5321,7 +5321,19 @@ const server = http.createServer(async (req, res) => {
       instructor: classifyJob.instructor,
       targetDate: classifyJob.target_date,
     });
-    json(result);
+    // Task #84 — surface the schedule cache file timestamp (savedAt) as
+    // top-level `scrapedAt` so consumers don't have to know about
+    // entry-level vs file-level freshness when they just want to render
+    // "schedule observed X ago".  Falls back to the per-entry fetchedAt
+    // when the cache file is unreadable but classifyClass returned data.
+    let scrapedAt = null;
+    try {
+      const { loadAll } = require('../classifier/scheduleCache');
+      const raw = loadAll();
+      if (raw?.savedAt) scrapedAt = raw.savedAt;
+    } catch (_) { /* leave null on failure */ }
+    if (!scrapedAt && result?.fetchedAt) scrapedAt = result.fetchedAt;
+    json({ ...result, scrapedAt });
 
   } else if (req.method === 'GET' && path === '/api/state') {
     // Self-heal stale active past one-offs so the Plan screen's primary feed
