@@ -90,7 +90,12 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     flippedByPast = inactivatePastJobs();
     if (flippedByPast > 0) {
       // Re-fetch so we don't try to run the just-deactivated rows in this tick.
+      // CRITICAL: re-apply the same `onlyJobId` filter as the initial load —
+      // otherwise a /run-selected-scheduler call that happens to coincide with
+      // a past-class auto-inactivation would silently fan out to every active
+      // job (the original onlyJobId filter would be lost on re-fetch).
       jobs = getAllJobs().filter(j => j.is_active === 1);
+      if (onlyJobId) jobs = jobs.filter(j => j.id === onlyJobId);
       // Best-effort PG sync so durability matches SQLite — fire-and-forget
       // is acceptable here because the next tick (or any API mutation) will
       // re-attempt sync if this one fails.
