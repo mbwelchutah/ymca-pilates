@@ -78,6 +78,12 @@ function emptyHealth() {
     lastFailureAt:      null,
     lastFailureReason:  null,
     currentState:       HEALTH_STATES.DEGRADED,
+    // Stage 8 — bounded escalation counter.  Incremented on every cheap
+    // failure (any non-trusted outcome), reset to 0 on a cheap success
+    // OR whenever a deep check actually runs.  Used by cadence-policy
+    // to bring forward a deep check after two consecutive cheap misses
+    // without ever exceeding the MIN_DEEP_REPROBE_MS floor.
+    consecutiveCheapFailures: 0,
   };
 }
 

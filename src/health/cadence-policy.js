@@ -120,11 +120,23 @@ function shouldRunCheapCheck(now, health, msUntilOpen) {
  */
 function shouldRunDeepCheck(now, health, msUntilOpen) {
   const interval = getDeepCheckInterval(msUntilOpen);
-  if (interval == null) return false;          // <30 m → defer
+  if (interval == null) return false;          // <30 m → defer to existing checkpoints
 
   const h    = health || {};
   const last = h.lastDeepCheckAt;
   if (last == null) return true;
+
+  // Stage 8 — bring-forward escalation.  Two consecutive cheap-check
+  // failures override the proximity cadence so we get a deep verification
+  // sooner than the normal interval would allow.  The MIN_DEEP_REPROBE_MS
+  // floor still applies, so even a constant stream of cheap failures can
+  // launch at most one deep check every 5 minutes.  deep-check.js resets
+  // consecutiveCheapFailures to 0 the instant any deep run completes, so
+  // this rule cannot self-perpetuate — two MORE cheap misses are required
+  // before another escalated launch is allowed.
+  if ((h.consecutiveCheapFailures || 0) >= 2) {
+    return (now - last) >= MIN_DEEP_REPROBE_MS;
+  }
 
   if (h.currentState === HEALTH_STATES.DISCONNECTED) {
     return (now - last) >= MIN_DEEP_REPROBE_MS;

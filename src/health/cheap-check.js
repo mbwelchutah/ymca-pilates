@@ -104,20 +104,25 @@ async function runCheapCheck({ msUntilOpen = null } = {}) {
     pingResult = await pingSessionHttp();
   } catch (err) {
     // Transport-level failure — treat as inconclusive NETWORK.
+    // Stage 8 — counts toward consecutiveCheapFailures so two thrown
+    // pings in a row trigger the bring-forward-deep escalation.
     const detail = `cheap check threw: ${err && err.message ? err.message : String(err)}`;
-    const health = updateHealth(() => ({
-      lastCheapCheckAt:  startedAt,
-      lastFailureAt:     startedAt,
-      lastFailureReason: FAILURE_REASONS.NETWORK,
+    const health = updateHealth((cur) => ({
+      lastCheapCheckAt:        startedAt,
+      lastFailureAt:           startedAt,
+      lastFailureReason:       FAILURE_REASONS.NETWORK,
+      consecutiveCheapFailures:(cur.consecutiveCheapFailures || 0) + 1,
     }), msUntilOpen);
     return { ok: false, reason: FAILURE_REASONS.NETWORK, detail, health };
   }
 
-  // Success path: only stamp the cheap-check timestamp.  Do NOT promote
-  // currentState here — only deep checks can move us into HEALTHY.
+  // Success path: stamp the cheap-check timestamp and clear the
+  // consecutive-failure counter.  Do NOT promote currentState here —
+  // only deep checks can move us into HEALTHY.
   if (pingResult && pingResult.trusted) {
     const health = updateHealth(() => ({
-      lastCheapCheckAt: startedAt,
+      lastCheapCheckAt:        startedAt,
+      consecutiveCheapFailures:0,
     }), msUntilOpen);
     return {
       ok:     true,
@@ -127,15 +132,20 @@ async function runCheapCheck({ msUntilOpen = null } = {}) {
     };
   }
 
-  // Failure path.
+  // Failure path.  Stage 8: any non-trusted outcome — auth, network,
+  // or unknown — increments consecutiveCheapFailures.  The counter is
+  // monotone here; deep-check.js is the only caller that resets it
+  // without a successful cheap ping (preventing infinite escalation
+  // when cheap keeps failing AND deep keeps failing).
   const reason = classifyPingFailure(pingResult);
   const detail = pingResult?.detail || 'cheap check untrusted';
 
-  const health = updateHealth(() => {
+  const health = updateHealth((cur) => {
     const patch = {
-      lastCheapCheckAt:  startedAt,
-      lastFailureAt:     startedAt,
-      lastFailureReason: reason,
+      lastCheapCheckAt:        startedAt,
+      lastFailureAt:           startedAt,
+      lastFailureReason:       reason,
+      consecutiveCheapFailures:(cur.consecutiveCheapFailures || 0) + 1,
     };
     // ONLY flip state when clearly disconnected.  Inconclusive failures
     // (NETWORK / UNKNOWN) leave the derived state in place.

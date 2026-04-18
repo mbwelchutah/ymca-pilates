@@ -133,6 +133,14 @@ function _persistResult({ startedAt, success, reason, verifiedStage, msUntilOpen
   return updateHealth(() => {
     const patch = {
       lastDeepCheckAt: startedAt,
+      // Stage 8 — escalation acknowledgement.  A deep check has now
+      // actually run; reset the cheap-failure counter so the
+      // bring-forward-deep rule (consecutiveCheapFailures >= 2) cannot
+      // re-fire on the very next tick.  This is the storm-prevention
+      // step: any deep run — success OR failure — clears the counter.
+      // Subsequent cheap failures must accumulate to two AGAIN before
+      // another escalated deep launch is permitted.
+      consecutiveCheapFailures: 0,
     };
     if (success) {
       patch.lastDeepSuccessAt  = startedAt;
@@ -145,6 +153,10 @@ function _persistResult({ startedAt, success, reason, verifiedStage, msUntilOpen
       // Auth-shaped reasons force DISCONNECTED via classifier rule #1; no
       // need to hard-set currentState here.  All other reasons fall through
       // to the AT_RISK rule (deepCheckAt > deepSuccessAt) automatically.
+      // Cadence then halves the deep interval (cadence-policy rule #4)
+      // for AT_RISK and uses the MIN_DEEP_REPROBE_MS floor for DISCONNECTED
+      // — the deep-failure-increases-frequency requirement of Stage 8 is
+      // therefore covered by the existing Stage-5 policy with no extra rule.
     }
     // Carry the verifiedStage as a sidecar field (not part of the formal
     // ConnectionHealth shape — it's diagnostic context for the UI).
