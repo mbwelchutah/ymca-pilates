@@ -47,13 +47,34 @@ fall out of this.
 
 ### Manual preflight is a fourth, ungoverned path
 
-`POST /api/preflight` in `server.js` (~L3964) calls `runBookingJob({…},
-{ preflightOnly: true })` directly. It does **not** consult
-`preflight-loop.isRunning()`, `auto-preflight.running`, or the per-job
-cooldown. It does set `jobState.active`, so tick.js will defer, but the
-burst timer in `preflight-loop` can still fire on top of it. This is
-the most likely culprit for the "ghost preflight job ID" pattern noted
-in the Yoga Nidra disappear-cycle investigation.
+`POST /api/preflight` in `server.js` (L3964–L3986) calls
+`runBookingJob({…}, { preflightOnly: true })` directly inside a fire-and-forget
+IIFE. It does **not** consult `preflight-loop.isRunning()`,
+`auto-preflight.running`, or the per-job cooldown.
+
+Critically, it also does **not** go through `runInBackground` (`server.js`
+L3840–L3854) and so it does **not** set `jobState.active`. `jobState` is
+only mutated by `runInBackground`. That means:
+
+* `tick.js`'s `isActive` callback (which reads `jobState.active`,
+  `server.js` L_runScheduledTick_) returns `false` during a manual preflight,
+  so a tick can land on top of one.
+* `preflight-loop.runPreflightLoop({ isActive })` (`preflight-loop.js`
+  L856–L864) likewise sees `isActive=false` and will start a burst on top
+  of a manual preflight.
+* The only thing keeping these in line is the auth-lock file
+  (`isLocked()`) acquired inside `runBookingJob`'s auth phase. That lock
+  is per-process and does serialize the browser launches, but it does
+  **not** prevent a stacked queue of three browser launches behind it
+  (manual preflight + auto-preflight T-2 + burst), and it does not
+  surface as a structured "deferred" event anywhere.
+
+This is the most plausible culprit for the "ghost preflight job ID"
+pattern noted in the Yoga Nidra disappear-cycle investigation
+(Task #68): a manual preflight clicked from the UI and an auto-preflight
+checkpoint can both be in flight against the same job within seconds of
+each other, and only the second one's writes to `sniper-state.json` are
+visible to the UI.
 
 ---
 
@@ -181,21 +202,41 @@ runner) and should be removed, or it must align with `tick.js`.
 
 ### 5.1 Three independent `running` flags
 
-* `tick.js`         → `runningJobs: Set<jobId>`
-* `auto-preflight`  → `running: boolean` (module-level)
-* `preflight-loop`  → `running: boolean` (module-level)
+* `tick.js`         → `runningJobs: Set<jobId>` (L37)
+* `auto-preflight`  → `running: boolean` (module-level, L52)
+* `preflight-loop`  → `running: boolean` (module-level, L98)
 
 Cross-runner coordination is done via:
-1. `jobState.active` (set by `runInBackground` and by `triggerBookingFromBurst`),
-2. `auth-lock` file (`isLocked()`),
-3. an `isActive` callback passed from `server.js` to each runner.
+1. `jobState.active` — set **only** by `runInBackground`
+   (`server.js` L3840–L3854), and indirectly by `triggerBookingFromBurst`
+   via the same path (`booking-bridge.js`).
+2. The `auth-lock` file (`isLocked()`), checked at the top of each
+   runner's main loop.
+3. The `isActive` callback passed from `server.js` to each runner —
+   which simply reads `jobState.active`.
 
-**Manual preflight (`POST /api/preflight`)** sets `jobState.active = true`
-inside `runInBackground`, but the `runBookingJob` it calls is launched with
-`preflightOnly: true` and *bypasses* the per-job cooldown that `tick.js`
-enforces. Result: a manual preflight at T-2 min can collide with the
-auto-preflight T-2 trigger and the burst timer's `armed`-phase fire — three
-browser launches stacked behind the auth lock.
+**Manual preflight (`POST /api/preflight`, `server.js` L3964–L3986)**
+calls `runBookingJob` directly inside an IIFE; it does **not** set
+`jobState.active` (only `runInBackground` does). Therefore the manual
+preflight is invisible to:
+* `tick.js` `runScheduledTick` `isActive` check (it returns `false`),
+* `preflight-loop.runPreflightLoop({ isActive })` (`preflight-loop.js`
+  L856–L864) — `isActive=false` so the loop and its bursts proceed,
+* `auto-preflight.checkAutoPreflights` `isActive` short-circuit
+  (`auto-preflight.js`, top of function).
+
+Manual preflight also passes `preflightOnly: true`, which bypasses the
+booking attempt itself, but it still launches a full browser session
+through `runBookingJob` — meaning the per-job cooldown that `tick.js`
+enforces (`COOLDOWN_*_MS` in tick.js L23–L24) does not apply.
+
+Result: a manual preflight at T-2 min can collide with the
+auto-preflight T-2 trigger AND with the burst timer's `armed`-phase
+fire. The only thing serializing them is the `auth-lock` file acquired
+inside `runBookingJob`'s auth phase. That lock prevents simultaneous
+browser activity but does **not** prevent the same job's
+`sniper-state.json` from being overwritten in arbitrary order by three
+near-simultaneous runs.
 
 ### 5.2 `firedThisCycle` is in-memory only (auto-preflight)
 
@@ -214,12 +255,17 @@ is no metric / observability on burst depth.
 
 ### 5.4 Hot-retry skips the auth-lock check at fire time
 
-`scheduleHotRetry → triggerBookingFromBurst` (booking-bridge L60) only
-checks `_isActive()` (booking active). It does **not** call `isLocked()`.
-The original `runBurstCheck` does check `isLocked()` at the top. After the
-first burst-handoff fire, the chained hot-retry attempts can race a manual
-sign-in or a session-keepalive run that grabs the auth lock. Symptom: hot
-retry runs into a half-locked auth state and surfaces an `auth_failure`.
+`scheduleHotRetry` (`preflight-loop.js` L800–L846) → `triggerBookingFromBurst`
+(`booking-bridge.js`) only consults `_isActive()` (booking active). It does
+**not** call `isLocked()`. By contrast, `runBurstCheck` (`preflight-loop.js`
+L882–L926, `runPreflightLoop` L959–L962) does check `isLocked()` at the top
+of each pass. After the first burst-handoff fire, the chained hot-retry
+attempts (up to `MAX_HOT_RETRIES = 3`, every `HOT_RETRY_DELAY_MS = 5 s`)
+can race a manual sign-in (`POST /api/login`) or a `session-keepalive`
+run that grabs the auth lock between attempts. The symptom would be a
+hot retry that surfaces an auth failure right after a successful first
+attempt — distinguishable in logs because the first attempt's auth phase
+succeeded.
 
 ### 5.5 Past-class detection lives only in `tick.js`
 
@@ -234,15 +280,19 @@ either skip it (auto-preflight) or run it pointlessly — but a `tick.js`
 
 ### 5.6 Three writers, one canonical readiness file
 
-`refreshConfirmedReadyState` is called from:
-* `tick.js`              `source: 'tick'`
-* `auto-preflight.js`    `source: pingConfirmed ? 'ping' : 'browser'`
-* `preflight-loop.js`    `source: 'browser'` (burst + main loop + error path)
+`refreshConfirmedReadyState` (in `src/bot/sniper-readiness.js`) is called from:
+* `tick.js`              with `source: 'tick'`
+* `auto-preflight.js`    with `source: pingConfirmed ? 'ping' : 'browser'`
+* `preflight-loop.js`    with `source: 'browser'` (burst + main loop + error path)
 
-There is no last-writer-wins ordering guarantee. A burst that started at
-T-90 s and finishes at T-15 s can clobber the confirmed-ready record
-written by the actual booking attempt that runs at T=0. Today the
-`confirmed-ready` consumer treats every write as authoritative.
+There is no last-writer-wins ordering guarantee — writes happen in
+whichever order the three runners' async work returns. A burst that
+started at T-90 s and finishes at T-15 s can clobber the confirmed-ready
+record written by the actual booking attempt that runs at T=0. The
+`confirmed-ready` consumer (the Tools screen and `/api/state`) treats
+every write as authoritative regardless of source. There is no
+`writtenAt`/`writtenBy` field that downstream code uses to prefer the
+freshest *real-booking* result over a stale background ping.
 
 ### 5.7 No structured visibility into "who is currently doing what"
 
