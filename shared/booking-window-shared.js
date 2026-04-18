@@ -149,15 +149,17 @@ function computeBookingOpenMs(job, now = new Date()) {
   return classStart - BOOKING_LEAD_MS;
 }
 
-module.exports = {
-  BOOKING_LEAD_DAYS,
-  BOOKING_LEAD_MINUTES,
-  BOOKING_LEAD_MS,
-  WARMUP_MS,
-  SNIPER_MS,
-  derivePhase,
-  parseClassTime,
-  computeClassStartMs,
-  computeBookingOpenMs,
-  pacificOffsetHours,
-};
+// Individual named-export assignments (rather than a single
+// `module.exports = { ... }` literal) so Vite/esbuild's CJS-to-ESM
+// analyzer can statically detect each export.  Some Vite versions stop
+// honouring named ESM imports against the object-literal form.
+module.exports.BOOKING_LEAD_DAYS    = BOOKING_LEAD_DAYS;
+module.exports.BOOKING_LEAD_MINUTES = BOOKING_LEAD_MINUTES;
+module.exports.BOOKING_LEAD_MS      = BOOKING_LEAD_MS;
+module.exports.WARMUP_MS            = WARMUP_MS;
+module.exports.SNIPER_MS            = SNIPER_MS;
+module.exports.derivePhase          = derivePhase;
+module.exports.parseClassTime       = parseClassTime;
+module.exports.computeClassStartMs  = computeClassStartMs;
+module.exports.computeBookingOpenMs = computeBookingOpenMs;
+module.exports.pacificOffsetHours   = pacificOffsetHours;
