@@ -56,6 +56,10 @@ function recordFailure({
 }) {
   try {
     const db = openDb();
+    const occurredAt  = new Date().toISOString();
+    const phaseSafe   = phase  || 'unknown';
+    const reasonSafe  = reason || 'unexpected_error';
+    const contextJson = context != null ? JSON.stringify(context) : null;
     db.prepare(`
       INSERT INTO failures
         (job_id, occurred_at, phase, reason, message, class_title, screenshot,
@@ -63,9 +67,9 @@ function recordFailure({
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       jobId      ?? null,
-      new Date().toISOString(),
-      phase      || 'unknown',
-      reason     || 'unexpected_error',
+      occurredAt,
+      phaseSafe,
+      reasonSafe,
       message    ?? null,
       classTitle ?? null,
       screenshot ?? null,
@@ -74,9 +78,34 @@ function recordFailure({
       expected   ?? null,
       actual     ?? null,
       url        ?? null,
-      context != null ? JSON.stringify(context) : null,
+      contextJson,
     );
     db.close();
+
+    // Mirror to PostgreSQL so failure history survives container redeploys
+    // (SQLite is wiped on every Replit publish).  Fire-and-forget — a PG
+    // outage must never block the synchronous failure-recording path used by
+    // booking and scheduler code.
+    try {
+      const { mirrorFailureToPg } = require('./pg-failures');
+      mirrorFailureToPg({
+        job_id:       jobId      ?? null,
+        occurred_at:  occurredAt,
+        phase:        phaseSafe,
+        reason:       reasonSafe,
+        message:      message    ?? null,
+        class_title:  classTitle ?? null,
+        screenshot:   screenshot ?? null,
+        category:     category   ?? null,
+        label:        label      ?? null,
+        expected:     expected   ?? null,
+        actual:       actual     ?? null,
+        url:          url        ?? null,
+        context_json: contextJson,
+      });
+    } catch (mirrorErr) {
+      console.error('[failures] PG mirror dispatch failed (non-fatal):', mirrorErr.message);
+    }
   } catch (e) {
     console.error('[failures] recordFailure error:', e.message);
   }
@@ -192,6 +221,16 @@ function clearFailures() {
   });
   tx();
   db.close();
+
+  // Also wipe the PG mirror so a subsequent restart doesn't re-import the
+  // rows the user just cleared.  Fire-and-forget — a PG hiccup must not stop
+  // the local clear from succeeding.
+  try {
+    const { clearFailuresInPg } = require('./pg-failures');
+    clearFailuresInPg();
+  } catch (mirrorErr) {
+    console.error('[failures] PG clear dispatch failed (non-fatal):', mirrorErr.message);
+  }
 }
 
 /**

@@ -26,8 +26,9 @@ Automates YMCA pilates/yoga class registration via Playwright + Daxko/FamilyWork
 | `src/scheduler/timing-learner.js` | Learns per-job timing offsets from historical booking data. |
 | `src/scheduler/escalation.js` | Escalation records for persistent click failures. |
 | `src/db/jobs.js` | SQLite CRUD for jobs table (via better-sqlite3). `syncSeed()` writes seed-jobs.json only; PG sync is now awaited explicitly by server.js mutation handlers. |
-| `src/db/pg-init.js` | PostgreSQL sync: restores jobs from PostgreSQL → `data/seed-jobs.json` on startup (PG → SQLite direction only). |
+| `src/db/pg-init.js` | PostgreSQL sync: restores jobs from PostgreSQL → `data/seed-jobs.json` on startup (PG → SQLite direction only). Also calls `restoreFailuresFromPg()` so the structured failure log survives container redeploys (Task #86). |
 | `src/db/pg-sync.js` | Bidirectional PG helpers: `initFromPg` (startup restore), `syncJobsToPg` (fire-and-forget, legacy), `syncJobsToPgAsync` (awaitable, used by server.js mutation handlers and production startup sync). Serialised via `_syncChain` promise queue — concurrent mutations wait their turn and always read a fresh SQLite snapshot, preventing the interleaved-DELETE duplicate-row bug. `_doSyncJobsToPgCore` reads from SQLite directly (not seed-jobs.json). |
+| `src/db/pg-failures.js` | PG mirror for the structured failure log (Task #86). `mirrorFailureToPg` per-row insert from `recordFailure`, `restoreFailuresFromPg` PG → SQLite at startup (idempotent by occurred_at+phase+reason+job_id), `clearFailuresInPg` wipes mirror when the user clears history. Also mirrors the `failures_meta.resetAt` timestamp so the Insights "since X" label reflects durable history, not the latest container boot. |
 
 #### Flow-Yoga-failure pass (Apr 16)
 Addresses four intertwined bugs that surfaced when Job #24 (Flow Yoga Fri 12 PM) failed at the 3 PM window with a misleading "Class not found on schedule" banner, a modal YES selector timeout, and a ghost-class disappear-then-return flicker on the Plan tab.

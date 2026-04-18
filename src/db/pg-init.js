@@ -10,7 +10,8 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { initFromPg } = require('./pg-sync');
+const { initFromPg }            = require('./pg-sync');
+const { restoreFailuresFromPg } = require('./pg-failures');
 
 const MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
 
@@ -18,7 +19,7 @@ const MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
 // If pg-init fails this time, the absence of the marker must reflect THIS run.
 try { fs.unlinkSync(MARKER); } catch (_) { /* absent is fine */ }
 
-initFromPg().then(() => {
+initFromPg().then(async () => {
   try {
     fs.mkdirSync(path.dirname(MARKER), { recursive: true });
     fs.writeFileSync(
@@ -30,6 +31,17 @@ initFromPg().then(() => {
   } catch (e) {
     console.error('[pg-init] failed to write marker (server will refuse to sync):', e.message);
   }
+
+  // Failure history is wiped with SQLite on every container redeploy.  Pull
+  // the durable PG mirror back into the freshly-bootstrapped SQLite so the
+  // Failure Insights panel survives the restart.  Errors are non-fatal — the
+  // panel will simply start empty if PG is unreachable.
+  try {
+    await restoreFailuresFromPg();
+  } catch (e) {
+    console.error('[pg-init] failure-history restore failed (non-fatal):', e.message);
+  }
+
   process.exit(0);
 }).catch((err) => {
   console.error('[pg-init] Fatal error:', err.message);
