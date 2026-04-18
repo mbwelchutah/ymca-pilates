@@ -11,7 +11,8 @@ const SEED_PATH = path.join(__dirname, '../../data/seed-jobs.json');
 function syncSeed() {
   try {
     const db   = openDb();
-    const jobs = db.prepare('SELECT class_title, instructor, day_of_week, class_time, target_date, is_active FROM jobs').all();
+    const jobs = db.prepare(`SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
+                                    advance_count, weekly_suggest_dismissed FROM jobs`).all();
     fs.writeFileSync(SEED_PATH, JSON.stringify(jobs, null, 2), 'utf8');
   } catch (e) {
     console.warn('[db] syncSeed failed (non-fatal):', e.message);
@@ -167,6 +168,11 @@ function advanceJobOneWeek(id) {
   // Re-activate the job when advancing — the user explicitly chose to roll
   // forward, so they want auto-registration on for the new occurrence even if
   // we previously auto-inactivated it during the past-class reconciliation.
+  // Task #66: increment advance_count so we can offer to convert this one-off
+  // to a recurring schedule after 2+ advances.  The counter is reset only by
+  // convertJobToRecurring (where it goes back to 0 because the job has just
+  // been converted).  updateJob does NOT currently reset it — see follow-up
+  // task #72 for resetting on manual date/identity edits.
   db.prepare(`
     UPDATE jobs
     SET target_date        = ?,
@@ -174,7 +180,8 @@ function advanceJobOneWeek(id) {
         last_run_at        = NULL,
         last_result        = NULL,
         last_error_message = NULL,
-        last_success_at    = NULL
+        last_success_at    = NULL,
+        advance_count      = COALESCE(advance_count, 0) + 1
     WHERE id = ?
   `).run(iso, id);
   // Forget any past-inactivation log gate for this id so future expirations
@@ -234,4 +241,41 @@ function inactivatePastJobs() {
   return flipped;
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun, advanceJobOneWeek, inactivatePastJobs };
+// Task #66: Converts a one-off job (target_date set) into a recurring one by
+// clearing target_date.  Day-of-week and time are preserved so the class keeps
+// auto-registering each week without further nudges.  Resets advance_count and
+// the dismiss flag so the suggestion state for this row is fresh.  Also clears
+// any stale per-occurrence run state and re-activates the job for the same
+// reasons advanceJobOneWeek does.  Returns the updated row, or null when the
+// job doesn't exist or already had no target_date.
+function convertJobToRecurring(id) {
+  const db  = openDb();
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  if (!job || !job.target_date) return null;
+  db.prepare(`
+    UPDATE jobs
+    SET target_date              = NULL,
+        is_active                = 1,
+        last_run_at              = NULL,
+        last_result              = NULL,
+        last_error_message       = NULL,
+        last_success_at          = NULL,
+        advance_count            = 0,
+        weekly_suggest_dismissed = 0
+    WHERE id = ?
+  `).run(id);
+  _pastInactivatedLogged.delete(id);
+  syncSeed();
+  return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+}
+
+// Task #66: Marks the "Make this weekly?" suggestion as dismissed for this job
+// so it never shows again, regardless of how many more times the user advances.
+function dismissWeeklySuggestion(id) {
+  const db = openDb();
+  const res = db.prepare('UPDATE jobs SET weekly_suggest_dismissed = 1 WHERE id = ?').run(id);
+  if (res.changes > 0) syncSeed();
+  return res.changes > 0;
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun, advanceJobOneWeek, convertJobToRecurring, dismissWeeklySuggestion, inactivatePastJobs };

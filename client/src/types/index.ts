@@ -80,6 +80,14 @@ export interface Job {
   // in the past.  When set, the scheduler skips the job and the Plan card
   // shows an "advance to next week" prompt instead of the stale countdown.
   passed?: boolean
+  // Task #66 — number of times this one-off job has been advanced via the
+  // "Advance to next week" prompt without being dismissed/converted.  Reset
+  // to 0 on conversion to recurring.  When >= 2 and not dismissed, the Plan
+  // card surfaces a "Make this weekly?" suggestion alongside the banner.
+  advance_count?: number
+  // Per-job dismissal of the "Make this weekly?" suggestion.  Stored as 0/1
+  // in SQLite/PG so it travels through pg-sync as a number, not a boolean.
+  weekly_suggest_dismissed?: number | boolean
   weekdayConsistency?: {
     isConsistent: boolean
     storedWeekday: string | null

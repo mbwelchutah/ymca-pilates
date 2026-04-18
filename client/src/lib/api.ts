@@ -158,6 +158,17 @@ export const api = {
   advanceJob: (id: number): Promise<{ success: boolean; job: Job }> =>
     apiFetch(`/api/jobs/${id}/advance`, { method: 'POST' }),
 
+  // Task #66 — One-tap conversion of a one-off class to a recurring schedule.
+  // Surfaced from the Plan card's "Make this weekly?" suggestion after a class
+  // has been advanced 2+ times in succession.  Clears target_date server-side.
+  convertJobToRecurring: (id: number): Promise<{ success: boolean; job: Job; error?: string }> =>
+    apiFetch(`/api/jobs/${id}/convert-to-recurring`, { method: 'POST' }),
+
+  // Task #66 — Permanently silences the "Make this weekly?" suggestion for
+  // this specific job; the prompt won't reappear regardless of future advances.
+  dismissWeeklySuggestion: (id: number): Promise<{ success: boolean; error?: string }> =>
+    apiFetch(`/api/jobs/${id}/dismiss-weekly-suggestion`, { method: 'POST' }),
+
   pauseScheduler: (): Promise<{ success: boolean }> =>
     apiFetch('/pause-scheduler', { method: 'POST' }),
 

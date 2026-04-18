@@ -64,6 +64,11 @@ function openDb() {
     'ALTER TABLE jobs ADD COLUMN last_success_at TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN target_date TEXT NULL',
     'ALTER TABLE jobs ADD COLUMN last_error_message TEXT NULL',
+    // Task #66 — track how many times a one-off has been advanced in succession
+    // (reset on conversion/dismiss) and whether the user has dismissed the
+    // "Make this weekly?" suggestion for this specific job.
+    'ALTER TABLE jobs ADD COLUMN advance_count INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE jobs ADD COLUMN weekly_suggest_dismissed INTEGER NOT NULL DEFAULT 0',
     // Structured failure enrichment columns (added in Stage 3.5+)
     'ALTER TABLE failures ADD COLUMN category TEXT NULL',
     'ALTER TABLE failures ADD COLUMN label TEXT NULL',
@@ -95,8 +100,9 @@ function openDb() {
         const insert = db.prepare(`
           INSERT INTO jobs
             (class_title, instructor, day_of_week, class_time, target_date, is_active,
-             last_result, last_success_at, last_run_at, last_error_message, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             last_result, last_success_at, last_run_at, last_error_message,
+             advance_count, weekly_suggest_dismissed, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const now = new Date().toISOString();
         const seedAll = db.transaction((rows) => {
@@ -112,6 +118,8 @@ function openDb() {
               r.last_success_at    ?? null,
               r.last_run_at        ?? null,
               r.last_error_message ?? null,
+              Number.isFinite(r.advance_count) ? r.advance_count : 0,
+              r.weekly_suggest_dismissed ? 1 : 0,
               now
             );
           }

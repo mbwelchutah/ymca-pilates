@@ -64,9 +64,15 @@ async function ensurePgSchema() {
       last_result        TEXT,
       last_success_at    TEXT,
       target_date        TEXT,
-      last_error_message TEXT
+      last_error_message TEXT,
+      advance_count            INTEGER NOT NULL DEFAULT 0,
+      weekly_suggest_dismissed INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // Older deployments predate the Task #66 columns — add them in place so the
+  // SELECT/INSERT pair below can rely on their presence.
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS advance_count            INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS weekly_suggest_dismissed INTEGER NOT NULL DEFAULT 0`);
 }
 
 // ── initFromPg ────────────────────────────────────────────────────────────────
@@ -81,7 +87,8 @@ async function initFromPg() {
     const pool = getPool();
     const { rows } = await pool.query(
       `SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
-              last_result, last_success_at, last_run_at, last_error_message
+              last_result, last_success_at, last_run_at, last_error_message,
+              advance_count, weekly_suggest_dismissed
        FROM jobs ORDER BY id`
     );
     if (rows.length > 0) {
@@ -146,7 +153,8 @@ async function _doSyncJobsToPgCore() {
     const { openDb } = require('./init');
     const db = openDb();
     jobs = db.prepare(`SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
-                              last_result, last_success_at, last_run_at, last_error_message FROM jobs`).all();
+                              last_result, last_success_at, last_run_at, last_error_message,
+                              advance_count, weekly_suggest_dismissed FROM jobs`).all();
   } catch (_) {
     if (!fs.existsSync(SEED_PATH)) return;
     jobs = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
@@ -162,8 +170,9 @@ async function _doSyncJobsToPgCore() {
       await client.query(
         `INSERT INTO jobs
            (class_title, instructor, day_of_week, class_time, target_date, is_active,
-            last_result, last_success_at, last_run_at, last_error_message, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            last_result, last_success_at, last_run_at, last_error_message,
+            advance_count, weekly_suggest_dismissed, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           j.class_title,
           j.instructor        ?? null,
@@ -175,6 +184,8 @@ async function _doSyncJobsToPgCore() {
           j.last_success_at   ?? null,
           j.last_run_at       ?? null,
           j.last_error_message ?? null,
+          Number.isFinite(j.advance_count) ? j.advance_count : 0,
+          j.weekly_suggest_dismissed ? 1 : 0,
           new Date().toISOString(),
         ]
       );

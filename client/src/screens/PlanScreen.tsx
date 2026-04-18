@@ -130,12 +130,16 @@ interface JobCardProps {
   onToggle:  () => Promise<void>
   onDelete:  () => Promise<void>
   onAdvance: () => Promise<void>
+  // Task #66 — convert a one-off job to recurring (clears target_date) and
+  // permanently dismiss the "Make this weekly?" suggestion for this job.
+  onConvertToRecurring:    () => Promise<void>
+  onDismissWeeklySuggest:  () => Promise<void>
   onEdit:    () => void
   onSelect:  () => void
   sniperRow?: SniperRowData
 }
 
-function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSelect, sniperRow }: JobCardProps) {
+function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onConvertToRecurring, onDismissWeeklySuggest, onEdit, onSelect, sniperRow }: JobCardProps) {
   const [toggling, setToggling]     = useState(false)
   const [toggleErr, setToggleErr]   = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -151,6 +155,13 @@ function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSel
   const [advancing, setAdvancing]   = useState(false)
   const [advanceErr, setAdvanceErr] = useState<string | null>(null)
   const [kept, setKept]             = useState(false)
+  // Task #66 — local feedback while POSTing convert/dismiss for the
+  // "Make this weekly?" suggestion.  Server state is the source of truth
+  // (advance_count + weekly_suggest_dismissed travel through /api/state),
+  // so no optimistic-show flag is needed.
+  const [converting, setConverting] = useState(false)
+  const [convertErr, setConvertErr] = useState<string | null>(null)
+  const [dismissingSuggest, setDismissingSuggest] = useState(false)
   // Reset the local "kept" dismissal once the job is no longer past (e.g. it
   // was advanced or its date was edited to a future value), so a future expiry
   // surfaces the prompt again.
@@ -230,6 +241,39 @@ function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSel
       setAdvanceErr(err instanceof Error ? err.message : 'Could not advance — try again')
     } finally {
       setAdvancing(false)
+    }
+  }
+
+  // Task #66 — convert this one-off into a recurring class with one tap.
+  // After success the parent refresh clears `passed` and `target_date`, so the
+  // banner (and the suggestion) naturally disappear without any local flag.
+  const handleConvertClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (converting) return
+    setConverting(true)
+    setConvertErr(null)
+    try {
+      await onConvertToRecurring()
+    } catch (err) {
+      setConvertErr(err instanceof Error ? err.message : 'Could not convert — try again')
+    } finally {
+      setConverting(false)
+    }
+  }
+
+  // Task #66 — permanently silence the suggestion for this job.  The server
+  // sets weekly_suggest_dismissed=1 so the prompt never returns even after
+  // future advances; parent refresh hides this UI on the next poll.
+  const handleDismissSuggestClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (dismissingSuggest) return
+    setDismissingSuggest(true)
+    try {
+      await onDismissWeeklySuggest()
+    } catch {
+      // Non-fatal: leave the suggestion visible so the user can retry.
+    } finally {
+      setDismissingSuggest(false)
     }
   }
 
@@ -352,6 +396,39 @@ function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSel
                     Keep
                   </button>
                 </div>
+
+                {/* Task #66 — "Make this weekly?" suggestion.
+                     Surfaced once a one-off has been advanced 2+ times in
+                     succession (server-tracked via advance_count), unless the
+                     user has explicitly dismissed it for this job.  Tapping
+                     "Make weekly" converts it to a recurring schedule (clears
+                     target_date) so the weekly nudge goes away entirely. */}
+                {(job.advance_count ?? 0) >= 2 && !job.weekly_suggest_dismissed && (
+                  <div className="mt-3 pt-3 border-t border-amber-500/20">
+                    <p className="text-[12px] text-amber-900/90 leading-snug">
+                      Looks like you attend this every week — make it a recurring class?
+                    </p>
+                    {convertErr && (
+                      <p className="text-[12px] text-accent-red mt-1">{convertErr}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <button
+                        onClick={handleConvertClick}
+                        disabled={converting || advancing}
+                        className="text-[13px] font-semibold text-accent-blue active:opacity-70 disabled:opacity-40"
+                      >
+                        {converting ? 'Converting…' : 'Make weekly'}
+                      </button>
+                      <button
+                        onClick={handleDismissSuggestClick}
+                        disabled={dismissingSuggest || converting}
+                        className="text-[13px] font-medium text-text-secondary active:opacity-70 disabled:opacity-40"
+                      >
+                        Not now
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1065,6 +1142,21 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     await refresh()
   }
 
+  // Task #66 — Tapping "Make weekly" on the suggestion clears target_date
+  // server-side; refresh so `passed` flips to false and the banner (with its
+  // suggestion) disappears immediately.
+  const handleConvertToRecurring = async (job: Job) => {
+    await api.convertJobToRecurring(job.id)
+    await refresh()
+  }
+
+  // Task #66 — "Not now" persists per-job dismissal so the suggestion never
+  // returns even after future advances.  Refresh picks up the new flag.
+  const handleDismissWeeklySuggest = async (job: Job) => {
+    await api.dismissWeeklySuggestion(job.id)
+    await refresh()
+  }
+
   const handleEdit = (job: Job) => {
     setEditingJob(job)
     setPrefill(null)
@@ -1202,6 +1294,8 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
                 onToggle={() => handleToggle(job)}
                 onDelete={() => handleDelete(job)}
                 onAdvance={() => handleAdvance(job)}
+                onConvertToRecurring={() => handleConvertToRecurring(job)}
+                onDismissWeeklySuggest={() => handleDismissWeeklySuggest(job)}
                 onEdit={() => handleEdit(job)}
                 onSelect={() => onSelectJob(job.id)}
                 sniperRow={job.id === selectedJobId ? watchedSniperRow : undefined}

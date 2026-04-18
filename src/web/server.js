@@ -2,7 +2,7 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun, advanceJobOneWeek, inactivatePastJobs } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun, advanceJobOneWeek, convertJobToRecurring, dismissWeeklySuggestion, inactivatePastJobs } = require('../db/jobs');
 const { syncJobsToPgAsync } = require('../db/pg-sync');
 const { openDb } = require('../db/init');
 const { runBookingJob, cancelRegistration } = require('../bot/register-pilates');
@@ -4850,6 +4850,73 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, job: { ...updated, passed: isPastClass(updated) } }));
+    return;
+
+  } else if (req.method === 'POST' && path.startsWith('/api/jobs/') && path.endsWith('/convert-to-recurring')) {
+    // Task #66: One-tap conversion of a one-off job into a recurring schedule.
+    // Triggered by the "Make this weekly?" suggestion that appears on the
+    // past-class banner once a job has been advanced 2+ times in succession.
+    // Clears target_date (so the scheduler rolls forward by day_of_week each
+    // week), resets advance_count + dismiss flag, and clears stale per-occurrence
+    // run state.  Day-of-week / class_time / instructor are preserved.
+    const idStr = path.slice('/api/jobs/'.length, -'/convert-to-recurring'.length);
+    const cId   = parseInt(idStr, 10);
+    if (isNaN(cId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Invalid job ID' }));
+    }
+    const existing = getJobById(cId);
+    if (!existing) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Job not found' }));
+    }
+    if (!existing.target_date) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'This class is already recurring.' }));
+    }
+    const updated = convertJobToRecurring(cId);
+    if (!updated) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Failed to convert job' }));
+    }
+    console.log(`Converted job #${cId} (${updated.class_title}) to recurring (cleared target_date ${existing.target_date}).`);
+    try {
+      await syncJobsToPgAsync();
+    } catch (e) {
+      console.error('[pg-sync] convert-to-recurring sync failed:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Saved locally but failed to sync to PostgreSQL — please retry.' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, job: { ...updated, passed: false } }));
+    return;
+
+  } else if (req.method === 'POST' && path.startsWith('/api/jobs/') && path.endsWith('/dismiss-weekly-suggestion')) {
+    // Task #66: Permanently silences the "Make this weekly?" suggestion for
+    // this job.  Does not change advance_count — the user is just opting out
+    // of the prompt, not declaring the streak ended.
+    const idStr = path.slice('/api/jobs/'.length, -'/dismiss-weekly-suggestion'.length);
+    const dId   = parseInt(idStr, 10);
+    if (isNaN(dId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Invalid job ID' }));
+    }
+    if (!getJobById(dId)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Job not found' }));
+    }
+    const ok = dismissWeeklySuggestion(dId);
+    if (ok) {
+      try {
+        await syncJobsToPgAsync();
+      } catch (e) {
+        console.error('[pg-sync] dismiss-weekly-suggestion sync failed:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, error: 'Saved locally but failed to sync to PostgreSQL — please retry.' }));
+      }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true }));
     return;
 
   } else if (req.method === 'POST' && path === '/delete-job') {
