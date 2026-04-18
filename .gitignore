@@ -3,3 +3,4 @@ data/*
 !data/seed-jobs.json
 src/data/
 screenshots/
+failures-cleared.json
