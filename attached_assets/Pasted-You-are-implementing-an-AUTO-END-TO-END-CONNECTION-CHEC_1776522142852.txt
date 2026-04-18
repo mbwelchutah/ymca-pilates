@@ -1,0 +1,327 @@
+You are implementing an AUTO END-TO-END CONNECTION CHECK system for the YMCA booking bot.
+
+CRITICAL RULES
+
+- DO NOT change booking logic (sniper, burst, liveTruth, booking execution)
+- DO NOT modify Now screen behavior except explicitly allowed
+- DO NOT modify class discovery, filtering, or DOM targeting
+- DO NOT change scheduler tick logic outside this feature
+- DO NOT refactor unrelated files
+- ALL changes must be additive and isolated
+
+- WORK IN STAGES
+- AFTER EACH STAGE:
+  1. Explain exactly what changed
+  2. List what remains
+  3. STOP
+  4. WAIT for "continue"
+
+If anything risks altering booking behavior → STOP and explain before proceeding.
+
+--------------------------------------------------
+STAGE 1 — AUDIT EXISTING HEALTH / PREFLIGHT SYSTEM
+--------------------------------------------------
+
+READ ONLY. NO CODE CHANGES.
+
+Identify:
+
+1. Where cheap session checks currently exist
+   - (cookie ping / schedule load / auth validation)
+2. Where deep preflight exists
+   - (Playwright flow that verifies schedule + modal)
+3. All existing preflight trigger points:
+   - T-30 / T-10 / T-2
+   - manual "Verify connection"
+   - scheduler hooks (if any)
+4. What data is currently stored:
+   - last success timestamp?
+   - last failure?
+   - failure reason?
+5. What UI currently shows connection status
+
+OUTPUT:
+
+- Exact files + functions
+- What is reliable vs weak today
+- Where the current gap exists (especially >30 min before open)
+
+DO NOT MODIFY CODE
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — DEFINE HEALTH MODEL (NO EXECUTION YET)
+--------------------------------------------------
+
+Create a small, isolated health model.
+
+Define:
+
+HealthState:
+- healthy
+- degraded
+- at_risk
+- disconnected
+
+Data structure (NEW):
+connectionHealth = {
+  lastCheapCheckAt
+  lastDeepCheckAt
+  lastDeepSuccessAt
+  lastFailureAt
+  lastFailureReason
+  currentState
+}
+
+Rules:
+
+- healthy:
+  recent deep check passed
+- degraded:
+  cheap checks passing but deep check stale
+- at_risk:
+  recent deep check failed
+- disconnected:
+  auth/session invalid
+
+IMPORTANT:
+- This is PURE STATE — do not trigger anything yet
+- Do not wire into scheduler yet
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — IMPLEMENT CHEAP SESSION CHECK (SAFE LAYER)
+--------------------------------------------------
+
+Goal: add lightweight session validation
+
+Requirements:
+
+- MUST NOT launch Playwright
+- MUST reuse existing HTTP/session logic if available
+- MUST NOT modify login flow
+
+Cheap check verifies:
+- schedule URL loads
+- user is authenticated
+- no redirect to login
+- minimal DOM or response check
+
+Cadence function (pure, no scheduler wiring yet):
+
+getCheapCheckInterval(msUntilOpen):
+- >12h → 15 min
+- 12h–2h → 10 min
+- <2h → 5 min
+
+Behavior:
+
+- store lastCheapCheckAt
+- update connectionHealth.currentState ONLY if clearly disconnected
+
+DO NOT:
+- trigger retries
+- trigger deep checks
+- modify booking behavior
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — IMPLEMENT DEEP PREFLIGHT (ISOLATED)
+--------------------------------------------------
+
+Goal: reusable deep verification
+
+Reuse existing Playwright preflight, but isolate as:
+
+runDeepPreflightCheck(jobId, options)
+
+Must verify:
+
+1. Auth valid
+2. Schedule loads
+3. Correct day selected
+4. Target class row found
+5. Correct modal opens
+6. STOP before booking click
+
+Return:
+
+{
+  success: boolean,
+  failureReason?: string,
+  verifiedStage: 'auth' | 'schedule' | 'row' | 'modal'
+}
+
+Store:
+
+- lastDeepCheckAt
+- lastDeepSuccessAt (only if success)
+- lastFailureAt
+- lastFailureReason
+
+DO NOT:
+- trigger booking
+- modify existing preflight behavior
+- change selectors or matching logic
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — BUILD SCHEDULING POLICY (NO EXECUTION YET)
+--------------------------------------------------
+
+Create PURE FUNCTIONS only.
+
+DO NOT wire into scheduler yet.
+
+Define:
+
+getDeepCheckInterval(msUntilOpen):
+
+- >12h → 6h
+- 12h–6h → 3h
+- 6h–2h → 1h
+- 2h–30m → 30m
+- <30m → defer to existing checkpoints (no change)
+
+Define:
+
+shouldRunCheapCheck(now, state)
+shouldRunDeepCheck(now, state)
+
+Based on:
+- last run times
+- msUntilOpen
+- failure state
+
+DO NOT:
+- schedule timers
+- modify tick.js
+- trigger execution
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — SAFE EXECUTION INTEGRATION (NO DRIFT)
+--------------------------------------------------
+
+Now integrate into scheduler WITHOUT affecting booking.
+
+Rules:
+
+- DO NOT touch booking/sniper logic
+- DO NOT change runTick decision paths
+- DO NOT block booking execution
+
+Integration points:
+
+- Hook into existing scheduler loop AFTER booking decisions
+- Run checks in background (fire-and-forget)
+- NEVER delay or block booking
+
+Behavior:
+
+- cheap checks run based on cadence
+- deep checks run based on cadence
+- failures update connectionHealth only
+
+Failure escalation:
+
+- if cheap fails twice → schedule deep check soon
+- if deep fails → mark at_risk
+- DO NOT stop booking attempts
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — UI (STRICTLY LIMITED SURFACE)
+--------------------------------------------------
+
+Allowed changes ONLY:
+
+Account panel:
+- show:
+  - last deep check
+  - last cheap check
+  - health state
+
+Now screen:
+- add ONE LINE ONLY:
+  - "Connection verified X min ago"
+  OR
+  - "Deep check failed X min ago"
+
+DO NOT:
+- change layout
+- add new cards
+- modify booking UI
+- change colors or structure
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 8 — FAILURE BEHAVIOR HARDENING
+--------------------------------------------------
+
+Add safety handling ONLY:
+
+Cases:
+
+1. cheap check fails
+   → retry in 2 min
+2. cheap fails twice
+   → trigger deep check
+3. deep check fails
+   → increase frequency based on proximity
+4. repeated failures
+   → remain at_risk
+
+DO NOT:
+- pause scheduler
+- block booking
+- change retry-strategy.js
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 9 — VERIFICATION (NO CODE CHANGES)
+--------------------------------------------------
+
+Simulate:
+
+1. session expires
+2. schedule page fails to load
+3. modal mismatch
+4. normal healthy state
+
+Verify:
+
+- health state transitions correctly
+- booking logic unaffected
+- no extra browser spam
+- cadence ramps correctly near open
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+FINAL GOAL
+
+You now have:
+
+- continuous low-cost monitoring
+- deep verification ramping toward open
+- zero impact on booking reliability
+- clear UI feedback
+- no drift into booking logic
