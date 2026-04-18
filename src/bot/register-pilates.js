@@ -1298,8 +1298,9 @@ async function runBookingJob(job, opts = {}) {
         if (lastProbe.spinnerVisible) sawSpinner = true;
         // ANY rendered count widget — even "0 classes this week" — means the
         // Bubble app has finished its initial paint. The "Today" tab may be a
-        // genuinely-empty day (e.g. Good Friday closure); we'll still navigate
-        // to the actual target-date tab afterwards, where classes do exist.
+        // genuinely-empty day (e.g. a holiday closure or just no offerings);
+        // we'll still navigate to the actual target-date tab afterwards,
+        // where classes do exist.
         if (lastProbe.count !== null) {
           return { ready: true, signal: `count_text=${lastProbe.count}`, elapsedMs: Date.now() - start, polls: pollCount };
         }
@@ -1512,7 +1513,7 @@ async function runBookingJob(job, opts = {}) {
         });
         // PRIMARY success signal: the <select>'s selectedOption text now matches
         // what we asked for.  Class-count delta is unreliable on empty days
-        // (e.g. Good Friday closure: count stays 0→0 even when filters apply).
+        // (count stays 0→0 even when filters apply, so the delta tells us nothing).
         const selectedText = await page.evaluate((idx) => {
           const sel = document.querySelectorAll('select')[idx];
           if (!sel) return null;
