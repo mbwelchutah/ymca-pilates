@@ -17,6 +17,11 @@ export function useAppState() {
   const [state, setState] = useState<AppState>(DEFAULT_STATE)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Task #81 — true while the most recent /api/state poll failed (any error).
+  // Resets to false on the next successful poll. Used by Tools / Settings to
+  // surface a "Showing last known state" pill independent of the longer
+  // ERROR_GRACE_RETRIES window that gates the user-visible `error`.
+  const [pollFailed, setPollFailed] = useState(false)
 
   // Counts consecutive failures so transient startup gaps don't flash errors.
   const failCount = useRef(0)
@@ -62,10 +67,15 @@ export function useAppState() {
         return { ...fresh, jobs: mergedJobs }
       })
       setError(null)
+      setPollFailed(false)
       failCount.current = 0
       hasLoaded.current = true
     } catch (e) {
       failCount.current += 1
+      // Task #81 — surface a "stale" signal immediately on the first failure so
+      // Tools/Settings can show a "Showing last known state" pill, even before
+      // the longer ERROR_GRACE_RETRIES window flips the hard `error` flag.
+      setPollFailed(true)
       // Only show an error after several consecutive failures so a brief
       // restart or slow cold-start doesn't immediately break the UI.
       if (failCount.current > ERROR_GRACE_RETRIES) {
@@ -87,5 +97,5 @@ export function useAppState() {
     return () => clearInterval(interval)
   }, [refresh])
 
-  return { state, loading, error, refresh }
+  return { state, loading, error, pollFailed, refresh }
 }

@@ -28,7 +28,7 @@ export default function App() {
   const [bgRefreshSignal, setBgRefreshSignal] = useState(0)
   const [toolsSection, setToolsSection] = useState<string | undefined>(undefined)
 
-  const { state, loading, error, refresh } = useAppState()
+  const { state, loading, error, pollFailed, refresh } = useAppState()
 
   // Speed up the poll while an auth operation is running so the header icon
   // clears promptly (within 3 s) once the lock is released.
@@ -292,6 +292,7 @@ export default function App() {
             tab={tab}
             onTabChange={handleTabChange}
             scrolled={scrolled}
+            pollFailed={pollFailed}
           />
         )}
         {tab === 'settings' && (
@@ -305,6 +306,7 @@ export default function App() {
             tab={tab}
             onTabChange={handleTabChange}
             scrolled={scrolled}
+            pollFailed={pollFailed}
           />
         )}
       </main>

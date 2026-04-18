@@ -4269,6 +4269,30 @@ const server = http.createServer(async (req, res) => {
       ? new Date(canonicalAuth.lastCheckedAt).toISOString()
       : null;
 
+    // Task #81 — degraded-mode signals so the client can flag old data.
+    // We're degraded when we have no canonical auth truth at all (never
+    // verified) or when the canonical auth source has no validated check
+    // (sessionValid is null and no lastCheckedAt). The displayData fields
+    // (detail/screenshot) live on auth-state too — if both are missing AND
+    // we've never recorded a successful check, we're effectively showing
+    // an empty/unknown preview.
+    const snapshotAgeMs = canonicalAuth.lastCheckedAt
+      ? (Date.now() - canonicalAuth.lastCheckedAt)
+      : null;
+    let sessionDegradedReason = null;
+    if (canonicalAuth.lastCheckedAt == null) {
+      sessionDegradedReason = 'no_session_check_yet';
+    } else if (canonicalAuth.sessionValid == null
+               && displayData.detail == null
+               && displayData.screenshot == null) {
+      sessionDegradedReason = 'session_status_unknown';
+    }
+    const sessionMeta = {
+      degradedReason: sessionDegradedReason,
+      fallbackJobId:  false,
+      snapshotAge:    snapshotAgeMs,
+    };
+
     json({
       valid:         canonicalAuth.sessionValid,
       checkedAt:     lastVerified,
@@ -4281,6 +4305,7 @@ const server = http.createServer(async (req, res) => {
       locked:        !!(jobState.active || isAuthLocked()),
       bookingActive: !!jobState.active,
       authState:     getAuthState(),
+      meta:          sessionMeta,
     });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
@@ -5340,8 +5365,12 @@ const server = http.createServer(async (req, res) => {
   } else if (req.method === 'GET' && path === '/api/state') {
     // Self-heal stale active past one-offs so the Plan screen's primary feed
     // never includes a "passed && is_active=1" row.  Best-effort PG sync.
+    // Task #81 — record the inactivation count so the response's meta block
+    // can flag the silent auto-correction.
+    let inactivatedCount = 0;
     try {
-      if (inactivatePastJobs() > 0) {
+      inactivatedCount = inactivatePastJobs();
+      if (inactivatedCount > 0) {
         syncJobsToPgAsync().catch(e =>
           console.error('[pg-sync] /api/state past-class sync failed:', e.message));
       }
@@ -5453,6 +5482,16 @@ const server = http.createServer(async (req, res) => {
     const phase       = firstActive ? firstActive.phase       : 'unknown';
     const bookingOpenMs = firstActive ? firstActive.bookingOpenMs : null;
     const nextClassMs   = firstActive ? firstActive.nextClassMs   : null;
+    // Task #81 — degraded-mode signals.
+    // degradedReason: 'past_jobs_inactivated' if we silently flipped rows.
+    // fallbackJobId: false (no jobId param taken; selectedJobId is informational).
+    // snapshotAge: null (live DB read, not file-backed).
+    const stateMeta = {
+      degradedReason: inactivatedCount > 0 ? 'past_jobs_inactivated' : null,
+      fallbackJobId: false,
+      snapshotAge: null,
+    };
+
     json({
       schedulerPaused: isSchedulerPaused(),
       dryRun: getDryRun(),
@@ -5461,20 +5500,36 @@ const server = http.createServer(async (req, res) => {
       bookingOpenMs,
       nextClassMs,
       jobs,
+      meta: stateMeta,
     });
 
   } else if (req.method === 'GET' && path === '/api/sniper-state') {
     const { loadState } = require('../bot/sniper-readiness');
     const sniperState = loadState();
-    json(sniperState || {
-      runId: null, jobId: null, phase: null,
-      bundle: { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED', modal: 'MODAL_NOT_TESTED' },
-      sniperState: 'SNIPER_WAITING',
-      authBlockedAt: null,
-      timing: null,
-      events: [],
-      updatedAt: null,
-      lastPreflightSnapshot: null,
+    // Task #81 — flag missing-file vs healthy state, and surface snapshot age
+    // (ms since updatedAt) so the client can render a "Showing last known" pill.
+    const sniperMeta = sniperState
+      ? {
+          degradedReason: null,
+          fallbackJobId: false,
+          snapshotAge: sniperState.updatedAt
+            ? (Date.now() - new Date(sniperState.updatedAt).getTime())
+            : null,
+        }
+      : { degradedReason: 'sniper_state_missing', fallbackJobId: false, snapshotAge: null };
+
+    json({
+      ...(sniperState || {
+        runId: null, jobId: null, phase: null,
+        bundle: { session: 'SESSION_UNKNOWN', discovery: 'DISCOVERY_NOT_TESTED', action: 'ACTION_NOT_TESTED', modal: 'MODAL_NOT_TESTED' },
+        sniperState: 'SNIPER_WAITING',
+        authBlockedAt: null,
+        timing: null,
+        events: [],
+        updatedAt: null,
+        lastPreflightSnapshot: null,
+      }),
+      meta: sniperMeta,
     });
 
   } else if (req.method === 'GET' && path === '/api/readiness') {
@@ -5493,10 +5548,18 @@ const server = http.createServer(async (req, res) => {
 
     // Resolve the job for nextWindow + timing computation.
     // Use readiness.jobId when available, else fall back to the first active job.
+    // Task #81 — track whether the job came from explicit readiness state or a
+    // silent fallback so the response meta block can flag it.
     let job = null;
+    let usedFallbackJobId = false;
     try {
       const jid = readiness?.jobId ?? null;
-      job = jid ? getJobById(Number(jid)) : (getAllJobs().find(j => j.is_active === 1) || null);
+      if (jid) {
+        job = getJobById(Number(jid));
+      } else {
+        job = getAllJobs().find(j => j.is_active === 1) || null;
+        if (job) usedFallbackJobId = true;
+      }
     } catch (_) { /* non-fatal */ }
 
     const armed = computeArmedState({
@@ -5560,7 +5623,23 @@ const server = http.createServer(async (req, res) => {
       if (jobId != null) escalation = allEscalations[String(jobId)] ?? null;
     } catch (_) { /* non-fatal */ }
 
-    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, learnedRunSpeed, lastTimingMetrics, escalation });
+    // Task #81 — degraded-mode signals.
+    //   degradedReason: 'no_readiness_yet' when readiness file has never been written.
+    //   fallbackJobId: true when we used "first active job" instead of an
+    //                  explicitly tracked readiness.jobId.
+    //   snapshotAge:   ms since readiness.lastCheckedAt (null when never checked).
+    let readinessSnapshotAge = null;
+    if (readiness?.lastCheckedAt) {
+      const t = new Date(readiness.lastCheckedAt).getTime();
+      if (!Number.isNaN(t)) readinessSnapshotAge = Date.now() - t;
+    }
+    const readinessMeta = {
+      degradedReason: readiness ? null : 'no_readiness_yet',
+      fallbackJobId: usedFallbackJobId,
+      snapshotAge: readinessSnapshotAge,
+    };
+
+    json({ ...(readiness || {}), armed, executionTiming, learnedTiming, learnedRunSpeed, lastTimingMetrics, escalation, meta: readinessMeta });
 
   } else if (req.method === 'GET' && path === '/api/confirmed-ready') {
     // Stage 5 (freshness) — canonical confirmed-ready state for a job.

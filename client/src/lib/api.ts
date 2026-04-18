@@ -1,4 +1,4 @@
-import type { Job, AppState, ScrapedClass, SessionStatus } from '../types'
+import type { Job, AppState, ScrapedClass, SessionStatus, ResponseMeta } from '../types'
 import type { ClassTruthResult, CacheFreshness } from './classTruth'
 import type { ReadinessBundle, SniperState } from './readinessTypes'
 import type { ExecutionPhase, SniperEvent } from './failureTypes'
@@ -60,6 +60,7 @@ export interface SniperRunState {
   screenshotPath: string | null
   events:                 SniperEvent[]
   updatedAt:              string | null
+  meta?:                  ResponseMeta   // Task #81 — degraded-response signals
   lastPreflightSnapshot: {
     checkedAt:       string
     status:          string
@@ -501,6 +502,7 @@ export const api = {
       executionPhase: string
       attemptNumber:  number
     } | null
+    meta?:           ResponseMeta   // Task #81 — degraded-response signals
   }> => apiFetch('/api/readiness'),
 
   fetchReplay: (jobId: number | string): Promise<import('./replayEvent').ReplaySummary | null> =>

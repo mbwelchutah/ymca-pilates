@@ -48,6 +48,7 @@ export interface SessionStatus {
   locked?:       boolean
   bookingActive?: boolean   // true when a booking run is currently in flight
   authState?:    AuthState
+  meta?:         ResponseMeta   // Task #81 — degraded-response signals
 }
 export type LastResult =
   | 'booked'
@@ -164,8 +165,18 @@ export interface ScrapedClass {
   scraped_at: string
 }
 
+// Task #81 — small "is this response degraded?" signal block surfaced by
+// /api/state, /api/sniper-state, /api/readiness, and /api/session-status.
+// Used by the Tools / Settings staleness pill.
+export interface ResponseMeta {
+  degradedReason: string | null
+  fallbackJobId:  boolean
+  snapshotAge:    number | null   // ms since the underlying snapshot was written
+}
+
 export interface AppState {
   schedulerPaused: boolean
   dryRun: boolean
   jobs: Job[]
+  meta?: ResponseMeta
 }

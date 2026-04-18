@@ -5,6 +5,7 @@ import { SectionHeader } from '../components/layout/SectionHeader'
 import { Card } from '../components/ui/Card'
 import { DetailRow } from '../components/ui/DetailRow'
 import { ScreenshotLightbox } from '../components/ui/ScreenshotLightbox'
+import { StaleStatePill } from '../components/ui/StaleStatePill'
 import type { AppState, SessionStatus, AuthStatusEnum, Job } from '../types'
 import type { SniperRunState, SniperTiming, ConfirmedReadyState } from '../lib/api'
 import { api, SLOWEST_PHASE_TO_DISPLAY_KEY } from '../lib/api'
@@ -79,6 +80,8 @@ interface ToolsScreenProps {
   tab?: import('../components/nav/TabBar').Tab
   onTabChange?: (tab: import('../components/nav/TabBar').Tab) => void
   scrolled?: boolean
+  // Task #81 — true while the most recent /api/state poll failed.
+  pollFailed?: boolean
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -1454,7 +1457,7 @@ function RecoveryPanel({ jobs, selectedJobId }: { jobs: Job[]; selectedJobId: nu
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo, tab = 'tools', onTabChange = () => {}, scrolled = false }: ToolsScreenProps) {
+export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accountAttention, authStatus, scrollTo, tab = 'tools', onTabChange = () => {}, scrolled = false, pollFailed = false }: ToolsScreenProps) {
   const selectedJob = appState.jobs.find(j => j.id === selectedJobId) ?? appState.jobs[0] ?? null
   const scrolledRef = useRef<string | undefined>(undefined)
 
@@ -1495,14 +1498,28 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   // ── Timing intelligence (one-shot fetch — changes only after new runs) ─────
   const [readiness, setReadiness] = useState<ReadinessData | null>(null)
 
+  // Task #81 — track per-endpoint fetch failure so the staleness pill can
+  // appear as soon as any of the four tracked endpoints can't be reached.
+  const [endpointErrors, setEndpointErrors] = useState({
+    sessionStatus: false,
+    sniperState:   false,
+    readiness:     false,
+  })
+
   useEffect(() => {
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setBotStatus).catch(() => {})
-    api.getSessionStatus().then(setSessionStatus).catch(() => {})
-    api.getSniperState().then(setSniperRunState).catch(() => {})
+    api.getSessionStatus()
+      .then(s => { setSessionStatus(s); setEndpointErrors(e => ({ ...e, sessionStatus: false })) })
+      .catch(() => setEndpointErrors(e => ({ ...e, sessionStatus: true })))
+    api.getSniperState()
+      .then(s => { setSniperRunState(s); setEndpointErrors(e => ({ ...e, sniperState: false })) })
+      .catch(() => setEndpointErrors(e => ({ ...e, sniperState: true })))
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
-    api.getReadiness().then(setReadiness).catch(() => {})
+    api.getReadiness()
+      .then(r => { setReadiness(r); setEndpointErrors(e => ({ ...e, readiness: false })) })
+      .catch(() => setEndpointErrors(e => ({ ...e, readiness: true })))
   }, [])
 
   useEffect(() => {
@@ -1525,14 +1542,45 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     .filter(j => j.last_run_at)
     .sort((a, b) => new Date(b.last_run_at!).getTime() - new Date(a.last_run_at!).getTime())[0] ?? null
 
+  // Task #81 — inline error feedback for toggle handlers so the user can tell
+  // a failed save apart from a server-rejected save (which currently both
+  // present as "toggle silently snaps back").
+  const [apfErr,        setApfErr]        = useState<string | null>(null)
+  const [kaErr,         setKaErr]         = useState<string | null>(null)
+  const [clearFailErr,  setClearFailErr]  = useState<string | null>(null)
+  const apfErrTimer       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const kaErrTimer        = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearFailErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (apfErrTimer.current)       clearTimeout(apfErrTimer.current)
+    if (kaErrTimer.current)        clearTimeout(kaErrTimer.current)
+    if (clearFailErrTimer.current) clearTimeout(clearFailErrTimer.current)
+  }, [])
+  const flashToggleErr = (
+    msg: string,
+    setter: (v: string | null) => void,
+    timerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  ) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setter(msg)
+    timerRef.current = setTimeout(() => setter(null), 4000)
+  }
+
   const handleAutoPreflightToggle = async () => {
     if (apfToggling || !autoPreflightConfig) return
     setApfToggling(true)
     try {
       const next = !autoPreflightConfig.enabled
       const r = await api.setAutoPreflightEnabled(next)
-      if (r.success) setAutoPreflightConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
-    } catch { /* ignored */ } finally { setApfToggling(false) }
+      if (r.success) {
+        setAutoPreflightConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
+        setApfErr(null)
+      } else {
+        flashToggleErr("Couldn't reach server — try again", setApfErr, apfErrTimer)
+      }
+    } catch {
+      flashToggleErr("Couldn't reach server — try again", setApfErr, apfErrTimer)
+    } finally { setApfToggling(false) }
   }
 
   const handleKeepaliveToggle = async () => {
@@ -1541,8 +1589,15 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     try {
       const next = !keepaliveConfig.enabled
       const r = await api.setSessionKeepaliveConfig(next, keepaliveConfig.intervalMinutes)
-      if (r.success) setKeepaliveConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
-    } catch { /* ignored */ } finally { setKaToggling(false) }
+      if (r.success) {
+        setKeepaliveConfig(prev => prev ? { ...prev, enabled: r.enabled } : null)
+        setKaErr(null)
+      } else {
+        flashToggleErr("Couldn't reach server — try again", setKaErr, kaErrTimer)
+      }
+    } catch {
+      flashToggleErr("Couldn't reach server — try again", setKaErr, kaErrTimer)
+    } finally { setKaToggling(false) }
   }
 
   const clearFTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1564,7 +1619,10 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
       await api.clearFailures()
       const fresh = await api.getFailures().catch(() => null)
       setFailures(fresh)
-    } catch { /* ignore */ } finally {
+      setClearFailErr(null)
+    } catch {
+      flashToggleErr("Couldn't reach server — try again", setClearFailErr, clearFailErrTimer)
+    } finally {
       setClearFState('idle')
     }
   }
@@ -1595,10 +1653,39 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     return 'bg-accent-amber'
   }
 
+  // Task #81 — staleness signals from poll error, any of the four endpoints'
+  // meta.degradedReason / meta.fallbackJobId hints, or any snapshot older
+  // than STALE_AGE_MS (we treat a 5-minute-old snapshot as old data the
+  // user should be told about).
+  const STALE_AGE_MS = 5 * 60 * 1000
+  const ageOver = (age?: number | null) =>
+    typeof age === 'number' && age > STALE_AGE_MS
+  const isStale =
+    pollFailed ||
+    endpointErrors.sessionStatus ||
+    endpointErrors.sniperState ||
+    endpointErrors.readiness ||
+    Boolean(appState.meta?.degradedReason) ||
+    Boolean(appState.meta?.fallbackJobId) ||
+    Boolean(sessionStatus?.meta?.degradedReason) ||
+    Boolean(sniperRunState?.meta?.degradedReason) ||
+    Boolean(readiness?.meta?.degradedReason) ||
+    Boolean(readiness?.meta?.fallbackJobId) ||
+    ageOver(appState.meta?.snapshotAge) ||
+    ageOver(sessionStatus?.meta?.snapshotAge) ||
+    ageOver(sniperRunState?.meta?.snapshotAge) ||
+    ageOver(readiness?.meta?.snapshotAge)
+
   return (
     <>
       <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
       <ScreenContainer>
+
+        {isStale && (
+          <div className="px-4 pt-2 pb-1">
+            <StaleStatePill />
+          </div>
+        )}
 
         {/* ── Last Run (compact, tap to expand) ───────────── */}
         <SectionHeader title="Last Run" id="tools-last-run" />
@@ -1886,6 +1973,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                 onClick: handleClearFailures,
               }}
             />
+            {clearFailErr && (
+              <p data-testid="clear-failures-error" className="text-[12px] text-accent-red px-4 pb-1">{clearFailErr}</p>
+            )}
             <Card padding="none">
               {(() => {
                 const PAGE = 5
@@ -2068,6 +2158,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               </button>
             )
           })()}
+          {apfErr && (
+            <p data-testid="apf-error" className="text-[12px] text-accent-red px-4 pb-2 -mt-1">{apfErr}</p>
+          )}
 
           {/* ── Session Check row ───────────────────────────── */}
           {(() => {
@@ -2114,6 +2207,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               </button>
             )
           })()}
+          {kaErr && (
+            <p data-testid="ka-error" className="text-[12px] text-accent-red px-4 pb-2 -mt-1">{kaErr}</p>
+          )}
 
         </Card>
 

@@ -225,11 +225,14 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
   const [signingOut, setSigningOut] = useState(false)
   const [feedback,   setFeedback]   = useState<{ text: string; cls: string } | null>(null)
   const [expanded,   setExpanded]   = useState(false)
+  // Task #81 — surface session-status fetch failures with a tap-to-retry hint
+  // instead of silently reverting to "Checking…".
+  const [sessionLoadError, setSessionLoadError] = useState(false)
 
   const fetchSession = useCallback(() => {
     api.getSessionStatus()
-      .then(s => setSession(s))
-      .catch(() => setSession(null))
+      .then(s => { setSession(s); setSessionLoadError(false) })
+      .catch(() => setSessionLoadError(true))
   }, [])
 
   // Fetch fresh status on open; collapse details on each open.
@@ -447,6 +450,16 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 <p className="text-[13px] text-text-secondary mt-0.5 leading-snug">
                   {conn.subline}
                 </p>
+                {sessionLoadError && (
+                  <button
+                    type="button"
+                    data-testid="session-load-error"
+                    onClick={fetchSession}
+                    className="mt-1 text-[12px] text-accent-red underline underline-offset-2 active:opacity-60"
+                  >
+                    Couldn't load session — tap to retry
+                  </button>
+                )}
               </div>
             </div>
 
