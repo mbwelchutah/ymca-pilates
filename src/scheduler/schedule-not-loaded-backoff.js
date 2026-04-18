@@ -15,10 +15,10 @@
 //     (5 min → 15 min → 45 min → cap at 120 min).
 //   - Any NON-`schedule_not_loaded` result (success, other failure, etc.)
 //     resets the counter and clears the gate.
-//   - When the booking-open moment is within NEAR_OPEN_MS, the gate is
-//     LIFTED for that tick (we'd rather attempt a booking than respect a
-//     backoff window and miss it).  The counter is preserved so the gate
-//     re-engages after the window closes if failures continue.
+//   - When the booking-open moment is within NEAR_OPEN_MS (or has already
+//     passed — `late` phase), the gate is fully RESET (state is cleared) so
+//     we try hard during the window the user is actually waiting on.  If
+//     `schedule_not_loaded` then recurs, the counter rebuilds from zero.
 //   - Manual "Run check" (preflight) bypasses the gate by calling
 //     runBookingJob directly — it doesn't go through the tick gate.
 //
@@ -97,18 +97,24 @@ function getBackoffStatus(jobId, msToOpen = null) {
   if (!s) {
     return { inBackoff: false, consecutive: 0, backoffUntilMs: 0, retryInMs: 0 };
   }
+  // Near-open RESET: if booking is within NEAR_OPEN_MS or already past
+  // (msToOpen <= NEAR_OPEN_MS, including negative values for the `late`
+  // phase), wipe the gate entirely so we try hard during the window the user
+  // actually cares about.  If `schedule_not_loaded` recurs, the counter will
+  // rebuild from zero.
+  if (msToOpen != null && msToOpen <= NEAR_OPEN_MS) {
+    _state.delete(jobId);
+    return {
+      inBackoff:      false,
+      consecutive:    0,
+      backoffUntilMs: 0,
+      retryInMs:      0,
+      nearOpenReset:  true,
+    };
+  }
   const now = Date.now();
   if (s.backoffUntilMs <= now) {
     return { inBackoff: false, consecutive: s.consecutive, backoffUntilMs: 0, retryInMs: 0 };
-  }
-  if (msToOpen != null && msToOpen >= 0 && msToOpen <= NEAR_OPEN_MS) {
-    return {
-      inBackoff:      false,
-      consecutive:    s.consecutive,
-      backoffUntilMs: s.backoffUntilMs,
-      retryInMs:      0,
-      nearOpenLifted: true,
-    };
   }
   return {
     inBackoff:      true,

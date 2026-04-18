@@ -71,19 +71,40 @@ describe('schedule_not_loaded backoff', () => {
     expect(sb.getBackoffStatus(JOB).consecutive).toBe(0);
   });
 
-  test('near-open window LIFTS the gate but preserves the consecutive counter', () => {
+  test('near-open window RESETS the gate (state cleared) so we try hard', () => {
     for (let i = 0; i < 3; i++) sb.recordResult(JOB, 'schedule_not_loaded');
     expect(sb.getBackoffStatus(JOB, /*msToOpen=*/ 30 * 60_000).inBackoff).toBe(true);
 
-    // Within 10 min of open — gate is lifted so the manual/scheduler attempt fires.
-    const lifted = sb.getBackoffStatus(JOB, /*msToOpen=*/ 5 * 60_000);
-    expect(lifted.inBackoff).toBe(false);
-    expect(lifted.nearOpenLifted).toBe(true);
-    expect(lifted.consecutive).toBe(3); // counter preserved
+    // Within 10 min of open — gate is RESET (state wiped) per task spec
+    // ("we reset the backoff and try again hard").
+    const reset = sb.getBackoffStatus(JOB, /*msToOpen=*/ 5 * 60_000);
+    expect(reset.inBackoff).toBe(false);
+    expect(reset.nearOpenReset).toBe(true);
+    expect(reset.consecutive).toBe(0); // counter cleared
 
-    // Once we move back outside the near-open window, the gate is back on
-    // (until the wall-clock backoff timestamp passes).
-    expect(sb.getBackoffStatus(JOB, /*msToOpen=*/ 30 * 60_000).inBackoff).toBe(true);
+    // Subsequent polls (any msToOpen) see no state — counter rebuilds from 0.
+    expect(sb.getBackoffStatus(JOB, /*msToOpen=*/ 30 * 60_000).inBackoff).toBe(false);
+    expect(sb.getBackoffStatus(JOB, /*msToOpen=*/ 30 * 60_000).consecutive).toBe(0);
+  });
+
+  test('near-open RESET also fires for the `late` phase (msToOpen < 0)', () => {
+    for (let i = 0; i < 4; i++) sb.recordResult(JOB, 'schedule_not_loaded');
+    expect(sb.getBackoffStatus(JOB).inBackoff).toBe(true);
+    const r = sb.getBackoffStatus(JOB, /*msToOpen=*/ -2 * 60_000);
+    expect(r.inBackoff).toBe(false);
+    expect(r.nearOpenReset).toBe(true);
+    expect(r.consecutive).toBe(0);
+  });
+
+  test('after near-open reset, fresh failures rebuild the counter from zero', () => {
+    for (let i = 0; i < 3; i++) sb.recordResult(JOB, 'schedule_not_loaded');
+    sb.getBackoffStatus(JOB, /*msToOpen=*/ 5 * 60_000); // triggers reset
+    // Two more failures should NOT immediately re-engage — threshold is 3.
+    sb.recordResult(JOB, 'schedule_not_loaded');
+    sb.recordResult(JOB, 'schedule_not_loaded');
+    expect(sb.getBackoffStatus(JOB).inBackoff).toBe(false);
+    sb.recordResult(JOB, 'schedule_not_loaded');
+    expect(sb.getBackoffStatus(JOB).inBackoff).toBe(true);
   });
 
   test('markLoggedOnce returns true once per backoff window, then false', () => {

@@ -351,8 +351,30 @@ async function runTick({ onlyJobId = null, skipCooldown = false, bypassScheduleB
       if (bs.inBackoff) {
         const retryMin = Math.max(1, Math.round(bs.retryInMs / 60000));
         const msg = `schedule_not_loaded backoff (retry in ~${retryMin} min, ${bs.consecutive} consecutive)`;
+        // One "still in backoff" entry per window — both to the console and
+        // to the structured failure log — so the user sees a single calm
+        // record instead of dozens of duplicate `schedule_not_loaded` rows.
         if (scheduleBackoff.markLoggedOnce(dbJob.id)) {
           console.log(`  => SKIPPING Job #${dbJob.id} — ${msg}`);
+          try {
+            const { recordFailure } = require('../db/failures');
+            recordFailure({
+              jobId:      dbJob.id,
+              phase:      'navigate',
+              reason:     'schedule_not_loaded',
+              category:   'navigate',
+              label:      'Schedule not loading — backed off',
+              message:    msg,
+              classTitle: dbJob.class_title || null,
+              screenshot: null,
+              context:    {
+                consecutive:    bs.consecutive,
+                retryInMs:      bs.retryInMs,
+                backoffUntilMs: bs.backoffUntilMs,
+                stillInBackoff: true,
+              },
+            });
+          } catch (_) { /* best-effort */ }
         }
         results.push({ jobId: dbJob.id, phase, status: 'skipped', message: msg });
         continue;
