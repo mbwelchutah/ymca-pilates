@@ -129,8 +129,11 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 
 // ── Empty states ──────────────────────────────────────────────────────────────
 
-/** Shown when no booking runs have ever been recorded for this job. */
-function EmptyNoRuns() {
+/** Shown when no booking runs have ever been recorded for this job.
+ *  The "Replay history resets on restart" hint is gated to active jobs
+ *  only — for an inactive/archived job the empty state isn't transient,
+ *  so the restart-reset note would be misleading. */
+function EmptyNoRuns({ isJobActive = false }: { isJobActive?: boolean }) {
   return (
     <div className="px-6 py-8 flex flex-col items-center gap-3">
       {/* Timeline illustration — dashed line with three empty circles */}
@@ -153,9 +156,11 @@ function EmptyNoRuns() {
         <p className="text-[11px] text-text-muted mt-1 leading-relaxed max-w-[220px]">
           The timeline fills in automatically after the first registration attempt.
         </p>
-        <p className="text-[10px] text-text-muted/70 mt-1.5 leading-relaxed max-w-[220px]">
-          Replay history resets on restart.
-        </p>
+        {isJobActive && (
+          <p className="text-[10px] text-text-muted/70 mt-1.5 leading-relaxed max-w-[220px]">
+            Replay history resets on restart.
+          </p>
+        )}
       </div>
     </div>
   )

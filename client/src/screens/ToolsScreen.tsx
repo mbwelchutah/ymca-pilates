@@ -2226,15 +2226,12 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                   {/* Timing intelligence — learned run speed baseline */}
                   <LearnedRunSpeedPanel readiness={readiness} />
 
-                  {/* Schedule Cache (classifier result for selected job) */}
-                  {selectedJob && classifierResult && classifierResult.fetchedAt && (() => {
+                  {/* Schedule Cache (classifier result for selected job).
+                      Task #84 — the freshness label renders even when the
+                      cache is missing/empty (no fetchedAt) so the user gets
+                      "Schedule never scraped" in amber instead of silence. */}
+                  {selectedJob && classifierResult && (() => {
                     const cr  = classifierResult
-                    const st  = cr.state
-                    const dot =
-                      st === 'bookable'           ? 'bg-accent-green' :
-                      st === 'waitlist_available' ? 'bg-accent-amber' :
-                      st === 'full'               ? 'bg-accent-red'   :
-                      st === 'not_found'          ? 'bg-text-muted'   : 'bg-divider'
                     // Task #84 — schedule cache age relative to now, with
                     // amber styling when missing or older than 12 h.
                     const STALE_MS = 12 * 60 * 60 * 1000
@@ -2248,13 +2245,30 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                       if (scrapeAge < 86_400_000)          return `Schedule scraped ${Math.floor(scrapeAge / 3_600_000)} h ago`
                       return                                      `Schedule scraped ${Math.floor(scrapeAge / 86_400_000)} d ago`
                     })()
+                    const st  = cr.state
+                    const dot =
+                      st === 'bookable'           ? 'bg-accent-green' :
+                      st === 'waitlist_available' ? 'bg-accent-amber' :
+                      st === 'full'               ? 'bg-accent-red'   :
+                      st === 'not_found'          ? 'bg-text-muted'   : 'bg-divider'
                     return (
                       <>
                         <SectionHeader title="Schedule Cache" id="tools-cache" />
-                        {/* Task #84 — relative-time scrape freshness, amber when stale */}
+                        {/* Task #84 — relative-time scrape freshness, amber when stale or missing.
+                            Always rendered when classifierResult is loaded — no fetchedAt gate. */}
                         <p className={`text-[12px] mb-2 -mt-1 px-1 ${scrapeStale ? 'text-amber-600 font-medium' : 'text-text-muted'}`}>
                           {scrapeRel}
                         </p>
+                        {!cr.fetchedAt ? (
+                          // No cache entry yet — show explanatory card without
+                          // the per-class details that depend on a match.
+                          <Card padding="md">
+                            <p className="text-[13px] text-text-secondary">
+                              No schedule data has been captured yet.
+                              Run a preflight or refresh the schedule to populate the cache.
+                            </p>
+                          </Card>
+                        ) : (
                         <Card padding="none">
                           <div className="flex items-center gap-2 px-4 py-3 border-b border-divider">
                             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
@@ -2285,6 +2299,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                             <KVRow label="Freshness" value={cr.freshness} />
                           )}
                         </Card>
+                        )}
                       </>
                     )
                   })()}
