@@ -110,6 +110,10 @@ interface ReplayTimelineProps {
   jobId:            number | null
   runKey?:          string | null
   isBookingActive?: boolean
+  /** Task #84 — when true, EmptyNoRuns shows the "Replay history resets on
+   *  restart" hint. Off for archived/inactive jobs where the empty state is
+   *  permanent. */
+  isJobActive?:     boolean
 }
 
 // ── RefreshIcon ───────────────────────────────────────────────────────────────
@@ -267,7 +271,7 @@ function HistoryPicker({
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: ReplayTimelineProps) {
+export function ReplayTimeline({ jobId, runKey, isBookingActive = false, isJobActive = false }: ReplayTimelineProps) {
   const [open,        setOpen]        = useState(false)
   const [replay,      setReplay]      = useState<ReplaySummary | null>(null)
   const [history,     setHistory]     = useState<ReplayRunMeta[]>([])
@@ -498,7 +502,7 @@ export function ReplayTimeline({ jobId, runKey, isBookingActive = false }: Repla
 
           {/* Empty: idle, no runs have ever been recorded */}
           {!loading && !isBookingActive && fetched && !replay && isLatest && (
-            <EmptyNoRuns />
+            <EmptyNoRuns isJobActive={isJobActive} />
           )}
 
           {/* Empty: a historical run was selected but its file is gone */}

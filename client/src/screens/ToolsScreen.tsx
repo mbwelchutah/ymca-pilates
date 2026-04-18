@@ -13,6 +13,7 @@ import type { FailureType } from '../lib/failureTypes'
 import { SESSION_LABEL, DISCOVERY_LABEL, ACTION_LABEL, MODAL_LABEL } from '../lib/readinessResolver'
 import type { ClassTruthResult } from '../lib/classTruth'
 import { CLASS_STATE_LABEL } from '../lib/classTruth'
+import { ReplayTimeline } from '../components/ReplayTimeline'
 
 interface FailureEntry {
   id:           number | null
@@ -2219,6 +2220,21 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                     title={`Run Events${sniperRunState?.events?.length ? ` · ${sniperRunState.events.length}` : ''}`}
                   />
                   <LastRunEvents sniperRunState={sniperRunState} />
+
+                  {/* Task #84 — replay history timeline. EmptyNoRuns inside
+                      will show the "Replay history resets on restart" hint
+                      only when the selected job is active. */}
+                  {selectedJob && (
+                    <>
+                      <SectionHeader id="tools-replay-timeline" title="Replay History" />
+                      <ReplayTimeline
+                        jobId={selectedJob.id}
+                        runKey={sniperRunState?.runId ?? null}
+                        isBookingActive={sniperRunState?.sniperState === 'running'}
+                        isJobActive={!!selectedJob.is_active}
+                      />
+                    </>
+                  )}
 
                   {/* Last Check Now (per-phase diagnostics) */}
                   <LastCheckNowSection sniperRunState={sniperRunState} />
