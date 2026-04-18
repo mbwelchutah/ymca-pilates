@@ -35,7 +35,7 @@ import {
   computeBookingOpenMs as sharedComputeBookingOpenMs,
   derivePhase as sharedDerivePhase,
   BOOKING_LEAD_MS as sharedBookingLeadMs,
-} from '../../../shared/booking-window-shared'
+} from '../../../shared/booking-window-shared.mjs'
 
 interface NowScreenProps {
   appState: AppState

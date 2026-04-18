@@ -96,6 +96,40 @@ describe('shared/booking-window-shared.js — Node wrapper agrees on bookingOpen
   });
 });
 
+describe('shared/booking-window-shared.mjs — ESM mirror agrees with CJS', () => {
+  it('exposes the same constant values as the CJS module', async () => {
+    const esm = await import('../shared/booking-window-shared.mjs');
+    expect(esm.BOOKING_LEAD_DAYS).toBe(shared.BOOKING_LEAD_DAYS);
+    expect(esm.BOOKING_LEAD_MINUTES).toBe(shared.BOOKING_LEAD_MINUTES);
+    expect(esm.BOOKING_LEAD_MS).toBe(shared.BOOKING_LEAD_MS);
+    expect(esm.WARMUP_MS).toBe(shared.WARMUP_MS);
+    expect(esm.SNIPER_MS).toBe(shared.SNIPER_MS);
+  });
+
+  it('produces the same derivePhase output for boundary inputs', async () => {
+    const esm = await import('../shared/booking-window-shared.mjs');
+    const inputs = [null, NaN, esm.WARMUP_MS + 1, esm.WARMUP_MS, esm.SNIPER_MS, 1, 0, -1000];
+    for (const x of inputs) {
+      expect(esm.derivePhase(x)).toBe(shared.derivePhase(x));
+    }
+  });
+
+  it('produces the same computeBookingOpenMs for several jobs', async () => {
+    const esm = await import('../shared/booking-window-shared.mjs');
+    const jobs = [
+      { class_time: '7:45 AM', day_of_week: 'Wednesday' },
+      { class_time: '6:00 PM', day_of_week: 'Saturday'  },
+      { class_time: '9:00 AM', target_date: '2099-04-21' },
+      { class_time: '12:00 PM', target_date: '2099-12-31' },
+    ];
+    const fixedNow = new Date('2026-04-18T12:00:00Z');
+    for (const job of jobs) {
+      expect(esm.computeBookingOpenMs(job, fixedNow))
+        .toBe(shared.computeBookingOpenMs(job, fixedNow));
+    }
+  });
+});
+
 describe('shared/booking-window-shared.js — parseClassTime', () => {
   it('handles AM, PM, midnight and noon edge cases', () => {
     expect(shared.parseClassTime('7:45 AM')).toEqual({ hours: 7,  minutes: 45 });
