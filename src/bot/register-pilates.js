@@ -1150,6 +1150,83 @@ async function runBookingJob(job, opts = {}) {
     }, { timeout: 15000 }).catch(() => console.log('⚠️ Dropdown options slow to load, proceeding anyway'));
     _tc.page_nav_done = new Date().toISOString();
 
+    // ── Branches → Eugene Y BEFORE readiness probe (April 2026 site change) ──
+    // YMCA added a "Branches" dropdown that defaults to blank.  Until a branch
+    // is picked the schedule grid renders zero cards, which would cause the
+    // readiness probe below to time out and set _scheduleNotLoaded — locking
+    // out every subsequent filter (including Branches itself, chicken-and-egg).
+    // Strategy: page.selectOption() + synthetic input/change event dispatch
+    // (Branches uses a real native <select>, not a Bubble overlay, so a
+    // pill-click fallback is structurally wrong and was removed).
+    // We also re-apply this after the reload-retry inside waitForScheduleReady,
+    // because page.reload() resets the dropdown back to blank.
+    async function selectBranchEugeneY() {
+      try {
+        const branchesIdxPre = await page.evaluate(() => {
+          const sels = Array.from(document.querySelectorAll('select'));
+          for (let i = 0; i < sels.length; i++) {
+            const first = (sels[i].options[0] && sels[i].options[0].text || '').trim().toLowerCase();
+            if (first === 'branches') return i;
+          }
+          return -1;
+        });
+        if (branchesIdxPre < 0) {
+          console.log('[branches] No Branches dropdown found — skipping (older site layout?).');
+          return false;
+        }
+        console.log(`[branches] Branches dropdown at index ${branchesIdxPre} — selecting "Eugene Y"…`);
+        // Strategy 1: native selectOption with synthetic events to nudge Bubble.io.
+        await page.locator('select').nth(branchesIdxPre)
+          .selectOption('Eugene Y', { timeout: 3000, force: true })
+          .catch(e => console.log(`[branches] selectOption threw: ${e.message}`));
+        // Bubble.io binds to its own state, not the underlying <select>, so
+        // also fire input/change events explicitly in case selectOption was a no-op.
+        await page.evaluate((idx) => {
+          const sel = document.querySelectorAll('select')[idx];
+          if (!sel) return;
+          for (const opt of sel.options) {
+            if ((opt.text || '').trim() === 'Eugene Y') {
+              sel.value = opt.value;
+              sel.dispatchEvent(new Event('input',  { bubbles: true }));
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+              break;
+            }
+          }
+        }, branchesIdxPre);
+        await page.waitForTimeout(1500);
+
+        // Did the schedule begin rendering?  Check for class-count widget OR
+        // a visible class card with a time.
+        const stateAfter = await page.evaluate(() => {
+          let countText = null;
+          for (const el of document.querySelectorAll('*')) {
+            if (el.children.length !== 0) continue;
+            const m = (el.textContent || '').match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
+            if (m) { countText = parseInt(m[1], 10); break; }
+          }
+          let cardVisible = false;
+          const timeRe = /\b\d{1,2}:\d{2}\s*(AM|PM)\b/i;
+          for (const el of document.querySelectorAll('*')) {
+            if (el.children.length !== 0) continue;
+            if (!timeRe.test((el.textContent || '').trim())) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) { cardVisible = true; break; }
+          }
+          return { countText, cardVisible };
+        });
+        // Branches uses a native <select> (not a Bubble overlay), so a pill-click
+        // fallback won't work — the <option> lives inside the select and is only
+        // visible when the user opens it natively.  Report the post-state and
+        // let the readiness probe decide whether to bail.
+        console.log(`[branches] After native + synthetic events — count=${stateAfter.countText}, cardVisible=${stateAfter.cardVisible}.`);
+        return stateAfter.countText !== null && stateAfter.countText > 0;
+      } catch (be) {
+        console.log(`[branches] selectBranchEugeneY threw: ${be.message}`);
+        return false;
+      }
+    }
+    await selectBranchEugeneY();
+
     // ── Centralized schedule-readiness wait (Task #62) ─────────────────────
     // Replaces the inline 2-second wait that previously lived inside
     // applyFilterBySelectIndex.  Runs ONCE here, just after navigation, with
@@ -1234,6 +1311,8 @@ async function runBookingJob(job, opts = {}) {
         for (const sel of selects) { if (sel.options.length > 1) return true; }
         return false;
       }, { timeout: 15000 }).catch(() => console.log('[schedule-ready] (after-reload) dropdown options slow to load, proceeding anyway'));
+      // Re-apply Branches → Eugene Y because page.reload() reset it back to blank.
+      await selectBranchEugeneY();
       console.log(`[schedule-ready] (after-reload) re-probing schedule readiness up to 10s…`);
       scheduleReadiness = await waitForScheduleReady();
       if (scheduleReadiness.ready) {
@@ -1252,6 +1331,23 @@ async function runBookingJob(job, opts = {}) {
       }));
     });
     console.log('Available select dropdowns:', JSON.stringify(allSelectInfo));
+
+    // ── Dropdown index lookup by label (April 2026 YMCA site change) ──────────
+    // YMCA added a new "Branches" dropdown at index 1, shifting every other
+    // filter's position (Location 1→2, Instructor 2→3, Event Name 3→4).  To
+    // survive future column reorderings we now look up dropdowns by their
+    // first-option label instead of by hardcoded index.  The first <option>
+    // text is always the dropdown's placeholder/label (e.g. "Category",
+    // "Branches", "Location", "Instructor", "Event Name").
+    function findSelectIndexByLabel(label) {
+      const lc = label.trim().toLowerCase();
+      const hit = allSelectInfo.find(s => (s.options[0] || '').trim().toLowerCase() === lc);
+      return hit ? hit.index : -1;
+    }
+    const CATEGORY_IDX   = findSelectIndexByLabel('Category');
+    const BRANCHES_IDX   = findSelectIndexByLabel('Branches');
+    const INSTRUCTOR_IDX = findSelectIndexByLabel('Instructor');
+    console.log(`  Resolved dropdown indexes — Category=${CATEGORY_IDX}, Branches=${BRANCHES_IDX}, Instructor=${INSTRUCTOR_IDX}`);
 
     // Bubble.io ignores programmatic changes to hidden <select> elements.
     // Bubble.io dropdown strategy:
@@ -1358,19 +1454,28 @@ async function runBookingJob(job, opts = {}) {
     //  and partial clicks corrupt the filter state)
   }
 
-    // Filter strategy: Category (index 0) + Instructor (index 2) via native selectOption.
-    // Event Name filter (index 3) is intentionally skipped: its native selectOption fails
+    // Filter strategy: Branches (Eugene Y) FIRST, then Category + Instructor via native
+    // selectOption.  The Branches dropdown was added by YMCA in April 2026 and defaults
+    // to blank — without selecting "Eugene Y" the schedule grid renders zero cards and
+    // our readiness probe times out (root cause of the schedule_not_loaded bail loop).
+    // Event Name filter is intentionally skipped: its native selectOption fails
     // ("did not find some options") and the pill-click fallback corrupts Bubble.io state
     // by partially opening the dropdown (observed: count went 79→14 from an aborted click).
     _tc.filter_apply_start = new Date().toISOString();
-    const categoryApplied = await applyFilterBySelectIndex(0, 'Yoga/Pilates', 'Category');
+
+    // (Branches selection happens earlier, before the readiness probe — see
+    // the [branches] block above.  Re-applying here would be a no-op and could
+    // burn time on a redundant Bubble.io re-render.)
+    const categoryApplied = CATEGORY_IDX >= 0
+      ? await applyFilterBySelectIndex(CATEGORY_IDX, 'Yoga/Pilates', 'Category')
+      : false;
 
     // Resolve instructor filter value: the DB may store just a first name (e.g. "Gretl")
     // or a full name (e.g. "Stephanie Sanders").  Find the best match from the dropdown
     // so selectOption() can do an exact-text match against the option element.
     let instructorForFilter = null;
-    if (instructor) {
-      const instrDropdown = allSelectInfo.find(s => s.index === 2);
+    if (instructor && INSTRUCTOR_IDX >= 0) {
+      const instrDropdown = allSelectInfo.find(s => s.index === INSTRUCTOR_IDX);
       if (instrDropdown) {
         const instrLower = instructor.trim().toLowerCase();
         // Prefer exact match first, then starts-with, then contains
@@ -1385,8 +1490,8 @@ async function runBookingJob(job, opts = {}) {
         }
       }
     }
-    const instructorApplied = instructorForFilter
-      ? await applyFilterBySelectIndex(2, instructorForFilter, 'Instructor')
+    const instructorApplied = (instructorForFilter && INSTRUCTOR_IDX >= 0)
+      ? await applyFilterBySelectIndex(INSTRUCTOR_IDX, instructorForFilter, 'Instructor')
       : false;
 
     _tc.filter_apply_done = new Date().toISOString();
