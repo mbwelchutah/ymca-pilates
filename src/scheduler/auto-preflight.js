@@ -38,6 +38,10 @@ const AUTH_BLOCK_STALE_MS = 20 * 60 * 1000; // 20 minutes
 const DATA_DIR      = path.resolve(__dirname, '../data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'auto-preflight-settings.json');
 const LOG_FILE      = path.join(DATA_DIR, 'auto-preflight-log.json');
+// Task #76 — durable record of which (jobId, bookingOpenMs, trigger) keys have
+// already fired.  Survives server restarts so a routine restart between T-30
+// and T-2 cannot re-fire T-30 inside its 90-second tolerance window.
+const FIRED_FILE    = path.join(DATA_DIR, 'auto-preflight-fired.json');
 
 // ── Trigger definitions ───────────────────────────────────────────────────────
 // windowMs:    how far before booking-open the trigger fires (ms)
@@ -55,8 +59,22 @@ const TRIGGERS = [
 // ── In-memory state ───────────────────────────────────────────────────────────
 // Tracks which trigger keys have already fired this server session.
 // Key format: `${jobId}:${bookingOpenMs}:${triggerName}`
+//
+// Task #76 — `firedThisCycle` is the hot-path read cache.  It is hydrated
+// from FIRED_FILE on first access (`ensureFiredHydrated`) and every fire is
+// also persisted via `persistFired()` so a server restart cannot replay a
+// checkpoint that already ran.
 const firedThisCycle = new Set();
+// Companion record: cycleKey → { bookingOpenMs, firedAt } so we can trim
+// expired entries on read without parsing the key.
+const firedDisk = new Map();
+let firedHydrated = false;
 let running = false;
+
+// How long after bookingOpen we keep a fired record on disk.  After this
+// window the booking is over and the in-memory cycleKey is no longer
+// reachable, so trimming is safe.
+const FIRED_TTL_AFTER_OPEN_MS = 60 * 60 * 1000; // 1 hour
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
@@ -90,9 +108,70 @@ function appendLog(entry) {
   } catch (e) { console.warn('[auto-preflight] appendLog failed:', e.message); }
 }
 
+// ── Task #76 — durable fired-checkpoint record ────────────────────────────────
+//
+// File shape:
+//   { "<jobId>:<bookingOpenMs>:<triggerName>": { bookingOpenMs, firedAt }, ... }
+//
+// `bookingOpenMs` is duplicated as a record field so trimming does not depend
+// on parsing the key (key format is internal, the field is the contract).
+
+function loadFiredFromDisk() {
+  try {
+    if (!fs.existsSync(FIRED_FILE)) return {};
+    const raw = JSON.parse(fs.readFileSync(FIRED_FILE, 'utf8'));
+    return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+  } catch (e) {
+    console.warn('[auto-preflight] loadFiredFromDisk failed:', e.message);
+    return {};
+  }
+}
+
+function persistFired() {
+  try {
+    const out = {};
+    for (const [key, entry] of firedDisk.entries()) out[key] = entry;
+    writeJsonAtomic(FIRED_FILE, out);
+  } catch (e) {
+    console.warn('[auto-preflight] persistFired failed:', e.message);
+  }
+}
+
+/** Hydrate the in-memory Set from disk on first access, dropping any
+ *  records whose bookingOpenMs is older than FIRED_TTL_AFTER_OPEN_MS so the
+ *  file cannot grow without bound across booking cycles. */
+function ensureFiredHydrated() {
+  if (firedHydrated) return;
+  firedHydrated = true;
+  const disk = loadFiredFromDisk();
+  const cutoff = Date.now() - FIRED_TTL_AFTER_OPEN_MS;
+  let trimmed = 0;
+  for (const [key, entry] of Object.entries(disk)) {
+    const bookingOpenMs = entry && typeof entry === 'object' ? entry.bookingOpenMs : null;
+    if (typeof bookingOpenMs !== 'number' || bookingOpenMs < cutoff) {
+      trimmed++;
+      continue;
+    }
+    firedThisCycle.add(key);
+    firedDisk.set(key, entry);
+  }
+  // If we dropped anything, rewrite the file so subsequent reads are quick.
+  if (trimmed > 0) persistFired();
+}
+
+/** Mark a cycle key as fired, in memory and on disk. */
+function recordFired(cycleKey, bookingOpenMs) {
+  ensureFiredHydrated();
+  if (firedThisCycle.has(cycleKey)) return;
+  firedThisCycle.add(cycleKey);
+  firedDisk.set(cycleKey, { bookingOpenMs, firedAt: new Date().toISOString() });
+  persistFired();
+}
+
 // ── Next-trigger calculator (used by /api/auto-preflight-config) ──────────────
 
 function getNextTrigger() {
+  ensureFiredHydrated();
   let soonest = null;
   const jobs = getAllJobs().filter(j => j.is_active === 1);
 
@@ -144,6 +223,11 @@ async function checkAutoPreflights({ isActive = false } = {}) {
   if (running)           return; // prior preflight not finished
   if (isActive)          return; // booking run is live — stay out of the way
 
+  // Task #76 — load durable fired-checkpoint record before the gate check
+  // below, so a checkpoint that fired in a previous server lifetime is not
+  // re-fired inside its 90-second tolerance window after restart.
+  ensureFiredHydrated();
+
   const jobs = getAllJobs().filter(j => j.is_active === 1);
 
   for (const dbJob of jobs) {
@@ -174,7 +258,11 @@ async function checkAutoPreflights({ isActive = false } = {}) {
       if (deviation > trigger.toleranceMs) continue;
 
       // ── Trigger fires ────────────────────────────────────────────────────
-      firedThisCycle.add(cycleKey); // mark before await so parallel ticks skip
+      // Task #76 — record durably *before* the await so a crash mid-preflight
+      // still prevents a re-fire when the server comes back up.  The Set
+      // mutation here is what blocks parallel ticks within this process; the
+      // file write is what blocks re-fires across process restarts.
+      recordFired(cycleKey, bookingOpenMs);
 
       // ── Stage 3: Auth-recovery gate ─────────────────────────────────────
       // Old behaviour: skip the checkpoint entirely if auth looks bad.
