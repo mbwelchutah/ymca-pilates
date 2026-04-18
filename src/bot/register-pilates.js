@@ -1198,11 +1198,18 @@ async function runBookingJob(job, opts = {}) {
         // Did the schedule begin rendering?  Check for class-count widget OR
         // a visible class card with a time.
         const stateAfter = await page.evaluate(() => {
+          // Pick the MAX visible count across all "X classes this week" matches.
+          // The page may have multiple such elements (stale placeholders + the
+          // real one); breaking on the first match would lock us into "0".
           let countText = null;
           for (const el of document.querySelectorAll('*')) {
             if (el.children.length !== 0) continue;
             const m = (el.textContent || '').match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
-            if (m) { countText = parseInt(m[1], 10); break; }
+            if (!m) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            const n = parseInt(m[1], 10);
+            if (countText === null || n > countText) countText = n;
           }
           let cardVisible = false;
           const timeRe = /\b\d{1,2}:\d{2}\s*(AM|PM)\b/i;
@@ -1245,12 +1252,21 @@ async function runBookingJob(job, opts = {}) {
       while (Date.now() < deadline) {
         pollCount++;
         lastProbe = await page.evaluate(() => {
+          // Pick the MAX visible count across all "X classes this week" matches.
+          // The page can hold multiple such elements (e.g. a stale "0 classes
+          // this week" placeholder for an unselected branch in addition to the
+          // real "65 classes this week" total). Breaking on the first match
+          // would lock the probe into 0 even after the real count renders.
           let count = null;
           for (const el of document.querySelectorAll('*')) {
             if (el.children.length !== 0) continue;
             const t = el.textContent || '';
             const m = t.match(/(\d+)\s+class(?:es)?\s+this\s+week/i);
-            if (m) { count = parseInt(m[1], 10); break; }
+            if (!m) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            const n = parseInt(m[1], 10);
+            if (count === null || n > count) count = n;
           }
           let cardVisible = false;
           const timeRe = /\b\d{1,2}:\d{2}\s*(AM|PM)\b/i;
@@ -1269,7 +1285,11 @@ async function runBookingJob(job, opts = {}) {
           return { count, cardVisible, spinnerVisible };
         }).catch(() => ({ count: null, cardVisible: false, spinnerVisible: false }));
         if (lastProbe.spinnerVisible) sawSpinner = true;
-        if (lastProbe.count !== null && lastProbe.count > 0) {
+        // ANY rendered count widget — even "0 classes this week" — means the
+        // Bubble app has finished its initial paint. The "Today" tab may be a
+        // genuinely-empty day (e.g. Good Friday closure); we'll still navigate
+        // to the actual target-date tab afterwards, where classes do exist.
+        if (lastProbe.count !== null) {
           return { ready: true, signal: `count_text=${lastProbe.count}`, elapsedMs: Date.now() - start, polls: pollCount };
         }
         if (lastProbe.cardVisible) {
@@ -1319,6 +1339,51 @@ async function runBookingJob(job, opts = {}) {
         console.log(`[schedule-ready] (after-reload) ready — signal=${scheduleReadiness.signal} after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}).`);
       } else {
         console.log(`[schedule-ready] (after-reload) STILL not ready after ${scheduleReadiness.elapsedMs}ms (polls=${scheduleReadiness.polls}, sawSpinner=${scheduleReadiness.sawSpinner}, lastProbe=${JSON.stringify(scheduleReadiness.lastProbe)}) — flagging _scheduleNotLoaded; caller will bail with schedule_not_loaded after the unfiltered-fallback skip.`);
+        // DIAGNOSTIC: dump everything matching "X classes" plus viewport size and
+        // a body-text excerpt so we can tell whether the schedule simply hasn't
+        // rendered (headless bot sees an empty page) vs the regex is missing it
+        // (page rendered "65 classes this week" but our matcher couldn't find it).
+        try {
+          const diag = await page.evaluate(() => {
+            const matches = [];
+            const re = /(\d+)\s+class(?:es)?\s+this\s+week/i;
+            for (const el of document.querySelectorAll('*')) {
+              const t = (el.textContent || '');
+              if (!re.test(t) || t.length > 200) continue;
+              const r = el.getBoundingClientRect();
+              matches.push({
+                tag: el.tagName,
+                children: el.children.length,
+                text: t.trim().slice(0, 100),
+                visible: r.width > 0 && r.height > 0,
+                rect: { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) },
+              });
+              if (matches.length >= 8) break;
+            }
+            const bodyTxt = (document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
+            return {
+              viewport: { w: window.innerWidth, h: window.innerHeight },
+              url: location.href,
+              title: document.title,
+              selectCount: document.querySelectorAll('select').length,
+              matches,
+              bodyTextLen: bodyTxt.length,
+              bodyTextHead: bodyTxt.slice(0, 600),
+            };
+          });
+          console.log('[schedule-ready][diag]', JSON.stringify(diag, null, 2));
+          // Save a screenshot of what the headless bot actually sees so we can
+          // visually diff it against the anonymous public view.
+          try {
+            const path = `/tmp/schedule-headless-${Date.now()}.png`;
+            await page.screenshot({ path, fullPage: true });
+            console.log(`[schedule-ready][diag] screenshot saved → ${path}`);
+          } catch (se) {
+            console.log(`[schedule-ready][diag] screenshot failed: ${se.message}`);
+          }
+        } catch (de) {
+          console.log(`[schedule-ready][diag] threw: ${de.message}`);
+        }
         _scheduleNotLoaded = true;
       }
     }
