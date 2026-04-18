@@ -29,12 +29,16 @@
 
 'use strict';
 
+const fs   = require('fs');
+const path = require('path');
+
 const { getAllJobs }                           = require('../db/jobs');
 const { getPhase, isPastClass }                = require('./_booking-window-shim');
 const { loadHealth }                           = require('./connection-health-store');
 const {
   shouldRunCheapCheck,
   shouldRunDeepCheck,
+  MIN_DEEP_REPROBE_MS,
 }                                               = require('./cadence-policy');
 const { runCheapCheck }                        = require('./cheap-check');
 const { runDeepPreflightCheck }                = require('./deep-check');
@@ -43,6 +47,46 @@ const { runDeepPreflightCheck }                = require('./deep-check');
 // long-running deep check never blocks a fast cheap ping.
 let _cheapInFlight = null;
 let _deepInFlight  = null;
+
+// ─── Cross-engine dedup against auto-preflight (Task #94) ───────────────────
+//
+// The pre-existing auto-preflight scheduler (src/scheduler/auto-preflight.js)
+// also runs deep preflights at coarse horizons (T-6h / T-3h / T-1h) plus the
+// fine-grained T-30/10/2 checkpoints.  Our cadence-policy already defers the
+// <30m window via getDeepCheckInterval() returning null, but the 6h/3h/1h
+// horizons overlap with our FAR/MID/NEAR intervals.  Both engines call the
+// same preflight (runBookingJob with preflightOnly:true), and per-engine
+// single-flight guards do not see each other.
+//
+// To prevent both engines launching a browser within minutes of each other,
+// we perform a ONE-DIRECTIONAL skip here: if auto-preflight has fired any
+// trigger within the past MIN_DEEP_REPROBE_MS (5 min), we skip our own deep
+// launch.  Auto-preflight remains the authoritative T-X owner; this engine
+// gracefully steps aside.
+//
+// Implemented as a file read of data/auto-preflight-fired.json (the durable
+// record auto-preflight already maintains for restart-safety).  We do not
+// modify auto-preflight in any way.
+const PREFLIGHT_FIRED_FILE = path.resolve(__dirname, '../data/auto-preflight-fired.json');
+
+function _getLastPreflightFiredAt() {
+  try {
+    if (!fs.existsSync(PREFLIGHT_FIRED_FILE)) return null;
+    const raw = JSON.parse(fs.readFileSync(PREFLIGHT_FIRED_FILE, 'utf8'));
+    if (!raw || typeof raw !== 'object') return null;
+    let maxMs = null;
+    for (const entry of Object.values(raw)) {
+      const firedAt = entry && entry.firedAt;
+      if (typeof firedAt !== 'string') continue;
+      const ms = Date.parse(firedAt);
+      if (!Number.isFinite(ms)) continue;
+      if (maxMs == null || ms > maxMs) maxMs = ms;
+    }
+    return maxMs;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Cadence driver: soonest upcoming active job ────────────────────────────
 
@@ -142,6 +186,15 @@ async function runAutoChecksTick({ now = Date.now() } = {}) {
     deepDecision = msUntilOpen != null && msUntilOpen < 30 * 60 * 1000
       ? 'skipped_window'
       : 'skipped_cadence';
+  } else if ((() => {
+    // Task #94 — cross-engine dedup against auto-preflight.  If the prior
+    // engine fired any checkpoint within the MIN_DEEP_REPROBE_MS window we
+    // assume that preflight covered the same verification surface and skip
+    // our own browser launch.
+    const lastPreflight = _getLastPreflightFiredAt();
+    return lastPreflight != null && (now - lastPreflight) < MIN_DEEP_REPROBE_MS;
+  })()) {
+    deepDecision = 'skipped_recent_preflight';
   } else {
     deepDecision = 'launched';
     const jobId = driver.job.id;
