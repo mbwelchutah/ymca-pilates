@@ -11,6 +11,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 // ── State file ────────────────────────────────────────────────────────────────
 const DATA_DIR        = path.resolve(__dirname, '../data');
 const STATE_FILE_PATH = path.join(DATA_DIR, 'sniper-state.json');
@@ -268,8 +270,7 @@ function emitSuccess(state, confirmation = null) {
 
 function saveState(state) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
+    writeJsonAtomic(STATE_FILE_PATH, state);
   } catch (e) {
     console.warn('[sniper-readiness] saveState failed:', e.message);
   }

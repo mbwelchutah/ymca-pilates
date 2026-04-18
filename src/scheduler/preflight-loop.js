@@ -28,6 +28,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const { getAllJobs }       = require('../db/jobs');
 const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
@@ -339,8 +341,7 @@ function loadLoopState() {
 
 function saveLoopState(record) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(record, null, 2));
+    writeJsonAtomic(STATE_FILE, record);
   } catch (e) {
     console.warn('[preflight-loop] saveLoopState failed:', e.message);
   }

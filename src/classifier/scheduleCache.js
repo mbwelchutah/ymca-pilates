@@ -32,6 +32,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const CACHE_FILE  = path.resolve(__dirname, '../data/fw-schedule-cache.json');
 const MAX_AGE_MS  = 4 * 60 * 60 * 1000;  // 4 hours — stale threshold (unchanged)
 
@@ -153,7 +155,7 @@ function saveEntries(entries) {
   if (!Array.isArray(entries) || entries.length === 0) return;
   try {
     const payload = { savedAt: new Date().toISOString(), entries };
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(payload, null, 2));
+    writeJsonAtomic(CACHE_FILE, payload);
   } catch (e) {
     console.warn('[schedule-cache] save failed:', e.message);
   }

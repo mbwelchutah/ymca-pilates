@@ -57,6 +57,7 @@ const HOST = '0.0.0.0';
 // ---------------------------------------------------------------------------
 const fsStatic   = require('fs');
 const pathStatic = require('path');
+const { writeJsonAtomic } = require('../util/atomic-json');
 const DIST_DIR   = pathStatic.join(__dirname, '../../dist');
 const DIST_INDEX = pathStatic.join(DIST_DIR, 'index.html');
 const SERVE_REACT = fsStatic.existsSync(DIST_INDEX);
@@ -4616,15 +4617,15 @@ const server = http.createServer(async (req, res) => {
       const dataDir = pathStatic.join(__dirname, '../data');
 
       // ── session-status.json ───────────────────────────────────────────────
-      fsStatic.writeFileSync(
+      writeJsonAtomic(
         pathStatic.join(dataDir, 'session-status.json'),
-        JSON.stringify({ valid: false, checkedAt: now, source: 'clear', detail: 'Session cleared by user' }, null, 2)
+        { valid: false, checkedAt: now, source: 'clear', detail: 'Session cleared by user' }
       );
 
       // ── familyworks-session.json ──────────────────────────────────────────
-      fsStatic.writeFileSync(
+      writeJsonAtomic(
         pathStatic.join(dataDir, 'familyworks-session.json'),
-        JSON.stringify({ ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: now, source: 'clear', detail: 'Session cleared by user' }, null, 2)
+        { ready: false, status: 'FAMILYWORKS_SESSION_MISSING', checkedAt: now, source: 'clear', detail: 'Session cleared by user' }
       );
 
       // ── sniper-state.json — reset bundle.session only, keep everything else ─
@@ -4635,7 +4636,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!sniper.bundle) sniper.bundle = {};
       sniper.bundle.session = 'SESSION_UNKNOWN';
-      fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+      writeJsonAtomic(sniperPath, sniper);
 
       const { clearAuthState } = require('../bot/auth-state');
       clearAuthState();
@@ -5664,8 +5665,7 @@ const server = http.createServer(async (req, res) => {
     // Write a flag so GET /api/failures skips the legacy screenshot fallback until new DB
     // failures are recorded — ensures "Clear history" truly produces zero displayed failures.
     try {
-      const fsC = require('fs');
-      fsC.writeFileSync('failures-cleared.json', JSON.stringify({ clearedAt: new Date().toISOString() }));
+      writeJsonAtomic('failures-cleared.json', { clearedAt: new Date().toISOString() });
     } catch (e) {
       console.warn('[failures] Could not write failures-cleared.json:', e.message);
     }
@@ -6058,7 +6058,7 @@ setTimeout(async () => {
           }
           if (changed) {
             sniper.updatedAt = new Date().toISOString();
-            fsStatic.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+            writeJsonAtomic(sniperPath, sniper);
             console.log('[auth-state] Startup ping: cleared stale auth-block from sniper state.');
           }
         }

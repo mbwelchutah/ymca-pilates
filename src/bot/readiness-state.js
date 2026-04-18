@@ -28,6 +28,7 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic }       = require('../util/atomic-json');
 const { loadState }             = require('./sniper-readiness');
 // Stage 6 (auth-truth-unification): session and schedule truth now come from
 // getCanonicalAuthTruth() (auth-state.json) instead of the legacy files
@@ -54,8 +55,7 @@ function loadReadiness() {
 
 function saveReadiness(record) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(record, null, 2));
+    writeJsonAtomic(STATE_FILE, record);
   } catch (e) {
     console.warn('[readiness-state] saveReadiness failed:', e.message);
   }

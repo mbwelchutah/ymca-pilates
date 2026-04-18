@@ -8,6 +8,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { writeJsonAtomic }                     = require('../util/atomic-json');
 const { createSession }                       = require('./daxko-session');
 const { saveCookies }                         = require('./session-ping');
 const { updateAuthState }                     = require('./auth-state');
@@ -18,8 +19,7 @@ const STATUS_FILE = path.join(DATA_DIR, 'session-status.json');
 
 function saveStatus(status) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2));
+    writeJsonAtomic(STATUS_FILE, status);
   } catch (e) {
     console.warn('[session-check] saveStatus failed:', e.message);
   }

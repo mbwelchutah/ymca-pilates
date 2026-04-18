@@ -11,6 +11,7 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
 const { getAllJobs }       = require('../db/jobs');
 const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
@@ -66,8 +67,7 @@ function loadSettings() {
 
 function saveSettings(settings) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    writeJsonAtomic(SETTINGS_FILE, settings);
   } catch (e) { console.warn('[auto-preflight] saveSettings failed:', e.message); }
 }
 
@@ -81,11 +81,10 @@ function loadLog() {
 
 function appendLog(entry) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     let entries = loadLog();
     entries.push(entry);
     if (entries.length > 50) entries = entries.slice(-50); // keep last 50
-    fs.writeFileSync(LOG_FILE, JSON.stringify(entries, null, 2));
+    writeJsonAtomic(LOG_FILE, entries);
   } catch (e) { console.warn('[auto-preflight] appendLog failed:', e.message); }
 }
 

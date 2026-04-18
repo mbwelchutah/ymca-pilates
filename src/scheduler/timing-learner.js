@@ -46,6 +46,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const DATA_DIR     = path.resolve(__dirname, '../data');
 const LEARNER_FILE = path.join(DATA_DIR, 'timing-learner.json');
 
@@ -73,8 +75,7 @@ function loadData() {
 
 function saveData(data) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(LEARNER_FILE, JSON.stringify(data, null, 2));
+    writeJsonAtomic(LEARNER_FILE, data);
   } catch (e) {
     console.warn('[timing-learner] saveData failed:', e.message);
   }

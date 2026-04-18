@@ -20,6 +20,7 @@ const { updateAuthState } = require('./auth-state');
 const { saveCookies, pingSessionHttp } = require('./session-ping');
 const replayStore = require('./replay-store');
 const { mergeAndSaveEntries } = require('../classifier/scheduleCache');
+const { writeJsonAtomic } = require('../util/atomic-json');
 
 // ── Session-file helpers ──────────────────────────────────────────────────────
 // Write to familyworks-session.json from the booking/preflight pipeline so that
@@ -28,8 +29,7 @@ const _DATA_DIR = path.resolve(__dirname, '../data');
 const _FW_FILE  = path.join(_DATA_DIR, 'familyworks-session.json');
 function _saveFwStatus(status) {
   try {
-    if (!fs.existsSync(_DATA_DIR)) fs.mkdirSync(_DATA_DIR, { recursive: true });
-    fs.writeFileSync(_FW_FILE, JSON.stringify(status, null, 2));
+    writeJsonAtomic(_FW_FILE, status);
   } catch (e) {
     console.warn('[register-pilates] saveFwStatus failed:', e.message);
   }

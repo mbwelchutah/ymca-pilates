@@ -31,6 +31,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const ESC_FILE   = path.join(DATA_DIR, 'escalation.json');
 
@@ -45,8 +47,7 @@ function loadEscalations() {
 
 function saveEscalations(map) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(ESC_FILE, JSON.stringify(map, null, 2));
+    writeJsonAtomic(ESC_FILE, map);
   } catch (e) {
     console.warn('[escalation] saveEscalations failed:', e.message);
   }

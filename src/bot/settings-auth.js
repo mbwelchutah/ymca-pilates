@@ -15,6 +15,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('../util/atomic-json');
 const { createSession }  = require('./daxko-session');
 const { saveCookies, pingSessionHttp } = require('./session-ping');
 const { updateAuthState } = require('./auth-state');
@@ -29,8 +30,7 @@ const SCHEDULE_URL = 'https://my.familyworks.app/schedulesembed/eugeneymca?searc
 
 function saveDaxkoStatus(status) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DAXKO_FILE, JSON.stringify(status, null, 2));
+    writeJsonAtomic(DAXKO_FILE, status);
   } catch (e) {
     console.warn('[settings-auth] saveDaxkoStatus failed:', e.message);
   }
@@ -38,8 +38,7 @@ function saveDaxkoStatus(status) {
 
 function saveFwStatus(status) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(FW_FILE, JSON.stringify(status, null, 2));
+    writeJsonAtomic(FW_FILE, status);
   } catch (e) {
     console.warn('[settings-session] saveFwStatus failed:', e.message);
   }

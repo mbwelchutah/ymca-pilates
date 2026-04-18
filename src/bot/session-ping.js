@@ -12,6 +12,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('../util/atomic-json');
 const { updateAuthState } = require('./auth-state');
 
 const DATA_DIR     = path.resolve(__dirname, '../data');
@@ -35,9 +36,8 @@ const FW_PING_URL = 'https://my.familyworks.app/api/1.1/obj/user';
 function saveCookies(cookies) {
   try {
     if (!Array.isArray(cookies) || cookies.length === 0) return;
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     const payload = { savedAt: new Date().toISOString(), cookies };
-    fs.writeFileSync(COOKIES_FILE, JSON.stringify(payload, null, 2));
+    writeJsonAtomic(COOKIES_FILE, payload);
     console.log(`[session-ping] Saved ${cookies.length} cookies for Tier-2 ping.`);
   } catch (e) {
     console.warn('[session-ping] saveCookies failed:', e.message);
@@ -205,11 +205,11 @@ function refreshStatusTimestamps() {
   const checkedAt = new Date().toISOString();
   try {
     const existing = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-    fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...existing, checkedAt, source: 'keepalive-tier2' }, null, 2));
+    writeJsonAtomic(STATUS_FILE, { ...existing, checkedAt, source: 'keepalive-tier2' });
   } catch { /* non-fatal */ }
   try {
     const existing = JSON.parse(fs.readFileSync(FW_FILE, 'utf8'));
-    fs.writeFileSync(FW_FILE, JSON.stringify({ ...existing, checkedAt, source: 'keepalive-tier2' }, null, 2));
+    writeJsonAtomic(FW_FILE, { ...existing, checkedAt, source: 'keepalive-tier2' });
   } catch { /* non-fatal */ }
 }
 

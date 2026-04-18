@@ -22,6 +22,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const DATA_DIR  = path.resolve(__dirname, '../data/replays');
 const MAX_RUNS  = 10;
 
@@ -55,7 +57,7 @@ function _loadIndex(jobId) {
 
 function _saveIndex(jobId, index) {
   try {
-    fs.writeFileSync(_indexFile(jobId), JSON.stringify(index, null, 2));
+    writeJsonAtomic(_indexFile(jobId), index);
   } catch (e) {
     console.warn('[replay-store] index write failed:', e.message);
   }
@@ -90,10 +92,8 @@ function finishRun(jobId, outcome) {
   summary.capturedAt = new Date().toISOString();
 
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
     // 1. Write the individual run file
-    fs.writeFileSync(_runFile(jobId, summary.runId), JSON.stringify(summary, null, 2));
+    writeJsonAtomic(_runFile(jobId, summary.runId), summary);
 
     // 2. Update the per-job index (newest first, capped at MAX_RUNS)
     const index = _loadIndex(jobId);
@@ -116,7 +116,7 @@ function finishRun(jobId, outcome) {
 
     // 3. Keep the legacy single-file alias so old in-memory reads still work
     const legacyFile = path.join(DATA_DIR, `replay-${jobId}.json`);
-    fs.writeFileSync(legacyFile, JSON.stringify(summary, null, 2));
+    writeJsonAtomic(legacyFile, summary);
 
   } catch (e) {
     console.warn('[replay-store] persist failed:', e.message);

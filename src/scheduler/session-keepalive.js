@@ -12,6 +12,7 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic }             = require('../util/atomic-json');
 const { runSessionCheck }             = require('../bot/session-check');
 const { recordFailure }               = require('../db/failures');
 const { getAllJobs }                   = require('../db/jobs');
@@ -53,8 +54,7 @@ function loadSettings() {
 
 function saveSettings(settings) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    writeJsonAtomic(SETTINGS_FILE, settings);
   } catch (e) { console.warn('[session-keepalive] saveSettings failed:', e.message); }
 }
 
@@ -68,11 +68,10 @@ function loadLog() {
 
 function appendLog(entry) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     let entries = loadLog();
     entries.push(entry);
     if (entries.length > MAX_LOG_ENTRIES) entries = entries.slice(-MAX_LOG_ENTRIES);
-    fs.writeFileSync(LOG_FILE, JSON.stringify(entries, null, 2));
+    writeJsonAtomic(LOG_FILE, entries);
   } catch (e) { console.warn('[session-keepalive] appendLog failed:', e.message); }
 }
 
@@ -243,7 +242,7 @@ async function checkSessionKeepalive({ isActive = false } = {}) {
         }
         if (changed) {
           sniper.updatedAt = new Date().toISOString();
-          fs.writeFileSync(sniperPath, JSON.stringify(sniper, null, 2));
+          writeJsonAtomic(sniperPath, sniper);
           console.log('[session-keepalive] Tier 2: cleared stale auth-block from sniper state (session confirmed via HTTP ping).');
         }
       }

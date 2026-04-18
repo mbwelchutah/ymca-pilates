@@ -46,6 +46,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { writeJsonAtomic } = require('../util/atomic-json');
+
 const DATA_DIR   = path.resolve(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'auth-state.json');
 
@@ -76,8 +78,7 @@ function _read() {
 
 function _write(state) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    writeJsonAtomic(STATE_FILE, state);
   } catch (e) {
     console.warn('[auth-state] write failed:', e.message);
   }
