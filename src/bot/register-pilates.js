@@ -664,6 +664,15 @@ async function runBookingJob(job, opts = {}) {
   // 'not_found' can be re-classified when they are not trustworthy.
   let filtersFailed = false;
 
+  // ── Self-Healing / Safe Recovery Pass — Stage 3 ─────────────────────────────
+  // Bounded counter for the page-reset healing layer. The heal layer is allowed
+  // to fire at most ONCE per run for each unhealthy class (filters_failed,
+  // transient_empty, stale schedule shell). Healing actions are reload + filter
+  // re-application + bounded settle — NEVER a Register click. If healing does
+  // not restore trust, the existing truthful failure classification is preserved
+  // (we just fall through to the original failure path unchanged).
+  let _pageHealAttempts = 0;
+
   // ── Timing capture — filled in during the sniper poll and action phases ──────
   // Written to _state.timing at the end of the run so it persists to the UI.
   // Stage 2 (timing markers): every major phase is now timestamped so metrics
@@ -1558,7 +1567,7 @@ async function runBookingJob(job, opts = {}) {
     // (Branches selection happens earlier, before the readiness probe — see
     // the [branches] block above.  Re-applying here would be a no-op and could
     // burn time on a redundant Bubble.io re-render.)
-    const categoryApplied = CATEGORY_IDX >= 0
+    let categoryApplied = CATEGORY_IDX >= 0
       ? await applyFilterBySelectIndex(CATEGORY_IDX, 'Yoga/Pilates', 'Category')
       : false;
 
@@ -1582,7 +1591,7 @@ async function runBookingJob(job, opts = {}) {
         }
       }
     }
-    const instructorApplied = (instructorForFilter && INSTRUCTOR_IDX >= 0)
+    let instructorApplied = (instructorForFilter && INSTRUCTOR_IDX >= 0)
       ? await applyFilterBySelectIndex(INSTRUCTOR_IDX, instructorForFilter, 'Instructor')
       : false;
 
@@ -1600,6 +1609,55 @@ async function runBookingJob(job, opts = {}) {
     //   (b) filter_apply_failed — schedule had cards, but native selectOption
     //       didn't change the count. Existing behaviour: continue with an
     //       unfiltered scan.
+    if (!categoryApplied && !instructorApplied) {
+      // ── Self-Healing / Safe Recovery Pass — Stage 3: page-reset heal ────────
+      // Both filters reported no effect. Before falling through to the existing
+      // truthful failure path (filter_apply_failed → filtersFailed=true → no
+      // unfiltered booking), attempt ONE bounded page-reset heal:
+      //   1. page.reload()  — clear any partially-applied Bubble.io state
+      //   2. waitForScheduleReady() — bounded readiness probe (already exists)
+      //   3. re-select Branches → "Eugene Y" (reload reverts it to blank)
+      //   4. re-apply Category and Instructor filters via the same closure
+      // If at least one filter applies after heal, we proceed normally with the
+      // restored state. If both still fail, we fall through to the original
+      // failure handling unchanged — no truthful classification is lost.
+      // Bounded: at most ONE attempt per run (_pageHealAttempts counter).
+      // Safe:    no Register click in this block, no identity check weakened.
+      if (_pageHealAttempts === 0 && !_scheduleNotLoaded) {
+        _pageHealAttempts++;
+        console.log('🩹 [page-heal/stage-3] Both filters failed — attempting one bounded page-reset heal (reload + re-apply Eugene Y + re-apply filters)…');
+        const healStartedAt = Date.now();
+        try {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+          await waitForScheduleReady();
+          if (BRANCHES_IDX >= 0) {
+            await page.locator('select')
+              .nth(BRANCHES_IDX)
+              .selectOption('Eugene Y', { timeout: 3000, force: true })
+              .catch(e => console.log(`🩹 [page-heal] branches re-select threw: ${e.message}`));
+            await page.waitForTimeout(400);
+          }
+          const healCategoryApplied = CATEGORY_IDX >= 0
+            ? await applyFilterBySelectIndex(CATEGORY_IDX, 'Yoga/Pilates', 'Category')
+            : false;
+          const healInstructorApplied = (instructorForFilter && INSTRUCTOR_IDX >= 0)
+            ? await applyFilterBySelectIndex(INSTRUCTOR_IDX, instructorForFilter, 'Instructor')
+            : false;
+          categoryApplied   = healCategoryApplied;
+          instructorApplied = healInstructorApplied;
+          const elapsedMs = Date.now() - healStartedAt;
+          if (categoryApplied || instructorApplied) {
+            console.log(`🩹 [page-heal/stage-3] ✅ Trust restored after ${elapsedMs} ms — categoryApplied=${categoryApplied}, instructorApplied=${instructorApplied}.`);
+          } else {
+            console.log(`🩹 [page-heal/stage-3] ❌ Heal did not restore filters after ${elapsedMs} ms — falling through to truthful failure classification.`);
+          }
+        } catch (he) {
+          console.log(`🩹 [page-heal/stage-3] ❌ Heal threw: ${he.message} — falling through to truthful failure classification.`);
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────
+    }
+
     if (!categoryApplied && !instructorApplied) {
       if (_scheduleNotLoaded) {
         console.log('⚠️ Schedule not loaded after centralized 10s wait + one reload retry (Task #62) — bailing with schedule_not_loaded (skipping unfiltered fallback to avoid wrong-card click).');
