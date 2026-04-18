@@ -1,0 +1,412 @@
+You are implementing a SELF-HEALING / SAFE RECOVERY PASS for the YMCA Booker app.
+
+PRIMARY GOAL
+
+Make the bot recover safely when the FamilyWorks / Bubble.io page is unstable, mis-rendered, stale, or incorrectly filtered — WITHOUT increasing the chance of booking the wrong class.
+
+This pass is specifically about:
+- filter failures
+- transient "No Classes" renders
+- stale / detached DOM
+- wrong class modal opens
+- liveTruth says OPEN but the DOM target is not trustworthy
+
+CRITICAL RULES
+
+- DO NOT weaken class identity verification
+- DO NOT weaken modal verification
+- DO NOT let liveTruth OPEN bypass DOM trust
+- DO NOT create any new path that can click Register on an untrusted class
+- DO NOT redesign the booking architecture
+- DO NOT modify unrelated UI
+- DO NOT touch scheduler timing unless explicitly required by a stage
+
+All recovery must be:
+- bounded
+- explainable
+- reversible
+- safer than the failure it tries to correct
+
+WORK IN STAGES
+
+AFTER EACH STAGE:
+1. summarize exactly what changed
+2. explain what remains
+3. STOP
+4. WAIT for "continue"
+
+If any proposed change could increase wrong-class booking risk:
+STOP and explain before proceeding.
+
+--------------------------------------------------
+STAGE 1 — AUDIT ALL EXISTING RECOVERY / FALLBACK PATHS
+--------------------------------------------------
+
+READ ONLY. NO CODE CHANGES.
+
+Trace every current fallback or recovery path for these failure types:
+
+1. category filter failed
+2. instructor filter failed
+3. schedule rendered 0 rows after filter
+4. no matching class card found
+5. stale / detached locator
+6. wrong modal opened
+7. modal has no action buttons
+8. liveTruth says OPEN while DOM trust is weak
+9. unfiltered scan runs after filter failure
+
+For each one, report:
+- exact file + function
+- what the code currently does
+- whether the behavior is bounded
+- whether it can still proceed toward a real booking attempt
+- what evidence is available at that point
+- where the smallest safe recovery insertion point is
+
+OUTPUT:
+- concise audit table
+- identify the top 3 most dangerous trust gaps
+- identify the top 3 easiest safe recovery wins
+
+DO NOT CHANGE CODE
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 2 — DEFINE TRUST + PAGE-HEALTH STATE (NO BEHAVIOR CHANGE)
+--------------------------------------------------
+
+Goal:
+Make the bot explicitly track whether the page is trustworthy enough to continue toward booking.
+
+Create a small, isolated model only. No behavior changes yet.
+
+Define:
+
+DomTrust:
+- trusted
+- unknown
+- untrusted
+
+PageHealth:
+- healthy
+- filters_failed
+- transient_empty
+- stale_dom
+- wrong_modal
+- action_unavailable
+- auth_blocked
+
+Map existing evidence into these states, for example:
+
+trusted:
+- exact row found with strong identity evidence
+- modal verified with correct time/class
+- correct title/time/instructor confirmed
+
+untrusted:
+- both filters failed and no exact target proof exists
+- wrong modal opened
+- stale/detached locator after rerender
+- empty-after-filter remained unresolved
+- scan is clearly running on wrong/unfiltered content without later proof
+
+unknown:
+- no strong positive proof yet, but not clearly broken
+
+Do NOT wire this into control flow yet.
+Do NOT alter status logic yet.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 3 — SAFE RECOVERY LAYER 1: PAGE RESET
+--------------------------------------------------
+
+Goal:
+When the page is clearly unhealthy, do one bounded page-healing attempt before giving up.
+
+Allowed healing actions:
+- reload the current schedule page
+- reset dropdown filters to safe defaults / All
+- re-select the correct day tab
+- wait for a bounded render settle
+- rerun row discovery
+
+Not allowed:
+- login-flow redesign
+- force-click booking action
+- bypassing identity checks
+- repeated looping resets
+
+Trigger this layer only for clearly unhealthy states such as:
+- filters_failed
+- transient_empty
+- stale schedule shell
+- obvious Bubble render collapse
+
+Requirements:
+- max 1 page-reset healing attempt per run unless stricter existing logic already exists
+- log when healing starts
+- log whether healing restored trust
+- if healing fails, preserve truthful classification
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 4 — SAFE RECOVERY LAYER 2: STALE LOCATOR / DETACHED DOM
+--------------------------------------------------
+
+Goal:
+When a target row becomes stale or detached, recover with a fresh target instead of continuing on a dead locator.
+
+Requirements:
+1. If the card/locator detaches:
+   - classify pageHealth = stale_dom
+   - do NOT keep trying to click the stale reference
+2. Re-run discovery once to obtain a fresh best candidate
+3. Rebuild the locator from fresh evidence
+4. Continue only if trust is restored
+5. If fresh targeting still fails:
+   - stop
+   - classify truthfully
+   - do NOT continue toward booking
+
+Keep this bounded:
+- one fresh-retarget attempt only unless existing code is already stricter
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 5 — SAFE RECOVERY LAYER 3: WRONG MODAL CONTAINMENT
+--------------------------------------------------
+
+Goal:
+If the wrong class modal opens, recover safely and prevent wrong booking.
+
+Requirements:
+1. If modal verification fails (wrong time / wrong class):
+   - classify pageHealth = wrong_modal
+   - classify domTrust = untrusted
+   - close the modal cleanly
+   - do NOT click Register
+2. Allow one bounded re-target attempt:
+   - rerun discovery
+   - choose a fresh target
+   - reopen modal
+   - verify again
+3. If the second modal is still wrong:
+   - stop
+   - return a safe failure
+   - keep diagnostics and screenshot
+4. Wrong-modal case must never proceed into booking action
+
+Do NOT create a candidate loop.
+Do NOT weaken verification.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 6 — FILTER FAILURE CONTAINMENT
+--------------------------------------------------
+
+Goal:
+If filters fail, prevent the bot from becoming overconfident about what it sees.
+
+Rules:
+1. If both filters failed:
+   - domTrust becomes at most unknown unless later restored by strong identity proof
+2. Unfiltered scanning may still be used for recovery / verification
+3. But unfiltered scanning alone must NOT authorize a real booking action
+4. Trust may only be restored by strong evidence such as:
+   - exact row with correct time
+   - verified correct modal
+   - correct title/time/instructor alignment
+
+If trust is not restored:
+- classify as "could not verify class presence"
+- do NOT book
+- do NOT report true class absence unless the page was trustworthy
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 7 — LIVE-TRUTH SAFETY GATE
+--------------------------------------------------
+
+Goal:
+liveTruth OPEN may accelerate checking, but must not cause a real booking attempt unless DOM trust is trusted.
+
+Requirements:
+- liveTruth may still:
+  - improve status display
+  - increase urgency
+  - trigger faster verification
+- liveTruth may NOT:
+  - trigger immediate booking fire
+  - permit Register click
+  unless domTrust === trusted
+
+Add the smallest safe gate at the real booking trigger boundary.
+
+If liveTruth says OPEN but domTrust is unknown/untrusted:
+- keep verifying
+- retry safely
+- use accelerated verification if appropriate
+- do NOT attempt real booking
+
+Preserve all existing fallback behavior.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 8 — SAFE FAILURE CLASSIFICATION
+--------------------------------------------------
+
+Goal:
+Make failures truthful when self-healing did not restore trust.
+
+Add or improve classifications such as:
+- filters failed — target not trusted
+- transient empty schedule unresolved
+- wrong class modal opened
+- stale DOM prevented safe targeting
+- could not verify class presence
+
+Requirements:
+- do NOT collapse these into plain class_not_found
+- do NOT say the class is absent if page trust was never restored
+- preserve screenshots, last_error_message, diagnostics, and run summary
+- wording should help the operator understand what happened
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 9 — TOOLS VISIBILITY (COMPACT)
+--------------------------------------------------
+
+Goal:
+Show self-healing activity clearly but compactly.
+
+Add compact visibility for:
+- whether self-heal ran this run
+- which layer ran:
+  - page reset
+  - stale DOM refresh
+  - wrong-modal recovery
+  - filter containment
+- whether trust was restored
+- whether booking was blocked because DOM was untrusted
+- last safe failure reason
+
+Requirements:
+- Tools only
+- compact, no debug wall
+- do NOT redesign the page
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 10 — VERIFY AGAINST REAL FAILURE SHAPES
+--------------------------------------------------
+
+Use the actual observed failures:
+
+Case A:
+- Flow Yoga targeted
+- filters failed
+- page showed wrong/unfiltered content
+- wrong modal opened for Rise & Align Yoga
+- booking must NOT proceed
+
+Case B:
+- schedule rendered 0 rows after filter
+- bounded retry happens
+- page remains unstable
+- class absence must NOT be overstated
+
+Case C:
+- stale / detached card after Bubble rerender
+- bot must re-target fresh or stop safely
+
+Case D:
+- liveTruth says OPEN
+- DOM trust is not restored
+- immediate booking must NOT fire
+
+Verify:
+1. healing attempts are bounded
+2. wrong-modal case never clicks Register
+3. untrusted DOM blocks real booking
+4. trust is restored only by strong evidence
+5. false class_not_found is reduced
+6. no infinite retry loops appear
+
+Return exact verification results.
+
+END WITH:
+Stage complete. Say "continue" to proceed.
+
+--------------------------------------------------
+STAGE 11 — FINAL QA / NO-DRIFT CLOSEOUT
+--------------------------------------------------
+
+Goal:
+Confirm the self-healing pass improved safety without drifting into unrelated booking behavior.
+
+Verify:
+- booking executor unchanged
+- modal verification still strict
+- liveTruth still cannot bypass trust
+- no new uncontrolled retries
+- no hidden booking path was introduced
+- known good cases (e.g. Gentle Yoga pre-open / trusted modal) still behave correctly
+
+Return:
+1. PASS / PASS WITH CAUTION / HOLD
+2. exact files changed
+3. exact healing layers added
+4. remaining risks, if any
+
+STOP after reporting.
+No further code changes unless a critical correctness issue is found.
+
+--------------------------------------------------
+FINAL SUCCESS CRITERIA
+--------------------------------------------------
+
+After this pass:
+
+- bad page states can be healed or safely contained
+- wrong modal opens cannot drift into booking
+- filter-failed / untrusted DOM cannot produce a wrong booking
+- liveTruth OPEN cannot bypass trust
+- failures become more truthful
+- Tools shows recovery activity compactly
+- wrong-class booking becomes structurally much harder
+
+The result should feel:
+- safer
+- calmer
+- more trustworthy
+- less whack-a-mole
+
+It should NOT feel like:
+- more aggressive
+- more magical
+- more willing to click the wrong thing
+- a rewrite of the bot
+
+END EACH STAGE WITH EXACTLY:
+
+Stage complete. Say "continue" to proceed.
