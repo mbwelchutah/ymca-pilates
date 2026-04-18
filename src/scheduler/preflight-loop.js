@@ -216,6 +216,15 @@ function evaluateImmediateTriggerGate({
   bookingActive,
   authLocked,
   dryRun,
+  domTrustVerified = false,   // ── Self-Healing Pass — Stage 7 ───────────────
+                              // Caller MUST set this to true only when a recent
+                              // preflight cycle produced positive DOM evidence
+                              // (modal-verified booking-window OPEN, etc.). At
+                              // the current immediate-fire call site, by
+                              // construction we just exhausted maxBurstRuns
+                              // preflights without success → domTrustVerified
+                              // is false, so liveTruth alone cannot fire booking.
+                              // Default false = fail-safe.
   now = Date.now(),
 }) {
   // Enumerate blockers in priority order — the first matched reason wins,
@@ -223,6 +232,23 @@ function evaluateImmediateTriggerGate({
   if (!transitionConsumed) {
     return { allow: false, reason: 'no fresh open transition (consume returned false)' };
   }
+  // ── Self-Healing / Safe Recovery Pass — Stage 7: liveTruth safety gate ────
+  // liveTruth says OPEN, but OPEN truth alone is insufficient to authorize a
+  // real booking fire. Stage 2's domTrust model requires strong DOM evidence
+  // (verified modal, exact-row identity, etc.) for trust = TRUSTED. At the
+  // immediate-fire boundary we have no such evidence — preflight bursts just
+  // exhausted without flipping to "ready". Block immediate fire here; the
+  // caller's fall-through to scheduleBurst() will run a fresh DOM-verifying
+  // preflight at the accelerated 5 s interval, and that path's existing
+  // burst:ready immediate-fire branch already requires preflight success
+  // (= verified DOM trust) before firing booking.
+  if (!domTrustVerified) {
+    return {
+      allow: false,
+      reason: 'liveTruth OPEN but DOM trust unverified — falling through to accelerated preflight burst (will fire on next preflight success)',
+    };
+  }
+  // ──────────────────────────────────────────────────────────────────────────
   if (phase !== 'sniper' && phase !== 'late' && phase !== 'armed') {
     return { allow: false, reason: `phase "${phase}" not eligible (need sniper/late/armed)` };
   }
@@ -728,6 +754,12 @@ async function runBurstCheck(dbJob) {
             bookingActive:      isBookingActive(),
             authLocked:         isLocked(),
             dryRun:             getDryRun(),
+            // Stage 7: at this boundary we just exhausted MAX_BURST_RUNS
+            // preflights without a "ready" verdict — by construction we have
+            // NO positive DOM-trust evidence. liveTruth OPEN alone must not
+            // authorize a real booking fire; the gate will block and the
+            // accelerated burst below will run a fresh DOM-verifying preflight.
+            domTrustVerified:   false,
           });
 
           if (_gate.allow) {
