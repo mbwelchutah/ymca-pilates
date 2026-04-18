@@ -44,11 +44,17 @@ function isActionable(reason) {
 // Inputs:
 //   actionableCount: number of non-transient failures in the rollup window
 //   lastResult:      job.last_result string (used for the "currently down" cue)
-// Returns one of: 'at_risk' | 'issue' | 'not_run' | 'healthy'.
+//   hasEverRun:      false only when the job has no last_result at all
+// Returns one of: 'at_risk' | 'not_run' | 'healthy'.
+//
+// Policy (per task #69):
+//   * Any actionable failure in the window OR a currently-down job => at_risk.
+//   * Transient failures never contribute (they are filtered upstream).
+//   * Never-run jobs render as 'not_run' (gray).
+//   * Otherwise 'healthy'.
 function classifyJobReliability({ actionableCount = 0, lastResult = null, hasEverRun = true } = {}) {
   const isDown = lastResult === 'failed' || lastResult === 'error';
-  if (actionableCount >= 3 || isDown) return 'at_risk';
-  if (actionableCount >= 1) return 'issue';
+  if (actionableCount >= 1 || isDown) return 'at_risk';
   if (!hasEverRun) return 'not_run';
   return 'healthy';
 }

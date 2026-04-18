@@ -42,6 +42,10 @@ interface JobReliability {
   failure_count:    number
   transient_count?: number
   top_reason:       string | null
+  // Server-stamped from src/scheduler/failure-classification.js so the UI
+  // doesn't duplicate threshold logic.  Optional for back-compat with
+  // older API responses (we recompute locally if missing).
+  status?:          'at_risk' | 'not_run' | 'healthy'
 }
 
 interface FailureData {
@@ -1751,15 +1755,20 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                   const neverRun = !job.last_result
                   const transient = rel?.transient_count ?? 0
 
-                  // Status: worst condition wins.  `fails` already counts only
-                  // ACTIONABLE failures (the server filters transient/expected
-                  // outcomes via the failure-classification taxonomy).
+                  // Authoritative status comes from the server-side shared
+                  // classifier (src/scheduler/failure-classification.js).
+                  // Fallback recomputes the same policy locally for older
+                  // /api/failures payloads.
+                  const computedStatus: 'at_risk' | 'not_run' | 'healthy' =
+                    rel?.status
+                      ?? (fails >= 1 || isDown ? 'at_risk'
+                          : neverRun           ? 'not_run'
+                                                : 'healthy')
+
                   let dot: string, statusText: string, statusColor: string
-                  if (fails >= 3 || isDown) {
+                  if (computedStatus === 'at_risk') {
                     dot = 'bg-accent-red';   statusText = 'At risk'; statusColor = 'text-accent-red'
-                  } else if (fails >= 1) {
-                    dot = 'bg-accent-amber'; statusText = 'Issue';   statusColor = 'text-accent-amber'
-                  } else if (neverRun) {
+                  } else if (computedStatus === 'not_run') {
                     dot = 'bg-divider';      statusText = 'Not run'; statusColor = 'text-text-muted'
                   } else {
                     dot = 'bg-accent-green'; statusText = 'Healthy'; statusColor = 'text-accent-green'

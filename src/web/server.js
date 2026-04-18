@@ -5604,7 +5604,24 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const byJob = getFailuresByJob({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() });
+    // Stamp each row with the canonical reliability status from the shared
+    // taxonomy (src/scheduler/failure-classification.js), so the Tools UI
+    // doesn't duplicate threshold logic.  Per Task #69: any actionable
+    // failure in the 7d window OR currently-down job => 'at_risk'.
+    const { classifyJobReliability } = require('../scheduler/failure-classification');
+    const rawByJob = getFailuresByJob({ sinceIso: new Date(now -  7 * 24 * 60 * 60 * 1000).toISOString() });
+    const jobMetaById = new Map(getAllJobs().map(j => [j.id, j]));
+    const byJob = rawByJob.map(r => {
+      const j = jobMetaById.get(r.job_id) || {};
+      return {
+        ...r,
+        status: classifyJobReliability({
+          actionableCount: r.failure_count,
+          lastResult:      j.last_result || null,
+          hasEverRun:      !!j.last_result,
+        }),
+      };
+    });
 
     // Compute hideBefore: the timestamp of the most recent successful preflight run.
     // Failures older than this are hidden by default on the UI so the list stays

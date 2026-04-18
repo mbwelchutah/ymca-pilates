@@ -57,19 +57,19 @@ describe('failure-classification taxonomy', () => {
 });
 
 describe('classifyJobReliability', () => {
+  // Per Task #69 acceptance criteria:
+  //   80 transient + 0 actionable  => Healthy
+  //   1 actionable                 => At risk
+
   test('80 transient + 0 actionable => healthy (the bug we are fixing)', () => {
     expect(classifyJobReliability({ actionableCount: 0, lastResult: 'success' })).toBe('healthy');
     expect(classifyJobReliability({ actionableCount: 0, lastResult: 'booked'  })).toBe('healthy');
   });
 
-  test('1 actionable failure => issue', () => {
-    expect(classifyJobReliability({ actionableCount: 1, lastResult: 'success' })).toBe('issue');
-    expect(classifyJobReliability({ actionableCount: 2, lastResult: 'booked'  })).toBe('issue');
-  });
-
-  test('3+ actionable failures => at_risk', () => {
-    expect(classifyJobReliability({ actionableCount: 3, lastResult: 'success' })).toBe('at_risk');
-    expect(classifyJobReliability({ actionableCount: 84, lastResult: 'booked' })).toBe('at_risk');
+  test('1 actionable failure => at_risk', () => {
+    expect(classifyJobReliability({ actionableCount: 1,  lastResult: 'success' })).toBe('at_risk');
+    expect(classifyJobReliability({ actionableCount: 2,  lastResult: 'booked'  })).toBe('at_risk');
+    expect(classifyJobReliability({ actionableCount: 84, lastResult: 'booked'  })).toBe('at_risk');
   });
 
   test('lastResult === error/failed => at_risk regardless of count', () => {
@@ -79,6 +79,11 @@ describe('classifyJobReliability', () => {
 
   test('never run => not_run', () => {
     expect(classifyJobReliability({ actionableCount: 0, lastResult: null, hasEverRun: false })).toBe('not_run');
+  });
+
+  test('healthy default (ran successfully, no actionable failures)', () => {
+    expect(classifyJobReliability({ actionableCount: 0, lastResult: 'booked',  hasEverRun: true })).toBe('healthy');
+    expect(classifyJobReliability({ actionableCount: 0, lastResult: 'success', hasEverRun: true })).toBe('healthy');
   });
 });
 
