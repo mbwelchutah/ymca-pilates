@@ -45,6 +45,18 @@ const REASONTAG_TO_REASON = {
   'error':           'unexpected_error',
 };
 
+// Stage 8: helper — distinguishes wrong-time mismatch (target slot likely absent)
+// from wrong-title mismatch (we picked the wrong row; target may still exist).
+// Used to split the post-mismatch failure classification so wrong-class cases
+// are no longer collapsed into 'class_not_found' (which means "class is not on
+// the schedule") when in fact we just couldn't reliably target it.
+function _isTitleOnlyMismatch(reasonTag) {
+  return reasonTag === 'title';
+}
+function _isTimeMismatchTag(reasonTag) {
+  return reasonTag === 'time' || reasonTag === 'time-instructor' || reasonTag === 'time-title';
+}
+
 // Convert an absolute screenshot path to the compact reference stored in DB.
 // New-style paths (under data/screenshots/{date}/) → "date/filename.png"
 // Old-style paths (flat screenshots/ dir) → "filename.png"
@@ -3410,7 +3422,31 @@ async function runBookingJob(job, opts = {}) {
 
         const secondResult = await attemptClickAndVerify(_lastSecondCard, 'second-best candidate');
         if (!secondResult.ok) {
-          // Both candidates had the wrong time → target class is not on the schedule
+          // Stage 8: split modal-mismatch outcomes by their semantic meaning.
+          //   - WRONG TIME (incl. time-instructor, time-title): the modal opened
+          //     at a different time slot in BOTH attempts → the target time slot
+          //     does not appear on the schedule → 'class_not_found' is truthful.
+          //   - WRONG TITLE only (right time, wrong class name): we picked the
+          //     wrong row(s); the target class MAY exist at the correct time
+          //     but we couldn't reliably target it → emit the new
+          //     'wrong_modal_unverified' reason so this is not collapsed into
+          //     "class is absent". Diagnostics, screenshot, and run summary
+          //     are preserved with operator-readable wording.
+          if (_isTitleOnlyMismatch(secondResult.reasonTag) || _isTitleOnlyMismatch(firstResult.reasonTag)) {
+            const msg = _wcPrefix + `Wrong-class modal opened in both attempts (right time, wrong class name) — picked rows did not match "${classTitle}". Target may still exist at ${classTimeNorm} but could not be reliably identified.`;
+            console.log(`ℹ️  [stage-8/wrong_modal_unverified] ${msg}`);
+            await captureFailure('verify', 'wrong_modal_unverified');
+            return logRunSummary({
+              status:  'error',
+              message: msg,
+              screenshotPath,
+              phase:   'verify',
+              reason:  'wrong_modal_unverified',
+              category:'verify',
+              label:   'Wrong class modal opened — target not reliably identified',
+              url:     page.url(),
+            });
+          }
           if (isTimeMismatch(secondResult)) {
             const msg = _wcPrefix + `Class rows were found but the booking modal showed a different class in all cases — both candidates had the wrong time. "${classTitle}" at ${classTimeNorm} does not appear to be on the schedule yet.`;
             console.log(`ℹ️  ${msg}`);
@@ -3430,6 +3466,25 @@ async function runBookingJob(job, opts = {}) {
           console.log(`   Second-best exists (score ${_lastSecondScore}) but is below fallback floor (${CONFIDENCE_THRESHOLD - 2}) — not trying.`);
         } else {
           console.log('   No second-best candidate available.');
+        }
+        // Stage 8: same split as the two-attempt branch above. A title-only
+        // mismatch with no fallback means our best guess was wrong — the
+        // target may still exist at the correct time. Emit the new
+        // 'wrong_modal_unverified' reason instead of class_not_found.
+        if (_isTitleOnlyMismatch(firstResult.reasonTag)) {
+          const msg = _wcPrefix + `Wrong-class modal opened (right time, wrong class name) — best matching row did not match "${classTitle}" and no second-best fallback was available. Target may still exist at ${classTimeNorm} but could not be reliably identified.`;
+          console.log(`ℹ️  [stage-8/wrong_modal_unverified] ${msg}`);
+          await captureFailure('verify', 'wrong_modal_unverified');
+          return logRunSummary({
+            status:  'error',
+            message: msg,
+            screenshotPath,
+            phase:   'verify',
+            reason:  'wrong_modal_unverified',
+            category:'verify',
+            label:   'Wrong class modal opened — target not reliably identified',
+            url:     page.url(),
+          });
         }
         // Time mismatch with no fallback → target class absent from schedule
         if (isTimeMismatch(firstResult)) {
