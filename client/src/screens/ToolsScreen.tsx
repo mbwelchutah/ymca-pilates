@@ -49,12 +49,16 @@ interface JobReliability {
 }
 
 interface FailureData {
-  recent:     FailureEntry[]
-  summary:    Record<string, number>
-  by_phase:   Record<string, number>
-  trends:     { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
-  byJob:      JobReliability[]
-  hideBefore: string | null
+  recent:         FailureEntry[]
+  summary:        Record<string, number>
+  by_phase:       Record<string, number>
+  trends:         { h1: TrendWindow; h6: TrendWindow; h24: TrendWindow; d7: TrendWindow }
+  byJob:          JobReliability[]
+  hideBefore:     string | null
+  // ISO timestamp at which the failure history was last wiped (fresh-DB
+  // bootstrap or DELETE /api/failures).  Surfaced so the Failure Insights
+  // panel can label trends as "since X" rather than implying durable history.
+  historyResetAt?: string | null
 }
 
 interface BotStatus {
@@ -1630,11 +1634,22 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           if (keepaliveConfig?.lastRun?.valid === false)
             alerts.push({ title: 'Session check failed', detail: 'A new check will run shortly.', color: 'amber' })
 
+          // Task #82 — failure history is wiped on every container redeploy
+          // (SQLite isn't persistent on Replit deploys), so honestly label the
+          // window as "since <reset>" rather than implying durable all-time data.
+          const resetAt = failures?.historyResetAt ?? null
+          const resetLabel = resetAt
+            ? `History resets on restart — last reset ${fmtStr(resetAt)}`
+            : null
+
           if (alerts.length === 0 && topCauses.length === 0) return null
 
           return (
             <>
               <SectionHeader title={alerts.length === 0 ? `Failure Insights · ${causeWin}` : 'Failure Insights'} />
+              {resetLabel && (
+                <p className="text-[11px] text-text-muted px-1 -mt-2 mb-2">{resetLabel}</p>
+              )}
               <Card padding="none">
                 {/* Alerts */}
                 {alerts.map((a, i) => {

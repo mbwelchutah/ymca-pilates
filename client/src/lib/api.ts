@@ -228,6 +228,7 @@ export const api = {
       d7:  { byReason: Array<{ reason: string; count: number }>; byPhase: Array<{ phase: string; count: number }>; total: number }
     }
     hideBefore: string | null
+    historyResetAt?: string | null
   }> => apiFetch('/api/failures'),
 
   clearFailures: (): Promise<{ success: boolean }> =>

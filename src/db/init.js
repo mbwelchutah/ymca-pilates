@@ -58,6 +58,24 @@ function openDb() {
     )
   `);
 
+  // Task #82 — failures-table metadata.  Holds a single 'resetAt' row that
+  // tracks when the failure history was last wiped (either by a fresh-DB
+  // bootstrap — Replit deployments rebuild SQLite from git on every publish —
+  // or by an explicit DELETE /api/failures call).  Surfaced in the Tools UI so
+  // the user knows the trends panel is bounded by that moment, not all-time.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS failures_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+  // Stamp resetAt the first time this code runs against a given SQLite file.
+  // INSERT OR IGNORE leaves an existing value alone (so the timestamp survives
+  // openDb() being called many times within a single process lifetime).
+  db.prepare(
+    `INSERT OR IGNORE INTO failures_meta (key, value) VALUES ('resetAt', ?)`
+  ).run(new Date().toISOString());
+
   // Safely add new columns to existing databases that predate them.
   // SQLite does not support "ADD COLUMN IF NOT EXISTS", so we try and ignore
   // the error that fires when the column is already there.

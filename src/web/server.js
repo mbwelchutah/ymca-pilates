@@ -5566,7 +5566,7 @@ const server = http.createServer(async (req, res) => {
   } else if (req.method === 'GET' && path === '/api/failures') {
     // Primary: query the structured failures table in SQLite.
     // Legacy fallback: scan screenshots/ for older verify-fail files not yet in DB.
-    const { getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob } = require('../db/failures');
+    const { getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob, getFailuresResetAt } = require('../db/failures');
     const fsM = require('fs'), pathM = require('path');
 
     const dbRecent  = getRecentFailures(20);
@@ -5651,7 +5651,12 @@ const server = http.createServer(async (req, res) => {
       hideBefore = sniperState?.lastSuccessfulPreflightAt ?? null;
     } catch {}
 
-    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob, hideBefore });
+    // Task #82 — surface when the failure history was last reset, so the UI
+    // can label trends as "since <ts>" rather than implying durable all-time
+    // history (SQLite is wiped on every container redeploy).
+    const historyResetAt = getFailuresResetAt();
+
+    json({ recent: recent.slice(0, 10), summary: summaryByReason, by_phase: summaryByPhase, trends, byJob, hideBefore, historyResetAt });
 
   } else if (req.method === 'DELETE' && path === '/api/failures') {
     const { clearFailures } = require('../db/failures');

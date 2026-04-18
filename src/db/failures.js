@@ -178,12 +178,34 @@ function getFailuresByJob({ sinceIso }) {
 }
 
 /**
- * Delete all rows from the failures table.
+ * Delete all rows from the failures table and stamp the reset timestamp so
+ * the UI can label the trends panel as "since <reset>" instead of all-time.
  */
 function clearFailures() {
   const db = openDb();
-  db.prepare('DELETE FROM failures').run();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM failures').run();
+    db.prepare(
+      `INSERT INTO failures_meta (key, value) VALUES ('resetAt', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run(new Date().toISOString());
+  });
+  tx();
   db.close();
 }
 
-module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob, clearFailures };
+/**
+ * Return the ISO timestamp at which the failure history was last reset
+ * (either by a fresh-DB bootstrap on container restart, or by an explicit
+ * clearFailures() call).  Returns null if the metadata row is somehow absent.
+ */
+function getFailuresResetAt() {
+  const db = openDb();
+  const row = db.prepare(
+    `SELECT value FROM failures_meta WHERE key = 'resetAt'`
+  ).get();
+  db.close();
+  return row ? row.value : null;
+}
+
+module.exports = { recordFailure, getRecentFailures, getFailureSummary, getFailureTrends, getFailuresByJob, clearFailures, getFailuresResetAt };
