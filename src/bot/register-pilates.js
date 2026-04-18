@@ -181,6 +181,15 @@ function classifyActionState(allBtnTexts, pageText = '') {
   // "Closed - Full", "Closed", "Full" in a button slot = strong full/closed signal
   const hasFullBtn     = btnLower.some(t => /\bfull\b/.test(t));
   const hasClosedBtn   = btnLower.some(t => /\bclosed\b/.test(t));
+  // Countdown button shown before the registration window opens, e.g.
+  //   "11 hrs until open registration", "45 mins until open registration",
+  //   "2 days until open registration", "Opens in 3 hrs", "Registration opens soon"
+  const hasCountdownBtn = btnLower.some(t =>
+    /\b(\d+\s*(hr|hrs|hour|hours|min|mins|minute|minutes|day|days|sec|secs|second|seconds))\s+until\s+open\s+registration\b/.test(t)
+    || /\bopens?\s+in\s+\d+/.test(t)
+    || /\bregistration\s+opens?\b/.test(t)
+    || /\buntil\s+open\s+registration\b/.test(t)
+  );
 
   // ── Page-body signals ───────────────────────────────────────────────────────
   // "0 spot left", "0 spots left", "no spots available"
@@ -206,6 +215,8 @@ function classifyActionState(allBtnTexts, pageText = '') {
   if (hasRegisterBtn)                      return 'bookable';          // Register beats Waitlist
   if (hasWaitlistBtn)                      return 'waitlist_available';
   if (hasCancelBtn && !hasRegisterBtn)     return 'already_registered';
+  // Countdown ("X hrs until open registration") = known pre-window state, not unknown
+  if (hasCountdownBtn)                     return 'not_open_yet';
   return 'unknown';
 }
 
@@ -3324,6 +3335,7 @@ async function runBookingJob(job, opts = {}) {
             ? (allBtnTexts.some(t => /\breserve\b/i.test(t)) ? 'RESERVE_AVAILABLE' : 'REGISTER_AVAILABLE')
         : hasWaitlist   ? 'WAITLIST_AVAILABLE'
         : _hasCancelOnly ? 'CANCEL_ONLY'
+        : _actionStateClassified === 'not_open_yet' ? 'NOT_OPEN_YET'
         : 'UNKNOWN_ACTION';
       emitEvent(_state, 'ACTION', null, `Preflight: detected action state — ${_actionState} (classified: ${_actionStateClassified})`, {
         evidence: {

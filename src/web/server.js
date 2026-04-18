@@ -4109,6 +4109,7 @@ const server = http.createServer(async (req, res) => {
             : rawActionState === 'WAITLIST_AVAILABLE'  ? 'waitlist_only'
             : rawActionState === 'LOGIN_REQUIRED'      ? 'login_required'
             : rawActionState === 'CANCEL_ONLY'         ? 'cancel_only'
+            : rawActionState === 'NOT_OPEN_YET'        ? 'not_open_yet'
             : rawActionState === 'UNKNOWN_ACTION'      ? 'not_open_yet'
             // No detection evidence — fall back to resolution event failureType
             : actionResolveEvt?.failureType === 'WAITLIST_ONLY'    ? 'waitlist_only'
