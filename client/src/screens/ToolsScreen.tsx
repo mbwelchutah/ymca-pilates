@@ -1676,6 +1676,17 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     ageOver(sniperRunState?.meta?.snapshotAge) ||
     ageOver(readiness?.meta?.snapshotAge)
 
+  // Task #88 — pick the largest snapshotAge across the four tracked endpoints
+  // so the pill reflects the oldest data the user is currently looking at.
+  const snapshotAgesMs = [
+    appState.meta?.snapshotAge,
+    sessionStatus?.meta?.snapshotAge,
+    sniperRunState?.meta?.snapshotAge,
+    readiness?.meta?.snapshotAge,
+  ].filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+  const largestSnapshotAgeSec =
+    snapshotAgesMs.length > 0 ? Math.max(...snapshotAgesMs) / 1000 : null
+
   return (
     <>
       <AppHeader subtitle="Tools" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
@@ -1683,7 +1694,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         {isStale && (
           <div className="px-4 pt-2 pb-1">
-            <StaleStatePill />
+            <StaleStatePill ageSeconds={largestSnapshotAgeSec} />
           </div>
         )}
 

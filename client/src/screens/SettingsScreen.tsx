@@ -105,7 +105,15 @@ export function SettingsScreen({ appState, refresh, onSessionRefresh, onAccount,
       <AppHeader subtitle="Settings" onAccount={onAccount} accountAttention={accountAttention} authStatus={authStatus} tab={tab} onTabChange={onTabChange} scrolled={scrolled} />
       <ScreenContainer>
 
-        {stale && <StaleStatePill />}
+        {stale && (
+          <StaleStatePill
+            ageSeconds={
+              typeof stateMeta?.snapshotAge === 'number'
+                ? stateMeta.snapshotAge / 1000
+                : null
+            }
+          />
+        )}
 
         {/* Scheduler */}
         <SectionHeader title="Scheduler" />
