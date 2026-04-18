@@ -3328,6 +3328,48 @@ async function runBookingJob(job, opts = {}) {
       console.log(`[row-capacity] Row shows "${_rowCapacityFromSchedule}" — proceeding to click modal for full action detection`);
     }
 
+    // ── Self-Healing / Safe Recovery Pass — Stage 6: filter-failure trust gate ──
+    // pageHealth = filters_failed propagates here as the run-scoped flag
+    // `filtersFailed` (set at L1664 when both Category & Instructor filters had
+    // no effect AND the Stage-3 page-reset heal could not restore them).
+    //
+    // The unfiltered scan above is allowed for VISIBILITY (so the operator can
+    // see what the schedule looked like and we can capture truthful diagnostics),
+    // but it must NOT authorize a Register click without strong identity proof.
+    // Strong identity here means: BOTH title and time matched on the row that
+    // findTargetCard() picked — i.e. _lastBestReasons contains 'title+5' AND
+    // 'time+5'. (Score >= 8 alone is insufficient: time+instructor without
+    // title can score 8 on a wrong-class same-time same-instructor neighbor.)
+    //
+    // If strong identity is NOT present while filters failed, bail safely with
+    // the truthful 'filter_apply_failed' classification — the modal-verification
+    // gate (Stage 5) would catch most wrong-class cases anyway, but failing
+    // here preserves diagnostics, avoids burning a Bubble.io modal-open cycle,
+    // and prevents any future regression in the modal walk from leaking through.
+    if (filtersFailed) {
+      const _reasons = Array.isArray(_lastBestReasons) ? _lastBestReasons : [];
+      const _hasTitleHit = _reasons.includes('title+5');
+      const _hasTimeHit  = _reasons.includes('time+5');
+      const _strongIdentity = _hasTitleHit && _hasTimeHit;
+      if (!_strongIdentity) {
+        const msg = `[stage-6/filter-trust-gate] Filters failed and the unfiltered-scan candidate did not produce strong identity proof (titleHit=${_hasTitleHit}, timeHit=${_hasTimeHit}, score=${_lastBestScore}, reasons=[${_reasons.join(',')}], matched="${(_lastBestText || '').slice(0, 80)}"). Refusing to click — booking requires title+time evidence when filters are not trustworthy.`;
+        console.log(`❌ ${msg}`);
+        await captureFailure('scan', 'filter_apply_failed');
+        return logRunSummary({
+          status:  'error',
+          message: msg,
+          screenshotPath,
+          phase:   'scan',
+          reason:  'filter_apply_failed',
+          category: 'scan',
+          label:   'Filter failure — candidate lacks strong identity proof',
+          url:     page.url(),
+        });
+      }
+      console.log(`🛡️  [stage-6/filter-trust-gate] Filters failed BUT candidate has strong identity (title+time matched on row, score=${_lastBestScore}) — allowing click; modal verification will provide final gate.`);
+    }
+    // ────────────────────────────────────────────────────────────────────────────
+
     _tc.modal_open_start = new Date().toISOString();
     const firstResult = await attemptClickAndVerify(targetCard, 'best candidate');
 
