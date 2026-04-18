@@ -2798,6 +2798,34 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
                 </div>
               )}
 
+              {/* Stage 7 (auto-connection-check) — single connection-health line.
+                   ONE compact line ONLY.  Either reports the freshness of the
+                   most recent successful deep verification, or — when the most
+                   recent deep check FAILED — surfaces that instead.  Hidden
+                   entirely when no connection-health data has been recorded.
+                   Does not change layout, cards, or any other status surface. */}
+              {execMode === 'idle' && sessionStatus?.connectionHealth && (() => {
+                const ch = sessionStatus.connectionHealth!
+                const minsAgo = (ms: number) => Math.max(0, Math.round((Date.now() - ms) / 60000))
+                const failedMostRecently =
+                  ch.lastDeepCheckAt != null &&
+                  (ch.lastDeepSuccessAt == null || ch.lastDeepCheckAt > ch.lastDeepSuccessAt)
+                let line: string | null = null
+                if (failedMostRecently) {
+                  line = `Deep check failed ${minsAgo(ch.lastDeepCheckAt!)} min ago`
+                } else if (ch.lastDeepSuccessAt != null) {
+                  line = `Connection verified ${minsAgo(ch.lastDeepSuccessAt)} min ago`
+                }
+                if (!line) return null
+                return (
+                  <div className="mt-1 pl-7 animate-fade-in-up">
+                    <span className={`text-[11px] ${failedMostRecently ? 'text-accent-amber' : 'text-text-muted'}`}>
+                      {line}
+                    </span>
+                  </div>
+                )
+              })()}
+
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
                 const { label, actionType, helperText, disabled, emphasis } = smartButton

@@ -572,6 +572,54 @@ export function AccountSheet({ open, onClose, polledStatus }: AccountSheetProps)
                 )}
               </div>
 
+              {/* Group 2b — Connection health (Stage 7 / auto-connection-check) ─
+                   Surfaces the new ConnectionHealth record from the auto cheap/
+                   deep checks.  Read-only.  Hidden entirely when the server has
+                   not yet reported a connectionHealth field (older deploys, or
+                   the file has never been written). */}
+              {session?.connectionHealth && (
+                <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3">
+                  <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2.5">
+                    Connection health
+                  </p>
+                  {(() => {
+                    const ch = session.connectionHealth!
+                    const stateLabel: Record<string, { text: string; ok: boolean | null; neutral: boolean }> = {
+                      healthy:      { text: 'Healthy',         ok: true,  neutral: false },
+                      degraded:     { text: 'Degraded',        ok: null,  neutral: true  },
+                      at_risk:      { text: 'At risk',         ok: false, neutral: false },
+                      disconnected: { text: 'Disconnected',    ok: false, neutral: false },
+                    }
+                    const s = stateLabel[ch.currentState] ?? { text: ch.currentState, ok: null, neutral: true }
+                    return (
+                      <>
+                        <DiagRow label="State" value={s.text} ok={s.ok} neutral={s.neutral} />
+                        <Divider />
+                        <DiagRow
+                          label="Last cheap check"
+                          value={ch.lastCheapCheckAt ? formatRelative(ch.lastCheapCheckAt) : 'Never'}
+                          ok={null}
+                          neutral
+                        />
+                        <Divider />
+                        <DiagRow
+                          label="Last deep check"
+                          value={ch.lastDeepSuccessAt
+                            ? `${formatRelative(ch.lastDeepSuccessAt)} (success)`
+                            : ch.lastDeepCheckAt
+                              ? `${formatRelative(ch.lastDeepCheckAt)} (failed)`
+                              : 'Never'}
+                          ok={ch.lastDeepSuccessAt != null
+                            ? (ch.lastDeepCheckAt != null && ch.lastDeepCheckAt > ch.lastDeepSuccessAt ? false : true)
+                            : ch.lastDeepCheckAt != null ? false : null}
+                          neutral={ch.lastDeepSuccessAt == null && ch.lastDeepCheckAt == null}
+                        />
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+
               {/* Group 3 — Last check (session-check.js result) */}
               {(session?.valid !== undefined && session?.valid !== null || session?.detail) && (
                 <div className="bg-[#f2f2f7] rounded-2xl px-4 py-3">

@@ -49,6 +49,26 @@ export interface SessionStatus {
   bookingActive?: boolean   // true when a booking run is currently in flight
   authState?:    AuthState
   meta?:         ResponseMeta   // Task #81 — degraded-response signals
+  // Stage 7 (auto-connection-check) — connection-health record from
+  // src/health/connection-health-store.  Optional; absent if the file
+  // has never been written or could not be read.  Read-only on the UI.
+  connectionHealth?: ConnectionHealth | null
+}
+
+export type ConnectionHealthState =
+  | 'healthy'
+  | 'degraded'
+  | 'at_risk'
+  | 'disconnected'
+
+export interface ConnectionHealth {
+  currentState:       ConnectionHealthState
+  lastCheapCheckAt:   number | null  // epoch ms
+  lastDeepCheckAt:    number | null  // epoch ms
+  lastDeepSuccessAt:  number | null  // epoch ms
+  lastFailureAt:      number | null  // epoch ms
+  lastFailureReason:  string | null
+  lastVerifiedStage:  'auth' | 'schedule' | 'row' | 'modal' | null
 }
 export type LastResult =
   | 'booked'

@@ -4294,6 +4294,27 @@ const server = http.createServer(async (req, res) => {
       snapshotAge:    snapshotAgeMs,
     };
 
+    // Stage 7 (auto-connection-check) — surface the new ConnectionHealth
+    // record alongside the existing session-status payload.  Read is
+    // wrapped in try/catch so a missing/corrupt connection-health.json
+    // can never break /api/session-status (the rest of the UI depends
+    // on this endpoint).  Output shape mirrors the on-disk record one-
+    // to-one; UI consumers ignore unknown fields.
+    let connectionHealth = null;
+    try {
+      const { loadHealth } = require('../health/connection-health-store');
+      const h = loadHealth();
+      connectionHealth = {
+        currentState:       h.currentState,
+        lastCheapCheckAt:   h.lastCheapCheckAt,
+        lastDeepCheckAt:    h.lastDeepCheckAt,
+        lastDeepSuccessAt:  h.lastDeepSuccessAt,
+        lastFailureAt:      h.lastFailureAt,
+        lastFailureReason:  h.lastFailureReason,
+        lastVerifiedStage:  h.lastVerifiedStage ?? null,
+      };
+    } catch (_) { /* health surface optional; never block session-status */ }
+
     json({
       valid:         canonicalAuth.sessionValid,
       checkedAt:     lastVerified,
@@ -4307,6 +4328,7 @@ const server = http.createServer(async (req, res) => {
       bookingActive: !!jobState.active,
       authState:     getAuthState(),
       meta:          sessionMeta,
+      connectionHealth,
     });
 
   } else if (req.method === 'POST' && path === '/api/session-check') {
