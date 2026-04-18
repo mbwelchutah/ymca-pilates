@@ -913,7 +913,14 @@ async function runBookingJob(job, opts = {}) {
     let _session;
     try {
       _tc.browser_launch_start = new Date().toISOString();
-      _session = await createSession({ headless: isHeadless });
+      // Task #71 — gate the page.goto retry on "not past booking open" so we
+      // never spend a second 60 s budget while the click race is already on.
+      let _pastBookingOpen = false;
+      try {
+        const { bookingOpen: _bo } = getBookingWindow(job);
+        _pastBookingOpen = _bo && _bo.getTime() <= Date.now();
+      } catch (_) { /* default false — retry permitted */ }
+      _session = await createSession({ headless: isHeadless, pastBookingOpen: _pastBookingOpen });
       _tc.browser_launch_done  = new Date().toISOString();
       // Auth succeeded — update session-status.json so the UI reflects the fresh result.
       saveSessionStatus({
@@ -957,7 +964,12 @@ async function runBookingJob(job, opts = {}) {
           detail:   (loginErr.message || 'Login failed').slice(0, 120),
         }
       });
-      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: 'login_failed', category: 'auth', label: 'Daxko login failed' });
+      // Task #71 — distinguish auth-phase page.goto timeouts from real
+      // credential failures so the noise-reduction taxonomy can classify
+      // them as transient (auth_timeout ∈ TRANSIENT_REASONS).
+      const _reason = isTimeout ? 'auth_timeout' : 'login_failed';
+      const _label  = isTimeout ? 'Daxko auth timed out' : 'Daxko login failed';
+      return logRunSummary({ status: 'error', message: loginErr.message, screenshotPath, phase: 'auth', reason: _reason, category: 'auth', label: _label });
     }
 
     // Auth phase complete — release the lock immediately so user-initiated

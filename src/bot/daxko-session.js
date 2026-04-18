@@ -15,6 +15,46 @@ try {
   CHROMIUM_PATH = null;
 }
 
+// Task #71 — page.goto timeout for Daxko/FamilyWorks auth navigations.
+// Bumped from Playwright's 30 s default to 60 s to absorb common slow-network
+// blips (YMCA infra, Replit egress) that were causing recurring "Daxko login
+// failed (Timeout 30000 ms exceeded — page.goto)" failures during the auth
+// phase.  Configurable via DAXKO_GOTO_TIMEOUT_MS for ops.
+const DAXKO_GOTO_TIMEOUT_MS =
+  Number(process.env.DAXKO_GOTO_TIMEOUT_MS) > 0
+    ? Number(process.env.DAXKO_GOTO_TIMEOUT_MS)
+    : 60000;
+
+function _isTimeoutError(err) {
+  if (!err) return false;
+  if (err.name === 'TimeoutError') return true;
+  return /timeout|timed out/i.test(err.message || '');
+}
+
+/**
+ * Run page.goto() with the bumped Daxko timeout and a single TimeoutError
+ * retry.  The retry is suppressed when `allowRetry` is false — used by the
+ * caller to opt out once the booking window has already opened (no time to
+ * spare on a second 60 s budget).
+ *
+ * Exported so the unit test can drive it with a mocked page.
+ */
+async function gotoWithRetry(page, url, opts = {}) {
+  const allowRetry = opts.allowRetry !== false;
+  const gotoOpts   = { timeout: DAXKO_GOTO_TIMEOUT_MS };
+  if (opts.waitUntil) gotoOpts.waitUntil = opts.waitUntil;
+
+  try {
+    return await page.goto(url, gotoOpts);
+  } catch (err) {
+    if (!allowRetry || !_isTimeoutError(err)) throw err;
+    console.warn(
+      `[session] page.goto timeout on first attempt (${url}, ${DAXKO_GOTO_TIMEOUT_MS / 1000}s) — retrying once.`,
+    );
+    return await page.goto(url, gotoOpts);
+  }
+}
+
 /**
  * Launch Chromium, log in to Daxko, and return a ready-to-use session.
  *
@@ -41,10 +81,14 @@ try {
  * (use try/finally).
  */
 async function createSession(opts = {}) {
-  const headless      = opts.headless !== false;
-  const validateOnly  = opts.validateOnly  === true;
-  const skipFastPath  = opts.skipFastPath  === true;
-  const screenshotDir = opts.screenshotDir || 'screenshots';
+  const headless         = opts.headless !== false;
+  const validateOnly     = opts.validateOnly  === true;
+  const skipFastPath     = opts.skipFastPath  === true;
+  const screenshotDir    = opts.screenshotDir || 'screenshots';
+  // Task #71 — when the booking window has already opened we suppress the
+  // one-shot timeout retry: a second 60 s budget would cost the click race.
+  const pastBookingOpen  = opts.pastBookingOpen === true;
+  const allowGotoRetry   = !pastBookingOpen;
 
   // ── Stage 3: Fast validation — try HTTP ping before touching a browser ────
   // If saved cookies are still valid (Tier-2 HTTP ping), we can skip the entire
@@ -182,7 +226,7 @@ async function createSession(opts = {}) {
     // the member dashboard (My Schedule, Browse, etc.).  If not, it shows a
     // "Login to Y Account" button.
     console.log('[session] Checking FamilyWorks member home page for existing session...');
-    await page.goto(HOME_URL, { timeout: 60000, waitUntil: 'domcontentloaded' });
+    await gotoWithRetry(page, HOME_URL, { waitUntil: 'domcontentloaded', allowRetry: allowGotoRetry });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(2000); // allow Bubble.io SPA to render
 
@@ -236,7 +280,7 @@ async function createSession(opts = {}) {
 
     // Load the schedule embed to get a class card for the OAuth trigger.
     console.log('[session] Loading schedule embed for OAuth flow...');
-    await page.goto(SCHEDULE_URL, { timeout: 30000 });
+    await gotoWithRetry(page, SCHEDULE_URL, { allowRetry: allowGotoRetry });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(4000); // Bubble.io needs time to render class cards
 
@@ -371,7 +415,7 @@ async function createSession(opts = {}) {
   // embed, not the home page or Daxko. Navigate there unless already on it.
   if (!page.url().includes('schedulesembed')) {
     console.log('[session] Navigating to FW schedule embed...');
-    await page.goto(SCHEDULE_URL, { timeout: 30000 });
+    await gotoWithRetry(page, SCHEDULE_URL, { allowRetry: allowGotoRetry });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(2000);
   }
@@ -380,4 +424,4 @@ async function createSession(opts = {}) {
   return { browser, page, snap, close, _homeValidated: homeValidated };
 }
 
-module.exports = { createSession, CHROMIUM_PATH };
+module.exports = { createSession, CHROMIUM_PATH, gotoWithRetry, DAXKO_GOTO_TIMEOUT_MS };
