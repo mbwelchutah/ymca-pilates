@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['client/src/**/*.test.ts', 'tests/**/*.test.js'],
+    include: ['client/src/**/*.test.ts', 'client/src/**/*.test.tsx', 'tests/**/*.test.js'],
     environment: 'node',
     deps: {
       // Transform project source files through vitest's pipeline.
