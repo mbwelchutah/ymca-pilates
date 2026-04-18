@@ -1,5 +1,12 @@
 # Non-Booking Surfaces Audit (Task #75)
 
+> **Historical snapshot.** This file records the state of the surfaces at
+> the time of the audit. Subsequent fixes may have changed individual
+> endpoints — for example, Task #83 converted `/clean-test-jobs`,
+> `/run-job`, and `/register` from GET to POST (with `confirm: true`
+> required for `/clean-test-jobs`). Treat the rows below as the audit
+> findings, not as current API documentation.
+
 Discovery-only audit of every non-booking server endpoint, every non-Now/Plan
 client surface, and every persistence path that could drift across SQLite,
 PostgreSQL, and JSON files. Booking-window and preflight code are explicitly

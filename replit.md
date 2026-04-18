@@ -147,6 +147,18 @@ Fixes the gap where `mergeAndSaveEntries` refreshed `savedAt` (file-level) while
 - **Gating invariant**: all four gating decisions (warmup suppression, `needs_attention` full/not-found, `confirmed_ready` gate) use `classTruth.freshness` (per-entry). `cacheFileFreshness` must never be used in a gate.
 - **Past-date eviction** (Stage 9): `_isPastDate(dateISO)` helper returns true for any `YYYY-MM-DD` string strictly before today UTC. Applied in two places: (1) `mergeAndSaveEntries` drops past-date entries from `kept` before writing, preventing indefinite accumulation; (2) `findEntry` skips past-date entries in the scoring map so a week-old "full" result can never be returned as the best match for an upcoming booking.
 
+## Destructive endpoint convention
+
+Any HTTP route that mutates server-side state (deletes rows, kicks off a
+booking run, clears a state file) **must be `POST`** and, if the mutation
+is destructive (data loss), **must require an explicit `confirm: true`
+field in the JSON body**. A bare `GET` against the same path returns
+`405 Method Not Allowed` with no side effects. This protects against
+stray prefetches from browser address bars, link scanners, and
+service-worker warm-ups firing destructive paths. Examples:
+`/api/recovery/clear-transient` (POST + confirm), `/clean-test-jobs`
+(POST + confirm), `/run-job` and `/register` (POST).
+
 ## Repair / Recovery Routes
 
 Three POST endpoints under `/api/recovery/` — all require `{ confirm: true }` in the request body or they return HTTP 400.

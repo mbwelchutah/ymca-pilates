@@ -40,7 +40,7 @@ src/
 
   web/
     server.js                 HTTP server on port 5000
-                              Routes: GET / (UI), /register, /run-job, /status
+                              Routes: GET / (UI), /status; POST /register, /run-job
 ```
 
 **There is no persistent scheduler loop yet.** The scheduler scripts run once and exit. To run on a recurring schedule you must trigger them externally (cron, GitHub Actions, or manually).

@@ -3005,7 +3005,7 @@ function buildHtml(jobs, error, editError) {
       activeSuccessText = successText;
       startDots(statusEl, 'Running ' + (jobLabel || 'job'));
       try {
-        const res  = await fetch(url);
+        const res  = await fetch(url, { method: 'POST' });
         const data = await res.json();
         if (!data.started) {
           stopDots();
@@ -3130,7 +3130,11 @@ function buildHtml(jobs, error, editError) {
       btn.textContent = 'Cleaning\u2026';
       startDots(statusEl, 'Cleaning old test jobs');
       try {
-        const res  = await fetch('/clean-test-jobs');
+        const res  = await fetch('/clean-test-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true }),
+        });
         const data = await res.json();
         stopDots();
         statusEl.textContent = data.log;
@@ -3922,10 +3926,14 @@ const server = http.createServer(async (req, res) => {
   } else if (req.method === 'GET' && path === '/status') {
     json(jobState);
 
-  } else if (req.method === 'GET' && path === '/register') {
+  } else if (req.method === 'POST' && path === '/register') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     runInBackground({ classTitle: 'Core Pilates', maxAttempts: 1 });
     json({ started: true });
+
+  } else if (req.method === 'GET' && path === '/register') {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ success: false, message: 'Method Not Allowed — use POST' }));
 
   } else if (req.method === 'POST' && path === '/force-run-job') {
     const urlObj = new URL(req.url, 'http://localhost');
@@ -4698,7 +4706,7 @@ const server = http.createServer(async (req, res) => {
       }
     });
 
-  } else if (req.method === 'GET' && path === '/run-job') {
+  } else if (req.method === 'POST' && path === '/run-job') {
     if (jobState.active) { json({ started: false, log: 'Already running, please wait...' }); return; }
     const id    = parsed.searchParams.get('id');
     const dbJob = id ? getJobById(Number(id)) : getJobById(1);
@@ -4718,14 +4726,33 @@ const server = http.createServer(async (req, res) => {
     });
     json({ started: true });
 
+  } else if (req.method === 'GET' && path === '/run-job') {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ success: false, message: 'Method Not Allowed — use POST' }));
+
+  } else if (req.method === 'POST' && path === '/clean-test-jobs') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      let confirm;
+      try { confirm = JSON.parse(body).confirm; } catch { confirm = undefined; }
+      if (confirm !== true) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Confirmation required — pass confirm: true' }));
+        return;
+      }
+      const db     = openDb();
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const deleted = db.prepare(
+        `DELETE FROM jobs WHERE class_title = 'Core Pilates' AND created_at < ?`
+      ).run(cutoff);
+      const remaining = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
+      json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
+    });
+
   } else if (req.method === 'GET' && path === '/clean-test-jobs') {
-    const db     = openDb();
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const deleted = db.prepare(
-      `DELETE FROM jobs WHERE class_title = 'Core Pilates' AND created_at < ?`
-    ).run(cutoff);
-    const remaining = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
-    json({ success: true, log: `Deleted ${deleted.changes} old test job(s). Remaining jobs: ${remaining}` });
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ success: false, message: 'Method Not Allowed — use POST with confirm: true' }));
 
   } else if (req.method === 'POST' && path === '/update-job') {
     const isJsonUp = (req.headers['content-type'] || '').includes('application/json');
