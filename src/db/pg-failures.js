@@ -321,6 +321,7 @@ async function clearFailuresInPg() {
 }
 
 module.exports = {
+  RETENTION_DAYS,
   ensurePgFailuresSchema,
   mirrorFailureToPg,
   restoreFailuresFromPg,

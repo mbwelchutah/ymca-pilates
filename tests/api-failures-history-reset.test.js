@@ -162,4 +162,19 @@ describe('GET /api/failures — historyResetAt envelope (Task #82)', () => {
     expect(new Date(after.historyResetAt).getTime())
       .toBeGreaterThan(new Date(before.historyResetAt).getTime());
   });
+
+  // Task #93 — the panel needs to know how far back the durable PG history
+  // actually goes.  The API surfaces RETENTION_DAYS from src/db/pg-failures
+  // when (and only when) PG mirroring is configured.  This test asserts the
+  // contract from both sides so the UI label cannot drift from the prune job.
+  it('includes historyRetentionDays matching pg-failures.RETENTION_DAYS when DATABASE_URL is set', async () => {
+    const { RETENTION_DAYS } = require('../src/db/pg-failures');
+    const data = await getJson(`http://localhost:${TEST_PORT}/api/failures`);
+    expect(data).toHaveProperty('historyRetentionDays');
+    if (process.env.DATABASE_URL) {
+      expect(data.historyRetentionDays).toBe(RETENTION_DAYS);
+    } else {
+      expect(data.historyRetentionDays).toBeNull();
+    }
+  });
 });

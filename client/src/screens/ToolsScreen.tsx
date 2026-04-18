@@ -75,6 +75,12 @@ interface FailureData {
     insertedRows?: number
     error:        string | null
   } | null
+  // Task #93 — retention horizon (in days) of the durable PG failure log.
+  // Sourced from the same constant the prune job uses, so the Failure
+  // Insights panel can tell users that older rows have been dropped instead
+  // of implying the history is unbounded.  Null when PG mirroring isn't
+  // configured.
+  historyRetentionDays?: number | null
 }
 
 interface BotStatus {
@@ -1816,7 +1822,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             empty-history-after-restart case, which is exactly when the user
             most needs to know that "0 failures" reflects a wiped log rather
             than durable health. */}
-        {failures !== null && (failures?.historyResetAt || failures?.historyRestore) && (
+        {failures !== null && (failures?.historyResetAt || failures?.historyRestore || typeof failures?.historyRetentionDays === 'number') && (
           <div
             data-testid="failure-history-reset-notice"
             className="px-1 -mt-1 mb-1"
@@ -1824,6 +1830,18 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
             {failures?.historyResetAt && (
               <p className="text-[11px] text-text-muted">
                 History resets on restart — last reset {fmtStr(failures.historyResetAt)}
+              </p>
+            )}
+            {/* Task #93 — surface the PG retention horizon so users understand
+                older rows are pruned rather than silently disappearing.  The
+                value is sourced from the same constant the prune job uses, so
+                the label cannot drift from the actual retention policy. */}
+            {typeof failures?.historyRetentionDays === 'number' && failures.historyRetentionDays > 0 && (
+              <p
+                data-testid="failure-history-retention-notice"
+                className="text-[11px] text-text-muted"
+              >
+                Showing failures from the last {failures.historyRetentionDays} days
               </p>
             )}
             {/* Task #91 — confirm the durable PG mirror was actually pulled

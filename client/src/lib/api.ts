@@ -230,6 +230,7 @@ export const api = {
     }
     hideBefore: string | null
     historyResetAt?: string | null
+    historyRetentionDays?: number | null
   }> => apiFetch('/api/failures'),
 
   clearFailures: (): Promise<{ success: boolean }> =>

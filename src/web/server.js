@@ -5785,9 +5785,19 @@ const server = http.createServer(async (req, res) => {
     // list.  Status is stamped to disk by pg-failures.js since pg-init runs
     // in a separate process from this server.
     let historyRestore = null;
+    let historyRetentionDays = null;
     try {
-      const { getRestoreStatus } = require('../db/pg-failures');
+      const { getRestoreStatus, RETENTION_DAYS } = require('../db/pg-failures');
       historyRestore = getRestoreStatus();
+      // Task #93 — surface the PG retention horizon so the Failure Insights
+      // panel can tell users their history only goes back this many days.
+      // Sourced from the same constant the prune job (Task #92) uses, so the
+      // label cannot drift from the actual policy.  Only meaningful when the
+      // PG mirror is configured — without DATABASE_URL there's no prune job
+      // running and SQLite-only history isn't horizon-bounded by this value.
+      if (process.env.DATABASE_URL && typeof RETENTION_DAYS === 'number') {
+        historyRetentionDays = RETENTION_DAYS;
+      }
     } catch (e) {
       console.warn('[failures] could not read PG restore status:', e.message);
     }
@@ -5801,6 +5811,7 @@ const server = http.createServer(async (req, res) => {
       hideBefore,
       historyResetAt,
       historyRestore,
+      historyRetentionDays,
     });
 
   } else if (req.method === 'DELETE' && path === '/api/failures') {
