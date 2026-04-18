@@ -89,7 +89,7 @@ function recordResult(jobId, reason) {
  *   consecutive:     number,
  *   backoffUntilMs:  number,
  *   retryInMs:       number,
- *   nearOpenLifted?: boolean,
+ *   nearOpenReset?: boolean,
  * }}
  */
 function getBackoffStatus(jobId, msToOpen = null) {

@@ -103,7 +103,7 @@ export interface Job {
     consecutive: number
     backoffUntilMs: number
     retryInMs: number
-    nearOpenLifted?: boolean
+    nearOpenReset?: boolean
   } | null
   // Stage 7: live-truth visibility (only populated for active sniper/late jobs)
   liveAvailability?: {
