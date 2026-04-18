@@ -14,10 +14,15 @@
  * the dev DB.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs   from 'fs';
-import os   from 'os';
-import path from 'path';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import fs    from 'fs';
+import os    from 'os';
+import path  from 'path';
+import http  from 'http';
+import { spawn }            from 'child_process';
+import { fileURLToPath }    from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let tmpDbPath;
 let originalSqlitePath;
@@ -70,5 +75,91 @@ describe('failures_meta.resetAt — Task #82', () => {
     const after = getFailuresResetAt();
     expect(after).toBeTruthy();
     expect(new Date(after).getTime()).toBeGreaterThan(new Date(initial).getTime());
+  });
+});
+
+// ── API-level coverage ──────────────────────────────────────────────────────
+// Spawns the real server and asserts GET /api/failures returns historyResetAt
+// in the response envelope, and that DELETE /api/failures advances it.
+
+const TEST_PORT = 5098;
+
+function getJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, (res) => {
+      let body = '';
+      res.on('data', c => { body += c; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(new Error(`JSON parse failed: ${body.slice(0, 200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+function deleteUrl(url) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      { hostname: u.hostname, port: u.port, path: u.pathname, method: 'DELETE' },
+      (res) => { res.resume(); res.on('end', resolve); }
+    );
+    req.on('error', reject);
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
+function waitForServer(port, retries = 20, delayMs = 300) {
+  return new Promise((resolve, reject) => {
+    let n = 0;
+    function attempt() {
+      const req = http.get(`http://localhost:${port}/api/failures`, (res) => {
+        res.resume();
+        resolve();
+      });
+      req.on('error', () => {
+        if (++n >= retries) { reject(new Error(`Server did not start on port ${port}`)); return; }
+        setTimeout(attempt, delayMs);
+      });
+      req.setTimeout(500, () => { req.destroy(); });
+    }
+    attempt();
+  });
+}
+
+describe('GET /api/failures — historyResetAt envelope (Task #82)', () => {
+  let serverProcess;
+
+  beforeAll(async () => {
+    serverProcess = spawn(process.execPath, ['src/web/server.js'], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, PORT: String(TEST_PORT) },
+      stdio: 'ignore',
+    });
+    await waitForServer(TEST_PORT);
+  }, 30_000);
+
+  afterAll(() => {
+    if (serverProcess) serverProcess.kill('SIGTERM');
+  });
+
+  it('includes historyResetAt as a non-null ISO timestamp on a fresh server', async () => {
+    const data = await getJson(`http://localhost:${TEST_PORT}/api/failures`);
+    expect(data).toHaveProperty('historyResetAt');
+    expect(typeof data.historyResetAt).toBe('string');
+    // Must be parseable as a valid Date.
+    expect(Number.isNaN(new Date(data.historyResetAt).getTime())).toBe(false);
+  });
+
+  it('historyResetAt advances after DELETE /api/failures', async () => {
+    const before = await getJson(`http://localhost:${TEST_PORT}/api/failures`);
+    await new Promise(r => setTimeout(r, 25));
+    await deleteUrl(`http://localhost:${TEST_PORT}/api/failures`);
+    const after = await getJson(`http://localhost:${TEST_PORT}/api/failures`);
+    expect(new Date(after.historyResetAt).getTime())
+      .toBeGreaterThan(new Date(before.historyResetAt).getTime());
   });
 });

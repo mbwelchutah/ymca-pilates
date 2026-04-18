@@ -1634,22 +1634,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           if (keepaliveConfig?.lastRun?.valid === false)
             alerts.push({ title: 'Session check failed', detail: 'A new check will run shortly.', color: 'amber' })
 
-          // Task #82 — failure history is wiped on every container redeploy
-          // (SQLite isn't persistent on Replit deploys), so honestly label the
-          // window as "since <reset>" rather than implying durable all-time data.
-          const resetAt = failures?.historyResetAt ?? null
-          const resetLabel = resetAt
-            ? `History resets on restart — last reset ${fmtStr(resetAt)}`
-            : null
-
           if (alerts.length === 0 && topCauses.length === 0) return null
 
           return (
             <>
               <SectionHeader title={alerts.length === 0 ? `Failure Insights · ${causeWin}` : 'Failure Insights'} />
-              {resetLabel && (
-                <p className="text-[11px] text-text-muted px-1 -mt-2 mb-2">{resetLabel}</p>
-              )}
               <Card padding="none">
                 {/* Alerts */}
                 {alerts.map((a, i) => {
@@ -1687,11 +1676,40 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           )
         })()}
 
+        {/* ── Failure history disclosure (Task #82) ───────────
+            ALWAYS rendered when failures payload is loaded — including the
+            empty-history-after-restart case, which is exactly when the user
+            most needs to know that "0 failures" reflects a wiped log rather
+            than durable health. */}
+        {failures !== null && failures?.historyResetAt && (
+          <div
+            data-testid="failure-history-reset-notice"
+            className="px-1 -mt-1 mb-1"
+          >
+            <p className="text-[11px] text-text-muted">
+              History resets on restart — last reset {fmtStr(failures.historyResetAt)}
+            </p>
+          </div>
+        )}
+
         {/* ── Failure Trends ────────────────────────────────── */}
         {failures !== null && (() => {
           const h1Total  = failures?.trends?.h1?.total  ?? 0
           const h6Total  = failures?.trends?.h6?.total  ?? 0
           const h24Total = failures?.trends?.h24?.total ?? 0
+
+          // Task #82 — when the failure history was reset more recently than
+          // a given window, that window's data is necessarily incomplete.
+          // Show a "since reset" suffix so the user knows the count is bounded.
+          const resetAtMs = failures?.historyResetAt
+            ? new Date(failures.historyResetAt).getTime()
+            : null
+          const nowMs = Date.now()
+          const sinceResetSuffix = (windowMs: number): string => {
+            if (resetAtMs == null) return ''
+            const ageMs = nowMs - resetAtMs
+            return ageMs < windowMs ? ' (since reset)' : ''
+          }
 
           // Direction: compare last-hour rate vs 24h hourly average
           const h24HourlyAvg = h24Total / 24
@@ -1713,9 +1731,9 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
           }
 
           const rows = [
-            { label: 'Last hour',     count: h1Total  },
-            { label: 'Last 6 hours',  count: h6Total  },
-            { label: 'Last 24 hours', count: h24Total },
+            { label: 'Last hour'     + sinceResetSuffix(    1 * 60 * 60 * 1000), count: h1Total  },
+            { label: 'Last 6 hours'  + sinceResetSuffix(    6 * 60 * 60 * 1000), count: h6Total  },
+            { label: 'Last 24 hours' + sinceResetSuffix(   24 * 60 * 60 * 1000), count: h24Total },
           ]
 
           return (
