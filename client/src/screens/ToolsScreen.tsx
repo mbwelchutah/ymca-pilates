@@ -108,16 +108,29 @@ const REASON_LABELS: Record<string, string> = {
   'invalid_job_params':          'Invalid job parameters',
   'login_failed':                'Login failed',
   'session_expired':             'Session expired',
+  'concurrent_auth':             'Auth lock held — concurrent login',
   'filter_apply_failed':         'Filters failed to apply',
+  'schedule_not_loaded':         'Schedule did not load',
   'schedule_not_rendered':       'Schedule rendered empty',
   'class_not_found':             'Class not on schedule',
   'modal_time_mismatch':         'Modal — wrong time',
   'modal_instructor_mismatch':   'Modal — wrong instructor',
+  'modal_title_mismatch':        'Modal — wrong class name',                  // Stage 5
   'modal_mismatch':              'Modal — wrong time & instructor',
+  // ── Self-Healing Safe Recovery Pass — Stage 9: surface new failure codes ──
+  // Show the operator the difference between "your class is genuinely absent"
+  // and "we couldn't safely target it". These reasons were introduced by
+  // Stages 4 and 8; without these labels, the dashboard would render the raw
+  // codes verbatim and look like dev jargon.
+  'stale_dom_untrusted':         'Stale page — could not safely target row',  // Stage 4
+  'wrong_modal_unverified':      'Wrong-class modal opened — not booked',     // Stage 8
+  // ──────────────────────────────────────────────────────────────────────────
   'click_fallback':              'Click failed — force used',
   'booking_not_open':            'Registration not open yet',
+  'class_full':                  'Class full',
   'registration_unclear':        'No confirmation after click',
   'stale_card_recovery_failed':  'Card lost after reload',
+  'ping_timeout':                'Network ping timed out',
   'unexpected_error':            'Unexpected error',
 }
 
