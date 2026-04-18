@@ -50,7 +50,18 @@ const FIRED_FILE    = path.join(DATA_DIR, 'auto-preflight-fired.json');
 //              With a 60 s tick and 90 s tolerance, every trigger fires within
 //              one tick of its named checkpoint.
 
+// Density ramps up the closer we get to booking-open:
+//   - Coarse pre-window deep verifies (6h, 3h, 1h) catch UI/auth regressions
+//     hours before they would matter, instead of waiting for T-30 to discover
+//     that the schedule URL changed or filters broke.
+//   - The fine-grained 30/10/2-min checkpoints remain unchanged.
+//   - Between checkpoints, the 12-min HTTP session-keepalive continues running.
+// Each trigger fires at most once per (jobId, bookingOpenMs) cycle and is
+// persisted to disk (FIRED_FILE) so a restart can't replay a checkpoint.
 const TRIGGERS = [
+  { name: '6h',    windowMs: 6 * 60 * 60 * 1000, toleranceMs: 5 * 60 * 1000 },
+  { name: '3h',    windowMs: 3 * 60 * 60 * 1000, toleranceMs: 5 * 60 * 1000 },
+  { name: '1h',    windowMs:     60 * 60 * 1000, toleranceMs: 2 * 60 * 1000 },
   { name: '30min', windowMs: 30 * 60 * 1000, toleranceMs: 90 * 1000 },
   { name: '10min', windowMs: 10 * 60 * 1000, toleranceMs: 90 * 1000 },
   { name: '2min',  windowMs:  2 * 60 * 1000, toleranceMs: 90 * 1000 },
