@@ -2581,7 +2581,17 @@ async function runBookingJob(job, opts = {}) {
           // Attempt one local recovery: re-run the scan immediately to get a fresh
           // element reference instead of propagating the error to the caller, which
           // would fall back to the second-best candidate (potentially equally stale).
-          console.log(`⚠️ [${candidateLabel}] Card detached — attempting local re-scan for fresh element...`);
+          //
+          // ── Self-Healing / Safe Recovery Pass — Stage 4: stale-DOM re-target ──
+          // pageHealth = stale_dom. This block is the ONE bounded re-target attempt.
+          // Bound is enforced by the existing single-attempt structure (no loop),
+          // and the post-rescan IDENTITY GATE below ensures the recovered element
+          // must restore trust before we proceed to click. If identity is not
+          // restored (score downgraded, target time not present in matched text),
+          // we bail with a truthful stale_dom_untrusted reason instead of clicking.
+          console.log(`⚠️ [${candidateLabel}] Card detached — attempting local re-scan for fresh element... (stage-4 pageHealth=stale_dom)`);
+          const _preRescanScore = _lastBestScore;
+          const _preRescanText  = _lastBestText;
           const recoveredCard = await findTargetCard();
           if (!recoveredCard) {
             console.log(`❌ [${candidateLabel}] Local recovery: re-scan returned no candidate`);
@@ -2600,7 +2610,38 @@ async function runBookingJob(job, opts = {}) {
             console.log(`❌ [${candidateLabel}] Recovered element also detached after re-scan`);
             return { ok: false, failMsg: 'Card detached twice; recovered element also not visible', reasonTag: 'error', recorded: false, usedSecondBest: _usedSecondBest };
           }
-          console.log(`✅ [${candidateLabel}] Local recovery succeeded — proceeding with fresh element`);
+
+          // ── Stage 4: identity re-validation gate ──────────────────────────
+          // The recovered card just survived a Bubble re-render. We must NOT
+          // assume it is still our target — a same-time neighbor could now sit
+          // where our card used to sit. Re-validate identity using the same
+          // signals findTargetCard() exposes via _lastBest* globals:
+          //   (a) post-rescan confidence must still meet CONFIDENCE_THRESHOLD
+          //   (b) post-rescan score must NOT downgrade (no silent weaker match)
+          //   (c) target time string must appear in the post-rescan matched text
+          // Any failure → bail safely with stale_dom_untrusted, no click.
+          const postRescanScore = _lastBestScore;
+          const postRescanText  = _lastBestText || '';
+          const _normTimeForCheck = (classTimeNorm || classTime || '').toString().trim();
+          const _timePresent = _normTimeForCheck
+            ? postRescanText.toLowerCase().includes(_normTimeForCheck.toLowerCase())
+            : true; // no target time configured → don't gate on it
+          const identityOk =
+            postRescanScore >= CONFIDENCE_THRESHOLD &&
+            postRescanScore >= _preRescanScore &&
+            _timePresent;
+          if (!identityOk) {
+            console.log(`❌ [${candidateLabel}] [stale_dom_untrusted] Recovered card failed identity re-validation — preScore=${_preRescanScore}, postScore=${postRescanScore}, timePresent=${_timePresent}, target="${_normTimeForCheck}", matched="${postRescanText.slice(0, 80)}"`);
+            await captureFailure('scan', 'stale_dom_untrusted');
+            return {
+              ok: false,
+              failMsg: `Card detached; re-scan returned a candidate that failed identity re-validation (score ${_preRescanScore}→${postRescanScore}, time match=${_timePresent}). Refusing to click on untrusted refreshed card.`,
+              reasonTag: 'stale_dom_untrusted',
+              recorded: false,
+              usedSecondBest: _usedSecondBest,
+            };
+          }
+          console.log(`✅ [${candidateLabel}] Local recovery succeeded — identity re-validated (score ${_preRescanScore}→${postRescanScore}, time match=${_timePresent}); proceeding with fresh element`);
           card = recoveredCard; // reassign: all downstream code in this function uses `card`
         }
 
