@@ -102,7 +102,16 @@ async function runSessionCheck({ source = 'manual' } = {}) {
     };
     saveStatus(status);
     // Stage 10: clear lastFailureType so canonical consumers see a clean state.
-    updateAuthState({ daxkoValid: true, familyworksValid: true, lastCheckedAt: Date.now(), lastFailureType: null });
+    // Task #79: also mirror display-only detail/screenshot so /api/session-status
+    // can render them without reading session-status.json.
+    updateAuthState({
+      daxkoValid:          true,
+      familyworksValid:    true,
+      lastCheckedAt:       Date.now(),
+      lastFailureType:     null,
+      lastCheckDetail:     status.detail     ?? null,
+      lastCheckScreenshot: status.screenshot ?? null,
+    });
     console.log('[session-check] Login succeeded — credentials valid.');
     return status;
   } catch (err) {
@@ -122,7 +131,17 @@ async function runSessionCheck({ source = 'manual' } = {}) {
     saveStatus(status);
     // Stage 10: write lastFailureType canonically so tick.js / preflight-loop.js
     // skip-gates can read it from auth-state.json instead of session-status.json.
-    updateAuthState({ daxkoValid: false, familyworksValid: false, bookingAccessConfirmed: false, bookingAccessConfirmedAt: null, lastCheckedAt: Date.now(), lastFailureType: isTimeout ? 'timeout' : 'auth_failed' });
+    // Task #79: also mirror display-only detail/screenshot for /api/session-status.
+    updateAuthState({
+      daxkoValid:               false,
+      familyworksValid:         false,
+      bookingAccessConfirmed:   false,
+      bookingAccessConfirmedAt: null,
+      lastCheckedAt:            Date.now(),
+      lastFailureType:          isTimeout ? 'timeout' : 'auth_failed',
+      lastCheckDetail:          status.detail     ?? null,
+      lastCheckScreenshot:      status.screenshot ?? null,
+    });
     return status;
   } finally {
     if (session) {

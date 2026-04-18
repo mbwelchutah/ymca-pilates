@@ -23,11 +23,15 @@
 // ║    auto-preflight.js  — recovery + ping fast-path decisions               ║
 // ║    preflight-loop.js  — session validity gate                              ║
 // ║                                                                           ║
-// ║  Non-canonical reads being migrated (see Stage 5/6):                      ║
-// ║    readiness-state.js  — still reads session-status.json + fw-session     ║
+// ║  Migration complete (Task #79):                                          ║
+// ║    readiness-state.js  — reads getCanonicalAuthTruth()                    ║
+// ║    tick.js             — reads getCanonicalAuthTruth()                    ║
+// ║    auto-preflight.js   — reads getCanonicalAuthTruth() + getAuthState()   ║
+// ║    session-validator.js — reads getCanonicalAuthTruth()                   ║
+// ║    /api/session-status — reads getCanonicalAuthTruth() + getAuthState()   ║
 // ║    session-keepalive.js checkFreshness() — still reads both legacy files  ║
-// ║    tick.js             — still reads session-status.json                  ║
-// ║    /api/session-status — still mixes all four sources                     ║
+// ║      (intentionally — Tier-1 file-mtime freshness IS the legacy file's    ║
+// ║       last-write timestamp; not a logical auth read).                     ║
 // ╚═══════════════════════════════════════════════════════════════════════════╝
 //
 // Persists to src/data/auth-state.json.
@@ -63,6 +67,11 @@ const DEFAULT_STATE = {
   // tick.js / preflight-loop.js session-failed gates can read from one canonical source.
   // null = never failed or last check succeeded; 'timeout' | 'auth_failed' on failure.
   lastFailureType:          null,
+  // Task #79 — display-only fields mirrored from session-status.json so
+  // /api/session-status no longer needs to read the legacy file.  Set by
+  // session-check.js (saveStatus path) and register-pilates.js auth phase.
+  lastCheckDetail:          null,   // human-readable string from last Daxko login attempt
+  lastCheckScreenshot:      null,   // basename of screenshot from last Daxko login attempt
   isAuthInProgress:         false,
   authOperation:            null,   // 'signing_in'|'refreshing'|'verifying'|'recovery'|null
 };

@@ -38,7 +38,10 @@ const path = require('path');
 
 const { checkFreshness }                  = require('../scheduler/session-keepalive');
 const { pingSessionHttp }                 = require('./session-ping');
-const { runSessionCheck, loadStatus }     = require('./session-check');
+const { runSessionCheck }                 = require('./session-check');
+// Task #79 — Daxko age (previously sourced from loadStatus().checkedAt) now
+// reads canonicalAuth.lastCheckedAt so session-status.json stays unread by
+// production code.
 const { getCanonicalAuthTruth }           = require('./auth-state');
 const { getPhase }                        = require('../scheduler/booking-window');
 const { getAllJobs }                       = require('../db/jobs');
@@ -106,9 +109,9 @@ function getSuspicionReason() {
   try {
     const now = Date.now();
 
-    const status = loadStatus();
-    if (status?.checkedAt) {
-      const ageMin = (now - new Date(status.checkedAt).getTime()) / 60000;
+    const canonicalAuth = getCanonicalAuthTruth();
+    if (canonicalAuth.lastCheckedAt != null) {
+      const ageMin = (now - canonicalAuth.lastCheckedAt) / 60000;
       if (ageMin > SUSPICION_AGE_MIN) {
         return `Daxko data is ${Math.round(ageMin)}m old (suspicion threshold: ${SUSPICION_AGE_MIN}m)`;
       }

@@ -4230,15 +4230,17 @@ const server = http.createServer(async (req, res) => {
     // getCanonicalAuthTruth() (auth-state.json), which is kept current by every
     // tier of session validation (ping + Playwright + keepalive).
     //
-    // loadStatus() (session-status.json) is still read, but ONLY for the display-
-    // only fields `detail` and `screenshot` from the last Playwright browser run.
-    // No auth decision is based on session-status.json in this handler.
+    // Task #79 — display-only `detail`/`screenshot` now live on auth-state.json
+    // as lastCheckDetail / lastCheckScreenshot.  session-status.json is no longer
+    // read by this handler (or by any production code path).
     const { getCanonicalAuthTruth, getAuthState } = require('../bot/auth-state');
-    const { loadStatus }                           = require('../bot/session-check');
 
     const canonicalAuth = getCanonicalAuthTruth();
-    // Display-only: Playwright detail string + screenshot (no canonical equivalent).
-    const displayData   = loadStatus() || {};
+    const fullAuth      = getAuthState();
+    const displayData   = {
+      detail:     fullAuth.lastCheckDetail     ?? null,
+      screenshot: fullAuth.lastCheckScreenshot ?? null,
+    };
 
     // ── Derive Daxko status ───────────────────────────────────────────────────
     const daxko = canonicalAuth.sessionValid === true  ? 'DAXKO_READY'

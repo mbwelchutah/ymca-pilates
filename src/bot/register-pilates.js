@@ -940,7 +940,15 @@ async function runBookingJob(job, opts = {}) {
       // leaving canonical auth truth stale until FW modal detection at line ~2016.
       // Writing daxkoValid:true here immediately so canonical truth reflects the
       // successful Daxko login even if the run crashes before reaching the modal.
-      updateAuthState({ daxkoValid: true, lastCheckedAt: Date.now(), lastFailureType: null });
+      // Task #79: also mirror display-only detail/screenshot so /api/session-status
+      // can render them without reading session-status.json.
+      updateAuthState({
+        daxkoValid:          true,
+        lastCheckedAt:       Date.now(),
+        lastFailureType:     null,
+        lastCheckDetail:     'Daxko login succeeded',
+        lastCheckScreenshot: null,
+      });
     } catch (loginErr) {
       // Distinguish transient timeouts from real auth failures.
       // A Playwright page-load timeout means the YMCA site was slow — credentials
@@ -961,7 +969,15 @@ async function runBookingJob(job, opts = {}) {
       // auth-state.json was not, leaving canonical auth truth stale.
       // familyworksValid is intentionally not set here — Daxko failed before
       // the FW check ran, so we have no new information about FW state.
-      updateAuthState({ daxkoValid: false, lastCheckedAt: Date.now(), lastFailureType: isTimeout ? 'timeout' : 'auth_failed' });
+      // Task #79: also mirror display-only detail/screenshot so /api/session-status
+      // can render them without reading session-status.json.
+      updateAuthState({
+        daxkoValid:          false,
+        lastCheckedAt:       Date.now(),
+        lastFailureType:     isTimeout ? 'timeout' : 'auth_failed',
+        lastCheckDetail:     loginErr.message || 'Login failed',
+        lastCheckScreenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
+      });
       emitEvent(_state, 'AUTH', 'AUTH_LOGIN_FAILED', loginErr.message, {
         screenshot: loginErr.screenshotPath ? path.basename(loginErr.screenshotPath) : null,
         evidence: {

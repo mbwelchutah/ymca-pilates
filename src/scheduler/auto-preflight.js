@@ -17,9 +17,11 @@ const { getPhase }         = require('./booking-window');
 const { runBookingJob }    = require('../bot/register-pilates');
 const { getDryRun }        = require('../bot/dry-run-state');
 const { loadState, updateLastSuccessfulPreflightAt } = require('../bot/sniper-readiness');
-const { loadStatus }       = require('../bot/session-check');
 const { isLocked }         = require('../bot/auth-lock');
-const { getAuthState, updateAuthState } = require('../bot/auth-state');
+// Task #79 — auth truth (including the lastCheckedAt + lastFailureType fields
+// that previously came from session-status.json via loadStatus()) now flows
+// exclusively through the canonical accessor.
+const { getAuthState, updateAuthState, getCanonicalAuthTruth } = require('../bot/auth-state');
 const { pingSessionHttp }  = require('../bot/session-ping');
 const { isCacheAdequate }  = require('../classifier/scheduleCache');
 // Stage 4 (freshness) — persist canonical readiness state after every preflight.
@@ -213,7 +215,10 @@ async function checkAutoPreflights({ isActive = false } = {}) {
         } else {
           // needs_refresh / recovering — check legacy signals for more detail.
           const sniperState   = loadState();
-          const sessionStatus = loadStatus();
+          // Task #79 — replace loadStatus() (session-status.json) with the
+          // canonical accessor.  sessionValid + lastCheckedAt mirror the
+          // legacy file's `valid` and `checkedAt` fields exactly.
+          const canonicalAuth = getCanonicalAuthTruth();
           if (sniperState?.sniperState === 'SNIPER_BLOCKED_AUTH') {
             const refTime = sniperState.authBlockedAt || sniperState.updatedAt;
             if (refTime && (Date.now() - new Date(refTime).getTime()) < AUTH_BLOCK_STALE_MS) {
@@ -221,8 +226,8 @@ async function checkAutoPreflights({ isActive = false } = {}) {
               recoveryReason = `SNIPER_BLOCKED_AUTH (${minAgo} min ago)`;
             }
           }
-          if (!recoveryReason && sessionStatus?.valid === false && sessionStatus.checkedAt) {
-            const age = Date.now() - new Date(sessionStatus.checkedAt).getTime();
+          if (!recoveryReason && canonicalAuth.sessionValid === false && canonicalAuth.lastCheckedAt != null) {
+            const age = Date.now() - canonicalAuth.lastCheckedAt;
             if (age < AUTH_BLOCK_STALE_MS) {
               const minAgo = Math.round(age / 60000);
               recoveryReason = `session-check failed (${minAgo} min ago)`;
