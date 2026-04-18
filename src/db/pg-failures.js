@@ -255,6 +255,43 @@ async function restoreFailuresFromPg() {
   }
 }
 
+// Retention policy for the PG `failures` table.  SQLite self-prunes by being
+// wiped on every Replit redeploy, but PG persists across deploys, so without
+// pruning the table accumulates every failure ever recorded — slowing both
+// restoreFailuresFromPg() at boot and the Failure Insights trend queries that
+// scan the whole table.
+//
+// Policy: delete rows whose occurred_at is older than RETENTION_DAYS.  This is
+// time-based (not row-count-based) so the trend windows the UI cares about
+// (24h / 7d / 30d) are always intact.
+const RETENTION_DAYS = 90;
+
+// Delete failure rows older than RETENTION_DAYS from PG and log how many were
+// removed.  Safe to call on every boot (cheap when nothing is stale) — the
+// occurred_at index makes the range scan fast.  Errors are non-fatal: a failed
+// prune just means the table stays the size it was.
+async function pruneFailuresInPg() {
+  if (!process.env.DATABASE_URL) return 0;
+  try {
+    await ensurePgFailuresSchema();
+    const pool = getPool();
+    const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString();
+    const result = await pool.query(
+      `DELETE FROM failures WHERE occurred_at < $1`,
+      [cutoff]
+    );
+    const removed = result.rowCount || 0;
+    console.log(
+      `[pg-failures] Prune complete — removed ${removed} row(s) older than ${RETENTION_DAYS} days (cutoff ${cutoff}).`
+    );
+    return removed;
+  } catch (err) {
+    console.error('[pg-failures] prune failed (non-fatal):', err.message);
+    return 0;
+  }
+}
+
 // Wipe PG failure history and stamp a fresh resetAt, mirroring the local
 // clearFailures() transaction.  Fire-and-forget from the API handler.
 async function clearFailuresInPg() {
@@ -287,6 +324,7 @@ module.exports = {
   ensurePgFailuresSchema,
   mirrorFailureToPg,
   restoreFailuresFromPg,
+  pruneFailuresInPg,
   clearFailuresInPg,
   getRestoreStatus,
 };

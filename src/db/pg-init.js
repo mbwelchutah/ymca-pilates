@@ -11,7 +11,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { initFromPg }            = require('./pg-sync');
-const { restoreFailuresFromPg } = require('./pg-failures');
+const { restoreFailuresFromPg, pruneFailuresInPg } = require('./pg-failures');
 
 const MARKER = path.join(__dirname, '../../data/.pg-init-status.json');
 // Stale restore-status marker from a previous boot would mislead the Failure
@@ -35,6 +35,16 @@ initFromPg().then(async () => {
     console.log('[pg-init] marker written — server sync path is unlocked.');
   } catch (e) {
     console.error('[pg-init] failed to write marker (server will refuse to sync):', e.message);
+  }
+
+  // Enforce the PG `failures` retention policy before restoring into SQLite,
+  // so stale rows are dropped at the source rather than copied into the fresh
+  // local DB.  Pruning is cheap (indexed range delete) and safe to run on
+  // every boot; this is the "scheduled" trigger called for in task #92.
+  try {
+    await pruneFailuresInPg();
+  } catch (e) {
+    console.error('[pg-init] failure-history prune failed (non-fatal):', e.message);
   }
 
   // Failure history is wiped with SQLite on every container redeploy.  Pull
