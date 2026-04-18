@@ -28,20 +28,6 @@
     "weekly_suggest_dismissed": 0
   },
   {
-    "class_title": "PREFLIGHT_LOOKUP_INACTIVE",
-    "instructor": "T",
-    "day_of_week": "Friday",
-    "class_time": "7:00 AM",
-    "target_date": null,
-    "is_active": 0,
-    "last_result": null,
-    "last_success_at": null,
-    "last_run_at": null,
-    "last_error_message": null,
-    "advance_count": 0,
-    "weekly_suggest_dismissed": 0
-  },
-  {
     "class_title": "TICKTEST_FUTURE",
     "instructor": "T",
     "day_of_week": "Tuesday",
@@ -87,6 +73,20 @@
     "class_title": "PASTTEST_API_RECURRING",
     "instructor": "T",
     "day_of_week": "Wednesday",
+    "class_time": "7:00 AM",
+    "target_date": null,
+    "is_active": 0,
+    "last_result": null,
+    "last_success_at": null,
+    "last_run_at": null,
+    "last_error_message": null,
+    "advance_count": 0,
+    "weekly_suggest_dismissed": 0
+  },
+  {
+    "class_title": "PREFLIGHT_LOOKUP_INACTIVE",
+    "instructor": "T",
+    "day_of_week": "Friday",
     "class_time": "7:00 AM",
     "target_date": null,
     "is_active": 0,
