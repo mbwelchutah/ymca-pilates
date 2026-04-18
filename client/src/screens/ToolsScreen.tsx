@@ -72,7 +72,7 @@ interface BotStatus {
 interface ToolsScreenProps {
   appState: AppState
   selectedJobId: number | null
-  refresh: () => void
+  refresh: () => void | Promise<void>
   onAccount?: () => void
   accountAttention?: boolean
   authStatus?: AuthStatusEnum | null
@@ -1506,21 +1506,43 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
     readiness:     false,
   })
 
-  useEffect(() => {
+  // Task #89 — extracted so the stale-state pill's manual retry can re-run
+  // exactly the same fetches that gate the staleness signal.  Returns a
+  // Promise that resolves once all tracked endpoints have settled, so the
+  // pill's spinner can be dismissed at the right moment.
+  const refetchTrackedEndpoints = useRef(() => {
+    const tracked = [
+      api.getSessionStatus()
+        .then(s => { setSessionStatus(s); setEndpointErrors(e => ({ ...e, sessionStatus: false })) })
+        .catch(() => setEndpointErrors(e => ({ ...e, sessionStatus: true }))),
+      api.getSniperState()
+        .then(s => { setSniperRunState(s); setEndpointErrors(e => ({ ...e, sniperState: false })) })
+        .catch(() => setEndpointErrors(e => ({ ...e, sniperState: true }))),
+      api.getReadiness()
+        .then(r => { setReadiness(r); setEndpointErrors(e => ({ ...e, readiness: false })) })
+        .catch(() => setEndpointErrors(e => ({ ...e, readiness: true }))),
+    ]
+    // Side fetches that aren't gated by the stale pill — fire alongside but
+    // don't block the returned promise.
     api.getFailures().then(setFailures).catch(() => {})
     api.getStatus().then(setBotStatus).catch(() => {})
-    api.getSessionStatus()
-      .then(s => { setSessionStatus(s); setEndpointErrors(e => ({ ...e, sessionStatus: false })) })
-      .catch(() => setEndpointErrors(e => ({ ...e, sessionStatus: true })))
-    api.getSniperState()
-      .then(s => { setSniperRunState(s); setEndpointErrors(e => ({ ...e, sniperState: false })) })
-      .catch(() => setEndpointErrors(e => ({ ...e, sniperState: true })))
     api.getAutoPreflightConfig().then(setAutoPreflightConfig).catch(() => {})
     api.getSessionKeepaliveConfig().then(setKeepaliveConfig).catch(() => {})
-    api.getReadiness()
-      .then(r => { setReadiness(r); setEndpointErrors(e => ({ ...e, readiness: false })) })
-      .catch(() => setEndpointErrors(e => ({ ...e, readiness: true })))
+    return Promise.allSettled(tracked)
+  })
+
+  useEffect(() => {
+    refetchTrackedEndpoints.current()
   }, [])
+
+  const handleStaleRetry = async () => {
+    // Refresh the parent /api/state poll alongside the Tools-screen fetches
+    // so any stale signal coming from `appState.meta` can clear too.
+    await Promise.all([
+      Promise.resolve(refresh()),
+      refetchTrackedEndpoints.current(),
+    ])
+  }
 
   useEffect(() => {
     if (!selectedJobId) return
@@ -1694,7 +1716,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
 
         {isStale && (
           <div className="px-4 pt-2 pb-1">
-            <StaleStatePill ageSeconds={largestSnapshotAgeSec} />
+            <StaleStatePill ageSeconds={largestSnapshotAgeSec} onRetry={handleStaleRetry} />
           </div>
         )}
 

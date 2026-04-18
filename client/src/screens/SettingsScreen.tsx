@@ -11,7 +11,7 @@ import { api } from '../lib/api'
 
 interface SettingsScreenProps {
   appState: AppState
-  refresh: () => void
+  refresh: () => void | Promise<void>
   onSessionRefresh?: () => void
   onAccount?: () => void
   accountAttention?: boolean
@@ -112,6 +112,13 @@ export function SettingsScreen({ appState, refresh, onSessionRefresh, onAccount,
                 ? stateMeta.snapshotAge / 1000
                 : null
             }
+            onRetry={async () => {
+              // Task #89 — Settings only depends on /api/state, so a manual
+              // retry just re-runs the parent poll.  `refresh` itself is
+              // async inside useAppState; we await a microtask wrapper so the
+              // pill spinner stays visible until the fetch settles.
+              await Promise.resolve(refresh())
+            }}
           />
         )}
 
