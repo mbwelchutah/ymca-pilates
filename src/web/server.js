@@ -5732,8 +5732,15 @@ const server = http.createServer(async (req, res) => {
     const db   = openDb();
     const rows = db.prepare('SELECT * FROM scraped_classes ORDER BY day_of_week, class_time').all();
     db.close();
+    // Task #84 — surface the most recent scrape timestamp so the UI can
+    // render "Schedule scraped X ago" near the refresh control.  All rows
+    // share a single scrape pass, so max(scraped_at) is the cache age.
+    let scrapedAt = null;
+    for (const r of rows) {
+      if (r.scraped_at && (!scrapedAt || r.scraped_at > scrapedAt)) scrapedAt = r.scraped_at;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ classes: rows }));
+    res.end(JSON.stringify({ classes: rows, scrapedAt }));
 
   } else if (req.method === 'POST' && path === '/refresh-schedule') {
     if (_scrapeRunning) {

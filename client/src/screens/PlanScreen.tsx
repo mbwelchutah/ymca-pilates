@@ -800,8 +800,25 @@ interface BrowseSheetProps {
   onTrack: (cls: ScrapedClass) => void
 }
 
+// Task #84 — "Schedule scraped X ago" freshness label.
+// Returns { label, isStale } where isStale=true when the cache is missing
+// or older than 12 h, prompting the amber styling near the refresh control.
+const SCHEDULE_STALE_MS = 12 * 60 * 60 * 1000   // 12 hours
+function formatScrapedAt(scrapedAt: string | null): { label: string; isStale: boolean } {
+  if (!scrapedAt) return { label: 'Schedule never scraped', isStale: true }
+  const ageMs = Date.now() - new Date(scrapedAt).getTime()
+  const isStale = ageMs > SCHEDULE_STALE_MS
+  let rel: string
+  if (ageMs < 60_000)            rel = 'just now'
+  else if (ageMs < 3_600_000)    rel = `${Math.floor(ageMs / 60_000)} m ago`
+  else if (ageMs < 86_400_000)   rel = `${Math.floor(ageMs / 3_600_000)} h ago`
+  else                           rel = `${Math.floor(ageMs / 86_400_000)} d ago`
+  return { label: `Schedule scraped ${rel}`, isStale }
+}
+
 function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
   const [classes, setClasses]     = useState<ScrapedClass[]>([])
+  const [scrapedAt, setScrapedAt] = useState<string | null>(null)
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [err, setErr]             = useState<string | null>(null)
@@ -809,7 +826,7 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
 
   useEffect(() => {
     api.getScrapedClasses()
-      .then(r => setClasses(r.classes))
+      .then(r => { setClasses(r.classes); setScrapedAt(r.scrapedAt) })
       .catch(e => setErr(e instanceof Error ? e.message : 'Could not load schedule'))
       .finally(() => setLoading(false))
   }, [])
@@ -822,12 +839,15 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
       await api.refreshSchedule()
       const updated = await api.getScrapedClasses()
       setClasses(updated.classes)
+      setScrapedAt(updated.scrapedAt)
     } catch (e) {
       setRefreshErr(e instanceof Error ? e.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
     }
   }
+
+  const freshness = formatScrapedAt(scrapedAt)
 
   const DAY_ORDER: Record<string, number> = {
     Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
@@ -859,6 +879,12 @@ function BrowseSheet({ onClose, onTrack }: BrowseSheetProps) {
               <h2 className="text-[18px] font-bold text-text-primary tracking-tight">Browse Schedule</h2>
               {!loading && !err && sorted.length > 0 && (
                 <p className="text-[12px] text-text-muted">{sorted.length} class{sorted.length !== 1 ? 'es' : ''}</p>
+              )}
+              {/* Task #84 — schedule cache freshness; amber when stale or missing */}
+              {!loading && !err && (
+                <p className={`text-[11px] mt-0.5 ${freshness.isStale ? 'text-amber-600 font-medium' : 'text-text-muted'}`}>
+                  {freshness.label}
+                </p>
               )}
             </div>
             <div className="flex items-center gap-3">

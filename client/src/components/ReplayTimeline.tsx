@@ -153,6 +153,9 @@ function EmptyNoRuns() {
         <p className="text-[11px] text-text-muted mt-1 leading-relaxed max-w-[220px]">
           The timeline fills in automatically after the first registration attempt.
         </p>
+        <p className="text-[10px] text-text-muted/70 mt-1.5 leading-relaxed max-w-[220px]">
+          Replay history resets on restart.
+        </p>
       </div>
     </div>
   )

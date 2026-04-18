@@ -33,7 +33,7 @@
     "day_of_week": "Tuesday",
     "class_time": "12:00 PM",
     "target_date": "2099-04-21",
-    "is_active": 0,
+    "is_active": 1,
     "last_result": null,
     "last_success_at": null,
     "last_run_at": null,

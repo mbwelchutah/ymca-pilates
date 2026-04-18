@@ -234,7 +234,7 @@ export const api = {
   clearFailures: (): Promise<{ success: boolean }> =>
     apiFetch('/api/failures', { method: 'DELETE' }),
 
-  getScrapedClasses: (): Promise<{ classes: ScrapedClass[] }> =>
+  getScrapedClasses: (): Promise<{ classes: ScrapedClass[]; scrapedAt: string | null }> =>
     apiFetch('/api/scraped-classes'),
 
   refreshSchedule: (): Promise<{ count: number; scraped_at: string }> =>
