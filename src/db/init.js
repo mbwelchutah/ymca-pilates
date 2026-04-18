@@ -5,7 +5,10 @@ const path = require('path');
 const Database = require('better-sqlite3');
 
 const DATA_DIR = path.join(__dirname, '../../data');
-const DB_PATH = path.join(DATA_DIR, 'app.db');
+// SQLITE_PATH lets isolated test runs point at a throwaway DB file so they
+// can call destructive helpers (clearFailures, etc.) without nuking dev data.
+// Production / dev always uses the canonical data/app.db.
+const DB_PATH = process.env.SQLITE_PATH || path.join(DATA_DIR, 'app.db');
 
 // Guard: sync-from-seed must run exactly once per process (at startup).
 // Running it on every openDb() call would revert user edits made via the

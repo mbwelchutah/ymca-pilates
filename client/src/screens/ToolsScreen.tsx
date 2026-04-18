@@ -38,9 +38,10 @@ interface TrendWindow {
 }
 
 interface JobReliability {
-  job_id:        number
-  failure_count: number
-  top_reason:    string | null
+  job_id:           number
+  failure_count:    number
+  transient_count?: number
+  top_reason:       string | null
 }
 
 interface FailureData {
@@ -1457,6 +1458,7 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
   const [expandedKey, setExpandedKey]         = useState<string | null>(null)
   const [activityShowAll, setActivityShowAll]   = useState(false)
   const [showAllFailures, setShowAllFailures]   = useState(false)
+  const [expandedTransientJobs, setExpandedTransientJobs] = useState<Set<number>>(() => new Set())
   const [lightboxSrc, setLightboxSrc]         = useState<string | null>(null)
 
   // ── Auto-preflight config (Stage 9.2) ─────────────────────────────────────
@@ -1747,8 +1749,11 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
               <Card padding="none">
                 {scored.map(({ job, rel, fails, isDown }, i) => {
                   const neverRun = !job.last_result
+                  const transient = rel?.transient_count ?? 0
 
-                  // Status: worst condition wins
+                  // Status: worst condition wins.  `fails` already counts only
+                  // ACTIONABLE failures (the server filters transient/expected
+                  // outcomes via the failure-classification taxonomy).
                   let dot: string, statusText: string, statusColor: string
                   if (fails >= 3 || isDown) {
                     dot = 'bg-accent-red';   statusText = 'At risk'; statusColor = 'text-accent-red'
@@ -1784,7 +1789,28 @@ export function ToolsScreen({ appState, selectedJobId, refresh, onAccount, accou
                         {topIssue && (
                           <span className="text-[12px] text-text-muted truncate">· {topIssue}</span>
                         )}
+                        {transient > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedTransientJobs(prev => {
+                                const next = new Set(prev)
+                                if (next.has(job.id)) next.delete(job.id); else next.add(job.id)
+                                return next
+                              })
+                            }}
+                            className="text-[12px] text-text-muted underline-offset-2 hover:underline"
+                            title="These are expected pre-window or infra-blip retries that don't affect reliability"
+                          >
+                            · +{transient} transient retr{transient === 1 ? 'y' : 'ies'} hidden
+                          </button>
+                        )}
                       </div>
+                      {transient > 0 && expandedTransientJobs.has(job.id) && (
+                        <div className="ml-[18px] mt-1 text-[11px] text-text-muted leading-relaxed">
+                          Transient retries (e.g. registration not open yet, schedule not yet rendered, page-load timeouts) are tracked in the full failure log below but excluded from this rollup. They self-recover and don't need attention.
+                        </div>
+                      )}
                     </div>
                   )
                 })}
