@@ -76,6 +76,10 @@ export interface Job {
   // Enriched by /api/state
   phase?: Phase
   bookingOpenMs?: number | null
+  // True for one-off jobs (target_date set) whose class date+time is already
+  // in the past.  When set, the scheduler skips the job and the Plan card
+  // shows an "advance to next week" prompt instead of the stale countdown.
+  passed?: boolean
   weekdayConsistency?: {
     isConsistent: boolean
     storedWeekday: string | null

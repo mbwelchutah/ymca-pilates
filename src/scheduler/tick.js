@@ -5,7 +5,7 @@
 // Does NOT check isSchedulerPaused() — callers decide whether to gate on it.
 
 const { getAllJobs, setLastRun }    = require('../db/jobs');
-const { getPhase }                  = require('./booking-window');
+const { getPhase, isPastClass }     = require('./booking-window');
 const { runBookingJob }             = require('../bot/register-pilates');
 const { getDryRun }                 = require('../bot/dry-run-state');
 const { loadState, emitTickSkip }   = require('../bot/sniper-readiness');
@@ -53,6 +53,11 @@ function nowLabel() {
 // In-memory concurrency guard shared across all callers in the same process.
 const runningJobs = new Set();
 
+// Tracks which past-class jobs we've already logged a "skipping past class"
+// notice for in this process — keeps the scheduler log readable while still
+// surfacing the condition once per job for traceability.
+const pastClassLogged = new Set();
+
 // Executes one scheduler tick: loads active jobs, filters by phase/cooldown/
 // booked status, and runs eligible ones.
 // Options:
@@ -78,6 +83,17 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
   console.log(`  Active jobs in scope: ${jobs.length}`);
   const results = [];
 
+  // Reconcile the past-class log gate against the *full* current job set
+  // (active or not) so IDs for jobs that have been deleted, deactivated, or
+  // advanced no longer accumulate in memory.  Without this, the Set could
+  // grow unboundedly over a long-lived process.
+  try {
+    const currentIds = new Set(getAllJobs().map(j => j.id));
+    for (const id of pastClassLogged) {
+      if (!currentIds.has(id)) pastClassLogged.delete(id);
+    }
+  } catch (_) { /* best-effort cleanup; never block the tick */ }
+
   for (const dbJob of jobs) {
     const job = {
       id:          dbJob.id,
@@ -97,6 +113,22 @@ async function runTick({ onlyJobId = null, skipCooldown = false } = {}) {
     }
 
     console.log(`  Job #${dbJob.id} (${dbJob.class_title} ${dbJob.day_of_week} ${dbJob.class_time}) — phase: ${phase}`);
+
+    // Past one-off class: target_date + class_time is already in the past.
+    // Skip the run loop entirely — no point launching the bot for a class that
+    // has already happened.  The UI surfaces an "advance to next week" prompt
+    // (see /api/state `passed` flag) so the user can roll the date forward.
+    if (isPastClass(dbJob)) {
+      if (!pastClassLogged.has(dbJob.id)) {
+        console.log(`  => SKIPPING Job #${dbJob.id} — class has passed (${dbJob.target_date} ${dbJob.class_time}); waiting for user to advance or remove.`);
+        pastClassLogged.add(dbJob.id);
+      }
+      results.push({ jobId: dbJob.id, phase, status: 'skipped', message: 'class has passed' });
+      continue;
+    }
+    // If the job was past and is now future again (advanced by the user),
+    // clear the one-shot log gate so a future past state will log again.
+    pastClassLogged.delete(dbJob.id);
 
     if (!ELIGIBLE_PHASES.includes(phase)) {
       results.push({ jobId: dbJob.id, phase, status: 'skipped', message: `phase is ${phase}` });

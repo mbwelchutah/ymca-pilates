@@ -2,13 +2,13 @@
 // Serves a jobs dashboard at / and booking API routes.
 const http = require('http');
 const { URL } = require('url');
-const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun } = require('../db/jobs');
+const { getJobById, getAllJobs, createJob, updateJob, deleteJob, setJobActive, setLastRun, clearLastRun, advanceJobOneWeek } = require('../db/jobs');
 const { syncJobsToPgAsync } = require('../db/pg-sync');
 const { openDb } = require('../db/init');
 const { runBookingJob, cancelRegistration } = require('../bot/register-pilates');
 const { scrapeSchedule } = require('../bot/scrape-schedule');
 const { getDryRun, setDryRun } = require('../bot/dry-run-state');
-const { getPhase }           = require('../scheduler/booking-window');
+const { getPhase, isPastClass } = require('../scheduler/booking-window');
 const { checkJobConsistency } = require('../scheduler/job-consistency');
 const { setSchedulerPaused, isSchedulerPaused } = require('../scheduler/scheduler-state');
 const { runTick }            = require('../scheduler/tick');
@@ -3859,7 +3859,7 @@ let _scrapeRunning = false;
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const json = (data) => {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(data));
@@ -4775,6 +4775,27 @@ const server = http.createServer((req, res) => {
         newActive = fields.is_active === '1';
       }
       if (id) {
+        // Guard: refuse to flip a past-dated job back to On — the scheduler
+        // will skip it anyway, and this prevents the UI from showing a misleading
+        // "On" state.  The user must Advance / Edit the date first.
+        if (newActive) {
+          const existing = getJobById(id);
+          if (existing && isPastClass(existing)) {
+            console.log(`Refused to activate job #${id} — class has passed (${existing.target_date} ${existing.class_time}).`);
+            if (isJsonTa) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                success:   false,
+                is_active: !!existing.is_active,
+                error:     'This class has already passed. Advance it to next week or edit the date before turning it on.',
+              }));
+            } else {
+              res.writeHead(409, { 'Content-Type': 'text/plain' });
+              res.end('class has passed');
+            }
+            return;
+          }
+        }
         setJobActive(id, newActive);
         console.log(`Set job #${id} is_active=${newActive}`);
         await syncJobsToPgAsync().catch(e => console.error('[pg-sync] toggle-active await failed:', e.message));
@@ -4787,6 +4808,49 @@ const server = http.createServer((req, res) => {
         res.end('ok');
       }
     });
+
+  } else if (req.method === 'POST' && path.startsWith('/api/jobs/') && path.endsWith('/advance')) {
+    // Bumps a one-off class's target_date forward by 7-day steps until the new
+    // date is in the future, and clears any stale per-occurrence run state so
+    // the new week starts clean.  Used by the Plan card's "Advance to next week"
+    // prompt that appears once a class has passed.
+    const idStr = path.slice('/api/jobs/'.length, -'/advance'.length);
+    const advId = parseInt(idStr, 10);
+    if (isNaN(advId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Invalid job ID' }));
+    }
+    const existing = getJobById(advId);
+    if (!existing) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Job not found' }));
+    }
+    if (!existing.target_date) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: false,
+        error:   'This is a recurring class — it already rolls forward automatically.',
+      }));
+    }
+    const updated = advanceJobOneWeek(advId);
+    if (!updated) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Failed to advance job' }));
+    }
+    console.log(`Advanced job #${advId} target_date ${existing.target_date} → ${updated.target_date}`);
+    // Await PG sync before responding so a successful 200 means SQLite *and*
+    // PostgreSQL are both durable — matches the pattern used by the other
+    // mutation endpoints (toggle-active, delete-job).
+    try {
+      await syncJobsToPgAsync();
+    } catch (e) {
+      console.error('[pg-sync] advance-job sync failed:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Saved locally but failed to sync to PostgreSQL — please retry.' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, job: { ...updated, passed: isPastClass(updated) } }));
+    return;
 
   } else if (req.method === 'POST' && path === '/delete-job') {
     const isJsonDel = (req.headers['content-type'] || '').includes('application/json');
@@ -5056,7 +5120,9 @@ const server = http.createServer((req, res) => {
     return;
 
   } else if (req.method === 'GET' && path === '/api/jobs') {
-    json(getAllJobs());
+    // Enrich each job with `passed` so clients can react to expired one-offs
+    // even when fetching this lighter endpoint instead of /api/state.
+    json(getAllJobs().map(j => ({ ...j, passed: isPastClass(j) })));
 
   } else if (req.method === 'GET' && path.startsWith('/api/jobs/') && path.endsWith('/classify')) {
     // Stage 6: return classifier truth for a specific job.
@@ -5152,10 +5218,15 @@ const server = http.createServer((req, res) => {
         liveTruth.refreshIfStale(j, { msUntilOpen });
       }
 
+      // `passed` flag — true for one-off jobs whose target_date + class_time
+      // has already gone by.  The Plan UI uses this to surface an "advance to
+      // next week" prompt instead of the stale countdown / Issue badge.
+      const passed = !!j.target_date && nextClassMs != null && nextClassMs < Date.now();
+
       return {
         ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency,
         liveAvailability, liveVerdict, liveUrgencyHints, liveRecentInfluence,
-        liveImmediateTrigger,
+        liveImmediateTrigger, passed,
       };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.

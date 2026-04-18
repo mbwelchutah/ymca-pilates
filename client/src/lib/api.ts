@@ -152,6 +152,12 @@ export const api = {
       body: JSON.stringify({ id }),
     }),
 
+  // Bumps a one-off job's target_date forward by 7-day steps until it is in
+  // the future, and clears any stale per-occurrence run state.  Used by the
+  // Plan card's "Advance to next week" prompt when a class has passed.
+  advanceJob: (id: number): Promise<{ success: boolean; job: Job }> =>
+    apiFetch(`/api/jobs/${id}/advance`, { method: 'POST' }),
+
   pauseScheduler: (): Promise<{ success: boolean }> =>
     apiFetch('/pause-scheduler', { method: 'POST' }),
 

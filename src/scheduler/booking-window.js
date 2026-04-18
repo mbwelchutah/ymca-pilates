@@ -154,4 +154,20 @@ function getPhase(job) {
   return { phase, nextClass, bookingOpen, msUntilOpen };
 }
 
-module.exports = { getBookingWindow, getPhase, parseTime, nextOccurrence };
+/**
+ * Returns true when the given job is a one-off (target_date set) whose class
+ * date+time has already passed in Pacific time.  Recurring jobs (no target_date)
+ * always return false because nextOccurrence() rolls them forward automatically.
+ */
+function isPastClass(job) {
+  const targetDate = job.targetDate || job.target_date;
+  if (!targetDate) return false;
+  try {
+    const { nextClass } = getBookingWindow(job);
+    return nextClass.getTime() < Date.now();
+  } catch (_) {
+    return false;
+  }
+}
+
+module.exports = { getBookingWindow, getPhase, parseTime, nextOccurrence, isPastClass };

@@ -127,14 +127,15 @@ interface SniperRowData {
 interface JobCardProps {
   job: Job
   isWatching: boolean
-  onToggle: () => Promise<void>
-  onDelete: () => Promise<void>
-  onEdit: () => void
-  onSelect: () => void
+  onToggle:  () => Promise<void>
+  onDelete:  () => Promise<void>
+  onAdvance: () => Promise<void>
+  onEdit:    () => void
+  onSelect:  () => void
   sniperRow?: SniperRowData
 }
 
-function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniperRow }: JobCardProps) {
+function JobCard({ job, isWatching, onToggle, onDelete, onAdvance, onEdit, onSelect, sniperRow }: JobCardProps) {
   const [toggling, setToggling]     = useState(false)
   const [toggleErr, setToggleErr]   = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -142,6 +143,18 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const [deleting, setDeleting]     = useState(false)
   const [deleteErr, setDeleteErr]   = useState<string | null>(null)
   const [cacheInfo, setCacheInfo]   = useState<ClassTruthResult | null>(null)
+  // Past-class prompt state.
+  // - advancing/advanceErr — feedback while POSTing /api/jobs/:id/advance.
+  // - kept — true once the user dismisses the prompt with "Keep"; the banner
+  //   stays out of the way for that occurrence (state is local; if /api/state
+  //   refreshes and the job is still past, the kept dismissal still applies).
+  const [advancing, setAdvancing]   = useState(false)
+  const [advanceErr, setAdvanceErr] = useState<string | null>(null)
+  const [kept, setKept]             = useState(false)
+  // Reset the local "kept" dismissal once the job is no longer past (e.g. it
+  // was advanced or its date was edited to a future value), so a future expiry
+  // surfaces the prompt again.
+  useEffect(() => { if (!job.passed) setKept(false) }, [job.passed])
 
   // Arm the destructive button ~900ms AFTER the confirm row appears so a
   // reflexive double-tap on "Delete" can't blow the class away.  The
@@ -190,11 +203,34 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
   const handleToggleClick = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (toggling) return
+    // Past-dated jobs are paused — block flipping back to On until the user
+    // advances the date.  Surface the same hint inline so the toggle reads as
+    // a no-op rather than a silent failure.
+    if (job.passed && !job.is_active) {
+      setToggleErr('Class has passed — advance to next week before turning on.')
+      return
+    }
     setToggling(true)
     setToggleErr(null)
     try { await onToggle() }
-    catch { setToggleErr('Could not update — try again') }
+    catch (err) { setToggleErr(err instanceof Error ? err.message : 'Could not update — try again') }
     finally { setToggling(false) }
+  }
+
+  const handleAdvanceClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (advancing) return
+    setAdvancing(true)
+    setAdvanceErr(null)
+    try {
+      // Parent's onAdvance both POSTs and refreshes /api/state so the card
+      // immediately re-renders with the new target_date and `passed: false`.
+      await onAdvance()
+    } catch (err) {
+      setAdvanceErr(err instanceof Error ? err.message : 'Could not advance — try again')
+    } finally {
+      setAdvancing(false)
+    }
   }
 
   const handleConfirmDelete = async () => {
@@ -209,8 +245,15 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
     }
   }
 
+  // When the class has passed and the user hasn't dismissed the prompt, the
+  // card switches to a calmer "paused" presentation: the stale countdown,
+  // status row, schedule cache, and Issue badge are all suppressed in favour
+  // of the past-class banner (rendered below).  Once the user taps "Keep",
+  // the card returns to its normal layout but the toggle stays guarded.
+  const showPastBanner = !!job.passed && !kept
+
   return (
-    <Card padding="none" className={`overflow-hidden ${!job.is_active ? 'opacity-60' : ''}`}>
+    <Card padding="none" className={`overflow-hidden ${(!job.is_active || job.passed) ? 'opacity-60' : ''}`}>
       {/* Active-target accent stripe — sole selection indicator; ring removed (redundant with stripe + badge) */}
       {isWatching && <div className="h-1 bg-accent-blue w-full" />}
 
@@ -234,21 +277,33 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
               </span>
             )}
           </div>
-          {/* On/Off toggle + ›  grouped on the right */}
+          {/* On/Off toggle + ›  grouped on the right.
+              Past-dated jobs render a dimmed, non-toggleable "Paused" pill so
+              the toggle doesn't read as actionable while the scheduler is
+              skipping the job. */}
           <div className="flex-shrink-0 flex items-center gap-1.5">
-            <button
-              onClick={handleToggleClick}
-              disabled={toggling}
-              className={`
-                px-3 py-1 rounded-full text-[12px] font-semibold
-                transition-colors active:opacity-70 disabled:opacity-40
-                ${job.is_active
-                  ? 'bg-accent-green/10 text-accent-green'
-                  : 'bg-[#f2f2f7] text-text-secondary'}
-              `}
-            >
-              {toggling ? '…' : job.is_active ? 'On' : 'Off'}
-            </button>
+            {job.passed ? (
+              <span
+                className="px-3 py-1 rounded-full text-[12px] font-semibold bg-[#f2f2f7] text-text-muted opacity-70"
+                title="Class has passed — advance to next week to resume"
+              >
+                Paused
+              </span>
+            ) : (
+              <button
+                onClick={handleToggleClick}
+                disabled={toggling}
+                className={`
+                  px-3 py-1 rounded-full text-[12px] font-semibold
+                  transition-colors active:opacity-70 disabled:opacity-40
+                  ${job.is_active
+                    ? 'bg-accent-green/10 text-accent-green'
+                    : 'bg-[#f2f2f7] text-text-secondary'}
+                `}
+              >
+                {toggling ? '…' : job.is_active ? 'On' : 'Off'}
+              </button>
+            )}
             {/* Disclosure indicator — communicates that the card body taps to Now */}
             <svg
               className="w-[14px] h-[14px] text-[#c8c8cc] flex-shrink-0"
@@ -264,11 +319,57 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
           {detailLine}
         </p>
 
+        {/* Past-class banner — replaces the stale countdown / Issue badge for
+             one-off classes whose date+time has already gone by.  The user
+             can advance the class to next week (preserves time/instructor
+             and clears the per-occurrence failure state), keep the prompt
+             out of the way for now, or remove the class entirely.
+             "Remove" reuses the existing destructive confirm flow below. */}
+        {showPastBanner && (
+          <div
+            className="mt-3 rounded-xl border border-amber-500/30 bg-amber-50 px-3 py-3"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-2">
+              <span className="text-[14px]" aria-hidden="true">⏰</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-amber-900 leading-snug">
+                  Class has passed
+                </p>
+                <p className="text-[12px] text-amber-800/80 mt-0.5 leading-snug">
+                  Auto-registration is paused. Advance to next week to keep this class on your plan.
+                </p>
+                {advanceErr && (
+                  <p className="text-[12px] text-accent-red mt-1">{advanceErr}</p>
+                )}
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    onClick={handleAdvanceClick}
+                    disabled={advancing}
+                    className="text-[13px] font-semibold text-accent-blue active:opacity-70 disabled:opacity-40"
+                  >
+                    {advancing ? 'Advancing…' : 'Advance to next week'}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setKept(true) }}
+                    disabled={advancing}
+                    className="text-[13px] font-medium text-text-secondary active:opacity-70 disabled:opacity-40"
+                  >
+                    Keep
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Row 3: Status
              Phase label is suppressed for the watched card when sniperRow is present —
              the sniper row below provides real-time phase information and
-             the coarse PHASE_LABEL (e.g. "Armed") can contradict it ("Monitoring"). */}
-        {job.is_active && (() => {
+             the coarse PHASE_LABEL (e.g. "Armed") can contradict it ("Monitoring").
+             Suppressed entirely for past-dated jobs — stale Issue/result badges
+             from prior runs are no longer actionable for that occurrence. */}
+        {job.is_active && !job.passed && (() => {
           // late phase: timing line already says "Opened [date]"; result badge covers outcome
           const showPhase = phase !== 'late' && (!isWatching || !sniperRow)
           const showBadge = !!(job.last_result && RESULT_SHOW.has(job.last_result) && isResultCurrent(job))
@@ -312,15 +413,19 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
           </div>
         )}
 
-        {/* Row 4: Timing — absolute date + live countdown */}
-        {timingLine && (
+        {/* Row 4: Timing — absolute date + live countdown.
+             Hidden for past-dated jobs: the "Opens …" line would point at a
+             stale window 3 days before a class that already happened. */}
+        {timingLine && !job.passed && (
           <p className="text-[12px] text-text-muted mt-1 tabular-nums leading-snug">
             {timingLine}
           </p>
         )}
 
-        {/* Row 5: Schedule cache availability (light indicator from classifier) */}
-        {job.is_active && cacheInfo && (() => {
+        {/* Row 5: Schedule cache availability (light indicator from classifier).
+             Hidden for past-dated jobs — class availability is not actionable
+             once the class has already happened. */}
+        {job.is_active && !job.passed && cacheInfo && (() => {
           const st = cacheInfo.state
           const [dot, label] =
             st === 'full'               ? ['bg-accent-red',   'Full']         :
@@ -344,8 +449,10 @@ function JobCard({ job, isWatching, onToggle, onDelete, onEdit, onSelect, sniper
           )
         })()}
 
-        {/* Sniper detail row — watched card only, unchanged logic */}
-        {isWatching && sniperRow && (() => {
+        {/* Sniper detail row — watched card only, unchanged logic.
+             Hidden for past-dated jobs: the sniper view describes a booking
+             window that no longer applies. */}
+        {isWatching && sniperRow && !job.passed && (() => {
           const { phase: sp, countdown: sniperCountdown } = sniperRow
 
           if (sp === 'monitoring') {
@@ -956,6 +1063,14 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
     await refresh()
   }
 
+  const handleAdvance = async (job: Job) => {
+    await api.advanceJob(job.id)
+    // Refresh so the card immediately reflects the new target_date and the
+    // computed `passed: false` flag — otherwise the past banner would linger
+    // until the next 5-second poll.
+    await refresh()
+  }
+
   const handleEdit = (job: Job) => {
     setEditingJob(job)
     setPrefill(null)
@@ -1092,6 +1207,7 @@ export function PlanScreen({ appState, selectedJobId, onSelectJob, loading, refr
                 isWatching={job.id === selectedJobId}
                 onToggle={() => handleToggle(job)}
                 onDelete={() => handleDelete(job)}
+                onAdvance={() => handleAdvance(job)}
                 onEdit={() => handleEdit(job)}
                 onSelect={() => onSelectJob(job.id)}
                 sniperRow={job.id === selectedJobId ? watchedSniperRow : undefined}

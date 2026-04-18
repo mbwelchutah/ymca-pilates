@@ -134,4 +134,47 @@ function clearLastRun(id) {
   syncSeed();
 }
 
-module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun };
+// Advances a one-off job's target_date forward by 7-day steps until the new
+// class date+time is strictly in the future (Pacific time, including the
+// class's class_time — not just the calendar day).  Also clears the
+// per-occurrence run state (last_run_at / last_result / last_error_message /
+// last_success_at) so the new week's card starts clean and any stale "Issue"
+// badge from a prior failed attempt no longer appears.  Returns the updated
+// job row, or null when the job doesn't exist or isn't a one-off.
+function advanceJobOneWeek(id) {
+  // Imported lazily to avoid a circular require with src/scheduler/* which
+  // depends on this module for getAllJobs/setLastRun at scheduler boot.
+  const { isPastClass } = require('../scheduler/booking-window');
+  const db  = openDb();
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  if (!job || !job.target_date) return null;
+
+  // Iterate in 7-day steps until the resulting target_date + class_time is no
+  // longer past per isPastClass (which compares full Pacific datetime via
+  // getBookingWindow).  Hard cap at 520 weeks (~10 years) so a misconfigured
+  // class_time that always classifies as past can never spin forever.
+  const d = new Date(job.target_date + 'T12:00:00Z');
+  let iso = job.target_date;
+  let candidate = { ...job, target_date: iso };
+  let bumps = 0;
+  while (isPastClass(candidate) && bumps < 520) {
+    d.setUTCDate(d.getUTCDate() + 7);
+    iso = d.toISOString().slice(0, 10);
+    candidate = { ...job, target_date: iso };
+    bumps++;
+  }
+
+  db.prepare(`
+    UPDATE jobs
+    SET target_date        = ?,
+        last_run_at        = NULL,
+        last_result        = NULL,
+        last_error_message = NULL,
+        last_success_at    = NULL
+    WHERE id = ?
+  `).run(iso, id);
+  syncSeed();
+  return db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+}
+
+module.exports = { createJob, getAllJobs, getJobById, setLastRun, updateJob, deleteJob, setJobActive, clearLastRun, advanceJobOneWeek };
