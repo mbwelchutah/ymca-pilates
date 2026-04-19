@@ -90,6 +90,10 @@ function openDb() {
     // "Make this weekly?" suggestion for this specific job.
     'ALTER TABLE jobs ADD COLUMN advance_count INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE jobs ADD COLUMN weekly_suggest_dismissed INTEGER NOT NULL DEFAULT 0',
+    // Task #103 — most recently captured FW waitlist position ("#N On Waitlist")
+    // moved from data/waitlist-positions.json into the jobs row so it survives a
+    // fresh-container restart cleanup the same way last_run_at does.
+    'ALTER TABLE jobs ADD COLUMN last_waitlist_position INTEGER NULL',
     // Structured failure enrichment columns (added in Stage 3.5+)
     'ALTER TABLE failures ADD COLUMN category TEXT NULL',
     'ALTER TABLE failures ADD COLUMN label TEXT NULL',
@@ -122,8 +126,8 @@ function openDb() {
           INSERT INTO jobs
             (class_title, instructor, day_of_week, class_time, target_date, is_active,
              last_result, last_success_at, last_run_at, last_error_message,
-             advance_count, weekly_suggest_dismissed, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             advance_count, weekly_suggest_dismissed, last_waitlist_position, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const now = new Date().toISOString();
         const seedAll = db.transaction((rows) => {
@@ -141,6 +145,7 @@ function openDb() {
               r.last_error_message ?? null,
               Number.isFinite(r.advance_count) ? r.advance_count : 0,
               r.weekly_suggest_dismissed ? 1 : 0,
+              Number.isFinite(r.last_waitlist_position) ? r.last_waitlist_position : null,
               now
             );
           }
@@ -168,8 +173,8 @@ function openDb() {
             INSERT INTO jobs
               (class_title, instructor, day_of_week, class_time, target_date, is_active,
                last_result, last_success_at, last_run_at, last_error_message,
-               advance_count, weekly_suggest_dismissed, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               advance_count, weekly_suggest_dismissed, last_waitlist_position, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           const now = new Date().toISOString();
           const insertAll = db.transaction((rows) => {
@@ -187,6 +192,7 @@ function openDb() {
                 r.last_error_message ?? null,
                 Number.isFinite(r.advance_count) ? r.advance_count : 0,
                 r.weekly_suggest_dismissed ? 1 : 0,
+                Number.isFinite(r.last_waitlist_position) ? r.last_waitlist_position : null,
                 now
               );
             }

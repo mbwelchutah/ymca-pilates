@@ -1,13 +1,19 @@
 'use strict';
-// waitlist-position-store.js — Task #101
+// waitlist-position-store.js — Task #101 (DB-backed since Task #103)
 //
-// Tiny disk-backed map of jobId → { position, capturedAt } so the most
-// recently observed FW waitlist badge ("#10 On Waitlist") can be surfaced
-// on the Now / Tools UI for as long as last_result === 'waitlist'.
+// Tiny key/value accessor for the most recently observed FW waitlist badge
+// ("#10 On Waitlist") so it can be surfaced on the Now / Tools UI for as long
+// as last_result === 'waitlist'.
 //
-// Deliberately *not* a DB schema change: positions are an enrichment, not
-// a source of truth. The file is tolerant of missing/corrupt content
-// (returns nulls) and writes are best-effort.
+// Originally backed by data/waitlist-positions.json — Task #103 moved storage
+// onto the jobs row itself (jobs.last_waitlist_position) so the value
+// survives the same fresh-container restart cleanup that wipes other on-disk
+// state, and so it participates in the existing PG mirror without a second
+// out-of-band file.
+//
+// Tolerant of missing/corrupt rows: get() returns null on any error and
+// set()/clear() swallow write failures so a transient DB hiccup never breaks
+// the booking pipeline.
 //
 // Usage:
 //   const positions = require('./waitlist-position-store');
@@ -15,55 +21,40 @@
 //   positions.get(jobId);   // 10  (or null)
 //   positions.clear(jobId); // forget on reset
 
-const fs   = require('fs');
-const path = require('path');
-
-const DATA_DIR = path.resolve(__dirname, '../../data');
-const FILE     = path.join(DATA_DIR, 'waitlist-positions.json');
-
-function _readAll() {
-  try {
-    if (!fs.existsSync(FILE)) return {};
-    const raw = fs.readFileSync(FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function _writeAll(map) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(map, null, 2));
-  } catch (err) {
-    console.warn('[waitlist-position-store] write failed (non-fatal):', err.message);
-  }
-}
+const { openDb } = require('../db/init');
 
 function get(jobId) {
   if (jobId == null) return null;
-  const all = _readAll();
-  const row = all[String(jobId)];
-  if (!row || typeof row.position !== 'number' || !Number.isFinite(row.position)) return null;
-  return row.position;
+  try {
+    const db  = openDb();
+    const row = db.prepare('SELECT last_waitlist_position FROM jobs WHERE id = ?').get(jobId);
+    if (!row) return null;
+    const n = row.last_waitlist_position;
+    return (typeof n === 'number' && Number.isFinite(n)) ? n : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function set(jobId, position) {
   if (jobId == null) return;
   if (position == null || !Number.isFinite(position)) return;
-  const all = _readAll();
-  all[String(jobId)] = { position, capturedAt: new Date().toISOString() };
-  _writeAll(all);
+  try {
+    const db = openDb();
+    db.prepare('UPDATE jobs SET last_waitlist_position = ? WHERE id = ?').run(position, jobId);
+  } catch (err) {
+    console.warn('[waitlist-position-store] write failed (non-fatal):', err.message);
+  }
 }
 
 function clear(jobId) {
   if (jobId == null) return;
-  const all = _readAll();
-  if (all[String(jobId)]) {
-    delete all[String(jobId)];
-    _writeAll(all);
+  try {
+    const db = openDb();
+    db.prepare('UPDATE jobs SET last_waitlist_position = NULL WHERE id = ?').run(jobId);
+  } catch (err) {
+    console.warn('[waitlist-position-store] clear failed (non-fatal):', err.message);
   }
 }
 
-module.exports = { get, set, clear, FILE };
+module.exports = { get, set, clear };

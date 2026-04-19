@@ -12,7 +12,7 @@ function syncSeed() {
   try {
     const db   = openDb();
     const jobs = db.prepare(`SELECT class_title, instructor, day_of_week, class_time, target_date, is_active,
-                                    advance_count, weekly_suggest_dismissed FROM jobs`).all();
+                                    advance_count, weekly_suggest_dismissed, last_waitlist_position FROM jobs`).all();
     fs.writeFileSync(SEED_PATH, JSON.stringify(jobs, null, 2), 'utf8');
   } catch (e) {
     console.warn('[db] syncSeed failed (non-fatal):', e.message);
