@@ -127,6 +127,45 @@ function useRelativeTime(iso: string | null): string {
   return label
 }
 
+// Task #98 — freshness window for the live class-availability snapshot.
+// Mirrors LIVE_FRESHNESS_MS used by the preflight reconciliation logic so the
+// "trust this verdict" rule and the user-facing "is this fresh?" hint always
+// agree. Anything older than this window is rendered as stale.
+const LIVE_AVAILABILITY_FRESHNESS_MS = 5 * 60 * 1000
+
+// Small subtitle under the live availability label that tells users how fresh
+// the displayed "open / waitlist / full / cancelled" verdict is.  Renders
+// nothing when no snapshot timestamp is known.  When the snapshot is older
+// than the freshness window we switch to an amber "Stale — refreshing…" hint
+// so the user knows not to fully trust the displayed availability label.
+function LiveAvailabilityFreshness({
+  live,
+}: {
+  live: Job['liveAvailability'] | null | undefined
+}) {
+  const fetchedAt = live?.fetchedAt ?? null
+  const relative  = useRelativeTime(fetchedAt ?? null)
+  if (!live || !fetchedAt) return null
+  const ageMs: number | null = (() => {
+    const a = live.ageMs
+    if (typeof a === 'number' && Number.isFinite(a) && a >= 0) {
+      // Server-provided ageMs is a snapshot value; add elapsed wall-clock
+      // since the relative label last refreshed so the staleness threshold
+      // doesn't lag the "Xm ago" copy by up to 30 s.
+      const parsed = Date.parse(fetchedAt)
+      return Number.isFinite(parsed) ? Date.now() - parsed : a
+    }
+    const parsed = Date.parse(fetchedAt)
+    return Number.isFinite(parsed) ? Date.now() - parsed : null
+  })()
+  const isStale = ageMs !== null && ageMs > LIVE_AVAILABILITY_FRESHNESS_MS
+  return (
+    <span className={`text-[12px] ml-[18px] ${isStale ? 'text-amber-600' : 'text-text-secondary'}`}>
+      {isStale ? 'Stale snapshot — refreshing…' : `Checked ${relative}`}
+    </span>
+  )
+}
+
 // Formats a preflight snapshot ISO timestamp as "Apr 5, 7:14 AM".
 function formatPreflightTime(iso: string): string {
   try {
@@ -2295,31 +2334,43 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
             </div>
           ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'bookable' ? (
             // Live FW API confirms spots remaining — flip "Unknown · checking" to a real verdict.
-            <div className="flex items-center gap-2.5 py-0.5">
-              <StatusDot color="blue" />
-              <span className="text-[16px] font-semibold text-accent-blue">
-                Open · {job.liveAvailability.openSpots != null
-                  ? `${job.liveAvailability.openSpots} spot${job.liveAvailability.openSpots === 1 ? '' : 's'} left`
-                  : 'Reserve available'}
-              </span>
+            <div className="flex flex-col gap-0.5 py-0.5">
+              <div className="flex items-center gap-2.5">
+                <StatusDot color="blue" />
+                <span className="text-[16px] font-semibold text-accent-blue">
+                  Open · {job.liveAvailability.openSpots != null
+                    ? `${job.liveAvailability.openSpots} spot${job.liveAvailability.openSpots === 1 ? '' : 's'} left`
+                    : 'Reserve available'}
+                </span>
+              </div>
+              <LiveAvailabilityFreshness live={job.liveAvailability} />
             </div>
           ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'waitlist_available' ? (
             // Live FW API confirms class full but waitlist is open.
-            <div className="flex items-center gap-2.5 py-0.5">
-              <StatusDot color="amber" />
-              <span className="text-[16px] font-semibold text-amber-600">Class full · Waitlist open</span>
+            <div className="flex flex-col gap-0.5 py-0.5">
+              <div className="flex items-center gap-2.5">
+                <StatusDot color="amber" />
+                <span className="text-[16px] font-semibold text-amber-600">Class full · Waitlist open</span>
+              </div>
+              <LiveAvailabilityFreshness live={job.liveAvailability} />
             </div>
           ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'full' ? (
             // Live FW API confirms class full with no waitlist.
-            <div className="flex items-center gap-2.5 py-0.5">
-              <StatusDot color="amber" />
-              <span className="text-[16px] font-semibold text-amber-600">Class is full</span>
+            <div className="flex flex-col gap-0.5 py-0.5">
+              <div className="flex items-center gap-2.5">
+                <StatusDot color="amber" />
+                <span className="text-[16px] font-semibold text-amber-600">Class is full</span>
+              </div>
+              <LiveAvailabilityFreshness live={job.liveAvailability} />
             </div>
           ) : phase === 'late' && (nextClassMs == null || nextClassMs > Date.now()) && job?.liveAvailability?.state === 'cancelled' ? (
             // Live FW API confirms class cancelled.
-            <div className="flex items-center gap-2.5 py-0.5">
-              <StatusDot color="gray" />
-              <span className="text-[16px] text-text-secondary">Class cancelled</span>
+            <div className="flex flex-col gap-0.5 py-0.5">
+              <div className="flex items-center gap-2.5">
+                <StatusDot color="gray" />
+                <span className="text-[16px] text-text-secondary">Class cancelled</span>
+              </div>
+              <LiveAvailabilityFreshness live={job.liveAvailability} />
             </div>
           ) : phase === 'late' && effectivePreflightStatus === 'not_found' ? (
             // Class wasn't found on the schedule — window is past but the mismatch
