@@ -404,20 +404,41 @@ async function checkBookingConfirmed(page, _jobId, attempt, actionLabel, replayS
 // classify the post-click DOM into a single canonical outcome with the raw
 // signals that produced the verdict.
 //
-// Outcomes (priority order):
+// Reserve path (action='register') outcomes (priority order — UNCHANGED):
 //   "booked"      — Unregister / Cancel / View Reservation visible (strongest)
 //   "waitlisted"  — waitlist-specific confirmation text observed
-//   "still_open"  — Register / Waitlist button still present (click had no effect)
+//   "still_open"  — Register button still present (click had no effect)
 //   "ambiguous"   — none of the above; re-checked every 2 s for up to 10 s
+//
+// Waitlist path (action='waitlist') outcomes (Stage 3 truth table):
+//   "auth_interrupted"   — login wall / SSO redirect during the flow
+//   "booked"             — Cancel Registration / View Reservation visible
+//   "already_waitlisted" — pre-click snapshot already showed waitlist marker AND
+//                          post-click still shows it (idempotent click)
+//   "waitlist_joined"    — Leave/View Waitlist OR position text OR explicit
+//                          confirmation text, confirmed across two polls
+//                          (RECHECK_OK) — or single positive read at timeout
+//   "no_state_change"    — Register/Waitlist button persists AND body+url+button
+//                          set is byte-identical to the pre-click snapshot AND
+//                          settle window (≥ 6 s) has elapsed
+//   "ambiguous"          — modal closed but no row badge, OR partial change
+//                          without resolving signal, OR poll budget exhausted
+//
+// IMPORTANT: a persistent Register/Waitlist button alone is NOT evidence the
+// waitlist click failed. FamilyWorks reuses the same button label after a
+// successful waitlist enrollment (documented at confirmBookingActuallyHappened
+// L374-378). Only the 3-way conjunction in the no_state_change rule treats
+// button persistence as failure.
 //
 // Returns { finalOutcome, confirmationSignals } — confirmationSignals records
 // the raw button + text observations used for classification, the attempted
 // action, when the check ran, and how long it took. This object is surfaced
 // on the run result and persisted to sniper-state so the readiness bundle
 // shows the verified booking outcome.
-async function confirmBookingOutcome(page, action, scope = null) {
+async function confirmBookingOutcome(page, action, scope = null, preClickSnapshot = null) {
   const POLL_INTERVAL_MS = 2000;
   const MAX_TOTAL_MS     = 10000;
+  const SETTLE_MIN_MS    = 6000;
   const startedAt        = Date.now();
 
   async function readSignalsOnce() {
@@ -425,57 +446,180 @@ async function confirmBookingOutcome(page, action, scope = null) {
     // picking up Register/Cancel buttons elsewhere on the schedule page.
     // Falls back to page-wide automatically when the scope element detached.
     let _scope = scope;
+    let _modalGone = false;
     if (_scope) {
-      try { if ((await _scope.count()) === 0) _scope = null; }
-      catch { _scope = null; }
+      try {
+        const cnt = await _scope.count();
+        if (cnt === 0) { _scope = null; _modalGone = true; }
+      } catch { _scope = null; _modalGone = true; }
     }
     const btns = await detectActionButtons(page, _scope).catch(() => ({
       hasCancel: false, hasRegister: false, hasWaitlist: false, allBtnTexts: [],
     }));
     const body = (await page.evaluate(() => document.body.textContent ?? '').catch(() => '')).toLowerCase();
+    const url  = page.url();
+    const btnTexts = btns.allBtnTexts || [];
+
     const waitlistText =
-      /\bon the waitlist\b|\bwaitlisted\b|\bwaitlist confirmed\b|you.?re on the waitlist/i.test(body);
+      /\bon the waitlist\b|\bwaitlisted\b|\bwaitlist confirmed\b|you.?re on the waitlist|joined (the )?waitlist|added to (the )?waitlist/i.test(body);
+    const waitlistPosition =
+      /#?\s*\d+\s*(?:on|in|of)?\s*(?:the\s*)?wait[\s-]?list|waitlist\s*position\s*[:#]?\s*\d+|position\s*[:#]?\s*\d+\s*on\s*(?:the\s*)?waitlist/i.test(body);
     const cancelText =
-      /\bcancel registration\b|\bleave waitlist\b|\bview reservation\b|\bview waitlist\b|\bunregister\b/i.test(body);
+      /\bcancel registration\b|\bview reservation\b|\bunregister\b/i.test(body);
+    const leaveWaitlistText =
+      /\bleave waitlist\b|\bview waitlist\b|\bcancel waitlist\b|\bremove from waitlist\b/i.test(body);
+    const leaveWaitlistButton = btnTexts.some(
+      t => /leave\s*waitlist|view\s*waitlist|cancel\s*waitlist|remove\s*from\s*waitlist|unregister/i.test(t)
+    );
+
+    // Auth wall detection — URL pattern OR visible password/login form
+    const authUrlHit = /\/login|\/sso|\/signin|daxko[-_]?login|account\.daxko/i.test(url);
+    let authForm = false;
+    try {
+      authForm = (await page.locator(
+        'input[type="password"]:visible, h1:has-text("Sign in"), h1:has-text("Log in")'
+      ).count().catch(() => 0)) > 0;
+    } catch { /* ignore */ }
+    const authWall = authUrlHit || authForm;
+
+    // Body-unchanged compare against pre-click snapshot
+    let bodyUnchanged = false;
+    if (preClickSnapshot && preClickSnapshot.hash) {
+      const currentHash = `${url}|${(body || '').slice(0, 2000)}|${[...btnTexts].sort().join(',')}`;
+      bodyUnchanged = currentHash === preClickSnapshot.hash;
+    }
+
     return {
       hasUnregisterButton: !!btns.hasCancel || cancelText,
       hasWaitlistText:     waitlistText,
+      hasWaitlistPosition: waitlistPosition,
+      hasLeaveWaitlist:    leaveWaitlistButton || leaveWaitlistText,
       hasRegisterButton:   !!btns.hasRegister,
       hasWaitlistButton:   !!btns.hasWaitlist,
-      visibleButtons:      btns.allBtnTexts || [],
+      visibleButtons:      btnTexts,
+      modalGone:           _modalGone,
+      authWall,
+      bodyUnchanged,
+      url,
     };
   }
 
-  function classify(sig) {
+  // Reserve-path classifier — UNCHANGED behavior from prior Stage 10E
+  function classifyRegister(sig) {
     if (sig.hasUnregisterButton) return 'booked';
     if (sig.hasWaitlistText)     return 'waitlisted';
-    if (action === 'register' && sig.hasRegisterButton) return 'still_open';
-    if (action === 'waitlist' && sig.hasWaitlistButton) return 'still_open';
+    if (sig.hasRegisterButton)   return 'still_open';
     return 'ambiguous';
   }
 
-  let signals = await readSignalsOnce();
-  let outcome = classify(signals);
+  // Waitlist-path classifier — Stage 3 truth table.
+  // Returns { outcome, positive } where `positive` arms the RECHECK_OK gate
+  // for waitlist_joined. A pending positive uses the sentinel '__pending_positive'.
+  function classifyWaitlist(sig, prevPositive) {
+    if (sig.authWall)            return { outcome: 'auth_interrupted', positive: false };
+    if (sig.hasUnregisterButton) return { outcome: 'booked',           positive: false };
 
-  while (outcome === 'ambiguous' && (Date.now() - startedAt) < MAX_TOTAL_MS) {
-    await page.waitForTimeout(POLL_INTERVAL_MS).catch(() => {});
-    signals = await readSignalsOnce();
-    outcome = classify(signals);
+    const positiveWL = sig.hasLeaveWaitlist || sig.hasWaitlistPosition || sig.hasWaitlistText;
+
+    // already_waitlisted — pre-click snapshot already showed a waitlist marker
+    // AND post-click still shows the same kind of marker. Idempotent click.
+    if (preClickSnapshot && preClickSnapshot.hadWaitlistMarker && positiveWL) {
+      return { outcome: 'already_waitlisted', positive: false };
+    }
+
+    // waitlist_joined — gated by RECHECK_OK (two consecutive positive reads)
+    if (positiveWL) {
+      if (prevPositive) return { outcome: 'waitlist_joined',     positive: true };
+      return                  { outcome: '__pending_positive',   positive: true };
+    }
+
+    // Modal closed without auth wall and no positive marker → ambiguous
+    // (FW may have closed the modal as part of a successful join, or the
+    // click silently dismissed it — we cannot tell apart without ROW_BADGE)
+    if (sig.modalGone) return { outcome: 'ambiguous', positive: false };
+
+    // True no_state_change requires the 3-way conjunction:
+    // button persists AND body byte-identical AND settle window elapsed.
+    const elapsed = Date.now() - startedAt;
+    const buttonsPersist = sig.hasRegisterButton || sig.hasWaitlistButton;
+    if (buttonsPersist && sig.bodyUnchanged && elapsed >= SETTLE_MIN_MS) {
+      return { outcome: 'no_state_change', positive: false };
+    }
+
+    return { outcome: 'ambiguous', positive: false };
+  }
+
+  let signals = await readSignalsOnce();
+  let outcome;
+  let prevPositive = false;
+
+  if (action === 'waitlist') {
+    let r = classifyWaitlist(signals, prevPositive);
+    outcome = r.outcome;
+    prevPositive = r.positive;
+
+    while ((outcome === 'ambiguous' || outcome === '__pending_positive') &&
+           (Date.now() - startedAt) < MAX_TOTAL_MS) {
+      await page.waitForTimeout(POLL_INTERVAL_MS).catch(() => {});
+      signals = await readSignalsOnce();
+      r = classifyWaitlist(signals, prevPositive);
+      outcome = r.outcome;
+      prevPositive = r.positive;
+    }
+    // A single positive read at timeout is more truthful than 'ambiguous'
+    // (FW may simply not flicker the marker a second time within 10 s).
+    if (outcome === '__pending_positive') outcome = 'waitlist_joined';
+  } else {
+    outcome = classifyRegister(signals);
+    while (outcome === 'ambiguous' && (Date.now() - startedAt) < MAX_TOTAL_MS) {
+      await page.waitForTimeout(POLL_INTERVAL_MS).catch(() => {});
+      signals = await readSignalsOnce();
+      outcome = classifyRegister(signals);
+    }
   }
 
   return {
     finalOutcome: outcome,
     confirmationSignals: {
       action,
-      hasUnregisterButton: signals.hasUnregisterButton,
-      hasWaitlistText:     signals.hasWaitlistText,
-      hasRegisterButton:   signals.hasRegisterButton,
-      hasWaitlistButton:   signals.hasWaitlistButton,
-      visibleButtons:      signals.visibleButtons,
-      checkedAt:           new Date().toISOString(),
-      elapsedMs:           Date.now() - startedAt,
+      hasUnregisterButton:  signals.hasUnregisterButton,
+      hasWaitlistText:      signals.hasWaitlistText,
+      hasWaitlistPosition:  signals.hasWaitlistPosition,
+      hasLeaveWaitlist:     signals.hasLeaveWaitlist,
+      hasRegisterButton:    signals.hasRegisterButton,
+      hasWaitlistButton:    signals.hasWaitlistButton,
+      visibleButtons:       signals.visibleButtons,
+      modalGone:            signals.modalGone,
+      authWall:             signals.authWall,
+      bodyUnchanged:        signals.bodyUnchanged,
+      preClickSnapshotUsed: !!preClickSnapshot,
+      checkedAt:            new Date().toISOString(),
+      elapsedMs:            Date.now() - startedAt,
     },
   };
+}
+
+// ── Stage 3: pre-click snapshot helper ───────────────────────────────────────
+// Captures a compact fingerprint of the modal/page state immediately BEFORE a
+// waitlist click so the post-click classifier can:
+//   1. Detect already_waitlisted (snapshot.hadWaitlistMarker = true)
+//   2. Detect no_state_change (snapshot.hash byte-identical post-click)
+// Returns null on any failure — confirmBookingOutcome handles a null snapshot
+// gracefully (skips both signals, behaves like single-read classifier).
+async function capturePreClickSnapshot(page, scope) {
+  try {
+    const url = page.url();
+    const body = (await page.evaluate(() => document.body.textContent ?? '').catch(() => '')).toLowerCase();
+    const btns = await detectActionButtons(page, scope).catch(() => ({ allBtnTexts: [] }));
+    const btnTexts = btns.allBtnTexts || [];
+    const hadWaitlistMarker =
+      /\bleave waitlist\b|\bview waitlist\b|\bcancel waitlist\b|#?\s*\d+\s*(?:on|in|of)?\s*(?:the\s*)?wait[\s-]?list|\bon the waitlist\b|\bwaitlisted\b/i.test(body) ||
+      btnTexts.some(t => /leave\s*waitlist|view\s*waitlist|cancel\s*waitlist|remove\s*from\s*waitlist/i.test(t));
+    const hash = `${url}|${(body || '').slice(0, 2000)}|${[...btnTexts].sort().join(',')}`;
+    return { hash, url, hadWaitlistMarker, capturedAt: new Date().toISOString() };
+  } catch {
+    return null;
+  }
 }
 
 // ── Inline Familyworks authentication ─────────────────────────────────────
@@ -3892,6 +4036,9 @@ async function runBookingJob(job, opts = {}) {
           _replayAction = 'waitlist';
           replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Register (class full → waitlist)', `Attempt ${attempt}`);
           _tc.actionClickAt = new Date().toISOString();
+          // Stage 3: capture pre-click snapshot for already_waitlisted /
+          // no_state_change detection in confirmBookingOutcome.
+          const _preClickSnap_fw = await capturePreClickSnapshot(page, _attemptModalScope);
           await registerBtn.first().click();
           // ── Stage 10E POINT 6 (full→waitlist) — strong post-click confirmation ──
           _state.isConfirming    = true;
@@ -3900,24 +4047,29 @@ async function runBookingJob(job, opts = {}) {
             : 'Confirming booking outcome…';
           saveState(_state);
           _tc.confirmation_check_start = new Date().toISOString();
-          _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope);
+          _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope, _preClickSnap_fw);
           _tc.confirmation_check_done = new Date().toISOString();
           _state.isConfirming    = false;
           _state.confirmingPhase = null;
           console.log(`[stage-10e] Register(full→waitlist): finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
-          if (_lastConfirmation.finalOutcome === 'booked' || _lastConfirmation.finalOutcome === 'waitlisted') {
+          // Stage 3 success outcomes: booked, waitlisted, waitlist_joined, already_waitlisted
+          if (_lastConfirmation.finalOutcome === 'booked' ||
+              _lastConfirmation.finalOutcome === 'waitlisted' ||
+              _lastConfirmation.finalOutcome === 'waitlist_joined' ||
+              _lastConfirmation.finalOutcome === 'already_waitlisted') {
             replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
             console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
             registered = true;
             break;
           }
-          // still_open or ambiguous → record structured failure and exit attempt
-          // loop with new "unconfirmed" status (Stage 10E mapping).
+          // no_state_change / ambiguous / auth_interrupted → structured failure
           {
             await captureFailure('post_click', 'unconfirmed');
-            const _reason = _lastConfirmation.finalOutcome === 'still_open'
-              ? 'click_silent_no_op'
-              : 'registration_unclear';
+            // Stage 3 reason mapping (replaces still_open/ambiguous-only mapping)
+            const _reason =
+              _lastConfirmation.finalOutcome === 'auth_interrupted' ? 'auth_redirect_during_action' :
+              _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
+                                                                       'registration_unclear';
             recordFailure({
               jobId:    job.id || job.jobId || null,
               phase:    'post_click', reason: _reason,
@@ -4020,6 +4172,9 @@ async function runBookingJob(job, opts = {}) {
         _replayAction = 'waitlist';
         replayStore.addEvent(_jobId, 'action_attempt', 'Clicked Join Waitlist', `Attempt ${attempt}`);
         _tc.actionClickAt = new Date().toISOString();
+        // Stage 3: capture pre-click snapshot for already_waitlisted /
+        // no_state_change detection in confirmBookingOutcome.
+        const _preClickSnap_wl = await capturePreClickSnapshot(page, _attemptModalScope);
         await waitlistBtn.first().click();
         // ── Stage 10E POINT 6 (Waitlist) — strong post-click confirmation ──
         _state.isConfirming    = true;
@@ -4028,24 +4183,29 @@ async function runBookingJob(job, opts = {}) {
           : 'Confirming booking outcome…';
         saveState(_state);
         _tc.confirmation_check_start = new Date().toISOString();
-        _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope);
+        _lastConfirmation = await confirmBookingOutcome(page, 'waitlist', _attemptModalScope, _preClickSnap_wl);
         _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming    = false;
         _state.confirmingPhase = null;
         console.log(`[stage-10e] Waitlist: finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
-        if (_lastConfirmation.finalOutcome === 'booked' || _lastConfirmation.finalOutcome === 'waitlisted') {
+        // Stage 3 success outcomes: booked, waitlisted, waitlist_joined, already_waitlisted
+        if (_lastConfirmation.finalOutcome === 'booked' ||
+            _lastConfirmation.finalOutcome === 'waitlisted' ||
+            _lastConfirmation.finalOutcome === 'waitlist_joined' ||
+            _lastConfirmation.finalOutcome === 'already_waitlisted') {
           replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
           console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
           registered = true;
           break;
         }
-        // still_open or ambiguous → record structured failure and exit attempt
-        // loop with new "unconfirmed" status (Stage 10E mapping).
+        // no_state_change / ambiguous / auth_interrupted → structured failure
         {
           await captureFailure('post_click', 'unconfirmed');
-          const _reason = _lastConfirmation.finalOutcome === 'still_open'
-            ? 'click_silent_no_op'
-            : 'registration_unclear';
+          // Stage 3 reason mapping (replaces still_open/ambiguous-only mapping)
+          const _reason =
+            _lastConfirmation.finalOutcome === 'auth_interrupted' ? 'auth_redirect_during_action' :
+            _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
+                                                                     'registration_unclear';
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: _reason,
