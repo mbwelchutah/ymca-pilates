@@ -20,6 +20,9 @@ const scheduleBackoff               = require('./schedule-not-loaded-backoff');
 const { getCanonicalAuthTruth }      = require('../bot/auth-state');
 // Stage 7 — update canonical confirmed-ready state after each booking run.
 const { refreshConfirmedReadyState } = require('../bot/confirmed-ready');
+// Task #102 — periodic FW position re-read for jobs already on the waitlist
+// (covers manual enrollments where the bot never saw the post-Reserve badge).
+const { recheckWaitlistPosition } = require('../bot/waitlist-position-recheck');
 
 // Fresh auth-block skip threshold: if the last run or session check recorded
 // an auth failure within this window, skip warmup-phase attempts (they will
@@ -54,6 +57,12 @@ function nowLabel() {
 
 // In-memory concurrency guard shared across all callers in the same process.
 const runningJobs = new Set();
+
+// Task #102 — per-job timestamp of the last waitlist-position recheck attempt.
+// In-memory only (resets on restart, which is fine for hourly granularity).
+// Keyed by job id; value is Date.now() at the start of the most recent attempt.
+const lastWaitlistRecheckAt = new Map();
+const WAITLIST_RECHECK_INTERVAL_MS = 60 * 60 * 1000; // ~hourly
 
 // Tracks which past-class jobs we've already logged a "skipping past class"
 // notice for in this process — keeps the scheduler log readable while still
@@ -439,6 +448,77 @@ async function runTick({ onlyJobId = null, skipCooldown = false, bypassScheduleB
         console.warn(`  [timing-learner] run-speed:error (tick) —`, speedErr.message);
       }
     }
+  }
+
+  // ── Task #102: waitlist-position recheck pass ─────────────────────────────
+  // For jobs whose last_result is 'waitlist', re-read the FW position about
+  // once per hour so the position pill stays in sync even when the user
+  // joined the waitlist manually (no post-Reserve polling ever ran).
+  //
+  // Read-only: never clicks any action button. Skipped during sniper / late
+  // phases (booking-critical windows) and when the job is currently running
+  // a booking attempt or its target class has passed.
+  try {
+    const SUCCESS_WAITLIST = 'waitlist';
+    let waitlistJobs = getAllJobs().filter(j =>
+      j.is_active === 1 &&
+      j.last_result === SUCCESS_WAITLIST,
+    );
+    if (onlyJobId) waitlistJobs = waitlistJobs.filter(j => j.id === onlyJobId);
+
+    for (const dbJob of waitlistJobs) {
+      if (runningJobs.has(dbJob.id)) continue;
+      if (isPastClass(dbJob)) {
+        lastWaitlistRecheckAt.delete(dbJob.id);
+        continue;
+      }
+      let phase;
+      try {
+        ({ phase } = getPhase({
+          id: dbJob.id, classTitle: dbJob.class_title, classTime: dbJob.class_time,
+          instructor: dbJob.instructor || null, dayOfWeek: dbJob.day_of_week,
+          targetDate: dbJob.target_date || null,
+        }));
+      } catch { continue; }
+      // Don't fight for the browser during the booking-critical phases.
+      if (phase === 'sniper' || phase === 'late') continue;
+
+      const lastAt = lastWaitlistRecheckAt.get(dbJob.id) || 0;
+      if (Date.now() - lastAt < WAITLIST_RECHECK_INTERVAL_MS) continue;
+
+      lastWaitlistRecheckAt.set(dbJob.id, Date.now());
+      runningJobs.add(dbJob.id);
+      try {
+        const r = await recheckWaitlistPosition({
+          id:         dbJob.id,
+          classTitle: dbJob.class_title,
+          classTime:  dbJob.class_time,
+          instructor: dbJob.instructor || null,
+          dayOfWeek:  dbJob.day_of_week,
+          targetDate: dbJob.target_date || null,
+        });
+        if (r && r.ok) {
+          console.log(`  [wl-recheck] Job #${dbJob.id} — refreshed position #${r.position}.`);
+        } else {
+          console.log(`  [wl-recheck] Job #${dbJob.id} — no update (${r && r.message ? r.message : 'unknown'}).`);
+        }
+      } catch (rcErr) {
+        console.warn(`  [wl-recheck] Job #${dbJob.id} — error: ${rcErr.message}`);
+      } finally {
+        runningJobs.delete(dbJob.id);
+      }
+    }
+
+    // Reconcile the recheck timestamp map against the current job set so it
+    // can't grow unboundedly across long-lived processes.
+    try {
+      const currentIds = new Set(getAllJobs().map(j => j.id));
+      for (const id of lastWaitlistRecheckAt.keys()) {
+        if (!currentIds.has(id)) lastWaitlistRecheckAt.delete(id);
+      }
+    } catch (_) { /* best-effort cleanup */ }
+  } catch (wlErr) {
+    console.warn(`  [wl-recheck] pass failed: ${wlErr.message}`);
   }
 
   return results;
