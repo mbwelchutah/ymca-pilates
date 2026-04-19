@@ -599,6 +599,39 @@ async function confirmBookingOutcome(page, action, scope = null, preClickSnapsho
   };
 }
 
+// ── Stage 4: operator-facing labels for waitlist post-click outcomes ─────────
+// Used by the waitlist call sites to produce truthful, human-readable labels
+// and one-line messages for the failure feed in Tools and run summaries.
+// Keyed on the canonical finalOutcome strings emitted by confirmBookingOutcome.
+const WAITLIST_OUTCOME_LABEL = {
+  waitlist_joined:    'Waitlist joined',
+  already_waitlisted: 'Already on waitlist',
+  no_state_change:    'No state change after waitlist click',
+  ambiguous:          'Waitlist outcome ambiguous',
+  auth_interrupted:   'Auth interrupted during waitlist flow',
+  // Backward compat (rare on waitlist path; surfaced if confirmBookingOutcome
+  // returns the reserve-path strings on a waitlist action):
+  booked:             'Registered (Cancel button visible)',
+  waitlisted:         'Waitlist confirmed',
+  still_open:         'No state change after waitlist click',
+};
+const WAITLIST_OUTCOME_MESSAGE = {
+  waitlist_joined:    'Click landed on the waitlist (verified by waitlist marker after the click).',
+  already_waitlisted: 'You were already on the waitlist before the click — nothing more to do.',
+  no_state_change:    'Click did not change the page (button persists, body and URL unchanged after settle).',
+  ambiguous:          'Click happened but no waitlist marker resolved within the 10 s window.',
+  auth_interrupted:   'A login wall appeared during the waitlist flow — sign in required to confirm.',
+  booked:             'Reserve-path success indicator appeared after the waitlist click.',
+  waitlisted:         'Waitlist confirmation text observed after the click.',
+  still_open:         'Click did not visibly change the page within the 10 s window.',
+};
+function _waitlistLabel(outcome) {
+  return WAITLIST_OUTCOME_LABEL[outcome] || `Waitlist outcome: ${outcome}`;
+}
+function _waitlistMessage(outcome) {
+  return WAITLIST_OUTCOME_MESSAGE[outcome] || `Waitlist post-click outcome was "${outcome}".`;
+}
+
 // ── Stage 3: pre-click snapshot helper ───────────────────────────────────────
 // Captures a compact fingerprint of the modal/page state immediately BEFORE a
 // waitlist click so the post-click classifier can:
@@ -4057,8 +4090,9 @@ async function runBookingJob(job, opts = {}) {
               _lastConfirmation.finalOutcome === 'waitlisted' ||
               _lastConfirmation.finalOutcome === 'waitlist_joined' ||
               _lastConfirmation.finalOutcome === 'already_waitlisted') {
-            replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
-            console.log(`WAITLIST: Class full — joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
+            const _label_fw_ok = _waitlistLabel(_lastConfirmation.finalOutcome);
+            replayStore.addEvent(_jobId, 'confirm', `${_label_fw_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
+            console.log(`WAITLIST: ${_label_fw_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
             registered = true;
             break;
           }
@@ -4070,12 +4104,15 @@ async function runBookingJob(job, opts = {}) {
               _lastConfirmation.finalOutcome === 'auth_interrupted' ? 'auth_redirect_during_action' :
               _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
                                                                        'registration_unclear';
+            // Stage 4: truthful operator-facing label & message keyed on outcome
+            const _label_fw   = _waitlistLabel(_lastConfirmation.finalOutcome);
+            const _message_fw = _waitlistMessage(_lastConfirmation.finalOutcome);
             recordFailure({
               jobId:    job.id || job.jobId || null,
               phase:    'post_click', reason: _reason,
               category: 'post_click',
-              label:    `Register(full→waitlist) outcome: ${_lastConfirmation.finalOutcome}`,
-              message:  `Register (full→waitlist) clicked but post-click outcome was "${_lastConfirmation.finalOutcome}" after up to 10 s of re-checks.`,
+              label:    _label_fw,
+              message:  _message_fw,
               classTitle,
               screenshot: _screenshotRef(screenshotPath),
               url:      page.url(),
@@ -4088,12 +4125,12 @@ async function runBookingJob(job, opts = {}) {
             _endConfirming();
             return logRunSummary({
               status:   'unconfirmed',
-              message:  `Register (full→waitlist) clicked but the booking could not be confirmed (finalOutcome=${_lastConfirmation.finalOutcome}).`,
+              message:  _message_fw,
               screenshotPath,
               phase:    'post_click',
               reason:   _reason,
               category: 'post_click',
-              label:    `Register(full→waitlist) outcome: ${_lastConfirmation.finalOutcome}`,
+              label:    _label_fw,
               url:      page.url(),
               recorded: true,
               finalOutcome:        _lastConfirmation.finalOutcome,
@@ -4193,8 +4230,9 @@ async function runBookingJob(job, opts = {}) {
             _lastConfirmation.finalOutcome === 'waitlisted' ||
             _lastConfirmation.finalOutcome === 'waitlist_joined' ||
             _lastConfirmation.finalOutcome === 'already_waitlisted') {
-          replayStore.addEvent(_jobId, 'confirm', `Waitlist enrollment confirmed (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
-          console.log(`WAITLIST: Joined waitlist for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
+          const _label_wl_ok = _waitlistLabel(_lastConfirmation.finalOutcome);
+          replayStore.addEvent(_jobId, 'confirm', `${_label_wl_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
+          console.log(`WAITLIST: ${_label_wl_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
           registered = true;
           break;
         }
@@ -4206,12 +4244,15 @@ async function runBookingJob(job, opts = {}) {
             _lastConfirmation.finalOutcome === 'auth_interrupted' ? 'auth_redirect_during_action' :
             _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
                                                                      'registration_unclear';
+          // Stage 4: truthful operator-facing label & message keyed on outcome
+          const _label_wl   = _waitlistLabel(_lastConfirmation.finalOutcome);
+          const _message_wl = _waitlistMessage(_lastConfirmation.finalOutcome);
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: _reason,
             category: 'post_click',
-            label:    `Waitlist outcome: ${_lastConfirmation.finalOutcome}`,
-            message:  `Waitlist clicked but post-click outcome was "${_lastConfirmation.finalOutcome}" after up to 10 s of re-checks.`,
+            label:    _label_wl,
+            message:  _message_wl,
             classTitle,
             screenshot: _screenshotRef(screenshotPath),
             url:      page.url(),
@@ -4224,12 +4265,12 @@ async function runBookingJob(job, opts = {}) {
           _endConfirming();
           return logRunSummary({
             status:   'unconfirmed',
-            message:  `Waitlist clicked but the booking could not be confirmed (finalOutcome=${_lastConfirmation.finalOutcome}).`,
+            message:  _message_wl,
             screenshotPath,
             phase:    'post_click',
             reason:   _reason,
             category: 'post_click',
-            label:    `Waitlist outcome: ${_lastConfirmation.finalOutcome}`,
+            label:    _label_wl,
             url:      page.url(),
             recorded: true,
             finalOutcome:        _lastConfirmation.finalOutcome,
