@@ -1221,6 +1221,11 @@ function resultToOutcome(result: string | null): {
       return { label: 'Needs Review',         reason: 'A check or run encountered an error — see details',    color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     case 'skipped':
       return { label: 'Skipped',             reason: 'Class skipped — already booked or paused',              color: 'text-text-muted',   dot: 'bg-text-muted'   }
+    // Stage 4: post-click waitlist outcomes that need operator review
+    // (no_state_change / ambiguous / auth_interrupted all map to last_result='unconfirmed';
+    //  the per-failure label/message in the activity feed carries the precise outcome)
+    case 'unconfirmed':
+      return { label: 'Waitlist Unconfirmed', reason: 'Click landed but the waitlist outcome was not verified — see Tools for details', color: 'text-accent-amber', dot: 'bg-accent-amber'  }
     default:
       return { label: 'Unknown',             reason: 'Outcome not recognized — check Tools for details',      color: 'text-text-muted',   dot: 'bg-text-muted'   }
   }
