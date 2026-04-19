@@ -5334,7 +5334,7 @@ async function cancelRegistration(job) {
   }
 }
 
-module.exports = { runBookingJob, cancelRegistration };
+module.exports = { runBookingJob, cancelRegistration, clickWaitlistReserveConfirmation };
 
 // Allow direct invocation: node src/bot/register-pilates.js
 if (require.main === module) {
