@@ -139,8 +139,26 @@ async function createSession(opts = {}) {
     };
   }
 
+  // ── Container Chromium launch hardening ──────────────────────────────────
+  // The Replit container has no X server, no /dev/shm size guarantee, and no
+  // working GPU/EGL stack. Without these flags Playwright fails with:
+  //   xcb_connect failed / ANGLE Display init failed / eglInitialize failed
+  //   / GPU process exited during initialization → 180 s launch timeout.
+  // Flags below force a headless software-rasterizer path with no display
+  // server and no shared-memory dependency. Booking logic, selectors, and
+  // scheduler behavior are NOT touched — this only changes how Chromium boots.
+  const _launchArgs = [
+    '--no-sandbox',                  // sandbox needs setuid; not available
+    '--disable-setuid-sandbox',      // belt-and-suspenders for the above
+    '--disable-gpu',                 // no GPU in the container
+    '--disable-software-rasterizer', // disable fallback that still probes EGL
+    '--disable-dev-shm-usage',       // /dev/shm too small → use /tmp instead
+    '--use-gl=swiftshader',          // CPU GL when GL is touched at all
+    '--ozone-platform=headless',     // no X/Wayland display server present
+  ];
   const browser = await chromium.launch({
     headless,
+    args: _launchArgs,
     ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
   });
 
