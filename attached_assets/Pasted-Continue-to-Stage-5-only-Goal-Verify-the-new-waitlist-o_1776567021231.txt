@@ -1,0 +1,71 @@
+Continue to Stage 5 only.
+
+Goal:
+Verify the new waitlist outcome detector and operator-facing labels against the real live Gentle Yoga failure shape.
+
+Requirements:
+- NO code changes unless a critical correctness issue is discovered
+- use the actual observed case shape:
+  - correct Gentle Yoga modal
+  - class full
+  - Waitlist CTA visible
+  - previous outcomes were still_open / ambiguous / unconfirmed
+- verify both:
+  1. the new detector would classify the post-click outcome more truthfully
+  2. the new labels/messages render correctly across the operator surfaces
+
+Please verify these cases:
+
+1. Waitlist joined
+- what exact signal(s) would now classify this as waitlist_joined?
+- confirm it would no longer fall into still_open
+- show what the operator would now see in:
+  - Tools recent activity row
+  - expanded failure/details text if applicable
+  - replay timeline
+  - run summary
+
+2. Already on waitlist
+- what exact signal(s) would classify this as already_waitlisted?
+- confirm it is treated as a success/idempotent state, not failure
+- show the operator-facing label/message
+
+3. No state change after waitlist click
+- what exact signal combination would now classify this as no_state_change?
+- confirm this replaces the old still_open result
+- show the operator-facing label/message
+
+4. Ambiguous waitlist outcome
+- what exact unresolved signal pattern would now classify as ambiguous?
+- confirm this is narrower than before
+- show the operator-facing label/message and last-run badge result
+
+5. Auth interrupted during waitlist flow
+- what exact signals trigger auth_interrupted?
+- confirm it no longer collapses into ambiguous
+- show the operator-facing label/message
+
+6. Gentle Yoga live-shape replay
+Using the actual observed Gentle Yoga modal shape:
+- correct class modal
+- full class
+- Waitlist CTA visible
+- prior outputs still_open / ambiguous / unconfirmed
+
+Explain which of the NEW outcomes is most likely now, based on the new detector:
+- waitlist_joined
+- already_waitlisted
+- no_state_change
+- ambiguous
+- auth_interrupted
+
+Be explicit about what evidence is still missing if you cannot distinguish with certainty.
+
+Return:
+1. verification matrix by outcome
+2. whether the old misleading still_open behavior is fully removed for the waitlist path
+3. whether operator-facing labels are now truthful across Tools / summaries / last-run card
+4. whether Stage 6 should be:
+   - PASS closeout
+   - PASS WITH CAUTION
+   - targeted fix

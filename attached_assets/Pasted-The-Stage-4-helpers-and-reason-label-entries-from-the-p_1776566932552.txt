@@ -1,0 +1,56 @@
+The Stage 4 helpers and reason-label entries from the previous turn are intact. One small gap remains for the last-run card: when a post-click failure stores last_result='unconfirmed', LastRunSummaryCard.resultToOutcome falls into default → "Unknown". That's a pre-existing gap, but since the task explicitly lists "last-run / failure cards" and permits a "tiny additive mapping", I'll close it.
+All 186 tests still pass. Stage 4 is complete.
+
+Stage 4 — LABEL CLEANUP (final report)
+1. Exact files / functions changed
+File	Range	Change
+src/bot/register-pilates.js	L605-636 (added in prior commit)	New WAITLIST_OUTCOME_LABEL + WAITLIST_OUTCOME_MESSAGE maps and _waitlistLabel() / _waitlistMessage() helpers
+src/bot/register-pilates.js	L4096-4141 (prior commit)	Full→waitlist call site uses helpers for both success log and failure label / message
+src/bot/register-pilates.js	L4236-4281 (prior commit)	Explicit-Waitlist-button call site: same helper-based labels
+client/src/screens/ToolsScreen.tsx	L134-136 (prior commit)	Added click_no_op_verified and auth_redirect_during_action to REASON_LABELS; refined registration_unclear text
+client/src/screens/ToolsScreen.tsx	L1227-1231 (this turn)	Added case 'unconfirmed' to LastRunSummaryCard.resultToOutcome so the last-run card renders an amber "Waitlist Unconfirmed" badge instead of the previous "Unknown"
+No detector code, no booking logic, no scheduler timing, no selectors, no polling windows, no status/reason codes were changed (the storage values unconfirmed, auth_redirect_during_action, click_no_op_verified, registration_unclear are unchanged — only their human-readable mappings).
+
+2. Old → new label / message mapping
+Per-failure label (label: field on recordFailure / logRunSummary, rendered in Tools recent-failures feed)
+finalOutcome	Old label	New label
+waitlist_joined (success)	"Waitlist enrollment confirmed (Stage 10E outcome=waitlist_joined)"	Waitlist joined
+already_waitlisted (success)	n/a — would have been still_open / ambiguous	Already on waitlist
+no_state_change	Register(full→waitlist) outcome: still_open / Waitlist outcome: still_open	No state change after waitlist click
+ambiguous	Register(full→waitlist) outcome: ambiguous / Waitlist outcome: ambiguous	Waitlist outcome ambiguous
+auth_interrupted	n/a — collapsed into ambiguous	Auth interrupted during waitlist flow
+Per-failure message (message: field, rendered when a failure row is expanded)
+finalOutcome	Old message	New message
+no_state_change	…booking could not be confirmed (finalOutcome=still_open).	Click did not change the page (button persists, body and URL unchanged after settle).
+ambiguous	…booking could not be confirmed (finalOutcome=ambiguous).	Click happened but no waitlist marker resolved within the 10 s window.
+auth_interrupted	n/a	A login wall appeared during the waitlist flow — sign in required to confirm.
+already_waitlisted (success)	n/a	You were already on the waitlist before the click — nothing more to do.
+waitlist_joined (success)	n/a (success had no message)	Click landed on the waitlist (verified by waitlist marker after the click).
+REASON_LABELS (Tools fallback when no per-failure label is present)
+Reason code	Old label	New label
+registration_unclear	No confirmation after click	Waitlist outcome ambiguous
+click_no_op_verified	(missing — rendered raw code)	No state change after waitlist click
+auth_redirect_during_action	(missing — rendered raw code)	Auth interrupted during waitlist flow
+LastRunSummaryCard.resultToOutcome (last-run card on a job)
+last_result	Old	New
+unconfirmed	Unknown (gray dot) — fell through default	Waitlist Unconfirmed with amber dot, reason: "Click landed but the waitlist outcome was not verified — see Tools for details"
+3. Where each new outcome is rendered
+Surface	Code path	What the operator sees
+Tools → Recent Activity feed (collapsed row)	ToolsScreen.tsx:2099 → f.label ?? REASON_LABELS[f.reason] ?? f.reason	Compact outcome label, e.g. "No state change after waitlist click"
+Tools → Recent Activity feed (expanded row)	Failure card body uses f.message	Plain-English explanation, e.g. "Click did not change the page (button persists, body and URL unchanged after settle)."
+Tools → Last-run card on each job	ToolsScreen.tsx:1184 resultToOutcome(last_result)	"Waitlist Unconfirmed" amber badge for any post-click failure (was "Unknown")
+Replay timeline confirm event	replayStore.addEvent(_jobId, 'confirm', '<label> (Stage 10E outcome=<finalOutcome>)')	E.g. "Waitlist joined (Stage 10E outcome=waitlist_joined)"
+Run-summary object (returned by logRunSummary, persisted to sniper-state, surfaced through /api/state)	Same label / message strings	Identical operator-facing wording across every consumer
+Server console log (operator tail)	console.log('WAITLIST: <label> for <class>… (outcome=<finalOutcome>)')	E.g. "WAITLIST: Already on waitlist for Gentle Yoga 10:45 a (outcome=already_waitlisted)"
+[stage-10e] … debug line	unchanged verbatim	Preserved for grep continuity in operator logs
+4. Confirmation that no detection or booking behavior changed
+confirmBookingOutcome (the detector): untouched — same signature, same truth table, same poll budget, same return shape.
+capturePreClickSnapshot / classifyWaitlist / classifyRegister: untouched.
+Success-vs-failure decision set {booked, waitlisted, waitlist_joined, already_waitlisted} → registered=true, everything else → recorded failure: untouched.
+Stored reason codes (auth_redirect_during_action, click_no_op_verified, registration_unclear, unconfirmed): untouched — only their display labels changed.
+recordFailure / logRunSummary field shape: unchanged — only the values of label and message are now helper-driven.
+All other fields (status, phase, category, reason, screenshot, url, recorded, finalOutcome, confirmationSignals, context): byte-identical to Stage 3.
+Selectors, polling windows, branching, click logic, modal verification, row targeting, class discovery, scheduler timing, retry behavior: none touched.
+Tests: 186/186 passing (37.9 s).
+Remaining
+Stage 5: verify the new classifier + new labels against the live Gentle Yoga failure shape (correct modal, full class, Waitlist CTA, prior still_open / ambiguous / unconfirmed outputs).
