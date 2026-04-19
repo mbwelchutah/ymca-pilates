@@ -1,0 +1,91 @@
+You are fixing a real production bug in the YMCA bot.
+
+Observed live behavior:
+- The bot reaches the correct Gentle Yoga modal
+- The class is full
+- The modal shows a Waitlist button
+- Tools records outcomes like:
+  - Register(full→waitlist) outcome: still_open
+  - Register(full→waitlist) outcome: ambiguous
+  - unconfirmed
+- Screenshots confirm the bot is on the correct class modal, so discovery/modal identity are no longer the problem
+
+Goal:
+Audit and fix the POST-CLICK FULL/WAITLIST OUTCOME DETECTION path only.
+
+Important:
+- Do NOT change class discovery
+- Do NOT change row targeting
+- Do NOT change modal identity verification
+- Do NOT change scheduler timing
+- Focus only on what happens AFTER the click on a full-class / waitlist CTA
+
+Work in stages and stop after each stage.
+
+STAGE 1 — AUDIT
+Read-only.
+Trace the exact full/waitlist click path in the code:
+- where the bot decides the class is full
+- where it chooses the waitlist/register CTA
+- what text/button states it expects after click
+- how it classifies:
+  - still_open
+  - ambiguous
+  - unconfirmed
+- what screenshots/diagnostics are captured
+
+Return:
+1. exact file/function/line ranges
+2. exact current success signals for reserve vs waitlist
+3. why the current waitlist path is misclassifying this live case
+
+STAGE 2 — DEFINE WAITLIST SUCCESS SIGNALS
+No behavior change yet.
+Define a compact truth table for post-click outcomes on full/waitlist flow:
+- waitlist_joined
+- already_waitlisted
+- no_state_change
+- ambiguous
+- auth_interrupted
+
+Use only signals already available on the live FamilyWorks modal/page when possible:
+- waitlist position text
+- button text changes
+- unregister/leave waitlist
+- reservation/waitlist badges
+- modal close + changed page state
+- inline confirmation messages
+
+Return the truth table only.
+
+STAGE 3 — IMPLEMENT BOUNDED WAITLIST OUTCOME DETECTOR
+Add the smallest safe change so the post-click verifier distinguishes reserve-path success from waitlist-path success.
+
+Requirements:
+- do not weaken safety
+- do not assume success just because click happened
+- if state did not change, classify as no_state_change, not still_open
+- if auth/navigation interrupts the flow, classify as auth_interrupted
+- preserve screenshots and diagnostics
+
+STAGE 4 — LABEL CLEANUP
+Make operator-facing labels truthful:
+- Waitlist joined
+- Already on waitlist
+- No state change after waitlist click
+- Waitlist outcome ambiguous
+- Auth interrupted during waitlist flow
+
+STAGE 5 — VERIFY AGAINST THE LIVE GENTLE YOGA FAILURE SHAPE
+Use the actual screenshots/log shape:
+- correct Gentle Yoga modal
+- full class
+- Waitlist CTA visible
+- existing outputs still_open / ambiguous / unconfirmed
+
+Verify the new classifier would label this case correctly.
+
+After each stage:
+- summarize exact changes
+- say what remains
+- stop
