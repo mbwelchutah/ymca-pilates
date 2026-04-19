@@ -4397,10 +4397,15 @@ async function runBookingJob(job, opts = {}) {
               _lastConfirmation.finalOutcome === 'waitlist_joined' ||
               _lastConfirmation.finalOutcome === 'already_waitlisted') {
             // Task #101: persist position so /api/state can surface it.
+            // Always write — when the badge wasn't captured this run, clear
+            // any cached position so the UI doesn't show a stale "#N" from
+            // a prior run on the same job.
             const _pos_fw = _reservePopup_fw.waitlistPosition ?? null;
-            if (_pos_fw != null) {
-              try { waitlistPositionStore.set(job.id || job.jobId || null, _pos_fw); } catch (_) {}
-            }
+            try {
+              const _jid = job.id || job.jobId || null;
+              if (_pos_fw != null) waitlistPositionStore.set(_jid, _pos_fw);
+              else                 waitlistPositionStore.clear(_jid);
+            } catch (_) {}
             const _label_fw_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_fw);
             replayStore.addEvent(_jobId, 'confirm', `${_label_fw_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
             console.log(`WAITLIST: ${_label_fw_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
@@ -4569,10 +4574,15 @@ async function runBookingJob(job, opts = {}) {
             _lastConfirmation.finalOutcome === 'waitlist_joined' ||
             _lastConfirmation.finalOutcome === 'already_waitlisted') {
           // Task #101: persist position so /api/state can surface it.
+          // Always write — when the badge wasn't captured this run, clear
+          // any cached position so the UI doesn't show a stale "#N" from
+          // a prior run on the same job.
           const _pos_wl = _reservePopup_wl.waitlistPosition ?? null;
-          if (_pos_wl != null) {
-            try { waitlistPositionStore.set(job.id || job.jobId || null, _pos_wl); } catch (_) {}
-          }
+          try {
+            const _jid = job.id || job.jobId || null;
+            if (_pos_wl != null) waitlistPositionStore.set(_jid, _pos_wl);
+            else                 waitlistPositionStore.clear(_jid);
+          } catch (_) {}
           const _label_wl_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_wl);
           replayStore.addEvent(_jobId, 'confirm', `${_label_wl_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
           console.log(`WAITLIST: ${_label_wl_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
@@ -4868,7 +4878,16 @@ async function runBookingJob(job, opts = {}) {
     // Replay: terminal outcome event
     if (!PREFLIGHT_ONLY) {
       if (_replayAction === 'waitlist') {
-        replayStore.addEvent(_jobId, 'waitlist', 'Joined waitlist', classTitle);
+        // Task #101: include the captured FW position in the terminal
+        // replay event ("Joined waitlist · #10") when known, so the run
+        // log mirrors the UI badge. Falls back to plain text otherwise.
+        const _termPos =
+          (_lastConfirmation && _lastConfirmation.confirmationSignals &&
+           _lastConfirmation.confirmationSignals.waitlistPosition) || null;
+        const _termMsg = _termPos != null && Number.isFinite(_termPos)
+          ? `Joined waitlist · #${_termPos}`
+          : 'Joined waitlist';
+        replayStore.addEvent(_jobId, 'waitlist', _termMsg, classTitle);
       } else {
         replayStore.addEvent(_jobId, 'success', 'Booking confirmed', classTitle);
       }
