@@ -4402,6 +4402,17 @@ async function runBookingJob(job, opts = {}) {
               const _jid = job.id || job.jobId || null;
               if (_pos_fw != null) waitlistPositionStore.set(_jid, _pos_fw);
               else                 waitlistPositionStore.clear(_jid);
+              // Task #104 — store.set/clear only write SQLite; queue a PG
+              // sync so the captured position survives a fresh-container
+              // restart (Replit rebuilds the container from git on publish
+              // and re-seeds SQLite from PG). Awaited (best-effort: sync
+              // errors are logged but swallowed) before we mark the loop
+              // registered=true so PG durability is attempted before exit.
+              try {
+                const { syncJobsToPgAsync } = require('../db/pg-sync');
+                await syncJobsToPgAsync().catch(e =>
+                  console.warn('[pg-sync] waitlist-position (full→waitlist) await failed:', e.message));
+              } catch (_) {}
             } catch (_) {}
             const _label_fw_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_fw);
             replayStore.addEvent(_jobId, 'confirm', `${_label_fw_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
@@ -4579,6 +4590,14 @@ async function runBookingJob(job, opts = {}) {
             const _jid = job.id || job.jobId || null;
             if (_pos_wl != null) waitlistPositionStore.set(_jid, _pos_wl);
             else                 waitlistPositionStore.clear(_jid);
+            // Task #104 — see matching comment above (full→waitlist branch).
+            // Queue a PG sync so the captured position survives a fresh-
+            // container restart that re-seeds SQLite from PostgreSQL.
+            try {
+              const { syncJobsToPgAsync } = require('../db/pg-sync');
+              await syncJobsToPgAsync().catch(e =>
+                console.warn('[pg-sync] waitlist-position (waitlist branch) await failed:', e.message));
+            } catch (_) {}
           } catch (_) {}
           const _label_wl_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_wl);
           replayStore.addEvent(_jobId, 'confirm', `${_label_wl_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);

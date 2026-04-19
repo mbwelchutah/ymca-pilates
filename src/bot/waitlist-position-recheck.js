@@ -287,6 +287,17 @@ async function recheckWaitlistPosition(job) {
 
     if (position != null) {
       positionStore.set(id, position);
+      // Task #104 — positionStore.set only writes SQLite. Replit rebuilds
+      // the container from git on every publish and re-seeds SQLite from
+      // PostgreSQL, so without an explicit PG sync the captured position
+      // would be lost on the next fresh-container restart. Awaited
+      // best-effort (sync errors are logged but swallowed) before we
+      // report success to the caller so PG durability is attempted first.
+      try {
+        const { syncJobsToPgAsync } = require('../db/pg-sync');
+        await syncJobsToPgAsync().catch(e =>
+          console.warn('[pg-sync] waitlist-position recheck await failed:', e.message));
+      } catch (_) {}
       console.log(`[wl-recheck] Job #${id} — position #${position} captured & stored.`);
       return { ok:true, position, message:`Captured waitlist position #${position}` };
     }

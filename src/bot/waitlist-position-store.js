@@ -15,6 +15,21 @@
 // set()/clear() swallow write failures so a transient DB hiccup never breaks
 // the booking pipeline.
 //
+// Durability note (Task #104): set() and clear() write only to SQLite. On
+// Replit the container is rebuilt from git on every publish and SQLite is
+// re-seeded from PostgreSQL, so a captured position is only durable across
+// a fresh-container restart if its caller also queues syncJobsToPgAsync()
+// (from src/db/pg-sync.js). The other jobs-row mutators (createJob /
+// updateJob / setLastRun-via-server-handlers / clearLastRun-via-/reset-booking)
+// already funnel through handlers that await the sync; the post-Reserve
+// captures in src/bot/register-pilates.js and the recheck in
+// src/bot/waitlist-position-recheck.js do not, so each of those call sites
+// queues a sync itself after calling set()/clear() here. The clear() invoked
+// from setLastRun() in src/db/jobs.js intentionally does not sync — its
+// surrounding handler already does. Any new call site that mutates the
+// position must follow the same rule, or the value will be lost on the next
+// fresh-container restart.
+//
 // Usage:
 //   const positions = require('./waitlist-position-store');
 //   positions.set(jobId, 10);
