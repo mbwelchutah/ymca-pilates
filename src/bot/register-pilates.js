@@ -1214,7 +1214,13 @@ async function runBookingJob(job, opts = {}) {
     browser = _session.browser;
     const page = _session.page;
     // Wrap session snap so screenshotPath in this closure stays current.
+    // Task #96 — same 400 ms pre-snap settle wait as captureFailure() so
+    // Tools-visible preflight/full/waitlist screenshots reflect FW's final
+    // render (e.g. Register→Waitlist button flip on full-class modals)
+    // rather than a transient pre-settle frame. snap() is observation-only;
+    // the booking decision is unaffected by the small delay.
     const snap = async (label = '') => {
+      await page.waitForTimeout(400).catch(() => {});
       const p = await _session.snap(label);
       if (p) screenshotPath = p;
     };
