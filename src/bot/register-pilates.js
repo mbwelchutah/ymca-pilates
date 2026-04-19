@@ -1221,6 +1221,15 @@ async function runBookingJob(job, opts = {}) {
     // Structured failure capture — saves to data/screenshots/{date}/{jobId}_{phase}_{reason}_{ts}.png
     // and updates screenshotPath so logRunSummary / recordFailure pick it up.
     const captureFailure = async (phase, reason) => {
+      // Task #96 — small settle wait so the screenshot reflects FW's final
+      // render. FamilyWorks (Bubble.io) can flip a full-class modal button
+      // from "Register" → "Waitlist" up to ~400 ms after the modal opens, and
+      // schedule re-renders also lag the underlying state by a few hundred
+      // milliseconds. Snapping immediately captures a transient pre-settle
+      // frame that doesn't match what the bot reasoned about a moment later.
+      // 400 ms is well under any retry/timeout budget and only delays the
+      // failure path (the booking decision is already made by this point).
+      await page.waitForTimeout(400).catch(() => {});
       const p = await captureFailureScreenshot(page, {
         jobId:  job.id || job.jobId || null,
         phase,
@@ -1917,19 +1926,36 @@ async function runBookingJob(job, opts = {}) {
       }).catch(() => true);
 
       if (!scheduleHasRowsRetry) {
-        console.log('⚠️ Schedule still empty after 1000 ms retry — recording render failure and continuing.');
-        await captureFailure('navigate', 'schedule_not_rendered');
-        recordFailure({
-          jobId:    job.id || job.jobId || null,
-          phase:    'navigate', reason: 'schedule_not_rendered',
-          category: 'navigate', label: 'Schedule rendered 0 rows after filter',
-          message:  'No time-containing card-sized elements visible after filter application (confirmed after 1000 ms retry)',
-          classTitle,
-          screenshot: _screenshotRef(screenshotPath),
-          url:      page.url(),
-          context:  { categoryApplied, instructorApplied },
-        });
-        // Non-terminal — continue; tab click may trigger re-render.
+        // Task #96 — distinguish a true Bubble.io stall from a legitimately
+        // empty day. FW renders "No Classes on <date>" with a "Try <day>" pill
+        // when the currently-selected day tab has no classes scheduled. That's
+        // the schedule honestly telling us the day is empty; clicking the
+        // target day-tab next will re-render the card list. Recording a
+        // failure in that case is misleading and noisy in Tools.
+        const emptyByScheduleHint = await page.evaluate(() => {
+          const txt = (document.body?.innerText || '').toLowerCase();
+          // FW empty-day strings: "No Classes on <date>" + adjacent "Try <day>" CTA.
+          // Require BOTH signals to avoid suppressing real Bubble.io stalls when
+          // the page incidentally contains one of these phrases in tooltips/help.
+          return /\bno classes\b/.test(txt) && /\btry\s+(sun|mon|tue|wed|thu|fri|sat)\b/.test(txt);
+        }).catch(() => false);
+        if (emptyByScheduleHint) {
+          console.log('ℹ️ Schedule shows "No Classes" empty-state for current tab — skipping render failure (will click target day tab next).');
+        } else {
+          console.log('⚠️ Schedule still empty after 1000 ms retry — recording render failure and continuing.');
+          await captureFailure('navigate', 'schedule_not_rendered');
+          recordFailure({
+            jobId:    job.id || job.jobId || null,
+            phase:    'navigate', reason: 'schedule_not_rendered',
+            category: 'navigate', label: 'Schedule rendered 0 rows after filter',
+            message:  'No time-containing card-sized elements visible after filter application (confirmed after 1000 ms retry)',
+            classTitle,
+            screenshot: _screenshotRef(screenshotPath),
+            url:      page.url(),
+            context:  { categoryApplied, instructorApplied },
+          });
+          // Non-terminal — continue; tab click may trigger re-render.
+        }
       } else {
         console.log('✅ Schedule rows appeared after 1000 ms retry — continuing normally.');
       }

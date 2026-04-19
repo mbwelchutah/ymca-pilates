@@ -1593,17 +1593,29 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
           if (r.modalDetail && !r.modalDetail.verdict?.toLowerCase().includes('reachable')) return 3
           return r.success ? null : 3
         })()
-        finalizeSteps(PREFLIGHT_STEP_LIST, failIdx)
+        // Task #96 — when the live availability JSON has a definitive verdict
+        // (waitlist_available / bookable / full / cancelled) we already know the
+        // booking path; a Playwright modal-step miss is a transient navigation
+        // hiccup, not "registration link broken". Suppress the contradictory
+        // ✗ row and red error text so the card tells one truthful story.
+        const liveDefinitive = job?.liveAvailability?.state &&
+          ['waitlist_available', 'bookable', 'full', 'cancelled'].includes(job.liveAvailability.state)
+        const reconcile = failIdx === 3 && liveDefinitive
+        finalizeSteps(PREFLIGHT_STEP_LIST, reconcile ? null : failIdx)
         // Derive text from failIdx (structured) not msg (string-match) to avoid
         // "Class not found" appearing when failure was actually at the modal step.
         const text = r.success
           ? 'Ready to register'
-          : failIdx === 0 ? 'Session expired — sign in again'
-          : failIdx === 2 ? 'Class not found on schedule'
-          : failIdx === 3 ? 'Could not access registration link'
-          : (r.message ?? 'Registration check blocked')
-        setExecDone({ ok: r.success, text, color: r.success ? 'green' : 'red' })
+          : reconcile
+            ? 'Using live availability — modal not opened this round'
+            : failIdx === 0 ? 'Session expired — sign in again'
+            : failIdx === 2 ? 'Class not found on schedule'
+            : failIdx === 3 ? 'Could not access registration link'
+            : (r.message ?? 'Registration check blocked')
+        const color: 'green' | 'amber' | 'red' = r.success ? 'green' : reconcile ? 'amber' : 'red'
+        setExecDone({ ok: r.success || reconcile, text, color })
         if (r.success) { haptic('selection'); setArmed(true); armedThisRun = true }
+        else if (reconcile) { haptic('selection') }
         else { haptic('error'); setLastFailedAction('preflight') }
       }
     } catch (e) {
