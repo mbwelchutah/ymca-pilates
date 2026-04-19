@@ -204,6 +204,38 @@ describe('clickWaitlistReserveConfirmation — popup with Reserve + Close', () =
     expect(result.waitlistPosition).toBeNull();
   });
 
+  it('post-Reserve: ignores unrelated "N on waitlist" copy outside the popup container', async () => {
+    // Regression guard for the code-review concern that a document.body
+    // fallback could match unrelated waitlist copy on the page (sidebars,
+    // help text, neighboring class rows). Container-scoped detection
+    // should ignore the stray "#42 On Waitlist" living outside the dialog
+    // and the popup, which still has Reserve+Close, should resolve to
+    // 'unknown' (no badge, no Cancel-only swap inside the container).
+    const dom = new JSDOM(`
+      <!DOCTYPE html>
+      <html><body>
+        <aside><span>Yoga 7am: #42 On Waitlist</span></aside>
+        <div role="dialog" class="confirm-popup">
+          <p>Michael Welch</p>
+          <button>Reserve</button>
+          <button>Close</button>
+        </div>
+      </body></html>
+    `);
+    patchJsdomVisibility(dom.window);
+    const page = makeFakePage({
+      dom,
+      clickImpl: () => { /* no DOM mutation inside dialog */ },
+    });
+
+    const result = await clickWaitlistReserveConfirmation(page, 1500, { confirmMaxMs: 100 });
+
+    expect(result.popupSeen).toBe(true);
+    expect(result.clicked).toBe(true);
+    expect(result.confirmedState).toBe('unknown');
+    expect(result.waitlistPosition).toBeNull();
+  });
+
   it('post-Reserve: neither badge nor Cancel-only appears → unknown', async () => {
     const dom = makePopupDom();
     const page = makeFakePage({

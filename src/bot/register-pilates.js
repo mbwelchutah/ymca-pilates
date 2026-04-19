@@ -472,14 +472,11 @@ async function _pollWaitlistConfirmedState(page, tagAttr, popupKind, maxMs, poll
           return { confirmedState: 'cancel_only', waitlistPosition: null };
         }
       }
-      // Document-level fallback: badge text may render outside the tagged
-      // container (rare — FW sometimes replaces the popup wholesale).
-      const bodyText = norm(document.body && document.body.textContent || '');
-      const m2 = bodyText.match(positionRe);
-      if (m2) {
-        const n = parseInt(m2[1], 10);
-        return { confirmedState: 'waitlisted', waitlistPosition: Number.isFinite(n) ? n : null };
-      }
+      // Task #101 — code review feedback: the prior document.body fallback
+      // could match unrelated "N on waitlist" copy elsewhere on the page
+      // (sidebars, help text, other class rows) and misreport position.
+      // Container-scoped detection above is sufficient; if no candidate
+      // container exposed the badge, return null and let the poll continue.
       return null;
     }, {
       tagAttr,
