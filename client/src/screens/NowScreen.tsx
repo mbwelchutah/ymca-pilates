@@ -2908,7 +2908,16 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
 
               {/* IDLE: Stage 3/4 — smart primary button + subtle overflow trigger */}
               {execMode === 'idle' && (() => {
-                const { label, actionType, helperText, disabled, emphasis } = smartButton
+                const { label: rawLabel, actionType, helperText, disabled, emphasis } = smartButton
+                // Task #101 — when the user is on the waitlist and the bot
+                // captured a position number from the FW post-Reserve popup,
+                // surface it inline ("On waitlist · #10") so the user knows
+                // where they stand without opening Tools.
+                const _wlPos = job?.lastWaitlistPosition
+                const label =
+                  nowCardState === 'waitlisted' && _wlPos != null && Number.isFinite(_wlPos)
+                    ? `On waitlist · #${_wlPos}`
+                    : rawLabel
 
                 // Map actionType → handler (register and waitlist share the same
                 // backend flow — handleNowBook detects which button to click)

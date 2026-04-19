@@ -5493,11 +5493,21 @@ const server = http.createServer(async (req, res) => {
       const msToOpen = bookingOpenMs != null ? (bookingOpenMs - Date.now()) : null;
       const scheduleBackoffStatus = scheduleBackoff.snapshotForApi(j.id, msToOpen);
 
+      // Task #101 — surface the most recently captured FW waitlist
+      // position so the Now / Tools UI can show "On waitlist · #10".
+      // Only meaningful when last_result === 'waitlist'; UI gates on that.
+      let lastWaitlistPosition = null;
+      try {
+        const waitlistPositions = require('../bot/waitlist-position-store');
+        lastWaitlistPosition = waitlistPositions.get(j.id);
+      } catch (_) { lastWaitlistPosition = null; }
+
       return {
         ...j, phase, bookingOpenMs, nextClassMs, weekdayConsistency,
         liveAvailability, liveVerdict, liveUrgencyHints, liveRecentInfluence,
         liveImmediateTrigger, passed,
         scheduleBackoff: scheduleBackoffStatus,
+        lastWaitlistPosition,
       };
     });
     // Top-level phase + bookingOpenMs + nextClassMs reuse the enriched first-active job's values.

@@ -72,6 +72,7 @@ export interface ConnectionHealth {
 }
 export type LastResult =
   | 'booked'
+  | 'waitlist'
   | 'found_not_open_yet'
   | 'not_found'
   | 'error'
@@ -163,6 +164,11 @@ export interface Job {
       afterMs: number
     }
   } | null
+  // Task #101 — most recently captured FW waitlist position (the "#N On
+  // Waitlist" badge from the post-Reserve confirmation popup). Null when
+  // the bot hasn't observed one for this job, or the cache was cleared on
+  // reset/cancel. Only meaningful when last_result === 'waitlist'.
+  lastWaitlistPosition?: number | null
   liveImmediateTrigger?: {
     lastFiredAtMs:       number | null
     cooldownActive:      boolean

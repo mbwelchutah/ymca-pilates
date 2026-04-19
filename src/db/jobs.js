@@ -73,6 +73,15 @@ function setLastRun(id, status, errorMessage) {
         last_success_at     = COALESCE(?, last_success_at)
     WHERE id = ?
   `).run(ts, status || null, errMsg, successAt, id);
+  // Task #101 — when a run resolves to anything other than waitlist
+  // (e.g. the user's spot was promoted to 'booked', or a later run errored),
+  // drop the cached FW waitlist position so the Now / Tools UI doesn't keep
+  // surfacing a stale "#N" badge. Waitlist enrollments refresh the store
+  // via waitlistPositionStore.set() in src/bot/register-pilates.js, so
+  // re-entering the waitlist on a subsequent run still shows the new number.
+  if (status && status !== 'waitlist') {
+    try { require('../bot/waitlist-position-store').clear(id); } catch (_) {}
+  }
 }
 
 function updateJob(id, fields) {
@@ -132,6 +141,10 @@ function clearLastRun(id) {
         last_error_message = NULL, last_success_at = NULL
     WHERE id = ?
   `).run(id);
+  // Task #101 — drop any cached FW waitlist position for this job so the
+  // Now / Tools UI doesn't keep showing "On waitlist · #N" after a reset
+  // or successful cancel. Best-effort; non-fatal if the store is missing.
+  try { require('../bot/waitlist-position-store').clear(id); } catch (_) {}
   syncSeed();
 }
 

@@ -1237,6 +1237,9 @@ interface JobLike {
   last_run_at: string | null
   last_result: string | null
   last_error_message: string | null
+  // Task #101 — surfaced via /api/state when the bot has captured the
+  // FW post-Reserve "#N On Waitlist" badge for this job.
+  lastWaitlistPosition?: number | null
 }
 
 function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreenshot }: {
@@ -1261,7 +1264,17 @@ function LastRunSummaryCard({ lastRunJob, botStatus, screenshot, onViewScreensho
     )
   }
 
-  const { label, reason: baseReason, color, dot } = resultToOutcome(lastRunJob.last_result)
+  const { label: rawLabel, reason: baseReason, color, dot } = resultToOutcome(lastRunJob.last_result)
+  // Task #101 — append the captured FW position to the Waitlisted label
+  // when known ("Waitlisted · #10"), so the user sees their place without
+  // expanding the row.
+  const _wlPos = lastRunJob.lastWaitlistPosition
+  const isWaitlistResult =
+    lastRunJob.last_result === 'waitlist' || lastRunJob.last_result === 'waitlisted'
+  const label =
+    isWaitlistResult && _wlPos != null && Number.isFinite(_wlPos)
+      ? `${rawLabel} · #${_wlPos}`
+      : rawLabel
   const errorShort = lastRunJob.last_error_message
     ? (lastRunJob.last_error_message.length > 80
         ? lastRunJob.last_error_message.slice(0, 80) + '…'

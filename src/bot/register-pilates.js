@@ -5,6 +5,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { captureFailureScreenshot, screenshotRelPath } = require('./screenshot-capture');
+const waitlistPositionStore = require('./waitlist-position-store');
 const { createSession }  = require('./daxko-session');
 const { getBookingWindow } = require('../scheduler/booking-window');
 const { checkJobConsistency } = require('../scheduler/job-consistency');
@@ -274,10 +275,35 @@ async function _waitForConfirmSignal(page, maxMs) {
 //
 // @param {import('playwright').Page} page
 // @param {number} [maxMs=1500] Max time to wait for the popup to appear.
-// @returns {Promise<{popupSeen: boolean, clicked: boolean, error?: string}>}
-async function clickWaitlistReserveConfirmation(page, maxMs = 1500) {
+// @param {object} [opts]
+// @param {number} [opts.confirmMaxMs=5000] After Reserve is clicked, how long
+//        to keep polling the popup for the post-Reserve confirmed state (the
+//        orange "#N On Waitlist" badge or a Cancel button replacing Reserve).
+// @param {number|string|null} [opts.jobId] Used only for forensic screenshot
+//        naming when the badge is observed.
+// @returns {Promise<{
+//   popupSeen: boolean,
+//   clicked: boolean,
+//   error?: string,
+//   confirmedState: 'waitlisted'|'cancel_only'|'unknown',
+//   waitlistPosition: number|null,
+// }>}
+//
+// Task #101 — after the Reserve click, FW updates the same popup with an
+// orange "#N On Waitlist" badge alongside Cancel + Close. We poll for that
+// badge (or, as a fallback, a bare Cancel button replacing Reserve) so the
+// bot can report the position number — FW's only durable confirmation that
+// the waitlist join actually committed (My Schedule still shows "No Events"
+// for waitlist entries).
+async function clickWaitlistReserveConfirmation(page, maxMs = 1500, opts = {}) {
   const POLL_MS = 200;
   const deadline = Date.now() + maxMs;
+  const CONFIRM_MAX_MS  = Number.isFinite(opts.confirmMaxMs) ? opts.confirmMaxMs : 5000;
+  const CONFIRM_POLL_MS = 250;
+  const jobId = opts.jobId ?? null;
+  // Match "#10 On Waitlist", "# 10 on waitlist", "10 on waitlist", "10 on the
+  // waitlist". Captures the digit run for the position number.
+  const POSITION_RE = /#?\s*(\d+)\s*on\s*(?:the\s*)?wait[\s-]?list/i;
   try {
     while (Date.now() < deadline) {
       // Detect a visible "Reserve" button that has a visible "Close" sibling
@@ -334,19 +360,138 @@ async function clickWaitlistReserveConfirmation(page, maxMs = 1500) {
           // Brief settle so the subsequent Stage 10E classifier sees the
           // post-Reserve DOM rather than a transient mid-render frame.
           await page.waitForTimeout(500).catch(() => {});
-          return { popupSeen: true, clicked: true };
+          // ── Task #101: post-Reserve confirmed-state polling ───────────────
+          // After Reserve commits, the same popup typically updates with an
+          // orange "#N On Waitlist" badge and Cancel + Close (Reserve gone).
+          // Poll for that badge — or, as a fallback, a Cancel button taking
+          // Reserve's place in the popup container — so we can report the
+          // user's waitlist position.
+          const confirm = await _pollWaitlistConfirmedState(
+            page, tagAttr, popup.kind, CONFIRM_MAX_MS, CONFIRM_POLL_MS, POSITION_RE,
+          );
+          if (confirm.confirmedState === 'waitlisted') {
+            // Forensic screenshot — captures the orange "#N On Waitlist"
+            // badge so the run is auditable later. Best-effort; non-fatal.
+            try {
+              await captureFailureScreenshot(page, {
+                jobId, phase: 'post_click', reason: 'waitlist_confirmed',
+              });
+            } catch (_) {}
+            console.log(
+              `[reserve-popup] Confirmed waitlisted${
+                confirm.waitlistPosition != null ? ` (position #${confirm.waitlistPosition})` : ''
+              }.`,
+            );
+          } else if (confirm.confirmedState === 'cancel_only') {
+            console.log('[reserve-popup] Confirmed: Cancel button replaced Reserve (no position visible).');
+          } else {
+            console.log('[reserve-popup] Post-Reserve confirmed state did not resolve within window.');
+          }
+          return {
+            popupSeen: true,
+            clicked: true,
+            confirmedState:   confirm.confirmedState,
+            waitlistPosition: confirm.waitlistPosition,
+          };
         } catch (clickErr) {
           console.log(`[reserve-popup] Click failed: ${clickErr.message}`);
-          return { popupSeen: true, clicked: false, error: clickErr.message };
+          return {
+            popupSeen: true, clicked: false, error: clickErr.message,
+            confirmedState: 'unknown', waitlistPosition: null,
+          };
         }
       }
       await page.waitForTimeout(POLL_MS).catch(() => {});
     }
     // No popup appeared within the window — caller continues to confirmBookingOutcome.
-    return { popupSeen: false, clicked: false };
+    return {
+      popupSeen: false, clicked: false,
+      confirmedState: 'unknown', waitlistPosition: null,
+    };
   } catch (err) {
-    return { popupSeen: false, clicked: false, error: err.message };
+    return {
+      popupSeen: false, clicked: false, error: err.message,
+      confirmedState: 'unknown', waitlistPosition: null,
+    };
   }
+}
+
+// ── Task #101 helper: post-Reserve confirmed-state polling ──────────────────
+// Re-scans the popup container that originally held Reserve+Close, looking
+// for the orange "#N On Waitlist" badge or a Cancel button replacing
+// Reserve. Returns the first definitive confirmation seen, or
+// { confirmedState: 'unknown', waitlistPosition: null } on timeout.
+//
+// Scope is bounded to the same container we tagged on the way in — prevents
+// catching stray "on waitlist" copy elsewhere on the page.
+async function _pollWaitlistConfirmedState(page, tagAttr, popupKind, maxMs, pollMs, positionRe) {
+  const deadline = Date.now() + maxMs;
+  const positionReSrc = positionRe.source;
+  const positionReFlags = positionRe.flags;
+  while (Date.now() < deadline) {
+    const result = await page.evaluate((args) => {
+      const { tagAttr, kind, posReSrc, posReFlags } = args;
+      const norm = t => (t || '').replace(/\s+/g, ' ').trim();
+      const lower = t => norm(t).toLowerCase();
+      const isVisible = el => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const cs = getComputedStyle(el);
+        return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0';
+      };
+      const positionRe = new RegExp(posReSrc, posReFlags);
+
+      // Find the popup container we originally tagged. Prefer ancestor of
+      // the tagged Reserve button; if it has been removed (Reserve replaced
+      // by Cancel), fall back to scanning all dialog-like containers.
+      let container = null;
+      const tagged = document.querySelector(`[${tagAttr}]`);
+      if (tagged) {
+        container = tagged.closest('[role="dialog"], .modal, [class*="popup" i], [class*="overlay" i]')
+                 || tagged.parentElement;
+      }
+      // Always also scan dialog-like containers — FW may unmount the tagged
+      // node entirely on Reserve and remount the same popup with new content.
+      const candidates = container
+        ? [container]
+        : [...document.querySelectorAll('[role="dialog"], .modal, [class*="popup" i], [class*="overlay" i]')];
+
+      for (const c of candidates) {
+        if (!isVisible(c)) continue;
+        const text = norm(c.textContent || '');
+        const m = text.match(positionRe);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          return { confirmedState: 'waitlisted', waitlistPosition: Number.isFinite(n) ? n : null };
+        }
+        const btns = [...c.querySelectorAll('button, [role="button"]')].filter(isVisible);
+        const hasCancel  = btns.some(b => /^cancel$/i.test(lower(b.textContent)));
+        const hasReserve = btns.some(b => /^reserve$/i.test(lower(b.textContent)));
+        if (hasCancel && !hasReserve) {
+          return { confirmedState: 'cancel_only', waitlistPosition: null };
+        }
+      }
+      // Document-level fallback: badge text may render outside the tagged
+      // container (rare — FW sometimes replaces the popup wholesale).
+      const bodyText = norm(document.body && document.body.textContent || '');
+      const m2 = bodyText.match(positionRe);
+      if (m2) {
+        const n = parseInt(m2[1], 10);
+        return { confirmedState: 'waitlisted', waitlistPosition: Number.isFinite(n) ? n : null };
+      }
+      return null;
+    }, {
+      tagAttr,
+      kind: popupKind,
+      posReSrc: positionReSrc,
+      posReFlags: positionReFlags,
+    }).catch(() => null);
+
+    if (result) return result;
+    await page.waitForTimeout(pollMs).catch(() => {});
+  }
+  return { confirmedState: 'unknown', waitlistPosition: null };
 }
 
 // ── Post-click booking confirmation ───────────────────────────────────────────
@@ -721,11 +866,20 @@ const WAITLIST_OUTCOME_MESSAGE = {
   waitlisted:         'Waitlist confirmation text observed after the click.',
   still_open:         'Click did not visibly change the page within the 10 s window.',
 };
-function _waitlistLabel(outcome) {
-  return WAITLIST_OUTCOME_LABEL[outcome] || `Waitlist outcome: ${outcome}`;
+function _waitlistLabel(outcome, position) {
+  const base = WAITLIST_OUTCOME_LABEL[outcome] || `Waitlist outcome: ${outcome}`;
+  // Task #101 — append the FW position number when known. Only meaningful
+  // for the "joined" / "already on waitlist" success outcomes; harmless if
+  // position is null.
+  if (position != null && Number.isFinite(position)) return `${base} · #${position}`;
+  return base;
 }
-function _waitlistMessage(outcome) {
-  return WAITLIST_OUTCOME_MESSAGE[outcome] || `Waitlist post-click outcome was "${outcome}".`;
+function _waitlistMessage(outcome, position) {
+  const base = WAITLIST_OUTCOME_MESSAGE[outcome] || `Waitlist post-click outcome was "${outcome}".`;
+  if (position != null && Number.isFinite(position)) {
+    return `${base} You are #${position} on the waitlist.`;
+  }
+  return base;
 }
 
 // ── Stage 3: pre-click snapshot helper ───────────────────────────────────────
@@ -4206,11 +4360,16 @@ async function runBookingJob(job, opts = {}) {
           // "Reserve" + "Close" button pair. Click Reserve so the waitlist
           // join is actually committed before the Stage 10E classifier reads
           // the post-click DOM. No-op when the popup never appears.
-          const _reservePopup_fw = await clickWaitlistReserveConfirmation(page);
+          const _reservePopup_fw = await clickWaitlistReserveConfirmation(
+            page, undefined, { jobId: job.id || job.jobId || null },
+          );
           if (_reservePopup_fw.popupSeen) {
+            const _posSuffix_fw = _reservePopup_fw.waitlistPosition != null
+              ? ` (position #${_reservePopup_fw.waitlistPosition})`
+              : '';
             replayStore.addEvent(_jobId, 'action_attempt',
               _reservePopup_fw.clicked
-                ? 'Clicked Reserve confirmation popup (waitlist 2-step)'
+                ? `Clicked Reserve confirmation popup (waitlist 2-step)${_posSuffix_fw}`
                 : `Reserve confirmation popup detected but click failed: ${_reservePopup_fw.error || 'unknown'}`,
               `Attempt ${attempt}`);
           }
@@ -4225,13 +4384,24 @@ async function runBookingJob(job, opts = {}) {
           _tc.confirmation_check_done = new Date().toISOString();
           _state.isConfirming    = false;
           _state.confirmingPhase = null;
+          // Task #101: enrich confirmationSignals with the post-Reserve
+          // popup state so failure context + run summaries carry it.
+          if (_lastConfirmation.confirmationSignals && typeof _lastConfirmation.confirmationSignals === 'object') {
+            _lastConfirmation.confirmationSignals.popupConfirmedState = _reservePopup_fw.confirmedState ?? null;
+            _lastConfirmation.confirmationSignals.waitlistPosition    = _reservePopup_fw.waitlistPosition ?? null;
+          }
           console.log(`[stage-10e] Register(full→waitlist): finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
           // Stage 3 success outcomes: booked, waitlisted, waitlist_joined, already_waitlisted
           if (_lastConfirmation.finalOutcome === 'booked' ||
               _lastConfirmation.finalOutcome === 'waitlisted' ||
               _lastConfirmation.finalOutcome === 'waitlist_joined' ||
               _lastConfirmation.finalOutcome === 'already_waitlisted') {
-            const _label_fw_ok = _waitlistLabel(_lastConfirmation.finalOutcome);
+            // Task #101: persist position so /api/state can surface it.
+            const _pos_fw = _reservePopup_fw.waitlistPosition ?? null;
+            if (_pos_fw != null) {
+              try { waitlistPositionStore.set(job.id || job.jobId || null, _pos_fw); } catch (_) {}
+            }
+            const _label_fw_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_fw);
             replayStore.addEvent(_jobId, 'confirm', `${_label_fw_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
             console.log(`WAITLIST: ${_label_fw_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
             registered = true;
@@ -4246,8 +4416,11 @@ async function runBookingJob(job, opts = {}) {
               _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
                                                                        'registration_unclear';
             // Stage 4: truthful operator-facing label & message keyed on outcome
-            const _label_fw   = _waitlistLabel(_lastConfirmation.finalOutcome);
-            const _message_fw = _waitlistMessage(_lastConfirmation.finalOutcome);
+            // Task #101: include the position when the helper saw it (rare on
+            // failure paths, but harmless when null).
+            const _pos_fw_fail = _reservePopup_fw.waitlistPosition ?? null;
+            const _label_fw   = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_fw_fail);
+            const _message_fw = _waitlistMessage(_lastConfirmation.finalOutcome, _pos_fw_fail);
             recordFailure({
               jobId:    job.id || job.jobId || null,
               phase:    'post_click', reason: _reason,
@@ -4359,11 +4532,16 @@ async function runBookingJob(job, opts = {}) {
         // "Reserve" + "Close" button pair. Click Reserve so the waitlist
         // join is actually committed before the Stage 10E classifier reads
         // the post-click DOM. No-op when the popup never appears.
-        const _reservePopup_wl = await clickWaitlistReserveConfirmation(page);
+        const _reservePopup_wl = await clickWaitlistReserveConfirmation(
+          page, undefined, { jobId: job.id || job.jobId || null },
+        );
         if (_reservePopup_wl.popupSeen) {
+          const _posSuffix_wl = _reservePopup_wl.waitlistPosition != null
+            ? ` (position #${_reservePopup_wl.waitlistPosition})`
+            : '';
           replayStore.addEvent(_jobId, 'action_attempt',
             _reservePopup_wl.clicked
-              ? 'Clicked Reserve confirmation popup (waitlist 2-step)'
+              ? `Clicked Reserve confirmation popup (waitlist 2-step)${_posSuffix_wl}`
               : `Reserve confirmation popup detected but click failed: ${_reservePopup_wl.error || 'unknown'}`,
             `Attempt ${attempt}`);
         }
@@ -4378,13 +4556,24 @@ async function runBookingJob(job, opts = {}) {
         _tc.confirmation_check_done = new Date().toISOString();
         _state.isConfirming    = false;
         _state.confirmingPhase = null;
+        // Task #101: enrich confirmationSignals with the post-Reserve popup
+        // state so failure context + run summaries carry it.
+        if (_lastConfirmation.confirmationSignals && typeof _lastConfirmation.confirmationSignals === 'object') {
+          _lastConfirmation.confirmationSignals.popupConfirmedState = _reservePopup_wl.confirmedState ?? null;
+          _lastConfirmation.confirmationSignals.waitlistPosition    = _reservePopup_wl.waitlistPosition ?? null;
+        }
         console.log(`[stage-10e] Waitlist: finalOutcome=${_lastConfirmation.finalOutcome} signals=${JSON.stringify(_lastConfirmation.confirmationSignals)}`);
         // Stage 3 success outcomes: booked, waitlisted, waitlist_joined, already_waitlisted
         if (_lastConfirmation.finalOutcome === 'booked' ||
             _lastConfirmation.finalOutcome === 'waitlisted' ||
             _lastConfirmation.finalOutcome === 'waitlist_joined' ||
             _lastConfirmation.finalOutcome === 'already_waitlisted') {
-          const _label_wl_ok = _waitlistLabel(_lastConfirmation.finalOutcome);
+          // Task #101: persist position so /api/state can surface it.
+          const _pos_wl = _reservePopup_wl.waitlistPosition ?? null;
+          if (_pos_wl != null) {
+            try { waitlistPositionStore.set(job.id || job.jobId || null, _pos_wl); } catch (_) {}
+          }
+          const _label_wl_ok = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_wl);
           replayStore.addEvent(_jobId, 'confirm', `${_label_wl_ok} (Stage 10E outcome=${_lastConfirmation.finalOutcome})`);
           console.log(`WAITLIST: ${_label_wl_ok} for ${classTitle} ${classTimeNorm || classTime} (outcome=${_lastConfirmation.finalOutcome})`);
           registered = true;
@@ -4399,8 +4588,11 @@ async function runBookingJob(job, opts = {}) {
             _lastConfirmation.finalOutcome === 'no_state_change'  ? 'click_no_op_verified' :
                                                                      'registration_unclear';
           // Stage 4: truthful operator-facing label & message keyed on outcome
-          const _label_wl   = _waitlistLabel(_lastConfirmation.finalOutcome);
-          const _message_wl = _waitlistMessage(_lastConfirmation.finalOutcome);
+          // Task #101: include the position when the helper saw it (rare on
+          // failure paths, but harmless when null).
+          const _pos_wl_fail = _reservePopup_wl.waitlistPosition ?? null;
+          const _label_wl   = _waitlistLabel(_lastConfirmation.finalOutcome, _pos_wl_fail);
+          const _message_wl = _waitlistMessage(_lastConfirmation.finalOutcome, _pos_wl_fail);
           recordFailure({
             jobId:    job.id || job.jobId || null,
             phase:    'post_click', reason: _reason,
