@@ -1,0 +1,56 @@
+Before:
+
+const browser = await chromium.launch({
+  headless,
+  ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
+});
+Adding the required flags. The current options have no args array, so there are no conflicting GPU/display flags to remove.
+Now let me verify Chromium actually launches with these flags:
+Flags work — the EGL/xcb/GPU errors are gone. New blocker: libgbm.so.1 system library missing. Let me install it.
+Good news — Nix already provides a working chromium binary at /nix/store/.../chromium, but Playwright defaults to its own bundled chrome-headless-shell which lacks libgbm. Let me make the launch code auto-detect the Nix chromium when CHROMIUM_PATH isn't set:
+The launch code already auto-detects chromium via which chromium (L11-15). Let me re-run the smoke test using the actual code path:
+Chromium launches in 1.65 seconds, navigates to the YMCA site, and renders the full page title. Let me restart the workflow to confirm the running app picks it up cleanly:
+Chromium launch fix
+File / function changed
+src/bot/daxko-session.js — the chromium.launch(...) call inside createSession() (L142-145 → now L145-166). Single launch site in the codebase (verified via grep).
+
+The pre-existing CHROMIUM_PATH auto-detection at L11-15 (execSync('which chromium')) was already correct and already pointed at the working Nix chromium — no change needed there. The new args array is the only addition.
+
+Before / after launch options
+Before:
+
+const browser = await chromium.launch({
+  headless,
+  ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
+});
+No args array → Playwright's bundled chrome-headless-shell binary tried to initialize ANGLE/EGL/GPU process, then timed out at 180 s with xcb_connect failed and eglInitialize failed.
+
+After:
+
+const _launchArgs = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-gpu',
+  '--disable-software-rasterizer',
+  '--disable-dev-shm-usage',
+  '--use-gl=swiftshader',
+  '--ozone-platform=headless',
+];
+const browser = await chromium.launch({
+  headless,            // unchanged — still true at all real call sites
+  args: _launchArgs,
+  ...(CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {}),
+});
+All seven required flags present. No conflicting flags removed — the previous launch had no args array at all, so there was nothing to strip. headless remains true. Booking logic, selectors, and scheduler behavior untouched.
+
+Did Chromium launch successfully?
+Yes. Direct smoke test using the same code path:
+
+Using: /nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium
+LAUNCH OK in 1650 ms · title: ""
+  url: https://www.eugeneymca.org/  title: "Eugene Family YMCA | The Y. For a better us.™"
+CLOSE OK
+Launch time: 1.65 s (vs previous 180 s timeout failure).
+Navigated past about:blank and successfully loaded the live YMCA page.
+Workflow restarted cleanly afterwards.
+No more xcb_connect, ANGLE Display init, eglInitialize, or GPU-process exit errors.
