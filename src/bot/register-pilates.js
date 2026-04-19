@@ -253,6 +253,102 @@ async function _waitForConfirmSignal(page, maxMs) {
   } catch { /* timeout cap reached — fall through to readSignals() */ }
 }
 
+// ── Task #99: Waitlist two-step Reserve confirmation popup ────────────────────
+// FamilyWorks's waitlist flow has TWO steps that the regular open-spot Register
+// flow does not have:
+//   1. Click the orange "Waitlist" button on the main class modal.
+//   2. A SECOND small confirmation popup appears on top of the main modal,
+//      showing the user's name (e.g. "Michael Welch") with a white "Reserve"
+//      button + gray "Close" button. Clicking Reserve is what actually enrolls
+//      the user on the waitlist; without it, FW records nothing.
+//
+// This helper runs AFTER the Waitlist click and BEFORE confirmBookingOutcome().
+// It is a no-op when the popup never appears (FW behavior may vary), so the
+// existing Stage 10E classifier still produces the verdict either way.
+//
+// Disambiguation from the main class modal: the confirmation popup has BOTH a
+// "Reserve" button AND a "Close" button as visible siblings — the main modal
+// uses an "X" icon to dismiss, not a "Close" button, so the (Reserve + Close)
+// pair is a strong, specific marker that this is the second-step popup and
+// not the original class modal.
+//
+// @param {import('playwright').Page} page
+// @param {number} [maxMs=1500] Max time to wait for the popup to appear.
+// @returns {Promise<{popupSeen: boolean, clicked: boolean, error?: string}>}
+async function clickWaitlistReserveConfirmation(page, maxMs = 1500) {
+  const POLL_MS = 200;
+  const deadline = Date.now() + maxMs;
+  try {
+    while (Date.now() < deadline) {
+      // Detect a visible "Reserve" button that has a visible "Close" sibling
+      // somewhere in the same dialog/popup container. Scan dialogs first,
+      // then fall back to ancestor-scoped lookup for bare overlay divs.
+      // Detect the popup AND tag the matched Reserve button in-place with a
+      // unique data attribute so we can click that exact element afterward.
+      // This avoids clicking the wrong "Reserve" if the underlying class
+      // modal also exposes a Reserve button (per ACTION_SELECTORS.register).
+      const tagAttr = `data-ymca-reserve-${Date.now()}`;
+      const popup = await page.evaluate((tagAttr) => {
+        const norm = t => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const isVisible = el => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return false;
+          const cs = getComputedStyle(el);
+          return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0';
+        };
+        const tag = (el, kind) => { el.setAttribute(tagAttr, kind); };
+        const containers = [...document.querySelectorAll(
+          '[role="dialog"], .modal, [class*="popup" i], [class*="overlay" i]'
+        )];
+        for (const c of containers) {
+          const btns = [...c.querySelectorAll('button, [role="button"]')].filter(isVisible);
+          if (btns.length === 0) continue;
+          const reserve = btns.find(b => /^reserve$/i.test(norm(b.textContent)));
+          const close   = btns.find(b => /^close$/i.test(norm(b.textContent)));
+          if (reserve && close) { tag(reserve, 'container'); return { found: true, kind: 'container' }; }
+        }
+        // Fallback: walk up from any visible Reserve button looking for a
+        // Close sibling within ~6 ancestor levels.
+        const allBtns = [...document.querySelectorAll('button, [role="button"]')].filter(isVisible);
+        const reserveBtn = allBtns.find(b => /^reserve$/i.test(norm(b.textContent)));
+        if (!reserveBtn) return { found: false };
+        let node = reserveBtn.parentElement;
+        for (let i = 0; i < 6 && node; i++) {
+          const closeBtn = [...node.querySelectorAll('button, [role="button"]')]
+            .filter(isVisible)
+            .find(b => /^close$/i.test(norm(b.textContent)));
+          if (closeBtn && closeBtn !== reserveBtn) { tag(reserveBtn, 'fallback'); return { found: true, kind: 'fallback' }; }
+          node = node.parentElement;
+        }
+        return { found: false };
+      }, tagAttr).catch(() => ({ found: false }));
+
+      if (popup.found) {
+        console.log(`[reserve-popup] Detected confirmation popup (${popup.kind || 'dialog'}) — clicking Reserve…`);
+        try {
+          // Click the exact element we tagged in evaluate() above — avoids
+          // any ambiguity with a Reserve button on the underlying modal.
+          const btn = page.locator(`[${tagAttr}]`).first();
+          await btn.click({ timeout: 2000 });
+          // Brief settle so the subsequent Stage 10E classifier sees the
+          // post-Reserve DOM rather than a transient mid-render frame.
+          await page.waitForTimeout(500).catch(() => {});
+          return { popupSeen: true, clicked: true };
+        } catch (clickErr) {
+          console.log(`[reserve-popup] Click failed: ${clickErr.message}`);
+          return { popupSeen: true, clicked: false, error: clickErr.message };
+        }
+      }
+      await page.waitForTimeout(POLL_MS).catch(() => {});
+    }
+    // No popup appeared within the window — caller continues to confirmBookingOutcome.
+    return { popupSeen: false, clicked: false };
+  } catch (err) {
+    return { popupSeen: false, clicked: false, error: err.message };
+  }
+}
+
 // ── Post-click booking confirmation ───────────────────────────────────────────
 // After clicking Register / Waitlist (and optionally a "Reserve" popup), this
 // checks whether the booking actually completed on the YMCA server.
@@ -4105,6 +4201,19 @@ async function runBookingJob(job, opts = {}) {
           // no_state_change detection in confirmBookingOutcome.
           const _preClickSnap_fw = await capturePreClickSnapshot(page, _attemptModalScope);
           await registerBtn.first().click();
+          // Task #99 — FW waitlist flow has a 2-step confirmation: after the
+          // first click, a small popup appears with the user's name and a
+          // "Reserve" + "Close" button pair. Click Reserve so the waitlist
+          // join is actually committed before the Stage 10E classifier reads
+          // the post-click DOM. No-op when the popup never appears.
+          const _reservePopup_fw = await clickWaitlistReserveConfirmation(page);
+          if (_reservePopup_fw.popupSeen) {
+            replayStore.addEvent(_jobId, 'action_attempt',
+              _reservePopup_fw.clicked
+                ? 'Clicked Reserve confirmation popup (waitlist 2-step)'
+                : `Reserve confirmation popup detected but click failed: ${_reservePopup_fw.error || 'unknown'}`,
+              `Attempt ${attempt}`);
+          }
           // ── Stage 10E POINT 6 (full→waitlist) — strong post-click confirmation ──
           _state.isConfirming    = true;
           _state.confirmingPhase = attempt > 1
@@ -4245,6 +4354,19 @@ async function runBookingJob(job, opts = {}) {
         // no_state_change detection in confirmBookingOutcome.
         const _preClickSnap_wl = await capturePreClickSnapshot(page, _attemptModalScope);
         await waitlistBtn.first().click();
+        // Task #99 — FW waitlist flow has a 2-step confirmation: after the
+        // first click, a small popup appears with the user's name and a
+        // "Reserve" + "Close" button pair. Click Reserve so the waitlist
+        // join is actually committed before the Stage 10E classifier reads
+        // the post-click DOM. No-op when the popup never appears.
+        const _reservePopup_wl = await clickWaitlistReserveConfirmation(page);
+        if (_reservePopup_wl.popupSeen) {
+          replayStore.addEvent(_jobId, 'action_attempt',
+            _reservePopup_wl.clicked
+              ? 'Clicked Reserve confirmation popup (waitlist 2-step)'
+              : `Reserve confirmation popup detected but click failed: ${_reservePopup_wl.error || 'unknown'}`,
+            `Attempt ${attempt}`);
+        }
         // ── Stage 10E POINT 6 (Waitlist) — strong post-click confirmation ──
         _state.isConfirming    = true;
         _state.confirmingPhase = attempt > 1
