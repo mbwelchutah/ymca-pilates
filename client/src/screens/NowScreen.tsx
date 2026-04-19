@@ -1598,9 +1598,26 @@ export function NowScreen({ appState, selectedJobId, staleSelectedJob = null, se
         // booking path; a Playwright modal-step miss is a transient navigation
         // hiccup, not "registration link broken". Suppress the contradictory
         // ✗ row and red error text so the card tells one truthful story.
-        const liveDefinitive = job?.liveAvailability?.state &&
-          ['waitlist_available', 'bookable', 'full', 'cancelled'].includes(job.liveAvailability.state)
-        const reconcile = failIdx === 3 && liveDefinitive
+        // Task #97 — only trust definitive live availability if it's actually
+        // fresh. A stale (hours-old) snapshot must not mask a real, current
+        // modal-step regression. Accept either an explicit ageMs under the
+        // freshness window, or a fetchedAt timestamp we can verify ourselves.
+        const LIVE_FRESHNESS_MS = 5 * 60 * 1000  // 5 minutes
+        const liveState = job?.liveAvailability?.state
+        const liveDefinitive = !!liveState &&
+          ['waitlist_available', 'bookable', 'full', 'cancelled'].includes(liveState)
+        const liveAgeMs: number | null = (() => {
+          const a = job?.liveAvailability?.ageMs
+          if (typeof a === 'number' && Number.isFinite(a)) return a
+          const ts = job?.liveAvailability?.fetchedAt
+          if (ts) {
+            const parsed = Date.parse(ts)
+            if (Number.isFinite(parsed)) return Date.now() - parsed
+          }
+          return null
+        })()
+        const liveFresh = liveAgeMs !== null && liveAgeMs >= 0 && liveAgeMs <= LIVE_FRESHNESS_MS
+        const reconcile = failIdx === 3 && liveDefinitive && liveFresh
         finalizeSteps(PREFLIGHT_STEP_LIST, reconcile ? null : failIdx)
         // Derive text from failIdx (structured) not msg (string-match) to avoid
         // "Class not found" appearing when failure was actually at the modal step.
